@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Account {
+  id              Int      @id @default(autoincrement())
+  username        String   @unique @db.VarChar(100)
+  passwordHash    String   @map("password_hash") @db.VarChar(512)
+  role            String   @db.VarChar(20)
+  status          String   @default("active") @db.VarChar(20)
+  fullName        String   @map("full_name") @db.VarChar(255)
+  position        String?  @db.VarChar(255)
+  permissionLevel String?  @map("permission_level") @db.VarChar(50)
+  createdBy       Int?     @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  creator         Account?           @relation("AccountCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAccounts Account[]          @relation("AccountCreatedBy")
+  profile         UserProfile?
+  sessions        UserSession[]
+  workSchedules   UserWorkSchedule[] @relation("ScheduleAccount")
+  createdSchedules UserWorkSchedule[] @relation("ScheduleCreatedBy")
+  updatedSchedules UserWorkSchedule[] @relation("ScheduleUpdatedBy")
+
+  @@map("accounts")
+}
+
+model UserProfile {
+  id              Int     @id @default(autoincrement())
+  accountId       Int     @unique @map("account_id")
+  workerCode      String  @unique @map("worker_code") @db.VarChar(50)
+  nationalityCode String  @map("nationality_code") @db.VarChar(20)
+  nationalityName String  @map("nationality_name") @db.VarChar(100)
+  workStartDate   String  @map("work_start_date") @db.Char(10)
+  phone           String  @db.VarChar(50)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("user_profiles")
+}
+
+model UserSession {
+  id               Int       @id @default(autoincrement())
+  accountId        Int       @map("account_id")
+  refreshTokenHash String    @map("refresh_token_hash") @db.VarChar(512)
+  deviceId         String    @map("device_id") @db.VarChar(255)
+  deviceName       String    @map("device_name") @db.VarChar(255)
+  ipAddress        String?   @map("ip_address") @db.VarChar(64)
+  userAgent        String?   @map("user_agent") @db.VarChar(512)
+  isActive         Boolean   @default(true) @map("is_active")
+  lastActiveAt     DateTime  @default(now()) @map("last_active_at") @db.Timestamp(3)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamp(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamp(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([accountId, isActive])
+  @@map("user_sessions")
+}
+
+model UserWorkSchedule {
+  id             Int      @id @default(autoincrement())
+  accountId      Int      @map("account_id")
+  workDate       String   @map("work_date") @db.Char(10)
+  shiftStartTime String   @map("shift_start_time") @db.Char(5)
+  shiftEndTime   String   @map("shift_end_time") @db.Char(5)
+  isCurrent      Boolean  @default(true) @map("is_current")
+  createdBy      Int?     @map("created_by")
+  updatedBy      Int?     @map("updated_by")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  account          Account  @relation("ScheduleAccount", fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdByAccount Account? @relation("ScheduleCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  updatedByAccount Account? @relation("ScheduleUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([accountId, isCurrent])
+  @@map("user_work_schedules")
+}

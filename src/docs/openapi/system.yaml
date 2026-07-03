@@ -1,0 +1,17 @@
+paths:
+  /:
+    get:
+      tags:
+        - System
+      summary: Check that the API is running.
+      responses:
+        "200":
+          description: API status.
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check endpoint.
+      responses:
+        "200":
+          description: Service health status.

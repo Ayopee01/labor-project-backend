@@ -1,0 +1,461 @@
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - statusCode
+        - code
+        - message
+      properties:
+        statusCode:
+          type: integer
+          example: 401
+        code:
+          type: string
+          example: INVALID_TOKEN
+        message:
+          type: string
+          example: Invalid or expired token.
+    Account:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: user01
+        role:
+          type: string
+          enum:
+            - admin
+            - user
+          example: user
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: active
+        full_name:
+          type: string
+          example: Worker Name
+        position:
+          type: string
+          nullable: true
+          example: null
+        permission_level:
+          type: string
+          nullable: true
+          enum:
+            - admin
+            - staff
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+    WorkerProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 10
+        account_id:
+          type: integer
+          example: 1
+        worker_code:
+          type: string
+          example: MNO00142
+        nationality_code:
+          type: string
+          example: TH
+        nationality_name:
+          type: string
+          example: Thai
+        work_start_date:
+          type: string
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          example: 081-234-5678
+    WorkSchedule:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 25
+        account_id:
+          type: integer
+          example: 1
+        work_date:
+          type: string
+          format: date
+          example: 2026-07-01
+        shift_start_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "06:00"
+        shift_end_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "18:00"
+        shift_name:
+          type: string
+          example: day
+        is_current:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+    AuthenticatedAccount:
+      type: object
+      properties:
+        account:
+          $ref: "#/components/schemas/Account"
+        profile:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkerProfile"
+        current_work_schedule:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkSchedule"
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+        - device_id
+        - device_name
+      properties:
+        username:
+          type: string
+          example: user01
+        password:
+          type: string
+          format: password
+          example: "123456"
+        device_id:
+          type: string
+          example: browser-device-id
+        device_name:
+          type: string
+          example: Chrome on Windows
+    ConfirmForceLoginRequest:
+      type: object
+      required:
+        - login_challenge_token
+        - device_id
+        - device_name
+      properties:
+        login_challenge_token:
+          type: string
+          example: temporary-jwt-token
+        device_id:
+          type: string
+          example: browser-device-id
+        device_name:
+          type: string
+          example: Chrome on Windows
+    RefreshRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          example: refresh-jwt-token
+    AuthSuccessResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: access-jwt-token
+        refresh_token:
+          type: string
+          example: refresh-jwt-token
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 900
+        account:
+          $ref: "#/components/schemas/Account"
+        profile:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkerProfile"
+        current_work_schedule:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkSchedule"
+    RefreshSuccessResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: access-jwt-token
+        refresh_token:
+          type: string
+          example: refresh-jwt-token
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 900
+    LoginConflictResponse:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            code:
+              type: string
+              example: ACTIVE_SESSION_EXISTS
+            login_challenge_token:
+              type: string
+              example: temporary-jwt-token
+            active_device:
+              type: object
+              properties:
+                device_id:
+                  type: string
+                  example: old-browser-device-id
+                device_name:
+                  type: string
+                  example: Safari on iPhone
+                last_active_at:
+                  type: string
+                  format: date-time
+                  example: 2026-07-01T09:00:00.000Z
+    LogoutSuccessResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Logged out successfully.
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 125
+        total_pages:
+          type: integer
+          example: 7
+    WorkerProfileInput:
+      type: object
+      required:
+        - worker_code
+        - nationality_code
+        - nationality_name
+        - work_start_date
+        - phone
+      properties:
+        worker_code:
+          type: string
+          example: MNO00142
+        nationality_code:
+          type: string
+          example: TH
+        nationality_name:
+          type: string
+          example: Thai
+        work_start_date:
+          type: string
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          example: 081-234-5678
+    WorkScheduleInput:
+      type: object
+      required:
+        - work_date
+        - shift_start_time
+        - shift_end_time
+      properties:
+        work_date:
+          type: string
+          format: date
+          example: 2026-07-01
+        shift_start_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "06:00"
+        shift_end_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "18:00"
+    CreateUserRequest:
+      type: object
+      required:
+        - username
+        - password
+        - full_name
+        - profile
+      properties:
+        username:
+          type: string
+          example: user01
+        password:
+          type: string
+          format: password
+          example: "123456"
+        full_name:
+          type: string
+          example: Worker Name
+        profile:
+          $ref: "#/components/schemas/WorkerProfileInput"
+        work_schedule:
+          $ref: "#/components/schemas/WorkScheduleInput"
+    UpdateUserRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Worker Name
+        profile:
+          $ref: "#/components/schemas/WorkerProfileInput"
+    ResetPasswordRequest:
+      type: object
+      required:
+        - new_password
+      properties:
+        new_password:
+          type: string
+          format: password
+          example: NewPassword@123456
+    UpdateUserStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: inactive
+    UserListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: user01
+        role:
+          type: string
+          enum:
+            - user
+          example: user
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: active
+        full_name:
+          type: string
+          example: Worker Name
+        profile:
+          $ref: "#/components/schemas/WorkerProfile"
+        current_work_schedule:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkSchedule"
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+    UserListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserListItem"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+    SessionInfo:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: integer
+          example: 5
+        device_id:
+          type: string
+          example: browser-device-id
+        device_name:
+          type: string
+          example: Chrome on Windows
+        last_active_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+    UserDetailResponse:
+      type: object
+      properties:
+        account:
+          $ref: "#/components/schemas/Account"
+        profile:
+          $ref: "#/components/schemas/WorkerProfile"
+        current_work_schedule:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkSchedule"
+        active_session:
+          $ref: "#/components/schemas/SessionInfo"
+    DeleteUserResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: User deleted or deactivated successfully.
+    WorkScheduleResponse:
+      type: object
+      properties:
+        data:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkSchedule"
+    WorkScheduleListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkSchedule"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
