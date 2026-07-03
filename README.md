@@ -1,8 +1,8 @@
 # Backend API Structure
 
 Backend Express API for labor/user management. During development the API runs
-locally with `npm run dev`, while PostgreSQL runs in Docker. Prisma owns the
-database schema, migrations, seed, and database client.
+locally with `npm run dev`, while PostgreSQL runs as a local database service.
+Prisma owns the database schema, migrations, seed, and database client.
 
 ## Stack
 
@@ -10,7 +10,6 @@ database schema, migrations, seed, and database client.
 - Express.js
 - PostgreSQL
 - Prisma ORM
-- Docker Compose
 - TypeScript compiled to CommonJS
 
 ## Development Setup
@@ -18,13 +17,13 @@ database schema, migrations, seed, and database client.
 ```bash
 npm install
 copy .env.example .env
-npm run db:up
 npm run db:migrate
 npm run db:seed
 npm run dev
 ```
 
 The server listens on `PORT` or `8080`.
+Create a local PostgreSQL database first and set `DATABASE_URL` in `.env`.
 
 Default seed admin:
 
@@ -39,18 +38,16 @@ development/testing.
 ```text
 labor-project
   |- npm run dev       Express API
-  |- Docker Compose    PostgreSQL
+  |- PostgreSQL        local database service
   `- Prisma            schema, migration, seed, client
 ```
 
 Useful commands:
 
 ```bash
-npm run db:up
 npm run db:migrate
 npm run db:seed
 npm run db:studio
-npm run db:down
 npm run build
 npm test
 ```
