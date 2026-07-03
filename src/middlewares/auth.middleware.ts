@@ -5,11 +5,6 @@ import { verifyAccessToken } from "../utils/jwt";
 import ApiError from "../utils/api-error";
 
 
-/* -------------------------------------- Config -------------------------------------- */
-
-// ค่าคงที่: scheme ของ Authorization header
-const AUTHORIZATION_SCHEME = "Bearer";
-
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function ดึง token จาก Authorization header
@@ -20,7 +15,7 @@ function getBearerToken(authorization: string | undefined): string {
 
   const [scheme, token] = authorization.split(" ");
 
-  if (scheme !== AUTHORIZATION_SCHEME || !token) {
+  if (scheme !== "Bearer" || !token) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid authorization format.");
   }
 
