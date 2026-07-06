@@ -27,10 +27,14 @@ export interface ProfileDto {
   id: number;
   account_id: number;
   worker_code: string;
+  image_url: string | null;
+  nationality: string;
   nationality_code: string;
   nationality_name: string;
   work_start_date: string;
   phone: string;
+  shirt_type: string | null;
+  shirt_number: string | null;
 }
 
 // Type ส่วน DTO ของ table user_work_schedules
@@ -73,14 +77,18 @@ export interface UserAccountUpdateInput {
 export interface ProfileCreateInput {
   account_id: number;
   worker_code: string;
+  image_url?: string | null;
+  nationality: string;
   nationality_code: string;
   nationality_name: string;
   work_start_date: string;
   phone: string;
+  shirt_type?: string | null;
+  shirt_number?: string | null;
 }
 
 // Type ส่วน Repository input สำหรับแก้ไข profile
-export type ProfileUpdateInput = Omit<ProfileCreateInput, "account_id">;
+export type ProfileUpdateInput = Partial<Omit<ProfileCreateInput, "account_id">>;
 
 // Type ส่วน Repository input สำหรับสร้างตารางงาน
 export interface WorkScheduleCreateInput {
@@ -90,6 +98,14 @@ export interface WorkScheduleCreateInput {
   shift_end_time: string;
   is_current?: boolean;
   created_by?: number | null;
+  updated_by?: number | null;
+}
+
+// Type ส่วน Repository input สำหรับแก้ไขตารางงานปัจจุบัน
+export interface WorkScheduleUpdateInput {
+  work_date: string;
+  shift_start_time: string;
+  shift_end_time: string;
   updated_by?: number | null;
 }
 

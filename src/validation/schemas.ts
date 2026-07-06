@@ -23,10 +23,26 @@ const timeString = trimmedString.pipe(
 const emptyStringToUndefined = (value: unknown): unknown =>
   value === "" ? undefined : value;
 
+const optionalDateString = z.preprocess(
+  emptyStringToUndefined,
+  dateString.optional()
+);
+
 // Format ข้อความ optional ที่ trim ก่อนใช้งาน และมอง empty string เป็น undefined
 const optionalTrimmedString = z.preprocess(
   emptyStringToUndefined,
   z.string().trim().optional()
+);
+
+const defaultActiveStatusSchema = z.preprocess(
+  emptyStringToUndefined,
+  activeStatusSchema.default("active")
+);
+
+// Format ค่าสถานะ optional สำหรับ body/query ที่อาจไม่ส่งมา
+const optionalActiveStatusSchema = z.preprocess(
+  emptyStringToUndefined,
+  activeStatusSchema.optional()
 );
 
 // Format ข้อความ optional ที่ trim แล้วแปลงเป็น lowercase เหมาะกับ search/filter
@@ -50,8 +66,8 @@ export const idSchema = z.coerce.number().int().positive();
 export const loginBodySchema = z.object({
   username: trimmedString,
   password: trimmedString,
-  device_id: trimmedString,
-  device_name: trimmedString,
+  device_id: optionalTrimmedString,
+  device_name: optionalTrimmedString,
 });
 
 // Schema body สำหรับยืนยัน force login ด้วย challenge token และอุปกรณ์ใหม่
@@ -71,10 +87,27 @@ export const refreshBodySchema = z.object({
 // Schema ข้อมูล profile ของ worker ที่ผูกกับ user account
 export const profileInputSchema = z.object({
   worker_code: trimmedString,
+  image_url: optionalTrimmedString,
+  nationality: optionalTrimmedString,
   nationality_code: trimmedString,
   nationality_name: trimmedString,
   work_start_date: dateString,
   phone: trimmedString,
+  shirt_type: optionalTrimmedString,
+  shirt_number: optionalTrimmedString,
+});
+
+// Schema ข้อมูล profile แบบ partial สำหรับ PATCH worker
+const updateProfileInputSchema = z.object({
+  worker_code: optionalTrimmedString,
+  image_url: optionalTrimmedString,
+  nationality: optionalTrimmedString,
+  nationality_code: optionalTrimmedString,
+  nationality_name: optionalTrimmedString,
+  work_start_date: optionalDateString,
+  phone: optionalTrimmedString,
+  shirt_type: optionalTrimmedString,
+  shirt_number: optionalTrimmedString,
 });
 
 // Schema ข้อมูลวันทำงานและช่วงเวลางานของ worker
@@ -86,27 +119,33 @@ export const workScheduleInputSchema = z.object({
 
 // Schema body สำหรับสร้าง worker พร้อม profile และ schedule เริ่มต้น
 export const createUserBodySchema = z.object({
-  username: trimmedString,
-  password: trimmedString,
+  username: optionalTrimmedString,
+  password: optionalTrimmedString,
+  img: optionalTrimmedString,
+  image_url: optionalTrimmedString,
   full_name: trimmedString,
-  profile: profileInputSchema,
-  work_schedule: workScheduleInputSchema.nullish(),
+  phone: trimmedString,
+  nationality: trimmedString,
+  nationality_code: optionalTrimmedString,
+  nationality_name: optionalTrimmedString,
+  shirt_type: trimmedString,
+  shirt_number: trimmedString,
+  work_start_date: optionalDateString,
+  status: defaultActiveStatusSchema,
+  work_schedule: workScheduleInputSchema,
 });
 
-// Schema body สำหรับแก้ไขชื่อและ profile ของ worker
+// Schema body สำหรับแก้ไขข้อมูล worker ผ่านเส้นหลัก
 export const updateUserBodySchema = z.object({
   full_name: optionalTrimmedString,
-  profile: profileInputSchema.optional(),
+  profile: updateProfileInputSchema.optional(),
+  status: optionalActiveStatusSchema,
+  work_schedule: z.unknown().optional(),
 });
 
 // Schema body สำหรับ reset password ของ worker
 export const resetPasswordBodySchema = z.object({
   new_password: trimmedString,
-});
-
-// Schema body สำหรับเปลี่ยนสถานะ active/inactive ของ worker
-export const updateStatusBodySchema = z.object({
-  status: activeStatusSchema,
 });
 
 /* -------------------------------------- Query Schemas -------------------------------------- */
@@ -123,18 +162,12 @@ const limitQuerySchema = z.preprocess(
   z.coerce.number().int().min(1).max(100).default(20)
 );
 
-// Schema query status แบบ optional ที่รับเฉพาะ active/inactive
-const optionalStatusSchema = z.preprocess(
-  emptyStringToUndefined,
-  activeStatusSchema.optional()
-);
-
 // Schema query สำหรับ pagination, search และ status filter
 export const paginationQuerySchema = z.object({
   page: pageQuerySchema,
   limit: limitQuerySchema,
   search: optionalLowercaseString,
-  status: optionalStatusSchema,
+  status: optionalActiveStatusSchema,
 });
 
 /* -------------------------------------- Token Schemas -------------------------------------- */

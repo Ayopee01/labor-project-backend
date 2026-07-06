@@ -18,25 +18,26 @@ test(
     process.env.REFRESH_TOKEN_HASH_SECRET = "service-test-refresh-hash-secret";
 
     const authService = await import("../src/services/auth.service");
+    const accountRepository = await import("../src/repositories/account.repository");
     const userService = await import("../src/services/user.service");
     const { closePrisma } = await import("../src/db/prisma");
+    const { hashPassword } = await import("../src/utils/password");
     const suffix = Date.now().toString(36);
-    const username = `service-user-${suffix}`;
-    const workerCode = `SVC-${suffix}`;
+    const phone = `service-phone-${suffix}`;
+    const shirtNumber = `SVC-${suffix}`;
 
     try {
       const created = await userService.createUser(
         {
-          username,
           password: "123456",
+          img: "https://example.com/worker.jpg",
           full_name: "Service Worker",
-          profile: {
-            worker_code: workerCode,
-            nationality_code: "TH",
-            nationality_name: "Thai",
-            work_start_date: "2024-07-15",
-            phone: "081-234-5678",
-          },
+          phone,
+          nationality: "Thai",
+          shirt_type: "Navy",
+          shirt_number: shirtNumber,
+          work_start_date: "2024-07-15",
+          status: "active",
           work_schedule: {
             work_date: "2026-07-01",
             shift_start_time: "06:00",
@@ -51,16 +52,44 @@ test(
         }
       );
 
-      assert.equal(created.account.username, username);
-      assert.equal(
-        (created.account as { password_hash?: string }).password_hash,
-        undefined
+      assert.equal(created.message, "Worker created successfully.");
+
+      const admin = await accountRepository.create({
+        username: `service-admin-${suffix}`,
+        password_hash: await hashPassword("Admin@123456"),
+        role: "admin",
+        status: "active",
+        full_name: "Service Admin",
+        position: "Administrator",
+        permission_level: "admin",
+        created_by: 1,
+      });
+
+      const adminLogin = await authService.login({
+        username: admin.username,
+        password: "Admin@123456",
+      });
+
+      assert.equal(adminLogin.account.role, "admin");
+      assert.equal(adminLogin.profile, null);
+      assert.equal(adminLogin.current_work_schedule, null);
+
+      await assert.rejects(
+        () =>
+          authService.login({
+            username: phone,
+            password: "123456",
+          }),
+        (error) =>
+          Boolean(
+            error &&
+              typeof error === "object" &&
+              (error as { code?: string }).code === "VALIDATION_ERROR"
+          )
       );
-      assert.equal(created.profile?.worker_code, workerCode);
-      assert.ok(created.current_work_schedule?.shift_name);
 
       const login = await authService.login({
-        username,
+        username: phone,
         password: "123456",
         device_id: `browser-device-${suffix}`,
         device_name: "Chrome on Windows",
@@ -80,16 +109,45 @@ test(
       const list = await userService.listUsers({
         page: 1,
         limit: 20,
-        search: workerCode,
+        search: shirtNumber,
       });
 
       assert.equal(list.pagination.total, 1);
+      const createdUser = list.data[0];
+      assert.equal(createdUser.username, phone);
+      assert.equal(
+        (createdUser as { password_hash?: string }).password_hash,
+        undefined
+      );
+      assert.equal(createdUser.profile?.worker_code, shirtNumber);
+      assert.equal(createdUser.profile?.image_url, "https://example.com/worker.jpg");
+      assert.equal(createdUser.profile?.nationality, "Thai");
+      assert.equal(createdUser.profile?.nationality_name, "Thai");
+      assert.equal(createdUser.profile?.shirt_number, shirtNumber);
+      assert.ok(createdUser.current_work_schedule?.shift_name);
 
-      const schedule = await userService.getCurrentWorkSchedule(
-        created.account.id
+      const updated = await userService.updateUser(
+        createdUser.id,
+        {
+          status: "inactive",
+          work_schedule: {
+            work_date: "2026-07-02",
+            shift_start_time: "18:00",
+            shift_end_time: "06:00",
+          },
+        },
+        {
+          account_id: 1,
+          role: "admin",
+          session_id: 1,
+          token_type: "access",
+        }
       );
 
-      assert.ok(schedule.data?.shift_name);
+      assert.equal(updated.account.status, "inactive");
+      assert.equal(updated.current_work_schedule?.work_date, "2026-07-02");
+      assert.ok(updated.current_work_schedule?.shift_name);
+      assert.equal(updated.active_session, null);
     } finally {
       await closePrisma();
     }

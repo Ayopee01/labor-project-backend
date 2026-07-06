@@ -72,10 +72,14 @@ export function mapProfile(record: UserProfile | null): ProfileDto | null {
     id: record.id,
     account_id: record.accountId,
     worker_code: record.workerCode,
+    image_url: record.imageUrl,
+    nationality: record.nationality,
     nationality_code: record.nationalityCode,
     nationality_name: record.nationalityName,
     work_start_date: toDateString(record.workStartDate),
     phone: record.phone,
+    shirt_type: record.shirtType,
+    shirt_number: record.shirtNumber,
   };
 }
 

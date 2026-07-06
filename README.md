@@ -87,7 +87,6 @@ $env:RUN_DB_TESTS="1"; npm test
 - `GET /api/admin/users`
 - `GET /api/admin/users/:id`
 - `PATCH /api/admin/users/:id`
-- `DELETE /api/admin/users/:id`
 - `PATCH /api/admin/users/:id/password`
 - `PATCH /api/admin/users/:id/status`
 - `PATCH /api/admin/users/:id/work-schedule`

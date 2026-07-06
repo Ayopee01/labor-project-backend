@@ -7,7 +7,7 @@ import { mapSchedule } from "./mapper";
 
 // import Types
 import type { DbConnection } from "../types/common.type";
-import type { PaginationFilters, WorkScheduleCreateInput, WorkScheduleDto } from "../types/users.type";
+import type { PaginationFilters, WorkScheduleCreateInput, WorkScheduleDto, WorkScheduleUpdateInput } from "../types/users.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -53,13 +53,19 @@ function buildScheduleCreateData(
   };
 }
 
-// Function สร้างข้อมูลสำหรับปิด schedule ปัจจุบัน
-function buildDeactivateCurrentData(
-  actorId?: number | string | null
-): Prisma.UserWorkScheduleUncheckedUpdateManyInput {
+// Function สร้างข้อมูลสำหรับแก้ไข schedule ปัจจุบัน
+function buildScheduleUpdateData(
+  schedule: WorkScheduleUpdateInput
+): Prisma.UserWorkScheduleUncheckedUpdateInput {
   return {
-    isCurrent: false,
-    updatedBy: actorId === undefined || actorId === null ? null : toAccountId(actorId),
+    workDate: schedule.work_date,
+    shiftStartTime: schedule.shift_start_time,
+    shiftEndTime: schedule.shift_end_time,
+    isCurrent: true,
+    updatedBy:
+      schedule.updated_by === undefined || schedule.updated_by === null
+        ? null
+        : toAccountId(schedule.updated_by),
   };
 }
 
@@ -83,23 +89,6 @@ export async function findCurrentByAccountId(
   return mapSchedule(schedule);
 }
 
-// Function ปิด schedule ปัจจุบันของ account
-export async function deactivateCurrentByAccountId(
-  accountId: number | string,
-  actorId?: number | string | null,
-  connection?: DbConnection
-): Promise<void> {
-  const db = client(connection);
-
-  await db.userWorkSchedule.updateMany({
-    where: {
-      accountId: toAccountId(accountId),
-      isCurrent: true,
-    },
-    data: buildDeactivateCurrentData(actorId),
-  });
-}
-
 // Function สร้าง schedule ใหม่ใน table user_work_schedules
 export async function create(
   schedule: WorkScheduleCreateInput,
@@ -114,6 +103,52 @@ export async function create(
   return requireMappedSchedule(mapSchedule(createdSchedule), "create");
 }
 
+// Function แก้ไข schedule ปัจจุบันของ account โดยไม่สร้างประวัติใหม่
+export async function updateCurrentByAccountId(
+  accountId: number | string,
+  schedule: WorkScheduleUpdateInput,
+  connection?: DbConnection
+): Promise<WorkScheduleDto | null> {
+  const db = client(connection);
+  const currentSchedule = await db.userWorkSchedule.findFirst({
+    where: {
+      accountId: toAccountId(accountId),
+      isCurrent: true,
+    },
+    orderBy: {
+      id: "desc",
+    },
+  });
+
+  if (!currentSchedule) {
+    return null;
+  }
+
+  const updatedSchedule = await db.userWorkSchedule.update({
+    where: {
+      id: currentSchedule.id,
+    },
+    data: buildScheduleUpdateData(schedule),
+  });
+
+  return requireMappedSchedule(mapSchedule(updatedSchedule), "update");
+}
+
+// Function ลบ schedule เก่าที่ไม่ใช่ current ของ account
+export async function deleteInactiveByAccountId(
+  accountId: number | string,
+  connection?: DbConnection
+): Promise<void> {
+  const db = client(connection);
+
+  await db.userWorkSchedule.deleteMany({
+    where: {
+      accountId: toAccountId(accountId),
+      isCurrent: false,
+    },
+  });
+}
+
 // Function ดึงรายการ schedule ของ account ตาม pagination
 export async function listByAccountId(
   accountId: number | string,
@@ -125,6 +160,7 @@ export async function listByAccountId(
   const schedules = await db.userWorkSchedule.findMany({
     where: {
       accountId: toAccountId(accountId),
+      isCurrent: true,
     },
     orderBy: {
       id: "desc",
@@ -146,6 +182,7 @@ export async function countByAccountId(
   return db.userWorkSchedule.count({
     where: {
       accountId: toAccountId(accountId),
+      isCurrent: true,
     },
   });
 }

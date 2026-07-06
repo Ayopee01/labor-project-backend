@@ -14,6 +14,7 @@ let password: typeof import("../src/utils/password");
 let refreshTokenHash: typeof import("../src/utils/refresh-token-hash");
 let shift: typeof import("../src/utils/shift");
 let authConfig: typeof import("../src/config/auth.config");
+let schemas: typeof import("../src/validation/schemas");
 
 before(async () => {
   const apiErrorModule = await import("../src/utils/api-error");
@@ -24,6 +25,7 @@ before(async () => {
   refreshTokenHash = await import("../src/utils/refresh-token-hash");
   shift = await import("../src/utils/shift");
   authConfig = await import("../src/config/auth.config");
+  schemas = await import("../src/validation/schemas");
 });
 
 test("jwt utilities sign and verify token types", () => {
@@ -121,6 +123,31 @@ test("auth config parses access token expiry units", () => {
       process.env.JWT_ACCESS_EXPIRES_IN = previousExpiresIn;
     }
   }
+});
+
+test("login body schema allows device fields to be omitted", () => {
+  const loginBody = schemas.loginBodySchema.parse({
+    username: "admin",
+    password: "Admin@123456",
+  });
+
+  assert.equal(loginBody.username, "admin");
+  assert.equal(loginBody.device_id, undefined);
+  assert.equal(loginBody.device_name, undefined);
+});
+
+test("update user schema allows partial profile updates", () => {
+  const updateBody = schemas.updateUserBodySchema.parse({
+    profile: {
+      image_url: "https://example.com/new-worker-image.jpg",
+    },
+  });
+
+  assert.equal(
+    updateBody.profile?.image_url,
+    "https://example.com/new-worker-image.jpg"
+  );
+  assert.equal(updateBody.profile?.worker_code, undefined);
 });
 
 test("shift utility calculates shifts from start time", () => {

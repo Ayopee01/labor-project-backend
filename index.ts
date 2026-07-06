@@ -1,8 +1,8 @@
 import dotenv from "dotenv";
 
-import app from "./src/app";
-
 dotenv.config({ quiet: true });
+
+const { default: app } = require("./src/app");
 
 const PORT = process.env.PORT || 8080;
 

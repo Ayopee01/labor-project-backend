@@ -74,6 +74,36 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
         },
       },
     },
+    {
+      profile: {
+        is: {
+          nationality: {
+            contains: search,
+            mode: SEARCH_MODE,
+          },
+        },
+      },
+    },
+    {
+      profile: {
+        is: {
+          phone: {
+            contains: search,
+            mode: SEARCH_MODE,
+          },
+        },
+      },
+    },
+    {
+      profile: {
+        is: {
+          shirtNumber: {
+            contains: search,
+            mode: SEARCH_MODE,
+          },
+        },
+      },
+    },
   ];
 }
 

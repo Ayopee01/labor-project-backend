@@ -34,10 +34,14 @@ model UserProfile {
   id              Int     @id @default(autoincrement())
   accountId       Int     @unique @map("account_id")
   workerCode      String  @unique @map("worker_code") @db.VarChar(50)
+  imageUrl        String? @map("image_url") @db.VarChar(512)
+  nationality     String  @db.VarChar(100)
   nationalityCode String  @map("nationality_code") @db.VarChar(20)
   nationalityName String  @map("nationality_name") @db.VarChar(100)
   workStartDate   String  @map("work_start_date") @db.Char(10)
   phone           String  @db.VarChar(50)
+  shirtType       String? @map("shirt_type") @db.VarChar(50)
+  shirtNumber     String? @map("shirt_number") @db.VarChar(50)
 
   account Account @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 

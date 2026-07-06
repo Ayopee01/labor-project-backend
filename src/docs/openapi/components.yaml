@@ -76,12 +76,19 @@ components:
         worker_code:
           type: string
           example: MNO00142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mno00142.jpg
+        nationality:
+          type: string
+          example: Myanmar
         nationality_code:
           type: string
-          example: TH
+          example: MM
         nationality_name:
           type: string
-          example: Thai
+          example: Myanmar
         work_start_date:
           type: string
           format: date
@@ -89,6 +96,14 @@ components:
         phone:
           type: string
           example: 081-234-5678
+        shirt_type:
+          type: string
+          nullable: true
+          example: Navy
+        shirt_number:
+          type: string
+          nullable: true
+          example: "12"
     WorkSchedule:
       type: object
       properties:
@@ -142,8 +157,6 @@ components:
       required:
         - username
         - password
-        - device_id
-        - device_name
       properties:
         username:
           type: string
@@ -154,9 +167,11 @@ components:
           example: "123456"
         device_id:
           type: string
+          description: Required for user login. Omit for admin login.
           example: browser-device-id
         device_name:
           type: string
+          description: Required for user login. Omit for admin login.
           example: Chrome on Windows
     ConfirmForceLoginRequest:
       type: object
@@ -252,6 +267,12 @@ components:
         message:
           type: string
           example: Logged out successfully.
+    ActionMessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Action completed successfully.
     PaginationMeta:
       type: object
       properties:
@@ -279,12 +300,19 @@ components:
         worker_code:
           type: string
           example: MNO00142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mno00142.jpg
+        nationality:
+          type: string
+          example: Myanmar
         nationality_code:
           type: string
-          example: TH
+          example: MM
         nationality_name:
           type: string
-          example: Thai
+          example: Myanmar
         work_start_date:
           type: string
           format: date
@@ -292,6 +320,44 @@ components:
         phone:
           type: string
           example: 081-234-5678
+        shirt_type:
+          type: string
+          example: Navy
+        shirt_number:
+          type: string
+          example: "12"
+    UpdateWorkerProfileInput:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          example: MNO00142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mno00142-updated.jpg
+        nationality:
+          type: string
+          example: Myanmar
+        nationality_code:
+          type: string
+          example: MM
+        nationality_name:
+          type: string
+          example: Myanmar
+        work_start_date:
+          type: string
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          example: 0899999999
+        shirt_type:
+          type: string
+          example: Navy
+        shirt_number:
+          type: string
+          example: "12"
     WorkScheduleInput:
       type: object
       required:
@@ -314,23 +380,62 @@ components:
     CreateUserRequest:
       type: object
       required:
-        - username
-        - password
         - full_name
-        - profile
+        - phone
+        - nationality
+        - shirt_type
+        - shirt_number
+        - work_schedule
       properties:
         username:
           type: string
-          example: user01
+          description: Optional. If omitted, phone is used as the login username.
+          example: "0812345678"
         password:
           type: string
           format: password
-          example: "123456"
+          description: Optional. If omitted, phone is used as the initial password.
+          example: "0812345678"
+        img:
+          type: string
+          description: Optional image URL from the UI. Stored as image_url.
+          example: https://example.com/uploads/workers/worker001.jpg
         full_name:
           type: string
-          example: Worker Name
-        profile:
-          $ref: "#/components/schemas/WorkerProfileInput"
+          example: Worker One
+        phone:
+          type: string
+          example: "0812345678"
+        nationality:
+          type: string
+          example: Myanmar
+        nationality_code:
+          type: string
+          description: Optional. Defaults to UNKNOWN when omitted.
+          example: MM
+        nationality_name:
+          type: string
+          description: Optional. Defaults to nationality when omitted.
+          example: Myanmar
+        shirt_type:
+          type: string
+          example: Navy
+        shirt_number:
+          type: string
+          description: Also used as worker_code for this backend.
+          example: "12"
+        work_start_date:
+          type: string
+          format: date
+          description: Optional. Defaults to work_schedule.work_date.
+          example: 2026-07-03
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          default: active
+          example: active
         work_schedule:
           $ref: "#/components/schemas/WorkScheduleInput"
     UpdateUserRequest:
@@ -340,7 +445,18 @@ components:
           type: string
           example: Worker Name
         profile:
-          $ref: "#/components/schemas/WorkerProfileInput"
+          $ref: "#/components/schemas/UpdateWorkerProfileInput"
+        status:
+          type: string
+          description: Optional. Updates the worker account status.
+          enum:
+            - active
+            - inactive
+          example: active
+        work_schedule:
+          description: Optional. Updates the current worker work schedule in place.
+          allOf:
+            - $ref: "#/components/schemas/WorkScheduleInput"
     ResetPasswordRequest:
       type: object
       required:
@@ -350,17 +466,6 @@ components:
           type: string
           format: password
           example: NewPassword@123456
-    UpdateUserStatusRequest:
-      type: object
-      required:
-        - status
-      properties:
-        status:
-          type: string
-          enum:
-            - active
-            - inactive
-          example: inactive
     UserListItem:
       type: object
       properties:
@@ -437,12 +542,6 @@ components:
             - $ref: "#/components/schemas/WorkSchedule"
         active_session:
           $ref: "#/components/schemas/SessionInfo"
-    DeleteUserResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: User deleted or deactivated successfully.
     WorkScheduleResponse:
       type: object
       properties:

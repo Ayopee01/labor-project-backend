@@ -19,7 +19,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UserDetailResponse"
+                $ref: "#/components/schemas/ActionMessageResponse"
         "400":
           description: Invalid request body.
           content:
@@ -39,7 +39,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Username or worker code already exists.
+          description: Username or shirt number already exists.
           content:
             application/json:
               schema:
@@ -142,7 +142,7 @@ paths:
     patch:
       tags:
         - Admin Users
-      summary: Update worker account and profile data.
+      summary: Update worker account, profile, status, and current work schedule.
       operationId: updateUser
       security:
         - bearerAuth: []
@@ -167,7 +167,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserDetailResponse"
         "400":
-          description: Invalid request body.
+          description: Invalid request body or shift time.
           content:
             application/json:
               schema:
@@ -192,45 +192,6 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Worker code already exists.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    delete:
-      tags:
-        - Admin Users
-      summary: Delete or deactivate a worker account.
-      operationId: deleteUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-          description: Worker account id.
-      responses:
-        "200":
-          description: Worker account deleted or deactivated.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeleteUserResponse"
-        "401":
-          description: Missing or invalid access token.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Authenticated account is not an admin.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Worker account not found.
           content:
             application/json:
               schema:
@@ -262,156 +223,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DeleteUserResponse"
+                $ref: "#/components/schemas/ActionMessageResponse"
         "400":
           description: Invalid request body.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Missing or invalid access token.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Authenticated account is not an admin.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Worker account not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/users/{id}/status:
-    patch:
-      tags:
-        - Admin Users
-      summary: Update worker account status.
-      operationId: updateUserStatus
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-          description: Worker account id.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateUserStatusRequest"
-      responses:
-        "200":
-          description: Worker status updated.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserDetailResponse"
-        "400":
-          description: Invalid request body.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Missing or invalid access token.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Authenticated account is not an admin.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Worker account not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/users/{id}/work-schedule:
-    patch:
-      tags:
-        - Admin Users
-      summary: Replace the current worker work schedule.
-      operationId: updateUserWorkSchedule
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-          description: Worker account id.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/WorkScheduleInput"
-      responses:
-        "200":
-          description: Current work schedule replaced.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WorkScheduleResponse"
-        "400":
-          description: Invalid request body or shift time.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Missing or invalid access token.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Authenticated account is not an admin.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Worker account not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    get:
-      tags:
-        - Admin Users
-      summary: Get the current worker work schedule.
-      operationId: getCurrentUserWorkSchedule
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-          description: Worker account id.
-      responses:
-        "200":
-          description: Current worker work schedule or null when none exists.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WorkScheduleResponse"
         "401":
           description: Missing or invalid access token.
           content:
@@ -434,7 +252,7 @@ paths:
     get:
       tags:
         - Admin Users
-      summary: List worker work schedule history.
+      summary: List current worker work schedule.
       operationId: listUserWorkSchedules
       security:
         - bearerAuth: []
@@ -462,7 +280,7 @@ paths:
           description: Number of records per page.
       responses:
         "200":
-          description: Paginated worker work schedule history.
+          description: Paginated current worker work schedule.
           content:
             application/json:
               schema:

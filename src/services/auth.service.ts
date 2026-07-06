@@ -15,7 +15,78 @@ import { verifyPassword } from "../utils/password";
 import { hashRefreshToken, refreshTokenHashesMatch } from "../utils/refresh-token-hash";
 import { formatScheduleWithShift } from "../utils/shift";
 
+/* -------------------------------------- Config -------------------------------------- */
+
+const USER_ROLE = "user";
+const ADMIN_SESSION_DEVICE_NAME = "Admin Web";
+
 /* -------------------------------------- Functions -------------------------------------- */
+
+// Function สร้าง device id สำหรับ session ของ admin หรือ user
+function getDefaultSessionDeviceId(account: AccountDto): string {
+  return account.role === "admin"
+    ? `admin:${account.id}`
+    : `${account.role}:${account.id}`;
+}
+
+// Function สร้าง device name สำหรับ session ของ admin หรือ user
+function getDefaultSessionDeviceName(account: AccountDto): string {
+  return account.role === "admin" ? ADMIN_SESSION_DEVICE_NAME : `${account.role} Web`;
+}
+
+// Function ตรวจสอบว่าผู้ใช้ role user ต้องมี device id และ device name หรือไม่
+function requireUserDevice(
+  deviceId?: string,
+  deviceName?: string
+): { deviceId: string; deviceName: string } {
+  if (!deviceId || !deviceName) {
+    const validationErrors = [];
+
+    if (!deviceId) {
+      validationErrors.push({
+        field: "device_id",
+        message: "Required.",
+      });
+    }
+
+    if (!deviceName) {
+      validationErrors.push({
+        field: "device_name",
+        message: "Required.",
+      });
+    }
+
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      "Device information is required for user login.",
+      {
+        validation_errors: validationErrors,
+      }
+    );
+  }
+
+  return {
+    deviceId,
+    deviceName,
+  };
+}
+
+// Function ระบุ device สำหรับ login ของ account
+function resolveLoginDevice(
+  account: AccountDto,
+  deviceId?: string,
+  deviceName?: string
+): { deviceId: string; deviceName: string } {
+  if (account.role === USER_ROLE) {
+    return requireUserDevice(deviceId, deviceName);
+  }
+
+  return {
+    deviceId: getDefaultSessionDeviceId(account),
+    deviceName: getDefaultSessionDeviceName(account),
+  };
+}
 
 // Function สร้าง response ของ account พร้อม profile และตารางงานปัจจุบัน
 async function buildAccountResponse(
@@ -24,7 +95,7 @@ async function buildAccountResponse(
 ): Promise<AccountResponse> {
   const safeAccount = accountRepository.sanitizeAccount(account);
 
-  if (account.role !== "user") {
+  if (account.role !== USER_ROLE) {
     return {
       account: safeAccount,
       profile: null,
@@ -123,13 +194,19 @@ export async function login(body: unknown) {
   }
 
   const activeSession = await sessionRepository.findActiveByAccountId(account.id);
+  const sessionDevice = resolveLoginDevice(account, deviceId, deviceName);
+  const requiresDevice = account.role === USER_ROLE;
 
-  if (activeSession && activeSession.device_id !== deviceId) {
+  if (
+    requiresDevice &&
+    activeSession &&
+    activeSession.device_id !== sessionDevice.deviceId
+  ) {
     const loginChallengeToken = signLoginChallengeToken({
       account_id: account.id,
       role: account.role,
       old_session_id: activeSession.id,
-      new_device_id: deviceId,
+      new_device_id: sessionDevice.deviceId,
     });
 
     throw new ApiError(
@@ -152,7 +229,12 @@ export async function login(body: unknown) {
       await sessionRepository.revoke(activeSession.id, transaction);
     }
 
-    const tokens = await createSession(account, deviceId, deviceName, transaction);
+    const tokens = await createSession(
+      account,
+      sessionDevice.deviceId,
+      sessionDevice.deviceName,
+      transaction
+    );
 
     return buildAuthSuccessResponse(account, tokens, transaction);
   });

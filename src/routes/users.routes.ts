@@ -62,18 +62,6 @@ router.patch(
   }
 );
 
-router.delete(
-  "/:id",
-  async (req, res, next) => {
-    try {
-      const result = await userService.deleteUser(String(req.params.id), req.auth);
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
 router.patch(
   "/:id/password",
   async (req, res, next) => {
@@ -81,53 +69,6 @@ router.patch(
       const result = await userService.resetPassword(
         String(req.params.id),
         req.body,
-        req.auth
-      );
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-router.patch(
-  "/:id/status",
-  async (req, res, next) => {
-    try {
-      const result = await userService.updateStatus(
-        String(req.params.id),
-        req.body,
-        req.auth
-      );
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-router.patch(
-  "/:id/work-schedule",
-  async (req, res, next) => {
-    try {
-      const result = await userService.updateWorkSchedule(
-        String(req.params.id),
-        req.body,
-        req.auth
-      );
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-router.get(
-  "/:id/work-schedule",
-  async (req, res, next) => {
-    try {
-      const result = await userService.getCurrentWorkSchedule(
-        String(req.params.id),
         req.auth
       );
       res.json(result);

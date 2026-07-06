@@ -2,7 +2,7 @@
 import cors from "cors";
 import express from "express";
 
-import setupSwagger from "./docs/swagger";
+import setupSwagger from "./docs/swagger_origin";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware";
 import authRoutes from "./routes/auth.routes";
 import systemRoutes from "./routes/system.routes";

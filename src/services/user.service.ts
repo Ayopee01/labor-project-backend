@@ -7,7 +7,7 @@ import type { AccessTokenPayload, SessionDto } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
 import type { AccountDto, FormattedSession, PaginationFilters, PaginationMeta, UserDetailResponse, UserListItem, UserListFilters } from "../types/users.type";
 import { parseId, parseWithSchema, parseWorkScheduleInput } from "../validation/parser";
-import { createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateStatusBodySchema, updateUserBodySchema } from "../validation/schemas";
+import { createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
 import { formatScheduleWithShift } from "../utils/shift";
@@ -154,15 +154,45 @@ async function revokeUserSessions(
   await sessionRepository.revokeActiveByAccountId(accountId, connection);
 }
 
+// Function ตรวจสอบว่า profile body มี field ที่ต้อง update หรือไม่
+function hasProfileUpdates(profile: object): boolean {
+  return Object.keys(profile).length > 0;
+}
+
 // Function สร้าง user พร้อม profile และ schedule เริ่มต้น
 export async function createUser(body: unknown, auth?: AccessTokenPayload) {
   const {
-    username,
+    username: requestedUsername,
     password,
+    img,
+    image_url: imageUrl,
     full_name: fullName,
-    profile: profileInput,
+    phone,
+    nationality,
+    nationality_code: requestedNationalityCode,
+    nationality_name: requestedNationalityName,
+    shirt_type: shirtType,
+    shirt_number: shirtNumber,
+    work_start_date: workStartDate,
+    status,
     work_schedule: workScheduleInput,
   } = parseWithSchema(createUserBodySchema, body);
+  const username = requestedUsername ?? phone;
+  const initialPassword = password ?? phone;
+  const initialWorkStartDate = workStartDate ?? workScheduleInput.work_date;
+  const nationalityCode = requestedNationalityCode ?? "UNKNOWN";
+  const nationalityName = requestedNationalityName ?? nationality;
+  const profileInput = {
+    worker_code: shirtNumber,
+    image_url: imageUrl ?? img ?? null,
+    nationality,
+    nationality_code: nationalityCode,
+    nationality_name: nationalityName,
+    work_start_date: initialWorkStartDate,
+    phone,
+    shirt_type: shirtType,
+    shirt_number: shirtNumber,
+  };
   const actorId = getActorId(auth);
 
   return withTransaction(async (transaction) => {
@@ -172,9 +202,9 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
     const account = await accountRepository.create(
       {
         username,
-        password_hash: await hashPassword(password),
+        password_hash: await hashPassword(initialPassword),
         role: "user",
-        status: "active",
+        status,
         full_name: fullName,
         position: null,
         permission_level: null,
@@ -191,20 +221,20 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
       transaction
     );
 
-    if (workScheduleInput) {
-      await workScheduleRepository.create(
-        {
-          account_id: account.id,
-          ...workScheduleInput,
-          is_current: true,
-          created_by: actorId,
-          updated_by: actorId,
-        },
-        transaction
-      );
-    }
+    await workScheduleRepository.create(
+      {
+        account_id: account.id,
+        ...workScheduleInput,
+        is_current: true,
+        created_by: actorId,
+        updated_by: actorId,
+      },
+      transaction
+    );
 
-    return formatUserDetail(account, transaction);
+    return {
+      message: "Worker created successfully.",
+    };
   });
 }
 
@@ -242,26 +272,38 @@ export async function getUser(id: number | string, _auth?: AccessTokenPayload) {
   return formatUserDetail(account);
 }
 
-// Function แก้ไขข้อมูล user และ profile
+// Function update ข้อมูล user รวมถึง profile และ schedule
 export async function updateUser(
   id: number | string,
   body: unknown,
-  _auth?: AccessTokenPayload
+  auth?: AccessTokenPayload
 ) {
+  const {
+    full_name: nextFullName,
+    profile: profileInput,
+    status,
+    work_schedule: workScheduleBody,
+  } = parseWithSchema(updateUserBodySchema, body);
+  const scheduleInput =
+    workScheduleBody === undefined
+      ? undefined
+      : parseWorkScheduleInput(workScheduleBody);
+  const actorId = getActorId(auth);
+
   return withTransaction(async (transaction) => {
     const account = await requireUserAccount(id, transaction);
-    const { full_name: nextFullName, profile: profileInput } = parseWithSchema(
-      updateUserBodySchema,
-      body
-    );
     let updatedAccount = account;
+    const hasProfileInput = profileInput !== undefined && hasProfileUpdates(profileInput);
 
-    if (profileInput !== undefined) {
-      await assertWorkerCodeAvailable(
-        profileInput.worker_code,
-        account.id,
-        transaction
-      );
+    if (hasProfileInput) {
+      if (profileInput.worker_code !== undefined) {
+        await assertWorkerCodeAvailable(
+          profileInput.worker_code,
+          account.id,
+          transaction
+        );
+      }
+
       await profileRepository.updateByAccountId(
         account.id,
         profileInput,
@@ -270,7 +312,7 @@ export async function updateUser(
     }
 
     if (
-      profileInput !== undefined ||
+      hasProfileInput ||
       (nextFullName !== undefined && nextFullName !== "")
     ) {
       updatedAccount = await accountRepository.updateUserAccount(
@@ -285,24 +327,48 @@ export async function updateUser(
       );
     }
 
+    if (status !== undefined) {
+      updatedAccount = await accountRepository.updateStatus(
+        account.id,
+        status,
+        transaction
+      );
+
+      if (status === "inactive") {
+        await revokeUserSessions(account.id, transaction);
+      }
+    }
+
+    if (scheduleInput !== undefined) {
+      const updatedSchedule = await workScheduleRepository.updateCurrentByAccountId(
+        account.id,
+        {
+          ...scheduleInput,
+          updated_by: actorId,
+        },
+        transaction
+      );
+
+      if (!updatedSchedule) {
+        await workScheduleRepository.create(
+          {
+            account_id: account.id,
+            ...scheduleInput,
+            is_current: true,
+            created_by: actorId,
+            updated_by: actorId,
+          },
+          transaction
+        );
+      }
+
+      await workScheduleRepository.deleteInactiveByAccountId(
+        account.id,
+        transaction
+      );
+    }
+
     return formatUserDetail(updatedAccount, transaction);
-  });
-}
-
-// Function ปิดการใช้งาน user และยกเลิก session ทั้งหมด
-export async function deleteUser(
-  id: number | string,
-  _auth?: AccessTokenPayload
-) {
-  return withTransaction(async (transaction) => {
-    const account = await requireUserAccount(id, transaction);
-
-    await accountRepository.updateStatus(account.id, "inactive", transaction);
-    await revokeUserSessions(account.id, transaction);
-
-    return {
-      message: "User deleted or deactivated successfully.",
-    };
   });
 }
 
@@ -333,80 +399,7 @@ export async function resetPassword(
   });
 }
 
-// Function เปลี่ยนสถานะ user และยกเลิก session หาก inactive
-export async function updateStatus(
-  id: number | string,
-  body: unknown,
-  _auth?: AccessTokenPayload
-) {
-  const { status } = parseWithSchema(updateStatusBodySchema, body);
-
-  return withTransaction(async (transaction) => {
-    const account = await requireUserAccount(id, transaction);
-    const updatedAccount = await accountRepository.updateStatus(
-      account.id,
-      status,
-      transaction
-    );
-
-    if (status === "inactive") {
-      await revokeUserSessions(account.id, transaction);
-    }
-
-    return formatUserDetail(updatedAccount, transaction);
-  });
-}
-
-// Function สร้างตารางงานปัจจุบันชุดใหม่ให้ user
-export async function updateWorkSchedule(
-  id: number | string,
-  body: unknown,
-  auth?: AccessTokenPayload
-) {
-  const scheduleInput = parseWorkScheduleInput(body);
-  const actorId = getActorId(auth);
-
-  return withTransaction(async (transaction) => {
-    const account = await requireUserAccount(id, transaction);
-
-    await workScheduleRepository.deactivateCurrentByAccountId(
-      account.id,
-      actorId,
-      transaction
-    );
-
-    const schedule = await workScheduleRepository.create(
-      {
-        account_id: account.id,
-        ...scheduleInput,
-        is_current: true,
-        created_by: actorId,
-        updated_by: actorId,
-      },
-      transaction
-    );
-
-    return {
-      data: formatScheduleWithShift(schedule),
-    };
-  });
-}
-
-// Function ดึงตารางงานปัจจุบันของ user
-export async function getCurrentWorkSchedule(
-  id: number | string,
-  _auth?: AccessTokenPayload
-) {
-  const account = await requireUserAccount(id);
-
-  return {
-    data: formatScheduleWithShift(
-      await workScheduleRepository.findCurrentByAccountId(account.id)
-    ),
-  };
-}
-
-// Function ดึงประวัติตารางงานของ user พร้อม pagination
+// Function ดึงรายการตารางงานของ user พร้อม pagination
 export async function listWorkSchedules(
   id: number | string,
   query: Record<string, unknown> = {},

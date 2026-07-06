@@ -34,12 +34,8 @@ function sortSwaggerOperations(
     "get /api/admin/users": 21,
     "get /api/admin/users/{id}": 22,
     "patch /api/admin/users/{id}": 23,
-    "delete /api/admin/users/{id}": 24,
-    "patch /api/admin/users/{id}/password": 25,
-    "patch /api/admin/users/{id}/status": 26,
-    "patch /api/admin/users/{id}/work-schedule": 27,
-    "get /api/admin/users/{id}/work-schedule": 28,
-    "get /api/admin/users/{id}/work-schedules": 29,
+    "patch /api/admin/users/{id}/password": 24,
+    "get /api/admin/users/{id}/work-schedules": 25,
   };
   const firstKey = `${firstOperation.get("method")} ${firstOperation.get("path")}`;
   const secondKey = `${secondOperation.get("method")} ${secondOperation.get("path")}`;
