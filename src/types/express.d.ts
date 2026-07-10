@@ -1,4 +1,5 @@
 import type { AccessTokenPayload, SessionDto } from "./auth.type";
+import type { DriverSessionDto } from "./driver.type";
 
 declare global {
   namespace Express {
@@ -6,6 +7,8 @@ declare global {
     interface Request {
       auth?: AccessTokenPayload;
       session?: SessionDto;
+      driverSession?: DriverSessionDto;
+      rawBody?: string;
     }
   }
 }

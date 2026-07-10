@@ -1,0 +1,52 @@
+﻿paths:
+  /api/admin/events:
+    get:
+      tags:
+        - Admin Realtime
+      summary: "[SSE] Open the Admin realtime event stream."
+      description: |
+        Keep this HTTP connection open. Backend sends `text/event-stream` events whenever Admin dashboard status or job events change.
+
+        Current event names include:
+        - `VEHICLE_JOB_CREATED`
+        - `DRIVER_JOB_READY`
+        - `WORKER_STATUS_CHANGED`
+        - `WORKER_ASSIGNED`
+        - `ASSIGNMENT_ACCEPTED`
+        - `ASSIGNMENT_TIMEOUT`
+        - `ASSIGNMENT_CHECKED_IN`
+        - `ASSIGNMENT_CANCELLED`
+        - `ASSIGNMENT_CREATED_BY_ADMIN`
+        - `ASSIGNMENT_SCAN_DEADLINE_EXTENDED`
+        - `VEHICLE_JOB_CANCELLED`
+        - `VEHICLE_JOB_CANCELLED_AND_REQUEUED`
+        - `MARKET_JOB_CANCELLED`
+        - `STALL_JOB_CANCELLED`
+        - `STALL_JOB_REOPENED`
+        - `TICKET_COMPLETION_SUBMITTED`
+        - `TICKET_COMPLETION_RESULT`
+      operationId: subscribeAdminEvents
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Server-Sent Events stream. This endpoint does not return a JSON list.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  event: TICKET_COMPLETION_RESULT
+                  data: {"type":"TICKET_COMPLETION_RESULT","title":"Ticket completion confirmed","message":"Vendor confirmed ticket BILL-88991.","payload":{"ticket_id":1},"occurred_at":"2026-07-08T09:00:00.000Z"}
+        "401":
+          description: Missing or invalid access token/session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Authenticated account is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

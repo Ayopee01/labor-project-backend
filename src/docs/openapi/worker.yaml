@@ -1,0 +1,238 @@
+﻿paths:
+  /ws/workers:
+    get:
+      tags:
+        - Worker Application
+      summary: "[WebSocket] Connect Worker Mobile for realtime assignment dispatch."
+      description: |
+        WebSocket endpoint for Worker Mobile only.
+
+        Connect with one of these token formats:
+        - `ws://localhost:8080/ws/workers?token=<access_token>`
+        - `Authorization: Bearer <access_token>` during the upgrade request
+        - `Sec-WebSocket-Protocol: token.<access_token>`
+
+        Backend sends realtime events such as `WORKER_ASSIGNED`, `ASSIGNMENT_TIMEOUT`,
+        `ASSIGNMENT_CANCELLED`, `ASSIGNMENT_ACCEPTED`, `WORKER_STATUS_CHANGED`,
+        `TICKET_COMPLETION_SUBMITTED`, `TICKET_COMPLETION_RESULT`,
+        `STALL_JOB_REOPENED`, `ASSIGNMENT_SCAN_DEADLINE_EXTENDED`,
+        `STALL_JOB_CANCELLED`, `MARKET_JOB_CANCELLED`, and `VEHICLE_JOB_CANCELLED`.
+        Worker actions such as accept/check-in/complete still use the REST endpoints.
+      operationId: connectWorkerWebSocket
+      security:
+        - bearerAuth: []
+      responses:
+        "101":
+          description: WebSocket connection upgraded successfully.
+        "401":
+          description: Missing or invalid access token/session.
+        "404":
+          description: WebSocket path not found.
+  /api/workers/me/online:
+    post:
+      tags:
+        - Worker Application
+      summary: Put the current worker into Redis FIFO queue during the assigned shift.
+      description: Worker Mobile must have an active `/ws/workers` WebSocket connection before going online.
+      operationId: workerOnline
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker queue state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerQueueEntry"
+        "403":
+          description: Worker is inactive, has no current schedule, or is outside the assigned shift.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Worker WebSocket is not connected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/offline:
+    post:
+      tags:
+        - Worker Application
+      summary: Remove the current worker from Redis FIFO queue.
+      operationId: workerOffline
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker queue state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerQueueEntry"
+  /api/workers/me/break:
+    post:
+      tags:
+        - Worker Application
+      summary: Put the current worker on a 15-minute break during the assigned shift.
+      operationId: workerBreak
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker break state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerQueueEntry"
+        "403":
+          description: Worker is inactive, has no current schedule, or is outside the assigned shift.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Worker is not ready, already busy, or reached the break limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/status:
+    get:
+      tags:
+        - Worker Application
+      summary: Get current worker queue state and active assignment.
+      operationId: getWorkerStatus
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerStatusResponse"
+  /api/workers/me/assignments/history:
+    get:
+      tags:
+        - Worker Application
+      summary: Get the current worker assignment history by date.
+      operationId: getWorkerAssignmentHistory
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Assignment created date in YYYY-MM-DD format. The date is interpreted in Asia/Bangkok time.
+      responses:
+        "200":
+          description: Worker assignment history for the selected date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerAssignmentHistoryResponse"
+        "400":
+          description: Invalid or missing date query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/assignments/{id}/accept:
+    post:
+      tags:
+        - Worker Application
+      summary: Accept a pending worker assignment within one minute before BullMQ timeout.
+      operationId: acceptWorkerAssignment
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Accepted assignment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleJobAssignment"
+  /api/workers/me/assignments/{id}/check-in-qr:
+    post:
+      tags:
+        - Worker Application
+      summary: Check in to an accepted assignment with worker QR.
+      operationId: checkInWorkerAssignmentQr
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - qr_token
+              properties:
+                qr_token:
+                  type: string
+      responses:
+        "200":
+          description: Checked-in assignment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleJobAssignment"
+  /api/workers/me/tickets/{id}/complete:
+    post:
+      tags:
+        - Worker Application
+      summary: Submit counted product quantities for a GateTicket and wait for vendor confirmation via LINE.
+      operationId: completeWorkerTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: GateTicket id. This is the stall/vendor-level ticket.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerTicketCompleteRequest"
+      responses:
+        "200":
+          description: Ticket completion submitted and waiting for vendor confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketCompletionResponse"
+        "403":
+          description: Worker is not assigned to this ticket.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Ticket is already waiting for vendor confirmation, closed, or not ready for completion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

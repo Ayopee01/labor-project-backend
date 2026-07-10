@@ -9,6 +9,8 @@ Prisma owns the database schema, migrations, seed, and database client.
 - Node.js
 - Express.js
 - PostgreSQL
+- Redis
+- BullMQ
 - Prisma ORM
 - TypeScript compiled to CommonJS
 
@@ -25,6 +27,56 @@ npm run dev
 The server listens on `PORT` or `8080`.
 Create a local PostgreSQL database first and set `DATABASE_URL` in `.env`.
 
+## Docker Development
+
+This project keeps PostgreSQL outside Docker for local development, while Redis
+and the API can run in Docker. This mirrors production more closely because the
+database remains an external service.
+
+Use `.env` for normal local runs:
+
+```env
+DATABASE_URL=postgresql://postgres:0000@localhost:5433/labor_project
+REDIS_URL=redis://localhost:6380
+REDIS_HOST_PORT=6380
+```
+
+Use `DOCKER_DATABASE_URL` when the API runs inside Docker and PostgreSQL stays
+on the host machine:
+
+```env
+DOCKER_DATABASE_URL=postgresql://postgres:0000@host.docker.internal:5433/labor_project
+```
+
+Start Redis and the API containers:
+
+```bash
+docker compose up --build
+```
+
+Run only Redis and keep the API on your host:
+
+```bash
+docker compose up redis
+npm run dev
+```
+
+The Redis container is exposed on host port `6380` by default to avoid conflicts
+with a local Redis service on `6379`. The API container still connects to Redis
+inside Docker through `redis://redis:6379`.
+
+Stop containers without deleting Redis data:
+
+```bash
+docker compose down
+```
+
+Delete Redis volume data:
+
+```bash
+docker compose down -v
+```
+
 Default seed admin:
 
 - username: `admin`
@@ -39,6 +91,7 @@ development/testing.
 labor-project
   |- npm run dev       Express API
   |- PostgreSQL        local database service
+  |- Redis             Docker or local Redis service
   `- Prisma            schema, migration, seed, client
 ```
 

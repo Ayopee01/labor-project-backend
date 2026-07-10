@@ -18,8 +18,8 @@ test(
     process.env.REFRESH_TOKEN_HASH_SECRET = "service-test-refresh-hash-secret";
 
     const authService = await import("../src/services/auth.service");
-    const accountRepository = await import("../src/repositories/account.repository");
-    const userService = await import("../src/services/user.service");
+    const { accountRepository } = await import("../src/repositories/admin-workers.repository");
+    const userService = await import("../src/services/admin-workers.service");
     const { closePrisma } = await import("../src/db/prisma");
     const { hashPassword } = await import("../src/utils/password");
     const suffix = Date.now().toString(36);
@@ -68,6 +68,7 @@ test(
       const adminLogin = await authService.login({
         username: admin.username,
         password: "Admin@123456",
+        client_type: "admin_web",
       });
 
       assert.equal(adminLogin.account.role, "admin");
@@ -79,6 +80,7 @@ test(
           authService.login({
             username: phone,
             password: "123456",
+            client_type: "worker_mobile",
           }),
         (error) =>
           Boolean(
@@ -93,6 +95,7 @@ test(
         password: "123456",
         device_id: `browser-device-${suffix}`,
         device_name: "Chrome on Windows",
+        client_type: "worker_mobile",
       });
 
       assert.equal(login.token_type, "Bearer");

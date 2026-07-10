@@ -1,0 +1,154 @@
+paths:
+  /api/admin/settings:
+    get:
+      tags:
+        - Admin Settings
+      summary: Get runtime system settings.
+      operationId: getAdminSettings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Runtime settings used by backend calculations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSettings"
+        "403":
+          description: Missing settings:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - Admin Settings
+      summary: Update runtime system settings.
+      operationId: updateAdminSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRuntimeSettingsRequest"
+      responses:
+        "200":
+          description: Updated runtime settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSettings"
+        "400":
+          description: Invalid settings payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Missing settings:update permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/roles:
+    get:
+      tags:
+        - Admin Settings
+      summary: List admin permission levels ordered from highest to lowest.
+      operationId: listAdminRoles
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Admin permission levels.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminRoleListResponse"
+        "403":
+          description: Missing roles:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/users/{id}/permissions:
+    get:
+      tags:
+        - Admin Settings
+      summary: Get permissions for one admin account.
+      operationId: getAdminUserPermissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Admin account id.
+      responses:
+        "200":
+          description: Admin account permissions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserPermissionsResponse"
+        "403":
+          description: Missing permissions:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Admin account not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - Admin Settings
+      summary: Update permissions for one admin account and revoke active sessions.
+      operationId: updateAdminUserPermissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Admin account id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdminUserPermissionsRequest"
+      responses:
+        "200":
+          description: Admin permissions updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateAdminUserPermissionsResponse"
+        "400":
+          description: Invalid permissions payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Missing permissions:update permission, or target/new permission level is equal or higher than the actor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Admin account not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

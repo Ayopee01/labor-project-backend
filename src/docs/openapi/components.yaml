@@ -53,8 +53,9 @@ components:
           type: string
           nullable: true
           enum:
+            - super_admin
             - admin
-            - staff
+            - supervisor
           example: null
         created_at:
           type: string
@@ -157,6 +158,7 @@ components:
       required:
         - username
         - password
+        - client_type
       properties:
         username:
           type: string
@@ -173,6 +175,13 @@ components:
           type: string
           description: Required for user login. Omit for admin login.
           example: Chrome on Windows
+        client_type:
+          type: string
+          description: Optional client policy. admin_web requires role admin, worker_mobile requires role user.
+          enum:
+            - admin_web
+            - worker_mobile
+          example: worker_mobile
     ConfirmForceLoginRequest:
       type: object
       required:
@@ -438,6 +447,83 @@ components:
           example: active
         work_schedule:
           $ref: "#/components/schemas/WorkScheduleInput"
+    CreateUserMultipartRequest:
+      type: object
+      required:
+        - full_name
+        - phone
+        - nationality
+        - shirt_type
+        - shirt_number
+        - work_date
+        - shift_start_time
+        - shift_end_time
+      properties:
+        image:
+          type: string
+          format: binary
+          description: "Optional worker profile image. Allowed types: jpg, png, webp. Max size: 5 MB."
+        username:
+          type: string
+          description: Optional. If omitted, phone is used as the login username.
+          example: "0812345678"
+        password:
+          type: string
+          format: password
+          description: Optional. If omitted, phone is used as the initial password.
+          example: "0812345678"
+        full_name:
+          type: string
+          example: Worker One
+        phone:
+          type: string
+          example: "0812345678"
+        nationality:
+          type: string
+          example: Myanmar
+        nationality_code:
+          type: string
+          description: Optional. Defaults to UNKNOWN when omitted.
+          example: MM
+        nationality_name:
+          type: string
+          description: Optional. Defaults to nationality when omitted.
+          example: Myanmar
+        shirt_type:
+          type: string
+          example: Navy
+        shirt_number:
+          type: string
+          description: Also used as worker_code for this backend.
+          example: "12"
+        work_start_date:
+          type: string
+          format: date
+          description: Optional. Defaults to work_date.
+          example: 2026-07-03
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          default: active
+          example: active
+        work_date:
+          type: string
+          format: date
+          example: 2026-07-03
+        shift_start_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "08:00"
+        shift_end_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "17:00"
+        work_schedule:
+          type: string
+          description: Optional alternative to work_date/shift_start_time/shift_end_time. Send a JSON string with those fields.
+          example: '{"work_date":"2026-07-03","shift_start_time":"08:00","shift_end_time":"17:00"}'
     UpdateUserRequest:
       type: object
       properties:
@@ -454,7 +540,7 @@ components:
             - inactive
           example: active
         work_schedule:
-          description: Optional. Updates the current worker work schedule in place.
+          description: Optional. Updates the current worker work schedule in place and removes other schedule rows for that worker.
           allOf:
             - $ref: "#/components/schemas/WorkScheduleInput"
     ResetPasswordRequest:
@@ -558,3 +644,755 @@ components:
             $ref: "#/components/schemas/WorkSchedule"
         pagination:
           $ref: "#/components/schemas/PaginationMeta"
+    RuntimeSettings:
+      type: object
+      properties:
+        driver_session_ttl_hours:
+          type: integer
+          example: 24
+        worker_accept_deadline_seconds:
+          type: integer
+          example: 60
+        worker_scan_deadline_minutes:
+          type: integer
+          example: 15
+        worker_break_duration_minutes:
+          type: integer
+          example: 15
+        worker_break_limit:
+          type: integer
+          example: 5
+        worker_break_count_ttl_hours:
+          type: integer
+          example: 48
+        worker_presence_stale_seconds:
+          type: integer
+          example: 90
+    UpdateRuntimeSettingsRequest:
+      type: object
+      properties:
+        driver_session_ttl_hours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          example: 24
+        worker_accept_deadline_seconds:
+          type: integer
+          minimum: 1
+          maximum: 600
+          example: 60
+        worker_scan_deadline_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          example: 15
+        worker_break_duration_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          example: 15
+        worker_break_limit:
+          type: integer
+          minimum: 0
+          maximum: 20
+          example: 5
+        worker_break_count_ttl_hours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          example: 48
+        worker_presence_stale_seconds:
+          type: integer
+          minimum: 1
+          maximum: 3600
+          example: 90
+    AdminPermission:
+      type: string
+      enum:
+        - settings:read
+        - settings:update
+        - roles:read
+        - permissions:read
+        - permissions:update
+        - workers:read
+        - workers:create
+        - workers:update
+        - workers:reset_password
+        - workers:force_status
+        - jobs:read
+        - jobs:assign
+        - jobs:cancel
+        - jobs:reopen
+        - jobs:extend_deadline
+    AdminRole:
+      type: object
+      properties:
+        key:
+          type: string
+          enum:
+            - super_admin
+            - admin
+            - supervisor
+          example: supervisor
+        name:
+          type: string
+          example: Supervisor
+        order:
+          type: integer
+          description: Lower value means higher admin rank.
+          example: 2
+    AdminRoleListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminRole"
+    AdminUserPermissionsResponse:
+      type: object
+      properties:
+        account_id:
+          type: integer
+          example: 1
+        role:
+          type: string
+          example: admin
+        permission_level:
+          type: string
+          nullable: true
+          enum:
+            - super_admin
+            - admin
+            - supervisor
+          example: supervisor
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+    UpdateAdminUserPermissionsRequest:
+      type: object
+      required:
+        - permissions
+      properties:
+        permission_level:
+          type: string
+          enum:
+            - super_admin
+            - admin
+            - supervisor
+          example: supervisor
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+    UpdateAdminUserPermissionsResponse:
+      allOf:
+        - $ref: "#/components/schemas/AdminUserPermissionsResponse"
+        - type: object
+          properties:
+            message:
+              type: string
+              example: Admin permissions updated successfully. Active sessions were revoked.
+
+    GateProductInput:
+      type: object
+      required:
+        - name
+        - quantity
+        - unit
+      properties:
+        product_type:
+          type: string
+          nullable: true
+          example: Vegetable
+        name:
+          type: string
+          example: Cabbage
+        quantity:
+          type: number
+          example: 10
+        unit:
+          type: string
+          example: crate
+    GateTicketInput:
+      type: object
+      required:
+        - stall_job_ref
+        - products
+      properties:
+        stall_job_ref:
+          type: string
+          example: STALLJOB-001
+          description: Stall-level case reference used by admins to track or manage this stall job.
+        ticket_no:
+          type: string
+          example: BILL-88991
+          description: Optional external bill or document number shown to the driver and used by admins for lookup.
+        stall_no:
+          type: string
+          example: A-01
+        vendor_name:
+          type: string
+          example: Vendor A
+        vendor_line_id:
+          type: string
+          example: line-vendor-a
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateProductInput"
+    GateMarketInput:
+      type: object
+      required:
+        - market_job_ref
+        - market_name
+        - tickets
+      properties:
+        market_job_ref:
+          type: string
+          example: MARKETJOB-001
+        market_name:
+          type: string
+          example: Market A
+        tickets:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateTicketInput"
+    GateVehicleJobRequest:
+      type: object
+      required:
+        - gate_transaction_ref
+        - vehicle_job_ref
+        - license_plate
+        - workers_required
+        - markets
+      properties:
+        gate_transaction_ref:
+          type: string
+          example: GATE-REQ-001
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0001
+        license_plate:
+          type: string
+          example: ABC-1234
+        vehicle_type:
+          type: string
+          nullable: true
+          example: Six-wheel truck
+        workers_required:
+          type: integer
+          example: 2
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateMarketInput"
+    VehicleJob:
+      type: object
+      properties:
+        id:
+          type: integer
+        vehicle_job_ref:
+          type: string
+        gate_transaction_ref:
+          type: string
+        license_plate:
+          type: string
+        vehicle_type:
+          type: string
+          nullable: true
+        workers_required:
+          type: integer
+        status:
+          type: string
+        driver_qr_token:
+          type: string
+        worker_qr_token:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    MarketJob:
+      type: object
+      properties:
+        id:
+          type: integer
+        vehicle_job_id:
+          type: integer
+        market_job_ref:
+          type: string
+        market_name:
+          type: string
+        status:
+          type: string
+    GateTicket:
+      type: object
+      properties:
+        id:
+          type: integer
+        vehicle_job_id:
+          type: integer
+        market_job_id:
+          type: integer
+        stall_job_ref:
+          type: string
+        ticket_no:
+          type: string
+          nullable: true
+        stall_no:
+          type: string
+          nullable: true
+        vendor_name:
+          type: string
+          nullable: true
+        vendor_line_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+        confirmation_status:
+          type: string
+    WorkerTicketCompleteRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          minItems: 1
+          description: Confirmed quantities counted by the worker. Every product in the ticket must be sent.
+          items:
+            type: object
+            required:
+              - ticket_product_id
+              - confirmed_quantity
+            properties:
+              ticket_product_id:
+                type: integer
+                example: 1
+              confirmed_quantity:
+                type: number
+                minimum: 0
+                example: 8
+    TicketCompletionSubmission:
+      type: object
+      properties:
+        id:
+          type: integer
+        ticket_id:
+          type: integer
+        submitted_by_worker_account_id:
+          type: integer
+        status:
+          type: string
+          example: WAITING_VENDOR_CONFIRM
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        rejected_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TicketCompletionResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Ticket completion submitted and waiting for vendor confirmation.
+        ticket:
+          $ref: "#/components/schemas/GateTicket"
+        submission:
+          $ref: "#/components/schemas/TicketCompletionSubmission"
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketProduct"
+    LineWebhookRequest:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                example: postback
+              source:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                    example: line-vendor-a
+              postback:
+                type: object
+                properties:
+                  data:
+                    type: string
+                    example: action=vendor_confirm_completion&ticketId=1
+    LineWebhookResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: LINE webhook processed.
+        processed:
+          type: integer
+          example: 1
+    TicketProduct:
+      type: object
+      properties:
+        id:
+          type: integer
+        ticket_id:
+          type: integer
+        product_type:
+          type: string
+          nullable: true
+        name:
+          type: string
+        quantity:
+          type: string
+        confirmed_quantity:
+          type: string
+          nullable: true
+        unit:
+          type: string
+    VehicleJobDetailResponse:
+      type: object
+      properties:
+        vehicle_job:
+          $ref: "#/components/schemas/VehicleJob"
+        markets:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/MarketJob"
+              - type: object
+                properties:
+                  tickets:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/GateTicket"
+                        - type: object
+                          properties:
+                            products:
+                              type: array
+                              items:
+                                $ref: "#/components/schemas/TicketProduct"
+    GateVehicleJobResponse:
+      allOf:
+        - $ref: "#/components/schemas/VehicleJobDetailResponse"
+        - type: object
+          properties:
+            message:
+              type: string
+            qr:
+              type: object
+              properties:
+                driver_qr_token:
+                  type: string
+                worker_qr_token:
+                  type: string
+    DriverSessionResponse:
+      type: object
+      properties:
+        driver_session_token:
+          type: string
+        expires_in:
+          type: integer
+          example: 86400
+        expires_at:
+          type: string
+          format: date-time
+        vehicle_job:
+          $ref: "#/components/schemas/VehicleJob"
+    AdminCancelRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          example: Driver reported vehicle job issue.
+    AdminVehicleJobListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleJob"
+        pagination:
+          nullable: true
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            total_pages:
+              type: integer
+    AdminCancelVehicleJobResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        vehicle_job:
+          $ref: "#/components/schemas/VehicleJob"
+    AdminCancelVehicleJobRequeueResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        vehicle_job:
+          $ref: "#/components/schemas/VehicleJob"
+        requeued_worker_account_ids:
+          type: array
+          items:
+            type: integer
+    AdminAssignWorkersRequest:
+      type: object
+      required:
+        - worker_account_ids
+      properties:
+        worker_account_ids:
+          type: array
+          minItems: 1
+          items:
+            type: integer
+          example:
+            - 2
+            - 3
+    AdminAssignWorkersResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleJobAssignment"
+    AdminCancelAssignmentResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        assignment:
+          $ref: "#/components/schemas/VehicleJobAssignment"
+    AdminExtendScanDeadlineRequest:
+      type: object
+      required:
+        - minutes
+      properties:
+        minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          example: 10
+        worker_account_ids:
+          type: array
+          minItems: 1
+          nullable: true
+          description: Optional. Use only when extending selected workers under a vehicle job.
+          items:
+            type: integer
+          example:
+            - 2
+        reason:
+          type: string
+          example: Worker needs more time to reach QR scan point.
+    AdminExtendScanDeadlineResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleJobAssignment"
+    AdminCancelMarketJobResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        market_job:
+          $ref: "#/components/schemas/MarketJob"
+    AdminCancelStallJobResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        stall_job:
+          $ref: "#/components/schemas/GateTicket"
+    AdminReopenStallJobResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        stall_job:
+          $ref: "#/components/schemas/GateTicket"
+    WorkerQueueEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        account_id:
+          type: integer
+        status:
+          type: string
+          example: ready
+        ready_at:
+          type: string
+          nullable: true
+        break_until:
+          type: string
+          nullable: true
+        break_count_used:
+          type: integer
+          nullable: true
+        break_count_limit:
+          type: integer
+          nullable: true
+    WorkerPresence:
+      type: object
+      properties:
+        is_online:
+          type: boolean
+          example: true
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        stale_after_seconds:
+          type: integer
+          example: 90
+    VehicleJobAssignment:
+      type: object
+      properties:
+        id:
+          type: integer
+        vehicle_job_id:
+          type: integer
+        worker_account_id:
+          type: integer
+        status:
+          type: string
+          example: PENDING
+        accept_deadline_at:
+          type: string
+          nullable: true
+        scan_deadline_at:
+          type: string
+          nullable: true
+        accepted_at:
+          type: string
+          nullable: true
+        scanned_at:
+          type: string
+          nullable: true
+        completed_at:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    WorkerAssignmentHistoryItem:
+      type: object
+      properties:
+        assignment:
+          $ref: "#/components/schemas/VehicleJobAssignment"
+        vehicle_job:
+          $ref: "#/components/schemas/VehicleJob"
+    WorkerAssignmentHistoryResponse:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentHistoryItem"
+    WorkerStatusResponse:
+      type: object
+      properties:
+        queue:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkerQueueEntry"
+        current_assignment:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/VehicleJobAssignment"
+        presence:
+          $ref: "#/components/schemas/WorkerPresence"
+    AdminWorkerStatusResponse:
+      allOf:
+        - $ref: "#/components/schemas/WorkerStatusResponse"
+        - type: object
+          properties:
+            worker:
+              $ref: "#/components/schemas/Account"
+    AdminWorkerStatusListResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            total:
+              type: integer
+            ready:
+              type: integer
+            waiting:
+              type: integer
+            break:
+              type: integer
+            busy:
+              type: integer
+            offline:
+              type: integer
+            alive:
+              type: integer
+            stale:
+              type: integer
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminWorkerStatusResponse"
+    AdminForceWorkerStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - waiting
+            - offline
+            - break
+          example: waiting
+        reason:
+          type: string
+          example: Worker contacted admin for status correction.
+    AdminForceWorkerStatusResponse:
+      allOf:
+        - $ref: "#/components/schemas/AdminWorkerStatusResponse"
+        - type: object
+          properties:
+            message:
+              type: string

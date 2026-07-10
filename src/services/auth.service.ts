@@ -1,12 +1,10 @@
-import * as accountRepository from "../repositories/account.repository";
-import * as profileRepository from "../repositories/profile.repository";
-import * as sessionRepository from "../repositories/session.repository";
-import * as workScheduleRepository from "../repositories/work-schedule.repository";
+import { accountRepository, profileRepository, sessionRepository, workScheduleRepository } from "../repositories/auth.repository";
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
+import { getAccountPermissions } from "./admin-settings.service";
 import { withTransaction } from "../db/prisma";
-import type { AccessTokenPayload, AccountResponse, AuthSuccessResponse, AuthTokens } from "../types/auth.type";
+import type { AccessTokenPayload, AccountResponse, AuthSuccessResponse, AuthTokens, LoginClientType } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
-import type { AccountDto } from "../types/users.type";
+import type { AccountDto } from "../types/admin-workers.type";
 import { parseWithSchema } from "../validation/parser";
 import { confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
@@ -19,6 +17,10 @@ import { formatScheduleWithShift } from "../utils/shift";
 
 const USER_ROLE = "user";
 const ADMIN_SESSION_DEVICE_NAME = "Admin Web";
+const CLIENT_ROLE_MAP = {
+  admin_web: "admin",
+  worker_mobile: USER_ROLE,
+} as const;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -89,6 +91,30 @@ function resolveLoginDevice(
 }
 
 // Function สร้าง response ของ account พร้อม profile และตารางงานปัจจุบัน
+function assertClientRoleAllowed(
+  account: AccountDto,
+  clientType?: LoginClientType
+): void {
+  if (!clientType) {
+    return;
+  }
+
+  const expectedRole = CLIENT_ROLE_MAP[clientType];
+
+  if (account.role !== expectedRole) {
+    throw new ApiError(
+      403,
+      "CLIENT_ROLE_NOT_ALLOWED",
+      "This account cannot login from this client.",
+      {
+        expected_role: expectedRole,
+        account_role: account.role,
+        client_type: clientType,
+      }
+    );
+  }
+}
+
 async function buildAccountResponse(
   account: AccountDto,
   connection?: DbConnection
@@ -134,9 +160,12 @@ async function createSession(
     },
     connection
   );
+  const accountPermissions = await getAccountPermissions(account);
   const accessToken = signAccessToken({
     account_id: account.id,
     role: account.role,
+    permission_level: account.permission_level,
+    permissions: accountPermissions.permissions,
     session_id: session.id,
   });
   const refreshToken = signRefreshToken({
@@ -178,6 +207,7 @@ export async function login(body: unknown) {
     password,
     device_id: deviceId,
     device_name: deviceName,
+    client_type: clientType,
   } = parseWithSchema(loginBodySchema, body);
   const account = await accountRepository.findByUsername(username);
 
@@ -192,6 +222,8 @@ export async function login(body: unknown) {
   if (account.status !== "active") {
     throw new ApiError(423, "ACCOUNT_INACTIVE", "Account is inactive.");
   }
+
+  assertClientRoleAllowed(account, clientType);
 
   const activeSession = await sessionRepository.findActiveByAccountId(account.id);
   const sessionDevice = resolveLoginDevice(account, deviceId, deviceName);
@@ -322,9 +354,12 @@ export async function refresh(body: unknown) {
     throw new ApiError(423, "ACCOUNT_INACTIVE", "Account is inactive.");
   }
 
+  const accountPermissions = await getAccountPermissions(account);
   const accessToken = signAccessToken({
     account_id: account.id,
     role: account.role,
+    permission_level: account.permission_level,
+    permissions: accountPermissions.permissions,
     session_id: session.id,
   });
   const nextRefreshToken = signRefreshToken({

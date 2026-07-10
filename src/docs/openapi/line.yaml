@@ -1,0 +1,27 @@
+﻿paths:
+  /api/line/webhook:
+    post:
+      tags:
+        - LINE
+      summary: Receive LINE webhook postback for vendor ticket completion confirm/reject.
+      operationId: handleLineWebhook
+      parameters:
+        - in: header
+          name: x-line-signature
+          schema:
+            type: string
+          required: false
+          description: Required when LINE_CHANNEL_SECRET is configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LineWebhookRequest"
+      responses:
+        "200":
+          description: LINE webhook processed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineWebhookResponse"

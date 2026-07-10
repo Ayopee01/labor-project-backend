@@ -1,0 +1,79 @@
+﻿paths:
+  /api/driver/qr-sessions:
+    post:
+      tags:
+        - Driver
+      summary: Create a 24-hour driver guest session from driver QR.
+      operationId: createDriverQrSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - qr_token
+              properties:
+                qr_token:
+                  type: string
+      responses:
+        "201":
+          description: Driver session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriverSessionResponse"
+        "404":
+          description: Driver QR token is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/driver/jobs/current:
+    get:
+      tags:
+        - Driver
+      summary: Get the vehicle job for the current driver session.
+      operationId: getDriverCurrentJob
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Vehicle job detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleJobDetailResponse"
+        "401":
+          description: Missing or invalid driver session token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/driver/jobs/{id}/ready:
+    post:
+      tags:
+        - Driver
+      summary: Mark a vehicle job ready and dispatch workers from Redis FIFO queue.
+      operationId: markDriverJobReady
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Vehicle job detail after ready state update.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleJobDetailResponse"
+        "403":
+          description: Driver session does not belong to this job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

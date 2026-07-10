@@ -129,11 +129,23 @@ test("login body schema allows device fields to be omitted", () => {
   const loginBody = schemas.loginBodySchema.parse({
     username: "admin",
     password: "Admin@123456",
+    client_type: "admin_web",
   });
 
   assert.equal(loginBody.username, "admin");
+  assert.equal(loginBody.client_type, "admin_web");
   assert.equal(loginBody.device_id, undefined);
   assert.equal(loginBody.device_name, undefined);
+});
+
+test("login body schema rejects unknown client type", () => {
+  assert.throws(() =>
+    schemas.loginBodySchema.parse({
+      username: "admin",
+      password: "Admin@123456",
+      client_type: "unknown_client",
+    })
+  );
 });
 
 test("update user schema allows partial profile updates", () => {
@@ -164,5 +176,42 @@ test("shift utility rejects invalid shift time", () => {
   assert.throws(
     () => shift.calculateShiftName("25:00"),
     (error) => error instanceof ApiError && error.code === "INVALID_SHIFT_TIME"
+  );
+});
+
+test("shift utility checks whether a time is inside work schedule", () => {
+  const morningSchedule = {
+    id: 1,
+    account_id: 1,
+    work_date: "2026-07-07",
+    shift_start_time: "08:00",
+    shift_end_time: "17:00",
+    is_current: true,
+    created_by: null,
+    updated_by: null,
+    created_at: "2026-07-07T00:00:00.000Z",
+    updated_at: "2026-07-07T00:00:00.000Z",
+  };
+  const nightSchedule = {
+    ...morningSchedule,
+    shift_start_time: "18:00",
+    shift_end_time: "06:00",
+  };
+
+  assert.equal(
+    shift.isDateInWorkSchedule(morningSchedule, new Date(2026, 6, 7, 8, 30)),
+    true
+  );
+  assert.equal(
+    shift.isDateInWorkSchedule(morningSchedule, new Date(2026, 6, 7, 17, 0)),
+    false
+  );
+  assert.equal(
+    shift.isDateInWorkSchedule(nightSchedule, new Date(2026, 6, 8, 2, 0)),
+    true
+  );
+  assert.equal(
+    shift.isDateInWorkSchedule(nightSchedule, new Date(2026, 6, 8, 7, 0)),
+    false
   );
 });

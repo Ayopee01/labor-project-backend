@@ -1,7 +1,7 @@
 // import Library
 import type { NextFunction, Request, Response } from "express";
 // import
-import * as sessionRepository from "../repositories/session.repository";
+import { sessionRepository } from "../repositories/auth.repository";
 import ApiError from "../utils/api-error";
 // import types
 import type { AccessTokenPayload, SessionDto } from "../types/auth.type";

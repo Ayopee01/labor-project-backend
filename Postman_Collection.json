@@ -66,104 +66,75 @@
       "value": "",
       "type": "string",
       "description": "Worker user id returned by POST /api/admin/users. Used by /:id routes."
+    },
+    {
+      "key": "adminUserId",
+      "value": "2",
+      "type": "string",
+      "description": "Lower-rank admin account id used by /api/admin/users/{{adminUserId}}/permissions. Seed supervisor is usually id 2."
+    },
+    {
+      "key": "vehicleJobId",
+      "value": "",
+      "type": "string",
+      "description": "Vehicle job id returned by POST /api/gate/vehicle-jobs."
+    },
+    {
+      "key": "marketJobId",
+      "value": "",
+      "type": "string",
+      "description": "Market job id returned by GET /api/admin/vehicle-jobs/{{vehicleJobId}}."
+    },
+    {
+      "key": "stallJobId",
+      "value": "",
+      "type": "string",
+      "description": "Stall job id returned by GET /api/admin/vehicle-jobs/{{vehicleJobId}}."
+    },
+    {
+      "key": "ticketId",
+      "value": "",
+      "type": "string",
+      "description": "GateTicket id used by worker ticket completion and LINE vendor confirmation flow."
+    },
+    {
+      "key": "ticketProductId",
+      "value": "",
+      "type": "string",
+      "description": "TicketProduct id used by worker product quantity confirmation."
+    },
+    {
+      "key": "driverQrToken",
+      "value": "",
+      "type": "string",
+      "description": "Driver QR token returned by POST /api/gate/vehicle-jobs."
+    },
+    {
+      "key": "workerQrToken",
+      "value": "",
+      "type": "string",
+      "description": "Worker QR token returned by POST /api/gate/vehicle-jobs."
+    },
+    {
+      "key": "driverSessionToken",
+      "value": "",
+      "type": "string",
+      "description": "Driver guest session token returned by POST /api/driver/qr-sessions."
+    },
+    {
+      "key": "workerAssignmentId",
+      "value": "",
+      "type": "string",
+      "description": "Worker assignment id returned by GET /api/workers/me/status."
+    },
+    {
+      "key": "clientType",
+      "value": "admin_web",
+      "type": "string",
+      "description": "Login client policy. Use admin_web for Admin Web, worker_mobile for Worker Mobile."
     }
   ],
   "item": [
-    {
-      "name": "System",
-      "item": [
-        {
-          "name": "GET /",
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                ""
-              ]
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/\nAuth: No auth required\nHeaders: None\nQuery: None\nBody: None\nNotes: Health-style root endpoint. Returns docs and health paths."
-          },
-          "response": []
-        },
-        {
-          "name": "GET /health",
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "health"
-              ]
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/health\nAuth: No auth required\nHeaders: None\nQuery: None\nBody: None\nNotes: Checks that the backend is running."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Docs",
-      "item": [
-        {
-          "name": "GET /api-docs",
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api-docs",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api-docs"
-              ]
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/api-docs\nAuth: No auth required\nHeaders: None\nQuery: None\nBody: None\nNotes: Opens Swagger UI in browser/Postman preview."
-          },
-          "response": []
-        },
-        {
-          "name": "GET /api-docs/openapi.json",
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api-docs/openapi.json",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api-docs",
-                "openapi.json"
-              ]
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/api-docs/openapi.json\nAuth: No auth required\nHeaders: None\nQuery: None\nBody: None\nNotes: Returns generated OpenAPI JSON from the mounted Swagger setup."
-          },
-          "response": []
-        }
-      ]
-    },
     {
       "name": "Auth",
       "item": [
@@ -200,7 +171,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"Admin@123456\"\n}",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"Admin@123456\",\n  \"client_type\": \"{{clientType}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -218,7 +189,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Admin login requires username and password only. User login must also send device_id and device_name.\nNotes: Saves access_token and refresh_token into collection variables when login succeeds. Saves login_challenge_token when ACTIVE_SESSION_EXISTS is returned."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Admin Web should send client_type admin_web. Worker Mobile should send client_type worker_mobile plus device_id and device_name.\nNotes: Backend rejects role/client mismatch with CLIENT_ROLE_NOT_ALLOWED. Saves access_token and refresh_token into collection variables when login succeeds. Saves login_challenge_token when ACTIVE_SESSION_EXISTS is returned."
           },
           "response": []
         },
@@ -392,7 +363,7 @@
       ]
     },
     {
-      "name": "Admin Users",
+      "name": "Admin Workers",
       "item": [
         {
           "name": "POST /api/admin/users",
@@ -404,22 +375,68 @@
                 "value": "Bearer {{accessToken}}",
                 "type": "text",
                 "description": "Required for protected routes. Format: Bearer <access_token>."
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text",
-                "description": "Required when sending JSON body."
               }
             ],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"img\": \"https://example.com/uploads/workers/worker001.jpg\",\n  \"full_name\": \"Worker One\",\n  \"phone\": \"0812345678\",\n  \"nationality\": \"Myanmar\",\n  \"shirt_type\": \"Navy\",\n  \"shirt_number\": \"12\",\n  \"work_schedule\": {\n    \"work_date\": \"2026-07-03\",\n    \"shift_start_time\": \"08:00\",\n    \"shift_end_time\": \"17:00\"\n  },\n  \"password\": \"0812345678\",\n  \"status\": \"active\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": [],
+                  "description": "Optional worker profile image. Allowed: jpg, png, webp. Max 5 MB."
+                },
+                {
+                  "key": "full_name",
+                  "value": "Worker One",
+                  "type": "text"
+                },
+                {
+                  "key": "phone",
+                  "value": "0812345678",
+                  "type": "text"
+                },
+                {
+                  "key": "nationality",
+                  "value": "Myanmar",
+                  "type": "text"
+                },
+                {
+                  "key": "shirt_type",
+                  "value": "Navy",
+                  "type": "text"
+                },
+                {
+                  "key": "shirt_number",
+                  "value": "12",
+                  "type": "text"
+                },
+                {
+                  "key": "work_date",
+                  "value": "2026-07-03",
+                  "type": "text"
+                },
+                {
+                  "key": "shift_start_time",
+                  "value": "08:00",
+                  "type": "text"
+                },
+                {
+                  "key": "shift_end_time",
+                  "value": "17:00",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "0812345678",
+                  "type": "text"
+                },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "type": "text"
                 }
-              }
+              ]
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/users",
@@ -435,7 +452,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON from create-user UI: img, full_name, phone, nationality, shirt_type, shirt_number, work_schedule, password, status\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to phone. password defaults to phone if omitted. nationality_name defaults to nationality and nationality_code defaults to UNKNOWN when omitted. shirt_number is used as worker_code internally. Use GET /api/admin/users with search or GET /api/admin/users/{id} when the frontend needs worker details."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: full_name, phone, nationality, shirt_type, shirt_number, work_date, shift_start_time, shift_end_time, password, status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to phone. password defaults to phone if omitted. nationality_name defaults to nationality and nationality_code defaults to UNKNOWN when omitted. shirt_number is used as worker_code internally. Uploaded image is stored under /uploads/workers and saved as profile.image_url. JSON body with image_url/img is still supported when no file upload is needed."
           },
           "response": []
         },
@@ -560,7 +577,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON with optional full_name, profile, status, and/or work_schedule. profile is partial; send only fields that should change.\nNotes: Admin only. This route updates only fields sent in the body. Sending work_schedule updates the current work schedule in place instead of creating history. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON with optional full_name, profile, status, and/or work_schedule. profile is partial; send only fields that should change.\nNotes: Admin only. This route updates only fields sent in the body. Sending work_schedule updates the current work schedule in place, then removes other schedule rows for that worker so no schedule history is kept. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
           },
           "response": []
         },
@@ -649,7 +666,1354 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}/work-schedules?page=1&limit=20\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit\nBody: None\nNotes: Admin only. Returns the current worker work schedule. Inactive old schedules are filtered out."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}/work-schedules?page=1&limit=20\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit\nBody: None\nNotes: Admin only. Returns the current worker work schedule. PATCH /api/admin/users/{{userId}} keeps only one schedule row for the worker."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/admin/users/worker-status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/worker-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "worker-status"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/worker-status\nAuth: Admin access token\nBody: None\nNotes: Lists all worker queue statuses, active assignments, heartbeat presence, and summary counts."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/admin/users/worker-status/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/worker-status/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "worker-status",
+                "{{userId}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/worker-status/{{userId}}\nAuth: Admin access token\nBody: None\nNotes: Shows one worker queue status, active assignment, and heartbeat presence."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/users/:id/worker-status/force",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"waiting\",\n  \"reason\": \"Worker contacted admin for status correction.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/{{userId}}/worker-status/force",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{userId}}",
+                "worker-status",
+                "force"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users/{{userId}}/worker-status/force\nAuth: Admin access token\nBody: status ready|waiting|offline|break, optional reason\nNotes: ready puts worker into Redis queue, waiting removes worker from dispatch queue, break starts a 15-minute break and consumes a break count, offline removes worker from queue."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin Jobs",
+      "item": [
+        {
+          "name": "GET /api/admin/vehicle-jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs?date=2026-07-07&page=1&limit=20&search=&status=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2026-07-07",
+                  "description": "Optional. If omitted, all dates are returned."
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Optional. If omitted, all matching rows are returned."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Optional page size used only when page is sent."
+                },
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "status",
+                  "value": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs?date=2026-07-07&page=1&limit=20&search=&status=\nAuth: Admin access token\nQuery: date/search/status optional. page optional; when page is omitted backend returns all matching rows ordered by latest created_at. When page is sent backend returns that page and pagination metadata.\nNotes: Search can match vehicle, market, stall, ticket, or license plate references."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/admin/vehicle-jobs/:id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.markets?.[0]?.id) pm.collectionVariables.set('marketJobId', String(body.markets[0].id));",
+                  "if (body.markets?.[0]?.tickets?.[0]?.id) pm.collectionVariables.set('stallJobId', String(body.markets[0].tickets[0].id));",
+                  "if (body.markets?.[0]?.tickets?.[0]?.id) pm.collectionVariables.set('ticketId', String(body.markets[0].tickets[0].id));",
+                  "if (body.markets?.[0]?.tickets?.[0]?.products?.[0]?.id) pm.collectionVariables.set('ticketProductId', String(body.markets[0].tickets[0].products[0].id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "{{vehicleJobId}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}\nAuth: Admin access token\nNotes: Returns vehicle job detail with markets, stall jobs, and products. Saves first marketJobId and stallJobId when available."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/vehicle-jobs/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Cancel entire vehicle job.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "{{vehicleJobId}}",
+                "cancel"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}/cancel\nAuth: Admin access token\nNotes: Cancels the entire vehicle job, all markets, all stall jobs, and active assignments. Workers from active assignments are moved to waiting."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/vehicle-jobs/:id/cancel-and-requeue",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Cancel vehicle job and requeue assigned workers.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}/cancel-and-requeue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "{{vehicleJobId}}",
+                "cancel-and-requeue"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}/cancel-and-requeue\nAuth: Admin access token\nBody: optional reason\nNotes: Cancels the whole vehicle job and returns affected workers to the tail of the Redis queue. If multiple workers are affected, backend randomly shuffles that group before enqueueing."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/vehicle-jobs/:id/assign-workers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.assignments?.[0]?.id) pm.collectionVariables.set('workerAssignmentId', String(body.assignments[0].id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"worker_account_ids\": [{{userId}}]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}/assign-workers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "{{vehicleJobId}}",
+                "assign-workers"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}/assign-workers\nAuth: Admin access token\nBody: worker_account_ids array\nNotes: Admin manually assigns the vehicle job to selected workers. Workers must be active and must not already have an active assignment. Backend marks them busy and starts the 1-minute accept timeout."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/vehicle-jobs/:id/scan-deadline/extend",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minutes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}/scan-deadline/extend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "{{vehicleJobId}}",
+                "scan-deadline",
+                "extend"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobId}}/scan-deadline/extend\nAuth: Admin access token\nBody: minutes required, worker_account_ids optional\nNotes: Extends scan deadline for all ACCEPTED assignments under the vehicle job. Add worker_account_ids to extend only selected workers in that vehicle job."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/assignments/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Cancel this worker assignment.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/assignments/{{workerAssignmentId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "assignments",
+                "{{workerAssignmentId}}",
+                "cancel"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/assignments/{{workerAssignmentId}}/cancel\nAuth: Admin access token\nBody: optional reason\nNotes: Cancels one active worker assignment and moves that worker to waiting. Backend does not auto-fill a replacement worker."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/market-jobs/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Cancel market job.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/market-jobs/{{marketJobId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "market-jobs",
+                "{{marketJobId}}",
+                "cancel"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/market-jobs/{{marketJobId}}/cancel\nAuth: Admin access token\nNotes: Cancels one market job and all stall jobs under that market."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/stall-jobs/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Cancel stall job.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/stall-jobs/{{stallJobId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "stall-jobs",
+                "{{stallJobId}}",
+                "cancel"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/stall-jobs/{{stallJobId}}/cancel\nAuth: Admin access token\nNotes: Cancels one stall job only."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/stall-jobs/:id/reopen",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/stall-jobs/{{stallJobId}}/reopen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "stall-jobs",
+                "{{stallJobId}}",
+                "reopen"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/stall-jobs/{{stallJobId}}/reopen\nAuth: Admin access token with jobs:reopen permission\nBody: None\nNotes: Reopens one closed stall job so workers can submit corrected quantities again."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin Settings",
+      "item": [
+        {
+          "name": "GET /api/admin/settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "settings"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/settings\nAuth: Admin access token with settings:read permission\nBody: None\nNotes: Returns runtime settings used by backend calculations."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/admin/settings",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_session_ttl_hours\": 24,\n  \"worker_accept_deadline_seconds\": 60,\n  \"worker_scan_deadline_minutes\": 15,\n  \"worker_break_duration_minutes\": 15,\n  \"worker_break_limit\": 5,\n  \"worker_break_count_ttl_hours\": 48,\n  \"worker_presence_stale_seconds\": 90\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "settings"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/settings\nAuth: Admin access token with settings:update permission\nBody: Partial JSON is allowed. Updated settings affect new calculations after this request; existing assignment deadlines already saved in DB remain unchanged."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/admin/roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "roles"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/roles\nAuth: Admin access token with roles:read permission\nBody: None\nNotes: Lists admin permission levels ordered from highest to lowest. Permissions are stored per admin account in DB, not derived from this response."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/admin/users/:id/permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/{{adminUserId}}/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{adminUserId}}",
+                "permissions"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{adminUserId}}/permissions\nAuth: Admin access token with permissions:read permission\nBody: None\nNotes: Use an admin account id, not a worker id."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/admin/users/:id/permissions",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permission_level\": \"supervisor\",\n  \"permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:reopen\",\n    \"jobs:extend_deadline\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/{{adminUserId}}/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{adminUserId}}",
+                "permissions"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{adminUserId}}/permissions\nAuth: Admin access token with permissions:update permission\nBody: permission_level and permissions array\nNotes: Updates admin permissions and revokes active sessions of that admin account. Permission is stored per account from DB. The actor must have a higher permission_level rank than both the target admin and the new permission_level. The target admin must login again to receive the latest permissions in the token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Gate Flow",
+      "item": [
+        {
+          "name": "POST /api/gate/vehicle-jobs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.vehicle_job?.id) pm.collectionVariables.set('vehicleJobId', String(body.vehicle_job.id));",
+                  "if (body.qr?.driver_qr_token) pm.collectionVariables.set('driverQrToken', body.qr.driver_qr_token);",
+                  "if (body.qr?.worker_qr_token) pm.collectionVariables.set('workerQrToken', body.qr.worker_qr_token);",
+                  "if (body.markets?.[0]?.tickets?.[0]?.id) pm.collectionVariables.set('ticketId', String(body.markets[0].tickets[0].id));",
+                  "if (body.markets?.[0]?.tickets?.[0]?.products?.[0]?.id) pm.collectionVariables.set('ticketProductId', String(body.markets[0].tickets[0].products[0].id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gate_transaction_ref\": \"GATE-REQ-001\",\n  \"vehicle_job_ref\": \"VEH-20260706-0001\",\n  \"license_plate\": \"ABC-1234\",\n  \"vehicle_type\": \"Six-wheel truck\",\n  \"workers_required\": 1,\n  \"markets\": [\n    {\n      \"market_job_ref\": \"MARKETJOB-001\",\n      \"market_name\": \"Market A\",\n      \"tickets\": [\n        {\n          \"stall_job_ref\": \"STALLJOB-001\",\n          \"ticket_no\": \"BILL-88991\",\n          \"stall_no\": \"A-01\",\n          \"vendor_name\": \"Vendor A\",\n          \"vendor_line_id\": \"line-vendor-a\",\n          \"products\": [\n            {\n              \"product_type\": \"Vegetable\",\n              \"name\": \"Cabbage\",\n              \"quantity\": 10,\n              \"unit\": \"crate\"\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/gate/vehicle-jobs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "gate",
+                "vehicle-jobs"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/vehicle-jobs\nAuth: No auth required in mock phase\nHeaders: Content-Type: application/json\nBody: Gate mock payload. gate_transaction_ref is idempotency key, vehicle_job_ref identifies the vehicle job, market_job_ref identifies each market job, stall_job_ref identifies each stall job, and ticket_no is an optional external bill number for driver/admin lookup.\nNotes: Saves vehicleJobId, driverQrToken, workerQrToken, ticketId, and ticketProductId collection variables."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Driver Flow",
+      "item": [
+        {
+          "name": "POST /api/driver/qr-sessions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.driver_session_token) pm.collectionVariables.set('driverSessionToken', body.driver_session_token);",
+                  "if (body.vehicle_job?.id) pm.collectionVariables.set('vehicleJobId', String(body.vehicle_job.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qr_token\": \"{{driverQrToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/driver/qr-sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "driver",
+                "qr-sessions"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/driver/qr-sessions\nAuth: No auth required\nBody: JSON qr_token from driver QR\nNotes: Creates a 24-hour driver guest session and saves driverSessionToken."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/driver/jobs/current",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverSessionToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/driver/jobs/current",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "driver",
+                "jobs",
+                "current"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/driver/jobs/current\nAuth: Driver guest session via Authorization: Bearer {{driverSessionToken}}\nBody: None"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/driver/jobs/:id/ready",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverSessionToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/driver/jobs/{{vehicleJobId}}/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "driver",
+                "jobs",
+                "{{vehicleJobId}}",
+                "ready"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/driver/jobs/{{vehicleJobId}}/ready\nAuth: Driver guest session\nBody: None\nNotes: Marks vehicle job DISPATCH_NOW and dispatches ready workers from Redis FIFO queue."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Worker Application",
+      "item": [
+        {
+          "name": "POST /api/workers/me/online",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/online",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "online"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/online\nAuth: Worker access token\nBody: None\nNotes: Puts worker into Redis FIFO queue only during the worker's current work schedule. Returns 403 if the worker has no current schedule or is outside the assigned shift."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/workers/me/offline",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/offline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "offline"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/offline\nAuth: Worker access token\nBody: None"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/workers/me/break",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/break",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "break"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/break\nAuth: Worker access token\nBody: None\nNotes: Puts worker into break status for 15 minutes. Requires worker to be ready and inside the current shift. Max 5 breaks per shift. BullMQ returns worker to the tail of Redis queue automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/workers/me/status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.current_assignment?.id) pm.collectionVariables.set('workerAssignmentId', String(body.current_assignment.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "status"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/workers/me/assignments/history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "assignments",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2026-07-07",
+                  "description": "Assignment created date in YYYY-MM-DD format."
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nAuth: Worker access token\nQuery: date required, YYYY-MM-DD\nBody: None\nNotes: Returns assignment history for the current worker only. The date is interpreted in Asia/Bangkok time and filters by assignment created_at."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/workers/me/assignments/:id/accept",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/assignments/{{workerAssignmentId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "assignments",
+                "{{workerAssignmentId}}",
+                "accept"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{workerAssignmentId}}/accept\nAuth: Worker access token\nBody: None\nNotes: Assignment must be PENDING and accepted within 1 minute. BullMQ handles timeout; if it expires, backend marks it TIMEOUT and returns the worker to the tail of the Redis queue."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/workers/me/assignments/:id/check-in-qr",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qr_token\": \"{{workerQrToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/assignments/{{workerAssignmentId}}/check-in-qr",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "assignments",
+                "{{workerAssignmentId}}",
+                "check-in-qr"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{workerAssignmentId}}/check-in-qr\nAuth: Worker access token\nBody: JSON qr_token from worker QR\nNotes: Checks worker into the job. If checked-in workers reach workers_required, vehicle job moves to IN_PROGRESS."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/workers/me/tickets/:id/complete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"ticket_product_id\": {{ticketProductId}},\n      \"confirmed_quantity\": 8\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/tickets/{{ticketId}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "tickets",
+                "{{ticketId}}",
+                "complete"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/tickets/{{ticketId}}/complete\nAuth: Worker access token\nBody: items required. Send every product in the ticket with confirmed_quantity counted by the worker.\nNotes: {{ticketId}} is GateTicket id. Any worker mapped to this ticket can submit, but only the first request while the ticket is IN_PROGRESS or COMPLETION_REJECTED succeeds. The ticket becomes WAITING_VENDOR_CONFIRM and vendor is notified via LINE queue with Gate quantity vs worker confirmed quantity."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin Realtime",
+      "item": [
+        {
+          "name": "GET /api/admin/events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "events"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/events\nAuth: Admin access token\nHeaders: Authorization: Bearer {{accessToken}}, Accept: text/event-stream\nBody: None\nNotes: This is an Admin-only SSE stream, not a JSON list. It stays open and receives realtime dashboard events. Snapshot/latest state should still be loaded from Admin REST APIs."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "LINE",
+      "item": [
+        {
+          "name": "POST /api/line/webhook - vendor confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"events\": [\n    {\n      \"type\": \"postback\",\n      \"source\": {\n        \"userId\": \"line-vendor-a\"\n      },\n      \"postback\": {\n        \"data\": \"action=vendor_confirm_completion&ticketId={{ticketId}}\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/line/webhook",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "webhook"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Mock LINE postback. userId must match GateTicket.vendor_line_id. Confirms the waiting ticket completion and notifies worker/admin."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/line/webhook - vendor reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"events\": [\n    {\n      \"type\": \"postback\",\n      \"source\": {\n        \"userId\": \"line-vendor-a\"\n      },\n      \"postback\": {\n        \"data\": \"action=vendor_reject_completion&ticketId={{ticketId}}\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/line/webhook",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "webhook"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Mock LINE postback. userId must match GateTicket.vendor_line_id. Rejects the waiting ticket completion, then the worker can submit the ticket completion again."
           },
           "response": []
         }

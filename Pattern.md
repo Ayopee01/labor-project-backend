@@ -49,6 +49,7 @@ Service เป็น logic หลักของ feature
 - รวม response shape ที่ API ต้องส่งกลับ
 - ใช้ `withTransaction` เมื่อมีการเขียนหลาย table ใน workflow เดียว
 - โยน error ด้วย `ApiError`
+- ถ้า logic เป็น background worker, Redis queue, BullMQ processor, หรือ dispatch queue ที่ไม่ได้ผูกกับ route เดียว ให้วางใน `src/queues` แล้วให้ service เรียกใช้ตามจำเป็น
 
 ตัวอย่าง comment:
 
@@ -106,14 +107,21 @@ export const loginBodySchema = z.object({
 
 ### types
 
-Types แยกตาม route/feature ที่เรียกใช้จริง
+Types แยกตาม route/tag/feature ที่เรียกใช้จริง
 
 - `auth.type.ts` สำหรับ token, session, auth response
-- `users.type.ts` สำหรับ user DTO, profile DTO, work schedule DTO, user response
+- `admin-workers.type.ts` สำหรับ worker account DTO, profile DTO, work schedule DTO, admin worker response
+- `admin-jobs.type.ts` สำหรับ filter/result ของงานฝั่ง Admin Jobs
+- `admin-settings.type.ts` สำหรับ runtime setting และ permission response
+- `worker.type.ts` สำหรับ worker queue, assignment, ticket, vehicle/market job DTO
+- `driver.type.ts` สำหรับ driver session DTO/response
+- `gate.type.ts` สำหรับ Gate payload และ Gate response
+- `line.type.ts` สำหรับ LINE webhook/event/queue payload
+- `notifications.type.ts` สำหรับ SSE notification event/client
 - `common.type.ts` สำหรับ type กลาง เช่น DB connection, error response, parser option
 - `express.d.ts` สำหรับ extend `Express.Request`
 - ไม่สร้าง type เผื่อไว้ถ้ายังไม่มีคนใช้
-- Type body/query ที่ Zod parse แล้วใช้เฉพาะใน service ไม่จำเป็นต้องแยกออกมา
+- Project นี้เลือกให้ type ที่ใช้จริงรวมไว้ใน `src/types` เพื่อให้ค้นหา shape ได้จากจุดเดียว แม้บาง type จะมาจาก body/query ที่ parse ด้วย Zod
 
 ตัวอย่าง comment:
 
@@ -269,6 +277,14 @@ import type { DbConnection } from "../types/common.type";
 
 ## Naming Pattern
 
+### File
+
+- Route file ให้ตั้งชื่อตาม Swagger tag/feature เช่น `admin-workers.routes.ts`, `admin-jobs.routes.ts`, `worker.routes.ts`
+- Service file ให้ตั้งชื่อตาม Swagger tag/feature เช่น `admin-workers.service.ts`, `admin-jobs.service.ts`, `worker.service.ts`
+- Type file ให้ตั้งชื่อตาม Swagger tag/feature เช่น `admin-workers.type.ts`, `gate.type.ts`, `notifications.type.ts`
+- OpenAPI file ให้แยกตาม Swagger tag/feature เช่น `admin-workers.yaml`, `admin-jobs.yaml`, `worker.yaml`
+- `components.yaml` ใช้เก็บ OpenAPI schemas/security ที่หลาย route อ้างอิงร่วมกัน
+
 ### Function
 
 - `find...` ใช้กับ query ที่อาจไม่เจอ และ return `null`
@@ -343,6 +359,36 @@ Response ของ service ควรสร้างให้ชัดใน serv
 - อย่า duplicate config หลายที่ ถ้าค่าเดียวกันถูกใช้หลายไฟล์
 - อย่าใช้ `any` ถ้าใช้ `unknown`, DTO, หรือ Prisma type ได้
 - อย่า return password hash ใน response
+
+## แนวทางปัจจุบันของ Project
+
+### Service ตาม route/tag
+
+- Service file ให้ตั้งชื่อตาม Swagger tag/route เป็นหลัก เช่น `admin-workers.service.ts`, `admin-jobs.service.ts`, `worker.service.ts`
+- Logic ที่เป็นของ route ใด route หนึ่งให้เก็บไว้ใน service ของ route นั้น เพื่อให้ไล่จาก Swagger -> route -> service ได้ตรงกัน
+- ถ้า logic เป็น background worker, Redis queue, BullMQ processor, หรือ dispatch queue ที่ไม่ได้ผูกกับ route เดียว ให้อยู่ใน `src/queues`
+
+### Admin Settings Service
+
+- `admin-settings.service.ts` เป็นข้อยกเว้นที่ตั้งใจให้เป็น service กลางของ runtime settings และ permissions ได้
+- เหตุผลคือ runtime settings และ permissions ถูกใช้หลาย flow เช่น auth, worker, driver, admin jobs และ queue dispatch
+- Function กลางที่ service อื่นเรียกใช้ได้คือ `getRuntimeSettings`, `clearRuntimeSettingsCache`, และ `getAccountPermissions`
+- `mergeRuntimeSettings` และ cache runtime settings ให้อยู่ใน `admin-settings.service.ts` ได้ เพราะยังเป็น logic ของ setting โดยตรง
+- ไม่ต้องแยก `app-settings.service.ts` เพิ่ม ถ้า logic ยังเกี่ยวกับ setting/permission โดยตรงและอยู่ในขอบเขตของ Admin Settings
+
+### Repository Shared
+
+- Shared repository logic ให้เก็บใน `src/repositories/shared` เฉพาะกรณีที่หลาย route ใช้ร่วมกันจริง
+- ตัวอย่าง shared repository ที่ยอมรับได้ เช่น account, session, profile, permission, work-schedule, mapper, repository-utils
+- Repository ที่เป็น feature-specific ให้ตั้งชื่อตาม Swagger tag เช่น `admin-workers.repository.ts`, `admin-jobs.repository.ts`, `gate.repository.ts`
+- ถ้า repository เริ่มใหญ่ ให้แยกตาม table/กลุ่ม query ที่ใช้ร่วมกันจริงก่อน ไม่ย้ายทุกอย่างกลับไป feature เดียวจนเกิด duplicate query
+
+### Types และ OpenAPI
+
+- Type ที่ใช้จริงให้รวมไว้ใน `src/types` และแยกไฟล์ตาม route/tag เช่น `admin-workers.type.ts`, `admin-jobs.type.ts`, `worker.type.ts`
+- Type จาก Zod สามารถย้ายมารวมใน `src/types` ได้ถ้ามีการ import ใช้งานจริง หรือช่วยให้ shape ของระบบอ่านชัดขึ้น
+- OpenAPI ให้แยกไฟล์ตาม route/tag เช่น `admin-workers.yaml`, `admin-jobs.yaml`, `worker.yaml`
+- `components.yaml` ใช้เก็บ schema/security ที่หลาย route อ้างอิงร่วมกัน ไม่ใช่ route หลักของระบบ
 
 ## Checklist ก่อนจบงาน
 

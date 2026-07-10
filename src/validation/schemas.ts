@@ -1,5 +1,6 @@
 // Import library
 import { z } from "zod";
+import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS } from "../config/permission.config";
 
 /* -------------------------------------- Formats -------------------------------------- */
 
@@ -55,6 +56,18 @@ const optionalLowercaseString = z.preprocess(
     .optional()
 );
 
+// Format page แบบ optional จริง ถ้าไม่ส่งจะเป็น undefined เพื่อให้ endpoint เลือกดึงทั้งหมดได้
+const optionalPageNumber = z.preprocess(
+  emptyStringToUndefined,
+  z.coerce.number().int().min(1).optional()
+);
+
+// Format limit แบบ optional จริง ถ้าไม่ส่งพร้อม page จะให้ service default เป็น 20
+const optionalLimitNumber = z.preprocess(
+  emptyStringToUndefined,
+  z.coerce.number().int().min(1).max(100).optional()
+);
+
 /* -------------------------------------- Common Schemas -------------------------------------- */
 
 // Schema แปลง id เป็น number และตรวจว่าเป็น integer บวก
@@ -68,6 +81,7 @@ export const loginBodySchema = z.object({
   password: trimmedString,
   device_id: optionalTrimmedString,
   device_name: optionalTrimmedString,
+  client_type: z.enum(["admin_web", "worker_mobile"]),
 });
 
 // Schema body สำหรับยืนยัน force login ด้วย challenge token และอุปกรณ์ใหม่
@@ -148,6 +162,156 @@ export const resetPasswordBodySchema = z.object({
   new_password: trimmedString,
 });
 
+/* -------------------------------------- Job Flow Schemas -------------------------------------- */
+
+// Schema สินค้าในตั๋วที่ Gate ส่งมา
+const gateProductInputSchema = z.object({
+  product_type: optionalTrimmedString,
+  name: trimmedString,
+  quantity: z.coerce.number().positive(),
+  unit: trimmedString,
+});
+
+// Schema ตั๋วหรือแผงที่ Gate ส่งมา
+const gateTicketInputSchema = z.object({
+  stall_job_ref: trimmedString,
+  ticket_no: optionalTrimmedString,
+  stall_no: optionalTrimmedString,
+  vendor_name: optionalTrimmedString,
+  vendor_line_id: optionalTrimmedString,
+  products: z.array(gateProductInputSchema).min(1),
+});
+
+// Schema งานตลาดที่ Gate ส่งมา
+const gateMarketInputSchema = z.object({
+  market_job_ref: trimmedString,
+  market_name: trimmedString,
+  tickets: z.array(gateTicketInputSchema).min(1),
+});
+
+// Schema body สำหรับจำลอง Gate ส่งข้อมูลงานรถเข้าระบบ
+export const gateVehicleJobBodySchema = z.object({
+  gate_transaction_ref: trimmedString,
+  vehicle_job_ref: trimmedString,
+  license_plate: trimmedString,
+  vehicle_type: optionalTrimmedString,
+  workers_required: z.coerce.number().int().positive(),
+  markets: z.array(gateMarketInputSchema).min(1),
+});
+
+// Schema body สำหรับเปิด driver session จาก QR
+export const driverQrSessionBodySchema = z.object({
+  qr_token: trimmedString,
+});
+
+// Schema body สำหรับ worker scan QR เข้างาน
+export const workerScanBodySchema = z.object({
+  qr_token: trimmedString,
+});
+
+const workerTicketCompleteItemSchema = z.object({
+  ticket_product_id: idSchema,
+  confirmed_quantity: z.coerce.number().min(0),
+});
+
+export const workerTicketCompleteBodySchema = z.object({
+  items: z.array(workerTicketCompleteItemSchema).min(1),
+});
+
+// Schema query สำหรับดูประวัติงานของ worker ตามวันที่
+export const workerAssignmentHistoryQuerySchema = z.object({
+  date: dateString,
+});
+
+// Schema query สำหรับ Admin ดูรายการงานรถ
+export const adminVehicleJobListQuerySchema = z.object({
+  date: optionalDateString,
+  page: optionalPageNumber,
+  limit: optionalLimitNumber,
+  search: optionalLowercaseString,
+  status: optionalTrimmedString,
+});
+
+// Schema body สำหรับ Admin ยกเลิกงาน
+export const adminCancelBodySchema = z.object({
+  reason: optionalTrimmedString,
+});
+
+// Schema body สำหรับ Admin force status worker
+// Schema body for Admin manually assigning workers to a vehicle job
+export const adminAssignWorkersBodySchema = z.object({
+  worker_account_ids: z.array(idSchema).min(1),
+});
+
+// Schema body for Admin extending worker scan deadline
+export const adminExtendScanDeadlineBodySchema = z.object({
+  minutes: z.coerce.number().int().positive().max(240),
+  worker_account_ids: z.array(idSchema).min(1).optional(),
+  reason: optionalTrimmedString,
+});
+
+// Schema body for Admin forcing worker status
+export const adminForceWorkerStatusBodySchema = z.object({
+  status: z.enum(["ready", "waiting", "offline", "break"]),
+  reason: optionalTrimmedString,
+});
+
+/* -------------------------------------- Settings Schemas -------------------------------------- */
+
+// Schema body สำหรับ Admin แก้ runtime settings ของระบบ
+export const updateSystemSettingsBodySchema = z
+  .object({
+    driver_session_ttl_hours: z.coerce.number().int().positive().max(168).optional(),
+    worker_accept_deadline_seconds: z.coerce.number().int().positive().max(600).optional(),
+    worker_scan_deadline_minutes: z.coerce.number().int().positive().max(240).optional(),
+    worker_break_duration_minutes: z.coerce.number().int().positive().max(240).optional(),
+    worker_break_limit: z.coerce.number().int().min(0).max(20).optional(),
+    worker_break_count_ttl_hours: z.coerce.number().int().positive().max(168).optional(),
+    worker_presence_stale_seconds: z.coerce.number().int().positive().max(3600).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one setting is required.",
+  });
+
+// Schema body สำหรับ Admin แก้ permissions ของ admin account
+export const updateAccountPermissionsBodySchema = z.object({
+  permission_level: z.enum(ADMIN_PERMISSION_LEVELS),
+  permissions: z
+    .array(z.enum(ADMIN_PERMISSIONS))
+    .default([]),
+});
+
+export const runtimeSettingsSchema = z.object({
+  driver_session_ttl_hours: z.coerce
+    .number()
+    .int()
+    .positive(),
+  worker_accept_deadline_seconds: z.coerce
+    .number()
+    .int()
+    .positive(),
+  worker_scan_deadline_minutes: z.coerce
+    .number()
+    .int()
+    .positive(),
+  worker_break_duration_minutes: z.coerce
+    .number()
+    .int()
+    .positive(),
+  worker_break_limit: z.coerce
+    .number()
+    .int()
+    .min(0),
+  worker_break_count_ttl_hours: z.coerce
+    .number()
+    .int()
+    .positive(),
+  worker_presence_stale_seconds: z.coerce
+    .number()
+    .int()
+    .positive(),
+});
+
 /* -------------------------------------- Query Schemas -------------------------------------- */
 
 // Schema query page แบบ optional ถ้าไม่ส่งมาจะใช้ default เป็น 1
@@ -182,6 +346,8 @@ const tokenTimestampsSchema = {
 export const accessTokenPayloadSchema = z.object({
   account_id: z.number().int().positive(),
   role: trimmedString,
+  permission_level: optionalTrimmedString.nullable(),
+  permissions: z.array(z.enum(ADMIN_PERMISSIONS)).optional(),
   session_id: z.number().int().positive(),
   token_type: z.literal("access"),
   ...tokenTimestampsSchema,

@@ -1,12 +1,18 @@
-import type { AccountRole, ProfileDto, SafeAccountDto, WorkScheduleWithShiftDto } from "./users.type";
+import type { AccountRole, ProfileDto, SafeAccountDto, WorkScheduleWithShiftDto } from "./admin-workers.type";
+import type { AdminPermission } from "../config/permission.config";
 
 // Type ส่วน Token: ชนิดของ JWT ที่ระบบ auth รองรับ
 export type TokenType = "access" | "refresh" | "login_challenge";
+
+// Type ส่วน client ที่อนุญาตให้ login ตาม platform
+export type LoginClientType = "admin_web" | "worker_mobile";
 
 // Type ส่วน Payload ของ access token
 export interface AccessTokenPayload {
   account_id: number;
   role: AccountRole;
+  permission_level?: string | null;
+  permissions?: AdminPermission[];
   session_id: number;
   token_type: "access";
   iat?: number;
