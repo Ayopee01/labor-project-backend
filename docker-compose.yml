@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: labor-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: labor_project
+    ports:
+      - "${POSTGRES_HOST_PORT:-5434}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d labor_project"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   redis:
     image: redis:7-alpine
     container_name: labor-redis
@@ -23,7 +40,7 @@ services:
     environment:
       PORT: 8080
       REDIS_URL: redis://redis:6379
-      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:password@host.docker.internal:5433/labor_project}
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:password@postgres:5432/labor_project}
     ports:
       - "8080:8080"
     volumes:
@@ -32,11 +49,14 @@ services:
       - api_node_modules:/app/node_modules
     command: sh -c "npm run db:generate && npm run dev"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
 volumes:
+  postgres_data:
   redis_data:
   api_node_modules:

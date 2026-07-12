@@ -13,6 +13,7 @@ import type { AccountDto } from "../types/admin-workers.type";
 
 const PENDING_REFRESH_TOKEN_HASH = "";
 
+// Function หา account จาก username สำหรับ flow login
 async function findByUsername(
   username: string,
   connection?: DbConnection
@@ -31,6 +32,7 @@ const authAccountRepository = {
   findByUsername,
 };
 
+// Function สร้างข้อมูล session เริ่มต้นก่อนมี refresh token hash จริง
 function buildPendingSessionData(session: PendingSessionInput) {
   return {
     accountId: session.account_id,
@@ -43,6 +45,7 @@ function buildPendingSessionData(session: PendingSessionInput) {
   };
 }
 
+// Function สร้างข้อมูลอัปเดต refresh token hash และเวลาใช้งานล่าสุด
 function buildRefreshTokenHashData(refreshTokenHash: string) {
   const updatedAt = new Date();
 
@@ -53,6 +56,7 @@ function buildRefreshTokenHashData(refreshTokenHash: string) {
   };
 }
 
+// Function หา session active จาก id และตรวจว่ายังไม่หมดอายุ
 async function findActiveById(
   sessionId: number | string,
   connection?: DbConnection
@@ -70,6 +74,7 @@ async function findActiveById(
   );
 }
 
+// Function สร้าง session pending เพื่อรออัปเดต refresh token hash
 async function createPending(
   session: PendingSessionInput,
   connection?: DbConnection
@@ -85,6 +90,7 @@ async function createPending(
   );
 }
 
+// Function อัปเดต hash ของ refresh token หลังออก token แล้ว
 async function updateRefreshTokenHash(
   sessionId: number | string,
   refreshTokenHash: string,
@@ -104,6 +110,7 @@ async function updateRefreshTokenHash(
   );
 }
 
+// Function revoke session ถ้ายัง active อยู่
 async function revoke(
   sessionId: number | string,
   connection?: DbConnection

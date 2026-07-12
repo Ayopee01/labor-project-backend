@@ -12,6 +12,7 @@ const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 
+// Route สร้าง worker พร้อม profile, schedule และรูปภาพถ้ามี
 router.post(
   "/",
   permissionMiddleware(["workers:create"]),
@@ -27,6 +28,7 @@ router.post(
   }
 );
 
+// Route ดึงรายการ worker สำหรับ Admin
 router.get(
   "/",
   permissionMiddleware(["workers:read"]),
@@ -40,10 +42,11 @@ router.get(
   }
 );
 
+// Route ดึงสถานะ worker ทั้งหมดสำหรับหน้า monitor
 router.get(
   "/worker-status",
   permissionMiddleware(["workers:read"]),
-  async (req, res, next) => {
+  async (_req, res, next) => {
     try {
       const result = await adminWorkersService.listAdminWorkerStatuses();
       res.json(result);
@@ -53,6 +56,7 @@ router.get(
   }
 );
 
+// Route ดึงสถานะ worker รายคนสำหรับหน้า monitor
 router.get(
   "/worker-status/:id",
   permissionMiddleware(["workers:read"]),
@@ -66,6 +70,7 @@ router.get(
   }
 );
 
+// Route ดึงรายละเอียด worker รายคน
 router.get(
   "/:id",
   permissionMiddleware(["workers:read"]),
@@ -79,6 +84,7 @@ router.get(
   }
 );
 
+// Route แก้ไขข้อมูล worker
 router.patch(
   "/:id",
   permissionMiddleware(["workers:update"]),
@@ -96,6 +102,7 @@ router.patch(
   }
 );
 
+// Route reset password ของ worker
 router.patch(
   "/:id/password",
   permissionMiddleware(["workers:reset_password"]),
@@ -113,6 +120,7 @@ router.patch(
   }
 );
 
+// Route ดึงประวัติตารางงานของ worker
 router.get(
   "/:id/work-schedules",
   permissionMiddleware(["workers:read"]),
@@ -130,6 +138,7 @@ router.get(
   }
 );
 
+// Route บังคับเปลี่ยนสถานะ worker จาก Admin
 router.post(
   "/:id/worker-status/force",
   permissionMiddleware(["workers:force_status"]),

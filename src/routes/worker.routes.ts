@@ -9,8 +9,9 @@ import * as workerService from "../services/worker.service";
 
 const router = express.Router();
 
-router.use(authMiddleware, sessionMiddleware, roleMiddleware(["user"]));
+router.use(authMiddleware, sessionMiddleware, roleMiddleware(["worker"]));
 
+// Route ให้ worker เข้า queue และพร้อมรับงาน
 router.post(
   "/me/online",
   async (req, res, next) => {
@@ -23,6 +24,7 @@ router.post(
   }
 );
 
+// Route ให้ worker ออกจาก queue
 router.post(
   "/me/offline",
   async (req, res, next) => {
@@ -35,6 +37,7 @@ router.post(
   }
 );
 
+// Route ให้ worker พักชั่วคราวตาม runtime settings
 router.post(
   "/me/break",
   async (req, res, next) => {
@@ -47,6 +50,7 @@ router.post(
   }
 );
 
+// Route ดึงสถานะ queue และ assignment ปัจจุบันของ worker
 router.get(
   "/me/status",
   async (req, res, next) => {
@@ -59,6 +63,7 @@ router.get(
   }
 );
 
+// Route ดึงประวัติงานของ worker ตามวันที่
 router.get(
   "/me/assignments/history",
   async (req, res, next) => {
@@ -74,6 +79,7 @@ router.get(
   }
 );
 
+// Route ให้ worker รับ assignment
 router.post(
   "/me/assignments/:id/accept",
   async (req, res, next) => {
@@ -89,6 +95,7 @@ router.post(
   }
 );
 
+// Route ให้ worker scan QR เพื่อ check-in เข้างาน
 router.post(
   "/me/assignments/:id/check-in-qr",
   async (req, res, next) => {
@@ -105,6 +112,7 @@ router.post(
   }
 );
 
+// Route ให้ worker ส่งยอดปิดงานระดับ ticket
 router.post(
   "/me/tickets/:id/complete",
   async (req, res, next) => {

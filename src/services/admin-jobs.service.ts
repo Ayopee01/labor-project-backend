@@ -503,6 +503,7 @@ export async function extendVehicleJobScanDeadline(
   };
 }
 
+// Function ยกเลิกงานตลาดพร้อมแจ้ง realtime ไปยัง Admin และ worker ที่เกี่ยวข้อง
 export async function cancelMarketJob(
   idParam: unknown,
   body: unknown

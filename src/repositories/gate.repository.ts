@@ -46,6 +46,7 @@ export async function findVehicleJobByRef(
   return mapVehicleJob(vehicleJob);
 }
 
+// Function สร้างงานรถจาก Gate พร้อมตลาด ตั๋ว สินค้า QR token และ request log
 export async function createVehicleJobFromGate(
   input: GateVehicleJobCreateInput,
   payloadSnapshot: Prisma.InputJsonValue,

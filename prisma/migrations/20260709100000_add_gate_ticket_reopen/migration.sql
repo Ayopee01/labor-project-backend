@@ -30,5 +30,5 @@ INSERT INTO "account_permissions" ("account_id", "permission", "updated_at")
 SELECT "id", 'jobs:reopen', CURRENT_TIMESTAMP
 FROM "accounts"
 WHERE "role" = 'admin'
-  AND "permission_level" IN ('admin', 'supervisor')
+  AND "permission_level" IN ('manager', 'supervisor')
 ON CONFLICT ("account_id", "permission") DO NOTHING;

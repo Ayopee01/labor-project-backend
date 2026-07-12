@@ -1,7 +1,10 @@
 import type { VehicleJobAssignmentDto, WorkerPresenceDto, WorkerQueueEntryDto } from "./worker.type";
 
-// Type ส่วน Value ของ role account: schema DB เก็บเป็น string
-export type AccountRole = string;
+// Config role account ที่ระบบรองรับ
+export const ACCOUNT_ROLES = ["admin", "worker"] as const;
+
+// Type ส่วน Value ของ role account ที่ระบบรองรับ
+export type AccountRole = (typeof ACCOUNT_ROLES)[number];
 
 // Type ส่วน Value ของ status account: schema DB เก็บเป็น string
 export type AccountStatus = string;

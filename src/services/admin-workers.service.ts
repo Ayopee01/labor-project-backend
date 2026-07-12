@@ -207,7 +207,7 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
       {
         username,
         password_hash: await hashPassword(initialPassword),
-        role: "user",
+        role: "worker",
         status,
         full_name: fullName,
         position: null,

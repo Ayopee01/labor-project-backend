@@ -29,66 +29,73 @@ export async function dispatchReadyWorkers(
       vehicleJob.id,
       connection
     );
-    const workersNeeded = vehicleJob.workers_required - activeAssignments;
+    let workersNeeded = vehicleJob.workers_required - activeAssignments;
 
     if (workersNeeded <= 0) {
       continue;
     }
 
-    const readyWorkers = await popReadyWorkers(workersNeeded);
+    while (workersNeeded > 0) {
+      const readyWorkers = await popReadyWorkers(workersNeeded);
 
-    for (const worker of readyWorkers) {
-      if (!isWorkerSocketConnected(worker.account_id)) {
-        const queue = await markWorkerOffline(worker.account_id);
+      if (readyWorkers.length === 0) {
+        break;
+      }
+
+      for (const worker of readyWorkers) {
+        if (!isWorkerSocketConnected(worker.account_id)) {
+          const queue = await markWorkerOffline(worker.account_id);
+          publishNotification({
+            type: "WORKER_STATUS_CHANGED",
+            title: "Worker offline",
+            message: `Worker ${worker.account_id} was marked offline because WebSocket is not connected.`,
+            payload: {
+              worker_account_id: worker.account_id,
+              queue,
+              reason: "socket_not_connected_during_dispatch",
+            },
+            audience: {
+              roles: ["admin"],
+            },
+          });
+          continue;
+        }
+
+        const assignment = await workerApplicationRepository.createAssignment(
+          vehicleJob.id,
+          worker.account_id,
+          buildDeadline(acceptDeadlineMs),
+          connection
+        );
+        await markWorkerBusy(worker.account_id);
+        await scheduleAssignmentTimeout(
+          assignment.id,
+          worker.account_id,
+          acceptDeadlineMs
+        );
+        sendWorkerSocketEvent(worker.account_id, "WORKER_ASSIGNED", {
+          assignment,
+          vehicle_job: vehicleJob,
+          accept_deadline_at: assignment.accept_deadline_at,
+        });
         publishNotification({
-          type: "WORKER_STATUS_CHANGED",
-          title: "Worker offline",
-          message: `Worker ${worker.account_id} was marked offline because WebSocket is not connected.`,
+          type: "WORKER_ASSIGNED",
+          title: "Worker assigned",
+          message: `Worker ${worker.account_id} was assigned to vehicle job ${vehicleJob.vehicle_job_ref}.`,
           payload: {
+            assignment_id: assignment.id,
+            vehicle_job_id: assignment.vehicle_job_id,
+            vehicle_job_ref: vehicleJob.vehicle_job_ref,
             worker_account_id: worker.account_id,
-            queue,
-            reason: "socket_not_connected_during_dispatch",
+            status: assignment.status,
+            accept_deadline_at: assignment.accept_deadline_at,
           },
           audience: {
             roles: ["admin"],
           },
         });
-        continue;
+        workersNeeded -= 1;
       }
-
-      const assignment = await workerApplicationRepository.createAssignment(
-        vehicleJob.id,
-        worker.account_id,
-        buildDeadline(acceptDeadlineMs),
-        connection
-      );
-      await markWorkerBusy(worker.account_id);
-      await scheduleAssignmentTimeout(
-        assignment.id,
-        worker.account_id,
-        acceptDeadlineMs
-      );
-      sendWorkerSocketEvent(worker.account_id, "WORKER_ASSIGNED", {
-        assignment,
-        vehicle_job: vehicleJob,
-        accept_deadline_at: assignment.accept_deadline_at,
-      });
-      publishNotification({
-        type: "WORKER_ASSIGNED",
-        title: "Worker assigned",
-        message: `Worker ${worker.account_id} was assigned to vehicle job ${vehicleJob.vehicle_job_ref}.`,
-        payload: {
-          assignment_id: assignment.id,
-          vehicle_job_id: assignment.vehicle_job_id,
-          vehicle_job_ref: vehicleJob.vehicle_job_ref,
-          worker_account_id: worker.account_id,
-          status: assignment.status,
-          accept_deadline_at: assignment.accept_deadline_at,
-        },
-        audience: {
-          roles: ["admin"],
-        },
-      });
     }
   }
 }

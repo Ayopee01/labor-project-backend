@@ -34,8 +34,8 @@ components:
           type: string
           enum:
             - admin
-            - user
-          example: user
+            - worker
+          example: worker
         status:
           type: string
           enum:
@@ -53,8 +53,8 @@ components:
           type: string
           nullable: true
           enum:
-            - super_admin
-            - admin
+            - owner
+            - manager
             - supervisor
           example: null
         created_at:
@@ -158,7 +158,6 @@ components:
       required:
         - username
         - password
-        - client_type
       properties:
         username:
           type: string
@@ -169,19 +168,12 @@ components:
           example: "123456"
         device_id:
           type: string
-          description: Required for user login. Omit for admin login.
+          description: Required for worker login. Omit for admin login.
           example: browser-device-id
         device_name:
           type: string
-          description: Required for user login. Omit for admin login.
+          description: Required when the account role is worker. Omit for admin login.
           example: Chrome on Windows
-        client_type:
-          type: string
-          description: Optional client policy. admin_web requires role admin, worker_mobile requires role user.
-          enum:
-            - admin_web
-            - worker_mobile
-          example: worker_mobile
     ConfirmForceLoginRequest:
       type: object
       required:
@@ -564,8 +556,8 @@ components:
         role:
           type: string
           enum:
-            - user
-          example: user
+            - worker
+          example: worker
         status:
           type: string
           enum:
@@ -712,6 +704,7 @@ components:
         - settings:read
         - settings:update
         - roles:read
+        - admins:create
         - permissions:read
         - permissions:update
         - workers:read
@@ -730,8 +723,8 @@ components:
         key:
           type: string
           enum:
-            - super_admin
-            - admin
+            - owner
+            - manager
             - supervisor
           example: supervisor
         name:
@@ -761,14 +754,64 @@ components:
           type: string
           nullable: true
           enum:
-            - super_admin
-            - admin
+            - owner
+            - manager
             - supervisor
           example: supervisor
         permissions:
           type: array
           items:
             $ref: "#/components/schemas/AdminPermission"
+    CreateAdminAccountRequest:
+      type: object
+      required:
+        - username
+        - password
+        - full_name
+        - permission_level
+        - permissions
+      properties:
+        username:
+          type: string
+          example: manager01
+        password:
+          type: string
+          example: Manager@123456
+        full_name:
+          type: string
+          example: Branch Manager
+        position:
+          type: string
+          nullable: true
+          example: Manager
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          default: active
+          example: active
+        permission_level:
+          type: string
+          enum:
+            - owner
+            - manager
+            - supervisor
+          example: manager
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+    CreateAdminAccountResponse:
+      allOf:
+        - $ref: "#/components/schemas/AdminUserPermissionsResponse"
+        - type: object
+          properties:
+            message:
+              type: string
+              example: Admin account created successfully.
+            account:
+              $ref: "#/components/schemas/Account"
     UpdateAdminUserPermissionsRequest:
       type: object
       required:
@@ -777,8 +820,8 @@ components:
         permission_level:
           type: string
           enum:
-            - super_admin
-            - admin
+            - owner
+            - manager
             - supervisor
           example: supervisor
         permissions:

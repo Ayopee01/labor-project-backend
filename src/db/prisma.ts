@@ -36,7 +36,7 @@ export function getPrisma(): PrismaClient {
   return global.prismaClient;
 }
 
-// Proxy สำหรับ PrismaClient เพื่อให้สามารถเรียกใช้ได้เหมือน PrismaClient ปกติ
+// Config proxy สำหรับ PrismaClient เพื่อให้เรียกใช้ได้เหมือน PrismaClient ปกติ
 export const prisma = new Proxy({} as PrismaClient, {
   get(target, property, receiver) {
     return Reflect.get(getPrisma(), property, receiver ?? target);

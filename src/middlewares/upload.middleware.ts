@@ -29,6 +29,7 @@ const storage = multer.diskStorage({
   },
 });
 
+// Middleware รับรูป worker และตรวจชนิดไฟล์/ขนาดก่อนบันทึกลง uploads
 export const uploadWorkerImage = multer({
   storage,
   limits: {

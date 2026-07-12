@@ -5,14 +5,17 @@ import type { Account, DriverSession, GateTicket, MarketJob, TicketCompletionSub
 import type { SessionDto } from "../../../types/auth.type";
 import type { DriverSessionDto } from "../../../types/driver.type";
 import type { GateTicketDto, MarketJobDto, TicketCompletionSubmissionDto, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto } from "../../../types/worker.type";
-import type { AccountDto, ProfileDto, SafeAccountDto, WorkScheduleDto } from "../../../types/admin-workers.type";
+import { ACCOUNT_ROLES, type AccountDto, type AccountRole, type ProfileDto, type SafeAccountDto, type WorkScheduleDto } from "../../../types/admin-workers.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function แปลงค่า Date จาก Prisma เป็น ISO string สำหรับ DTO
 function toIsoString(value: Date): string;
+// Function overload รองรับ string ที่เป็น ISO อยู่แล้ว
 function toIsoString(value: string): string;
+// Function overload รองรับ Date ที่อาจเป็น null
 function toIsoString(value: Date | null): string | null;
+// Function แปลง Date/string/null เป็น ISO string หรือ null
 function toIsoString(value: Date | string | null): string | null {
   if (value instanceof Date) {
     return value.toISOString();
@@ -32,7 +35,9 @@ function toDateString(value: Date | string): string {
 
 // Function ลบ password_hash ออกจาก account ก่อนส่งเป็น response
 export function sanitizeAccount(account: AccountDto): SafeAccountDto;
+// Function overload คืน null เมื่อไม่มี account
 export function sanitizeAccount(account: null): null;
+// Function ลบ password_hash ออกจาก account หรือคืน null
 export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | null {
   if (!account) {
     return null;
@@ -41,6 +46,15 @@ export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | nu
   const { password_hash: _passwordHash, ...safeAccount } = account;
 
   return safeAccount;
+}
+
+// Function แปลง record จาก table accounts เป็น AccountDto
+function toAccountRole(role: string): AccountRole {
+  if ((ACCOUNT_ROLES as readonly string[]).includes(role)) {
+    return role as AccountRole;
+  }
+
+  throw new Error(`Unsupported account role: ${role}`);
 }
 
 // Function แปลง record จาก table accounts เป็น AccountDto
@@ -53,7 +67,7 @@ export function mapAccount(record: Account | null): AccountDto | null {
     id: record.id,
     username: record.username,
     password_hash: record.passwordHash,
-    role: record.role,
+    role: toAccountRole(record.role),
     status: record.status,
     full_name: record.fullName,
     position: record.position,
@@ -207,6 +221,7 @@ export function mapTicketProduct(record: TicketProduct | null): TicketProductDto
   };
 }
 
+// Function แปลง record จาก table ticket_workers เป็น TicketWorkerDto
 export function mapTicketWorker(record: TicketWorker | null): TicketWorkerDto | null {
   if (!record) {
     return null;
@@ -222,6 +237,7 @@ export function mapTicketWorker(record: TicketWorker | null): TicketWorkerDto | 
   };
 }
 
+// Function แปลง record จาก table ticket_completion_submissions เป็น TicketCompletionSubmissionDto
 export function mapTicketCompletionSubmission(
   record: TicketCompletionSubmission | null
 ): TicketCompletionSubmissionDto | null {

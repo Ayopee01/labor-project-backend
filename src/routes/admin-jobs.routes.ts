@@ -13,6 +13,7 @@ const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 
+// Route ดึงรายการงานรถสำหรับ Admin
 router.get(
   "/vehicle-jobs",
   permissionMiddleware(["jobs:read"]),
@@ -26,6 +27,7 @@ router.get(
   }
 );
 
+// Route ดึงรายละเอียดงานรถพร้อมตลาด ตั๋ว และสินค้า
 router.get(
   "/vehicle-jobs/:id",
   permissionMiddleware(["jobs:read"]),
@@ -39,6 +41,7 @@ router.get(
   }
 );
 
+// Route ยกเลิกงานรถทั้งคัน
 router.post(
   "/vehicle-jobs/:id/cancel",
   permissionMiddleware(["jobs:cancel"]),
@@ -55,6 +58,7 @@ router.post(
   }
 );
 
+// Route ยกเลิกงานรถและนำ worker กลับเข้าคิว
 router.post(
   "/vehicle-jobs/:id/cancel-and-requeue",
   permissionMiddleware(["jobs:cancel"]),
@@ -71,6 +75,7 @@ router.post(
   }
 );
 
+// Route assign worker เข้างานรถแบบระบุรายคน
 router.post(
   "/vehicle-jobs/:id/assign-workers",
   permissionMiddleware(["jobs:assign"]),
@@ -87,6 +92,7 @@ router.post(
   }
 );
 
+// Route ต่อเวลา scan QR ของงานรถ
 router.post(
   "/vehicle-jobs/:id/scan-deadline/extend",
   permissionMiddleware(["jobs:extend_deadline"]),
@@ -103,6 +109,7 @@ router.post(
   }
 );
 
+// Route ยกเลิก assignment รายคน
 router.post(
   "/assignments/:id/cancel",
   permissionMiddleware(["jobs:cancel"]),
@@ -119,6 +126,7 @@ router.post(
   }
 );
 
+// Route ยกเลิกงานตลาด
 router.post(
   "/market-jobs/:id/cancel",
   permissionMiddleware(["jobs:cancel"]),
@@ -135,6 +143,7 @@ router.post(
   }
 );
 
+// Route ยกเลิกงานแผงหรือตั๋วรายใบ
 router.post(
   "/stall-jobs/:id/cancel",
   permissionMiddleware(["jobs:cancel"]),
@@ -151,6 +160,7 @@ router.post(
   }
 );
 
+// Route เปิดงานแผงกลับมาให้ worker ส่งยอดใหม่
 router.post(
   "/stall-jobs/:id/reopen",
   permissionMiddleware(["jobs:reopen"]),

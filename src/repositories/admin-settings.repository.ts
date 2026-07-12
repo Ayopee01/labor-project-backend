@@ -8,7 +8,7 @@ import { client, requireMapped, toId } from "./shared/repository-utils";
 // import Types
 import type { DbConnection } from "../types/common.type";
 import type { SystemSettingDto } from "../types/admin-settings.type";
-import type { AccountDto } from "../types/admin-workers.type";
+import type { AccountCreateInput, AccountDto } from "../types/admin-workers.type";
 
 export {
   permissionRepository,
@@ -39,6 +39,51 @@ async function findAdminById(
 }
 
 // Function อัปเดต permission level ของ admin account
+// Function ตรวจว่า username ถูกใช้แล้วหรือยังสำหรับสร้าง admin account
+async function usernameExists(
+  username: string,
+  connection?: DbConnection
+): Promise<boolean> {
+  const db = client(connection);
+  const account = await db.account.findUnique({
+    where: {
+      username,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return Boolean(account);
+}
+
+// Function แปลง input สร้าง admin account เป็น Prisma create data
+function buildAdminAccountCreateData(account: AccountCreateInput) {
+  return {
+    username: account.username,
+    passwordHash: account.password_hash,
+    role: ADMIN_ROLE,
+    status: account.status ?? "active",
+    fullName: account.full_name,
+    position: account.position ?? null,
+    permissionLevel: account.permission_level ?? null,
+    createdBy: account.created_by ?? null,
+  };
+}
+
+// Function สร้าง account role admin สำหรับ flow Settings/Permissions เท่านั้น
+async function createAdmin(
+  account: AccountCreateInput,
+  connection?: DbConnection
+): Promise<AccountDto> {
+  const db = client(connection);
+  const createdAccount = await db.account.create({
+    data: buildAdminAccountCreateData(account),
+  });
+
+  return requireMapped(mapAccount(createdAccount), "Admin account", "create");
+}
+
 async function updatePermissionLevel(
   id: number | string,
   permissionLevel?: string | null,
@@ -59,7 +104,9 @@ async function updatePermissionLevel(
 
 const adminSettingsAccountRepository = {
   ...accountRepository,
+  createAdmin,
   findAdminById,
+  usernameExists,
   updatePermissionLevel,
 };
 

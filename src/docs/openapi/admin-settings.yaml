@@ -73,6 +73,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/admins:
+    post:
+      tags:
+        - Admin Settings
+      summary: Create an admin account with initial permissions.
+      operationId: createAdminAccount
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdminAccountRequest"
+      responses:
+        "201":
+          description: Admin account created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAdminAccountResponse"
+        "400":
+          description: Invalid admin payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Missing admins:create permission, or new permission level is equal or higher than the actor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Username already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/admin/users/{id}/permissions:
     get:
       tags:

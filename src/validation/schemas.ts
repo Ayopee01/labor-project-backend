@@ -1,6 +1,7 @@
 // Import library
 import { z } from "zod";
 import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS } from "../config/permission.config";
+import { ACCOUNT_ROLES } from "../types/admin-workers.type";
 
 /* -------------------------------------- Formats -------------------------------------- */
 
@@ -81,7 +82,6 @@ export const loginBodySchema = z.object({
   password: trimmedString,
   device_id: optionalTrimmedString,
   device_name: optionalTrimmedString,
-  client_type: z.enum(["admin_web", "worker_mobile"]),
 });
 
 // Schema body สำหรับยืนยัน force login ด้วย challenge token และอุปกรณ์ใหม่
@@ -214,6 +214,7 @@ const workerTicketCompleteItemSchema = z.object({
   confirmed_quantity: z.coerce.number().min(0),
 });
 
+// Schema body สำหรับ worker ส่งยอดสินค้าที่นับจริงตอนปิดงาน
 export const workerTicketCompleteBodySchema = z.object({
   items: z.array(workerTicketCompleteItemSchema).min(1),
 });
@@ -275,6 +276,20 @@ export const updateSystemSettingsBodySchema = z
 
 // Schema body สำหรับ Admin แก้ permissions ของ admin account
 export const updateAccountPermissionsBodySchema = z.object({
+  permission_level: z.enum(ADMIN_PERMISSION_LEVELS),
+  permissions: z
+    .array(z.enum(ADMIN_PERMISSIONS))
+    .default([]),
+});
+
+// Schema runtime settings หลังอ่านค่าจาก DB และแปลงเป็น number พร้อมใช้งาน
+// Schema body สำหรับ Admin สร้าง admin account ใหม่พร้อมกำหนด permission level และ permissions เริ่มต้น
+export const createAdminAccountBodySchema = z.object({
+  username: trimmedString,
+  password: trimmedString,
+  full_name: trimmedString,
+  position: optionalTrimmedString,
+  status: defaultActiveStatusSchema,
   permission_level: z.enum(ADMIN_PERMISSION_LEVELS),
   permissions: z
     .array(z.enum(ADMIN_PERMISSIONS))
@@ -345,7 +360,7 @@ const tokenTimestampsSchema = {
 // Schema payload ของ access token สำหรับยืนยันผู้ใช้และ session
 export const accessTokenPayloadSchema = z.object({
   account_id: z.number().int().positive(),
-  role: trimmedString,
+  role: z.enum(ACCOUNT_ROLES),
   permission_level: optionalTrimmedString.nullable(),
   permissions: z.array(z.enum(ADMIN_PERMISSIONS)).optional(),
   session_id: z.number().int().positive(),
@@ -364,7 +379,7 @@ export const refreshTokenPayloadSchema = z.object({
 // Schema payload ของ token ที่ใช้ยืนยันการ force login จากอุปกรณ์ใหม่
 export const loginChallengeTokenPayloadSchema = z.object({
   account_id: z.number().int().positive(),
-  role: trimmedString,
+  role: z.enum(ACCOUNT_ROLES),
   old_session_id: z.number().int().positive(),
   new_device_id: trimmedString,
   token_type: z.literal("login_challenge"),

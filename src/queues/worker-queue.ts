@@ -33,6 +33,7 @@ const workerBreakReturnQueue = new Queue(REDIS_CONFIG.workerBreakReturnQueueName
 
 let timeoutWorker: Worker | null = null;
 let breakReturnWorker: Worker | null = null;
+let lastWorkerQueueScore = 0;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -113,12 +114,23 @@ async function setWorkerStatus(
   return mapQueueStatus(accountId, latest) as WorkerQueueEntryDto;
 }
 
+// Function สร้าง score คิวให้เรียงตามลำดับที่เรียก แม้เข้า queue ใน millisecond เดียวกัน
+function buildWorkerQueueScore(): number {
+  const now = Date.now();
+  const nextScore = now <= lastWorkerQueueScore ? lastWorkerQueueScore + 1 : now;
+
+  lastWorkerQueueScore = nextScore;
+
+  return nextScore;
+}
+
 // Function เพิ่ม worker เข้าท้ายคิว Redis FIFO
 export async function enqueueWorker(accountId: number): Promise<WorkerQueueEntryDto> {
-  const readyAt = new Date();
+  const readyScore = buildWorkerQueueScore();
+  const readyAt = new Date(readyScore);
   await redis.zadd(
     REDIS_CONFIG.workerQueueKey,
-    readyAt.getTime(),
+    readyScore,
     String(accountId)
   );
 

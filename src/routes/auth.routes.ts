@@ -7,6 +7,7 @@ import * as authService from "../services/auth.service";
 
 const router = express.Router();
 
+// Route login ด้วย username/password และข้อมูล client
 router.post(
   "/login",
   async (req, res, next) => {
@@ -19,6 +20,7 @@ router.post(
   }
 );
 
+// Route ยืนยัน force login เมื่อมี session เดิมบนอุปกรณ์อื่น
 router.post(
   "/login/confirm-force",
   async (req, res, next) => {
@@ -31,6 +33,7 @@ router.post(
   }
 );
 
+// Route ขอ access token และ refresh token ชุดใหม่
 router.post(
   "/refresh",
   async (req, res, next) => {
@@ -43,6 +46,7 @@ router.post(
   }
 );
 
+// Route logout และ revoke session ปัจจุบัน
 router.post(
   "/logout",
   authMiddleware,
@@ -57,6 +61,7 @@ router.post(
   }
 );
 
+// Route ดึงข้อมูลผู้ใช้จาก token ปัจจุบัน
 router.get(
   "/me",
   authMiddleware,

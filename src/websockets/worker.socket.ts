@@ -81,7 +81,7 @@ async function authenticateWorkerSocket(
 ): Promise<AccessTokenPayload> {
   const payload = verifyAccessToken(getSocketToken(request));
 
-  if (payload.role !== "user") {
+  if (payload.role !== "worker") {
     throw new ApiError(403, "FORBIDDEN", "Worker account is required.");
   }
 

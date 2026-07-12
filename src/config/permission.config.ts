@@ -5,6 +5,7 @@ export const ADMIN_PERMISSIONS = [
   "settings:read",
   "settings:update",
   "roles:read",
+  "admins:create",
   "permissions:read",
   "permissions:update",
   "workers:read",
@@ -19,15 +20,17 @@ export const ADMIN_PERMISSIONS = [
   "jobs:extend_deadline",
 ] as const;
 
+// Type permission ที่ระบบรองรับจาก ADMIN_PERMISSIONS
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
 
 // Config ลำดับยศของ admin โดย index น้อยกว่าคือยศสูงกว่า
 export const ADMIN_PERMISSION_LEVELS = [
-  "super_admin",
-  "admin",
+  "owner",
+  "manager",
   "supervisor",
 ] as const;
 
+// Type level ของ admin จาก ADMIN_PERMISSION_LEVELS
 export type AdminPermissionLevel = (typeof ADMIN_PERMISSION_LEVELS)[number];
 
 /* -------------------------------------- Functions -------------------------------------- */

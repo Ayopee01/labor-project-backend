@@ -1,6 +1,3 @@
-// import Library
-import { Prisma } from "@prisma/client";
-
 // import
 import * as accountRepository from "./shared/account.repository";
 import * as workScheduleRepository from "./shared/work-schedule.repository";
@@ -165,6 +162,7 @@ export async function findAssignmentByIdAndWorker(
   return mapVehicleJobAssignment(assignment);
 }
 
+// Function เปลี่ยน assignment เป็นรับงานแล้วและกำหนดเวลา scan QR
 export async function acceptAssignment(
   assignmentId: number,
   scanDeadlineAt: Date,
@@ -185,6 +183,7 @@ export async function acceptAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment accept");
 }
 
+// Function เปลี่ยน assignment เป็นหมดเวลารับงาน
 export async function timeoutAssignment(
   assignmentId: number,
   connection?: DbConnection
@@ -236,6 +235,7 @@ export async function findGateTicketForCompletion(
   return mapGateTicket(ticket);
 }
 
+// Function ดึงรายการสินค้าใน ticket ตามลำดับที่สร้าง
 export async function listTicketProducts(
   ticketId: number,
   connection?: DbConnection
@@ -282,6 +282,7 @@ export async function updateTicketProductConfirmations(
   return listTicketProducts(ticketId, connection);
 }
 
+// Function สร้าง ticket worker จาก assignment ของงานรถเมื่อยังไม่มี mapping ระดับ ticket
 export async function ensureTicketWorkersFromVehicleAssignments(
   ticketId: number,
   vehicleJobId: number,

@@ -11,5 +11,8 @@ export const RUNTIME_SETTING_KEYS = [
   "worker_presence_stale_seconds",
 ] as const;
 
+// Type key ของ runtime setting ที่ระบบรองรับ
 export type RuntimeSettingKey = (typeof RUNTIME_SETTING_KEYS)[number];
+
+// Type map ค่า runtime settings เป็น number พร้อมใช้งาน
 export type RuntimeSettings = Record<RuntimeSettingKey, number>;

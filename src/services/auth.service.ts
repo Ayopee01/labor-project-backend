@@ -2,7 +2,7 @@ import { accountRepository, profileRepository, sessionRepository, workScheduleRe
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
 import { getAccountPermissions } from "./admin-settings.service";
 import { withTransaction } from "../db/prisma";
-import type { AccessTokenPayload, AccountResponse, AuthSuccessResponse, AuthTokens, LoginClientType } from "../types/auth.type";
+import type { AccessTokenPayload, AccountResponse, AuthSuccessResponse, AuthTokens } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import { parseWithSchema } from "../validation/parser";
@@ -15,29 +15,25 @@ import { formatScheduleWithShift } from "../utils/shift";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-const USER_ROLE = "user";
+const WORKER_ROLE = "worker";
 const ADMIN_SESSION_DEVICE_NAME = "Admin Web";
-const CLIENT_ROLE_MAP = {
-  admin_web: "admin",
-  worker_mobile: USER_ROLE,
-} as const;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้าง device id สำหรับ session ของ admin หรือ user
+// Function สร้าง device id สำหรับ session ของ admin หรือ worker
 function getDefaultSessionDeviceId(account: AccountDto): string {
   return account.role === "admin"
     ? `admin:${account.id}`
     : `${account.role}:${account.id}`;
 }
 
-// Function สร้าง device name สำหรับ session ของ admin หรือ user
+// Function สร้าง device name สำหรับ session ของ admin หรือ worker
 function getDefaultSessionDeviceName(account: AccountDto): string {
   return account.role === "admin" ? ADMIN_SESSION_DEVICE_NAME : `${account.role} Web`;
 }
 
-// Function ตรวจสอบว่าผู้ใช้ role user ต้องมี device id และ device name หรือไม่
-function requireUserDevice(
+// Function ตรวจสอบว่า worker ต้องมี device id และ device name ตอน login หรือไม่
+function requireWorkerDevice(
   deviceId?: string,
   deviceName?: string
 ): { deviceId: string; deviceName: string } {
@@ -61,7 +57,7 @@ function requireUserDevice(
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "Device information is required for user login.",
+      "Device information is required for worker login.",
       {
         validation_errors: validationErrors,
       }
@@ -80,8 +76,8 @@ function resolveLoginDevice(
   deviceId?: string,
   deviceName?: string
 ): { deviceId: string; deviceName: string } {
-  if (account.role === USER_ROLE) {
-    return requireUserDevice(deviceId, deviceName);
+  if (account.role === WORKER_ROLE) {
+    return requireWorkerDevice(deviceId, deviceName);
   }
 
   return {
@@ -91,37 +87,13 @@ function resolveLoginDevice(
 }
 
 // Function สร้าง response ของ account พร้อม profile และตารางงานปัจจุบัน
-function assertClientRoleAllowed(
-  account: AccountDto,
-  clientType?: LoginClientType
-): void {
-  if (!clientType) {
-    return;
-  }
-
-  const expectedRole = CLIENT_ROLE_MAP[clientType];
-
-  if (account.role !== expectedRole) {
-    throw new ApiError(
-      403,
-      "CLIENT_ROLE_NOT_ALLOWED",
-      "This account cannot login from this client.",
-      {
-        expected_role: expectedRole,
-        account_role: account.role,
-        client_type: clientType,
-      }
-    );
-  }
-}
-
 async function buildAccountResponse(
   account: AccountDto,
   connection?: DbConnection
 ): Promise<AccountResponse> {
   const safeAccount = accountRepository.sanitizeAccount(account);
 
-  if (account.role !== USER_ROLE) {
+  if (account.role !== WORKER_ROLE) {
     return {
       account: safeAccount,
       profile: null,
@@ -207,7 +179,6 @@ export async function login(body: unknown) {
     password,
     device_id: deviceId,
     device_name: deviceName,
-    client_type: clientType,
   } = parseWithSchema(loginBodySchema, body);
   const account = await accountRepository.findByUsername(username);
 
@@ -223,11 +194,9 @@ export async function login(body: unknown) {
     throw new ApiError(423, "ACCOUNT_INACTIVE", "Account is inactive.");
   }
 
-  assertClientRoleAllowed(account, clientType);
-
   const activeSession = await sessionRepository.findActiveByAccountId(account.id);
   const sessionDevice = resolveLoginDevice(account, deviceId, deviceName);
-  const requiresDevice = account.role === USER_ROLE;
+  const requiresDevice = account.role === WORKER_ROLE;
 
   if (
     requiresDevice &&

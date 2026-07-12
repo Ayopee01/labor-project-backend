@@ -53,12 +53,13 @@ function withBreakUsage(
   };
 }
 
+// Function ตรวจ auth ว่าเป็น worker ที่ active ก่อนทำงานใน Worker Mobile flow
 async function requireWorker(auth?: AccessTokenPayload) {
   if (!auth) {
     throw new ApiError(401, "UNAUTHORIZED", "Authentication is required.");
   }
 
-  if (auth.role !== "user") {
+  if (auth.role !== "worker") {
     throw new ApiError(403, "FORBIDDEN", "Worker account is required.");
   }
 
@@ -111,6 +112,7 @@ function buildVendorCompletionMessage(
     .join("\n");
 }
 
+// Function ตรวจรายการสินค้าที่ worker ส่งว่าครบ ตรง ticket และไม่ซ้ำ
 function validateTicketCompletionItems(
   products: TicketProductDto[],
   items: Array<{ ticket_product_id: number; confirmed_quantity: number }>

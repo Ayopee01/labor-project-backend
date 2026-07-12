@@ -10,7 +10,7 @@ import type { AccountDto } from "../../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-const USER_ROLE = "user";
+const WORKER_ROLE = "worker";
 const ADMIN_ROLE = "admin";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -45,7 +45,7 @@ export async function findById(
   return mapAccount(account);
 }
 
-// Function ค้นหา account role user ใช้ร่วมกับ Admin Jobs และ Worker Application
+// Function ค้นหา account role worker ใช้ร่วมกับ Admin Jobs และ Worker Application
 export async function findUserById(
   id: number | string,
   connection?: DbConnection
@@ -54,7 +54,7 @@ export async function findUserById(
   const account = await db.account.findFirst({
     where: {
       id: toAccountId(id),
-      role: USER_ROLE,
+      role: WORKER_ROLE,
     },
   });
 
@@ -81,7 +81,7 @@ export async function listAllUsers(connection?: DbConnection): Promise<AccountDt
   const db = client(connection);
   const accounts = await db.account.findMany({
     where: {
-      role: USER_ROLE,
+      role: WORKER_ROLE,
     },
     orderBy: {
       id: "desc",

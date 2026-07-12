@@ -375,6 +375,7 @@ export async function cancelAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment cancel");
 }
 
+// Function ต่อเวลา scan deadline ของ assignment
 export async function extendAssignmentScanDeadline(
   assignmentId: number,
   scanDeadlineAt: Date,

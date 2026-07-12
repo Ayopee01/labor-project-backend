@@ -9,6 +9,7 @@ import * as notificationsService from "../services/notifications.service";
 
 const router = express.Router();
 
+// Route เปิด SSE stream สำหรับ notification ฝั่ง Admin
 router.get(
   "/",
   authMiddleware,

@@ -26,22 +26,26 @@ import type {
   WorkScheduleUpdateInput,
 } from "../types/admin-workers.type";
 
-const USER_ROLE = "user";
+const WORKER_ROLE = "worker";
 const DEFAULT_ACCOUNT_STATUS = "active";
 const SEARCH_MODE = "insensitive" as const;
 
+// Function เลือก prisma client ปกติ หรือ transaction client ที่ส่งเข้ามา
 function client(connection?: DbConnection): DbConnection {
   return connection ?? prisma;
 }
 
+// Function แปลง account id จาก path/string ให้เป็น number สำหรับ Prisma query
 function toAccountId(id: number | string): number {
   return toId(id);
 }
 
+// Function ตรวจว่า mapper คืน account DTO ที่ไม่ใช่ null
 function isAccountDto(account: AccountDto | null): account is AccountDto {
   return account !== null;
 }
 
+// Function สร้าง OR filter สำหรับค้นหา worker จากหลาย field
 function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
   return [
     {
@@ -99,9 +103,10 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
   ];
 }
 
+// Function สร้าง where condition สำหรับ list worker
 function buildUserWhere(filters: Partial<UserListFilters> = {}): Prisma.AccountWhereInput {
   const where: Prisma.AccountWhereInput = {
-    role: USER_ROLE,
+    role: WORKER_ROLE,
   };
 
   if (filters.status) {
@@ -115,6 +120,7 @@ function buildUserWhere(filters: Partial<UserListFilters> = {}): Prisma.AccountW
   return where;
 }
 
+// Function สร้างเงื่อนไขตรวจ username ซ้ำโดยยกเว้น account ปัจจุบันได้
 function buildUsernameExistsWhere(
   username: string,
   exceptAccountId?: number | string | null
@@ -130,6 +136,7 @@ function buildUsernameExistsWhere(
   };
 }
 
+// Function แปลง input สร้าง account เป็น Prisma create data
 function buildAccountCreateData(account: AccountCreateInput): Prisma.AccountUncheckedCreateInput {
   return {
     username: account.username,
@@ -143,6 +150,7 @@ function buildAccountCreateData(account: AccountCreateInput): Prisma.AccountUnch
   };
 }
 
+// Function แปลง field แก้ไข worker account เป็น Prisma update data
 function buildUserAccountUpdateData(fields: UserAccountUpdateInput): Prisma.AccountUpdateInput {
   const data: Prisma.AccountUpdateInput = {};
 
@@ -153,6 +161,7 @@ function buildUserAccountUpdateData(fields: UserAccountUpdateInput): Prisma.Acco
   return data;
 }
 
+// Function แปลง input profile เป็น data เฉพาะ field ที่ส่งมา
 function buildProfileData(profile: ProfileDataInput): ProfileData {
   const data: ProfileData = {};
 
@@ -195,6 +204,7 @@ function buildProfileData(profile: ProfileDataInput): ProfileData {
   return data;
 }
 
+// Function แปลง input สร้าง profile เป็น Prisma create data
 function buildProfileCreateData(profile: ProfileCreateInput): ProfileCreateData {
   return {
     workerCode: profile.worker_code,
@@ -209,10 +219,12 @@ function buildProfileCreateData(profile: ProfileCreateInput): ProfileCreateData 
   };
 }
 
+// Function ตรวจว่า mapper คืน work schedule DTO ที่ไม่ใช่ null
 function isWorkScheduleDto(schedule: WorkScheduleDto | null): schedule is WorkScheduleDto {
   return schedule !== null;
 }
 
+// Function แปลง input สร้างตารางงานเป็น Prisma create data
 function buildScheduleCreateData(
   schedule: WorkScheduleCreateInput
 ): Prisma.UserWorkScheduleUncheckedCreateInput {
@@ -227,6 +239,7 @@ function buildScheduleCreateData(
   };
 }
 
+// Function แปลง input แก้ไขตารางงานปัจจุบันเป็น Prisma update data
 function buildScheduleUpdateData(
   schedule: WorkScheduleUpdateInput
 ): Prisma.UserWorkScheduleUncheckedUpdateInput {
@@ -242,6 +255,7 @@ function buildScheduleUpdateData(
   };
 }
 
+// Function ตรวจว่า username ถูกใช้แล้วหรือไม่
 async function usernameExists(
   username: string,
   exceptAccountId?: number | string | null,
@@ -258,6 +272,7 @@ async function usernameExists(
   return Boolean(account);
 }
 
+// Function สร้าง account worker/admin ผ่าน repository facade
 async function create(
   account: AccountCreateInput,
   connection?: DbConnection
@@ -270,6 +285,7 @@ async function create(
   return requireMapped(mapAccount(createdAccount), "Account", "create");
 }
 
+// Function ดึงรายการ worker ตาม filter และ pagination
 async function listUsers(
   filters: UserListFilters,
   connection?: DbConnection
@@ -287,6 +303,7 @@ async function listUsers(
   return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
 }
 
+// Function นับจำนวน worker ตาม filter
 async function countUsers(
   filters: UserListFilters,
   connection?: DbConnection
@@ -298,6 +315,7 @@ async function countUsers(
   });
 }
 
+// Function อัปเดตข้อมูล account ของ worker
 async function updateUserAccount(
   id: number | string,
   fields: UserAccountUpdateInput,
@@ -314,6 +332,7 @@ async function updateUserAccount(
   return requireMapped(mapAccount(updatedAccount), "Account", "update");
 }
 
+// Function อัปเดต password hash ของ account
 async function updatePassword(
   id: number | string,
   passwordHash: string,
@@ -332,6 +351,7 @@ async function updatePassword(
   return requireMapped(mapAccount(updatedAccount), "Account", "password update");
 }
 
+// Function อัปเดตสถานะ account
 async function updateStatus(
   id: number | string,
   status: string,
@@ -350,6 +370,7 @@ async function updateStatus(
   return requireMapped(mapAccount(updatedAccount), "Account", "status update");
 }
 
+// Function ตรวจว่า worker code ถูกใช้แล้วหรือไม่
 async function workerCodeExists(
   workerCode: string,
   exceptAccountId?: number | string | null,
@@ -374,6 +395,7 @@ async function workerCodeExists(
   return Boolean(profile);
 }
 
+// Function สร้าง profile ของ worker
 async function createProfile(
   profile: ProfileCreateInput,
   connection?: DbConnection
@@ -389,6 +411,7 @@ async function createProfile(
   return requireMapped(mapProfile(createdProfile), "Profile", "create");
 }
 
+// Function อัปเดต profile จาก account id
 async function updateProfileByAccountId(
   accountId: number | string,
   profile: ProfileUpdateInput,
@@ -405,6 +428,7 @@ async function updateProfileByAccountId(
   return requireMapped(mapProfile(updatedProfile), "Profile", "update");
 }
 
+// Function สร้างตารางงานของ worker
 async function createWorkSchedule(
   schedule: WorkScheduleCreateInput,
   connection?: DbConnection
@@ -417,6 +441,7 @@ async function createWorkSchedule(
   return requireMapped(mapSchedule(createdSchedule), "Schedule", "create");
 }
 
+// Function อัปเดตตารางงานปัจจุบันของ worker
 async function updateCurrentWorkScheduleByAccountId(
   accountId: number | string,
   schedule: WorkScheduleUpdateInput,
@@ -447,6 +472,7 @@ async function updateCurrentWorkScheduleByAccountId(
   return requireMapped(mapSchedule(updatedSchedule), "Schedule", "update");
 }
 
+// Function ลบตารางงานอื่นของ worker โดยเก็บ schedule ที่ระบุไว้
 async function deleteOtherWorkSchedulesByAccountId(
   accountId: number | string,
   keepScheduleId: number | string,
@@ -464,6 +490,7 @@ async function deleteOtherWorkSchedulesByAccountId(
   });
 }
 
+// Function ดึงรายการตารางงานปัจจุบันของ worker ตาม pagination
 async function listWorkSchedulesByAccountId(
   accountId: number | string,
   filters: PaginationFilters,
@@ -485,6 +512,7 @@ async function listWorkSchedulesByAccountId(
   return schedules.map((schedule) => mapSchedule(schedule)).filter(isWorkScheduleDto);
 }
 
+// Function นับจำนวนตารางงานปัจจุบันของ worker
 async function countWorkSchedulesByAccountId(
   accountId: number | string,
   connection?: DbConnection

@@ -5,6 +5,7 @@ import * as lineService from "../services/line.service";
 
 const router = express.Router();
 
+// Route รับ LINE webhook จาก vendor สำหรับ confirm/reject งาน
 router.post(
   "/webhook",
   async (req, res, next) => {

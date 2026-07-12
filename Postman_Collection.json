@@ -65,13 +65,13 @@
       "key": "userId",
       "value": "",
       "type": "string",
-      "description": "Worker user id returned by POST /api/admin/users. Used by /:id routes."
+      "description": "Worker account id returned by POST /api/admin/users. Used by /:id routes."
     },
     {
       "key": "adminUserId",
-      "value": "2",
+      "value": "",
       "type": "string",
-      "description": "Lower-rank admin account id used by /api/admin/users/{{adminUserId}}/permissions. Seed supervisor is usually id 2."
+      "description": "Lower-rank admin account id used by /api/admin/users/{{adminUserId}}/permissions. Set by POST /api/admin/admins."
     },
     {
       "key": "vehicleJobId",
@@ -126,12 +126,6 @@
       "value": "",
       "type": "string",
       "description": "Worker assignment id returned by GET /api/workers/me/status."
-    },
-    {
-      "key": "clientType",
-      "value": "admin_web",
-      "type": "string",
-      "description": "Login client policy. Use admin_web for Admin Web, worker_mobile for Worker Mobile."
     }
   ],
   "item": [
@@ -171,7 +165,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"Admin@123456\",\n  \"client_type\": \"{{clientType}}\"\n}",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"Admin@123456\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -189,7 +183,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Admin Web should send client_type admin_web. Worker Mobile should send client_type worker_mobile plus device_id and device_name.\nNotes: Backend rejects role/client mismatch with CLIENT_ROLE_NOT_ALLOWED. Saves access_token and refresh_token into collection variables when login succeeds. Saves login_challenge_token when ACTIVE_SESSION_EXISTS is returned."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Send username/password. Worker accounts must also send device_id and device_name. Backend decides login flow from account.role.\nNotes: Saves access_token and refresh_token into collection variables when login succeeds. Saves login_challenge_token when ACTIVE_SESSION_EXISTS is returned."
           },
           "response": []
         },
@@ -500,7 +494,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker users with pagination and filters."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts with pagination and filters."
           },
           "response": []
         },
@@ -1343,6 +1337,61 @@
               "type": "noauth"
             },
             "description": "Method: GET\nURL: {{baseUrl}}/api/admin/roles\nAuth: Admin access token with roles:read permission\nBody: None\nNotes: Lists admin permission levels ordered from highest to lowest. Permissions are stored per admin account in DB, not derived from this response."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/admins",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.account?.id) pm.collectionVariables.set('adminUserId', String(body.account.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"manager01\",\n  \"password\": \"Manager@123456\",\n  \"full_name\": \"Branch Manager\",\n  \"position\": \"Manager\",\n  \"permission_level\": \"manager\",\n  \"permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:reopen\",\n    \"jobs:extend_deadline\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "admins"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/admins\nAuth: Admin access token with admins:create permission\nBody: username, password, full_name, optional position/status, permission_level owner|manager|supervisor, and permissions array\nNotes: Creates role=admin only. Seed owner admin can create manager/supervisor. Manager can create supervisor only. No API can create owner because the actor must have a higher permission_level than the new account. Saves created account id to {{adminUserId}}."
           },
           "response": []
         },
