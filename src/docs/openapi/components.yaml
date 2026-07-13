@@ -390,8 +390,8 @@ components:
       properties:
         username:
           type: string
-          description: Optional. If omitted, phone is used as the login username.
-          example: "0812345678"
+          description: Optional. If omitted, backend uses worker_code generated from shirt_number, for example MN000004.
+          example: MN000004
         password:
           type: string
           format: password
@@ -423,8 +423,8 @@ components:
           example: Navy
         shirt_number:
           type: string
-          description: Also used as worker_code for this backend.
-          example: "12"
+          description: Used to generate worker_code and default username with MN prefix and 6 digits.
+          example: "4"
         work_start_date:
           type: string
           format: date
@@ -457,8 +457,8 @@ components:
           description: "Optional worker profile image. Allowed types: jpg, png, webp. Max size: 5 MB."
         username:
           type: string
-          description: Optional. If omitted, phone is used as the login username.
-          example: "0812345678"
+          description: Optional. If omitted, backend uses worker_code generated from shirt_number, for example MN000004.
+          example: MN000004
         password:
           type: string
           format: password
@@ -486,8 +486,8 @@ components:
           example: Navy
         shirt_number:
           type: string
-          description: Also used as worker_code for this backend.
-          example: "12"
+          description: Used to generate worker_code and default username with MN prefix and 6 digits.
+          example: "4"
         work_start_date:
           type: string
           format: date
@@ -519,10 +519,51 @@ components:
     UpdateUserRequest:
       type: object
       properties:
+        worker_code:
+          type: string
+          description: Optional. If omitted and shirt_number is sent, backend regenerates worker_code and username from shirt_number.
+          example: MN000115
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000115.jpg
+        img:
+          type: string
+          nullable: true
+          description: Optional alias for image_url.
+          example: https://example.com/uploads/workers/mn000115.jpg
         full_name:
           type: string
           example: Worker Name
+        phone:
+          type: string
+          example: "0811111111"
+        position:
+          type: string
+          nullable: true
+          example: Worker
+        shirt_type:
+          type: string
+          nullable: true
+          example: Navy
+        shirt_number:
+          type: string
+          nullable: true
+          example: "115"
+        work_date:
+          type: string
+          format: date
+          example: 2026-07-03
+        shift_start_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "08:00"
+        shift_end_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "17:00"
         profile:
+          description: Backward compatible nested profile update.
           $ref: "#/components/schemas/UpdateWorkerProfileInput"
         status:
           type: string
@@ -547,40 +588,49 @@ components:
     UserListItem:
       type: object
       properties:
-        id:
-          type: integer
-          example: 1
-        username:
+        worker_code:
           type: string
-          example: user01
-        role:
+          nullable: true
+          example: MN000004
+        shirt_number:
           type: string
-          enum:
-            - worker
-          example: worker
+          nullable: true
+          example: "4"
+        full_name:
+          type: string
+          example: Worker Name
+        work_schedule:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/UserListSchedule"
         status:
           type: string
           enum:
             - active
             - inactive
           example: active
-        full_name:
-          type: string
-          example: Worker Name
-        profile:
-          $ref: "#/components/schemas/WorkerProfile"
-        current_work_schedule:
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/WorkSchedule"
-        created_at:
-          type: string
-          format: date-time
-          example: 2026-07-01T09:00:00.000Z
         updated_at:
           type: string
           format: date-time
           example: 2026-07-01T09:00:00.000Z
+    UserListSchedule:
+      type: object
+      properties:
+        work_date:
+          type: string
+          format: date
+          example: 2026-07-03
+        shift_start_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "08:00"
+        shift_end_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "17:00"
+        shift_name:
+          type: string
+          example: กะเช้า
     UserListResponse:
       type: object
       properties:
@@ -610,16 +660,59 @@ components:
     UserDetailResponse:
       type: object
       properties:
-        account:
-          $ref: "#/components/schemas/Account"
-        profile:
-          $ref: "#/components/schemas/WorkerProfile"
-        current_work_schedule:
+        image_url:
+          type: string
           nullable: true
-          allOf:
-            - $ref: "#/components/schemas/WorkSchedule"
-        active_session:
-          $ref: "#/components/schemas/SessionInfo"
+          example: https://example.com/uploads/workers/mn000115.jpg
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        full_name:
+          type: string
+          example: นายMANY MANY
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: active
+        details:
+          type: object
+          properties:
+            phone:
+              type: string
+              nullable: true
+              example: "0811111111"
+            position:
+              type: string
+              nullable: true
+              example: Worker
+            shirt_number:
+              type: string
+              nullable: true
+              example: "115"
+            shirt_type:
+              type: string
+              nullable: true
+              example: Navy
+            work_date:
+              type: string
+              nullable: true
+              format: date
+              example: 2026-07-03
+            shift_start_time:
+              type: string
+              nullable: true
+              example: "08:00"
+            shift_end_time:
+              type: string
+              nullable: true
+              example: "17:00"
+            shift_name:
+              type: string
+              nullable: true
+              example: เธเธฐเน€เธเนเธฒ
     WorkScheduleResponse:
       type: object
       properties:
@@ -1384,12 +1477,43 @@ components:
         presence:
           $ref: "#/components/schemas/WorkerPresence"
     AdminWorkerStatusResponse:
-      allOf:
-        - $ref: "#/components/schemas/WorkerStatusResponse"
-        - type: object
-          properties:
-            worker:
-              $ref: "#/components/schemas/Account"
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: นายMANY MANY
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        shirt_number:
+          type: string
+          nullable: true
+          example: "115"
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000115.jpg
+        shift_name:
+          type: string
+          nullable: true
+          example: กะเช้า
+        latest_activity_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Latest timestamp from the current worker flow step, such as app heartbeat, queue ready time, assignment accepted/scanned time, or latest status update.
+          example: 2026-07-12T14:40:07.759Z
+        status:
+          type: string
+          description: The only board status returned by this API. UI maps this value to a column.
+          enum:
+            - open_app
+            - ready
+            - assigned
+            - working
+            - break
+          example: ready
     AdminWorkerStatusListResponse:
       type: object
       properties:
@@ -1398,19 +1522,15 @@ components:
           properties:
             total:
               type: integer
+            open_app:
+              type: integer
             ready:
               type: integer
-            waiting:
+            assigned:
+              type: integer
+            working:
               type: integer
             break:
-              type: integer
-            busy:
-              type: integer
-            offline:
-              type: integer
-            alive:
-              type: integer
-            stale:
               type: integer
         data:
           type: array

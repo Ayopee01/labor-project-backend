@@ -121,6 +121,25 @@ function buildUserWhere(filters: Partial<UserListFilters> = {}): Prisma.AccountW
 }
 
 // Function สร้างเงื่อนไขตรวจ username ซ้ำโดยยกเว้น account ปัจจุบันได้
+// Function สร้างเงื่อนไขค้นหา worker จาก username หรือ worker_code
+function buildUserIdentifierWhere(identifier: string): Prisma.AccountWhereInput {
+  return {
+    role: WORKER_ROLE,
+    OR: [
+      {
+        username: identifier,
+      },
+      {
+        profile: {
+          is: {
+            workerCode: identifier,
+          },
+        },
+      },
+    ],
+  };
+}
+
 function buildUsernameExistsWhere(
   username: string,
   exceptAccountId?: number | string | null
@@ -154,8 +173,16 @@ function buildAccountCreateData(account: AccountCreateInput): Prisma.AccountUnch
 function buildUserAccountUpdateData(fields: UserAccountUpdateInput): Prisma.AccountUpdateInput {
   const data: Prisma.AccountUpdateInput = {};
 
+  if (fields.username !== undefined) {
+    data.username = fields.username;
+  }
+
   if (fields.full_name !== undefined) {
     data.fullName = fields.full_name;
+  }
+
+  if (fields.position !== undefined) {
+    data.position = fields.position;
   }
 
   return data;
@@ -316,6 +343,19 @@ async function countUsers(
 }
 
 // Function อัปเดตข้อมูล account ของ worker
+// Function ค้นหา worker จาก username หรือ worker_code
+async function findUserByIdentifier(
+  identifier: string,
+  connection?: DbConnection
+): Promise<AccountDto | null> {
+  const db = client(connection);
+  const account = await db.account.findFirst({
+    where: buildUserIdentifierWhere(identifier),
+  });
+
+  return mapAccount(account);
+}
+
 async function updateUserAccount(
   id: number | string,
   fields: UserAccountUpdateInput,
@@ -533,6 +573,7 @@ const adminWorkersAccountRepository = {
   create,
   listUsers,
   countUsers,
+  findUserByIdentifier,
   updateUserAccount,
   updatePassword,
   updateStatus,

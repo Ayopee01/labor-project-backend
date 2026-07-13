@@ -8,10 +8,74 @@ import sessionMiddleware from "../middlewares/session.middleware";
 
 // import Service
 import * as adminJobsService from "../services/admin-jobs.service";
+import * as adminWorkersService from "../services/admin-workers.service";
 
 const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
+
+// Route ดึงตารางงานปัจจุบันของ worker สำหรับบริบทงาน/คิว
+router.get(
+  "/jobs/workers/:id/work-schedules",
+  permissionMiddleware(["jobs:read"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminWorkersService.listWorkSchedules(
+        String(req.params.id),
+        req.query,
+        req.auth
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Route ดึงสถานะ worker ทั้งหมดสำหรับหน้า monitor/dispatch
+router.get(
+  "/jobs/workers/status",
+  permissionMiddleware(["jobs:read"]),
+  async (_req, res, next) => {
+    try {
+      const result = await adminWorkersService.listAdminWorkerStatuses();
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Route ดึงสถานะ worker รายคนสำหรับหน้า monitor/dispatch
+router.get(
+  "/jobs/workers/status/:id",
+  permissionMiddleware(["jobs:read"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminWorkersService.getAdminWorkerStatus(req.params.id);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Route บังคับเปลี่ยนสถานะ worker จากหน้า monitor/dispatch
+router.post(
+  "/jobs/workers/:id/status/force",
+  permissionMiddleware(["workers:force_status"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminWorkersService.forceAdminWorkerStatus(
+        req.params.id,
+        req.body
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 // Route ดึงรายการงานรถสำหรับ Admin
 router.get(

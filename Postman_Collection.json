@@ -63,9 +63,9 @@
     },
     {
       "key": "userId",
-      "value": "",
+      "value": "MN000115",
       "type": "string",
-      "description": "Worker account id returned by POST /api/admin/users. Used by /:id routes."
+      "description": "Worker code or username used by Admin Workers /:id routes, for example MN000115."
     },
     {
       "key": "adminUserId",
@@ -446,7 +446,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: full_name, phone, nationality, shirt_type, shirt_number, work_date, shift_start_time, shift_end_time, password, status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to phone. password defaults to phone if omitted. nationality_name defaults to nationality and nationality_code defaults to UNKNOWN when omitted. shirt_number is used as worker_code internally. Uploaded image is stored under /uploads/workers and saved as profile.image_url. JSON body with image_url/img is still supported when no file upload is needed."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: full_name, phone, nationality, shirt_type, shirt_number, work_date, shift_start_time, shift_end_time, password, status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to worker_code generated from shirt_number, such as MN000004. password defaults to phone if omitted. nationality_name defaults to nationality and nationality_code defaults to UNKNOWN when omitted. shirt_number is saved separately and also used to generate worker_code. Uploaded image is stored under /uploads/workers and saved as profile.image_url. JSON body with image_url/img is still supported when no file upload is needed."
           },
           "response": []
         },
@@ -494,7 +494,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts with pagination and filters."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: worker_code, shirt_number, full_name, work_schedule, status, updated_at. work_schedule includes only work_date, shift_start_time, shift_end_time, and shift_name."
           },
           "response": []
         },
@@ -525,7 +525,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. Uses {{userId}} path variable."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{userId}} must be worker_code or username, for example MN000115. Response is trimmed for worker edit UI: image_url, worker_code, full_name, status, and details."
           },
           "response": []
         },
@@ -549,7 +549,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"profile\": {\n    \"image_url\": \"https://example.com/uploads/workers/worker001-updated.jpg\"\n  },\n  \"status\": \"active\"\n}",
+              "raw": "{\n  \"image_url\": \"https://example.com/uploads/workers/mn000115.jpg\",\n  \"full_name\": \"นายMANY MANY\",\n  \"phone\": \"0811111111\",\n  \"status\": \"active\",\n  \"position\": \"Worker\",\n  \"shirt_number\": \"115\",\n  \"shirt_type\": \"Navy\",\n  \"work_date\": \"2026-07-03\",\n  \"shift_start_time\": \"08:00\",\n  \"shift_end_time\": \"17:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -571,7 +571,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON with optional full_name, profile, status, and/or work_schedule. profile is partial; send only fields that should change.\nNotes: Admin only. This route updates only fields sent in the body. Sending work_schedule updates the current work schedule in place, then removes other schedule rows for that worker so no schedule history is kept. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: image_url/img, worker_code, full_name, phone, status, position, shirt_number, shirt_type, work_date, shift_start_time, shift_end_time. Nested profile/work_schedule is still supported for backward compatibility.\nNotes: Admin only. {{userId}} must be worker_code or username. If shirt_number is sent without worker_code, backend regenerates worker_code/username as MN + 6 digits. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
           },
           "response": []
         },
@@ -618,12 +618,17 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}/password\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON: new_password\nNotes: Admin only. Resets worker password and revokes worker sessions."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}/password\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON: new_password\nNotes: Admin only. {{userId}} must be worker_code or username. Resets worker password and revokes worker sessions."
           },
           "response": []
-        },
+        }
+      ]
+    },
+    {
+      "name": "Admin Jobs",
+      "item": [
         {
-          "name": "GET /api/admin/users/:id/work-schedules",
+          "name": "GET /api/admin/jobs/workers/:id/work-schedules",
           "request": {
             "method": "GET",
             "header": [
@@ -635,14 +640,15 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/users/{{userId}}/work-schedules?page=1&limit=20",
+              "raw": "{{baseUrl}}/api/admin/jobs/workers/{{userId}}/work-schedules?page=1&limit=20",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "admin",
-                "users",
+                "jobs",
+                "workers",
                 "{{userId}}",
                 "work-schedules"
               ],
@@ -660,12 +666,12 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}/work-schedules?page=1&limit=20\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit\nBody: None\nNotes: Admin only. Returns the current worker work schedule. PATCH /api/admin/users/{{userId}} keeps only one schedule row for the worker."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/jobs/workers/{{userId}}/work-schedules?page=1&limit=20\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit\nBody: None\nNotes: Admin Jobs. {{userId}} must be worker_code or username. Returns the current worker work schedule for job operations."
           },
           "response": []
         },
         {
-          "name": "GET /api/admin/users/worker-status",
+          "name": "GET /api/admin/jobs/workers/status",
           "request": {
             "method": "GET",
             "header": [
@@ -676,26 +682,27 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/users/worker-status",
+              "raw": "{{baseUrl}}/api/admin/jobs/workers/status",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "admin",
-                "users",
-                "worker-status"
+                "jobs",
+                "workers",
+                "status"
               ]
             },
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/worker-status\nAuth: Admin access token\nBody: None\nNotes: Lists all worker queue statuses, active assignments, heartbeat presence, and summary counts."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/jobs/workers/status\nAuth: Admin access token\nBody: None\nNotes: Admin Jobs. Lists only active workers who are online and inside their current shift. Response is shaped for the worker queue board with full_name, worker_code, shirt_number, image_url, shift_name, latest_activity_at, and one status only. UI maps status to its own columns. Board status values: open_app, ready, assigned, working, break."
           },
           "response": []
         },
         {
-          "name": "GET /api/admin/users/worker-status/:id",
+          "name": "GET /api/admin/jobs/workers/status/:id",
           "request": {
             "method": "GET",
             "header": [
@@ -706,27 +713,28 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/users/worker-status/{{userId}}",
+              "raw": "{{baseUrl}}/api/admin/jobs/workers/status/{{userId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "admin",
-                "users",
-                "worker-status",
+                "jobs",
+                "workers",
+                "status",
                 "{{userId}}"
               ]
             },
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/worker-status/{{userId}}\nAuth: Admin access token\nBody: None\nNotes: Shows one worker queue status, active assignment, and heartbeat presence."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/jobs/workers/status/{{userId}}\nAuth: Admin access token\nBody: None\nNotes: Admin Jobs. {{userId}} must be worker_code or username. Shows one worker queue status, active assignment, and heartbeat presence."
           },
           "response": []
         },
         {
-          "name": "POST /api/admin/users/:id/worker-status/force",
+          "name": "POST /api/admin/jobs/workers/:id/status/force",
           "request": {
             "method": "POST",
             "header": [
@@ -751,31 +759,27 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/admin/users/{{userId}}/worker-status/force",
+              "raw": "{{baseUrl}}/api/admin/jobs/workers/{{userId}}/status/force",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "admin",
-                "users",
+                "jobs",
+                "workers",
                 "{{userId}}",
-                "worker-status",
+                "status",
                 "force"
               ]
             },
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users/{{userId}}/worker-status/force\nAuth: Admin access token\nBody: status ready|waiting|offline|break, optional reason\nNotes: ready puts worker into Redis queue, waiting removes worker from dispatch queue, break starts a 15-minute break and consumes a break count, offline removes worker from queue."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/workers/{{userId}}/status/force\nAuth: Admin access token\nBody: status ready|waiting|offline|break, optional reason\nNotes: Admin Jobs. {{userId}} must be worker_code or username. ready puts worker into Redis queue, waiting removes worker from dispatch queue, break starts a 15-minute break and consumes a break count, offline removes worker from queue."
           },
           "response": []
-        }
-      ]
-    },
-    {
-      "name": "Admin Jobs",
-      "item": [
+        },
         {
           "name": "GET /api/admin/vehicle-jobs",
           "request": {

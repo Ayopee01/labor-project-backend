@@ -38,7 +38,8 @@ test(
     const { hashPassword } = await import("../../../src/utils/password");
     const suffix = Date.now().toString(36);
     const phone = `service-phone-${suffix}`;
-    const shirtNumber = `SVC-${suffix}`;
+    const shirtNumber = "130";
+    const workerCode = "MN000130";
 
     try {
       // Step Act สร้าง worker ผ่าน admin-workers service พร้อม profile และ work schedule
@@ -97,7 +98,7 @@ test(
       await assert.rejects(
         () =>
           authService.login({
-            username: phone,
+            username: workerCode,
             password: "123456",
           }),
         (error) =>
@@ -110,7 +111,7 @@ test(
 
       // Step Act login ด้วย worker พร้อมข้อมูลอุปกรณ์
       const login = await authService.login({
-        username: phone,
+        username: workerCode,
         password: "123456",
         device_id: `browser-device-${suffix}`,
         device_name: "Chrome on Windows",
@@ -134,37 +135,69 @@ test(
       const list = await userService.listUsers({
         page: 1,
         limit: 20,
-        search: shirtNumber,
+        search: workerCode,
       });
 
       // Step Assert ตรวจ response list ว่าซ่อน password และ map profile/schedule ถูกต้อง
       assert.equal(list.pagination.total, 1);
       const createdUser = list.data[0];
-      assert.equal(createdUser.username, phone);
+      assert.equal(createdUser.worker_code, workerCode);
+      assert.equal((createdUser as { id?: number }).id, undefined);
       assert.equal(
         (createdUser as { password_hash?: string }).password_hash,
         undefined
       );
-      assert.equal(createdUser.profile?.worker_code, shirtNumber);
       assert.equal(
-        createdUser.profile?.image_url,
-        "https://example.com/worker.jpg"
+        (createdUser as { username?: string }).username,
+        undefined
       );
-      assert.equal(createdUser.profile?.nationality, "Thai");
-      assert.equal(createdUser.profile?.nationality_name, "Thai");
-      assert.equal(createdUser.profile?.shirt_number, shirtNumber);
-      assert.ok(createdUser.current_work_schedule?.shift_name);
-
+      assert.equal(createdUser.shirt_number, shirtNumber);
+      assert.equal(createdUser.full_name, "Service Worker");
+      assert.equal(createdUser.status, "active");
+      assert.deepEqual(createdUser.work_schedule, {
+        work_date: "2026-07-01",
+        shift_start_time: "06:00",
+        shift_end_time: "18:00",
+        shift_name: createdUser.work_schedule?.shift_name,
+      });
+      assert.ok(createdUser.work_schedule?.shift_name);
+      assert.equal(
+        (createdUser.work_schedule as { id?: number } | null)?.id,
+        undefined
+      );
+      assert.equal(
+        (createdUser.work_schedule as { account_id?: number } | null)?.account_id,
+        undefined
+      );
+      assert.equal(
+        (createdUser.work_schedule as { created_by?: number } | null)?.created_by,
+        undefined
+      );
+      assert.equal(
+        (createdUser.work_schedule as { updated_by?: number } | null)?.updated_by,
+        undefined
+      );
+      assert.equal(
+        (createdUser.work_schedule as { created_at?: string } | null)?.created_at,
+        undefined
+      );
+      assert.equal(
+        (createdUser.work_schedule as { updated_at?: string } | null)?.updated_at,
+        undefined
+      );
+      assert.equal(
+        (createdUser.work_schedule as { is_current?: boolean } | null)?.is_current,
+        undefined
+      );
       // Step Act แก้สถานะ worker และเปลี่ยน work schedule เป็นกะกลางคืน
       const updated = await userService.updateUser(
-        createdUser.id,
+        workerCode,
         {
           status: "inactive",
-          work_schedule: {
-            work_date: "2026-07-02",
-            shift_start_time: "18:00",
-            shift_end_time: "06:00",
-          },
+          position: "Worker",
+          work_date: "2026-07-02",
+          shift_start_time: "18:00",
+          shift_end_time: "06:00",
         },
         {
           account_id: 1,
@@ -175,10 +208,11 @@ test(
       );
 
       // Step Assert ตรวจว่า update account/schedule สำเร็จ และ session active ถูกเคลียร์
-      assert.equal(updated.account.status, "inactive");
-      assert.equal(updated.current_work_schedule?.work_date, "2026-07-02");
-      assert.ok(updated.current_work_schedule?.shift_name);
-      assert.equal(updated.active_session, null);
+      assert.equal(updated.status, "inactive");
+      assert.equal(updated.worker_code, workerCode);
+      assert.equal(updated.details.position, "Worker");
+      assert.equal(updated.details.work_date, "2026-07-02");
+      assert.ok(updated.details.shift_name);
     } finally {
       // Step Cleanup ปิด Prisma connection หลังจบ integration test
       await closePrisma();

@@ -151,7 +151,17 @@ export const createUserBodySchema = z.object({
 
 // Schema body สำหรับแก้ไขข้อมูล worker ผ่านเส้นหลัก
 export const updateUserBodySchema = z.object({
+  worker_code: optionalTrimmedString,
+  image_url: optionalTrimmedString,
+  img: optionalTrimmedString,
   full_name: optionalTrimmedString,
+  phone: optionalTrimmedString,
+  position: optionalTrimmedString,
+  shirt_type: optionalTrimmedString,
+  shirt_number: optionalTrimmedString,
+  work_date: optionalDateString,
+  shift_start_time: z.preprocess(emptyStringToUndefined, timeString.optional()),
+  shift_end_time: z.preprocess(emptyStringToUndefined, timeString.optional()),
   profile: updateProfileInputSchema.optional(),
   status: optionalActiveStatusSchema,
   work_schedule: z.unknown().optional(),

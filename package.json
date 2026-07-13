@@ -16,7 +16,7 @@
     "docker:down": "docker compose down",
     "docker:redis": "docker compose up redis",
     "test": "npm run test:unit && npm run test:routes",
-    "test:unit": "node --import tsx --test test/unit/utilities/utils.test.ts test/unit/permissions/permission-config.test.ts",
+    "test:unit": "node --import tsx --test test/unit/utilities/utils.test.ts test/unit/permissions/permission-config.test.ts test/unit/admin-workers/worker-code.test.ts",
     "test:routes": "node --import tsx --test test/routes/auth.routes.test.ts test/routes/admin-settings.routes.test.ts test/routes/worker.routes.test.ts",
     "test:integration": "node --import tsx --test test/integration/database/services.integration.test.ts",
     "test:p0": "npm run test:unit && npm run test:routes",

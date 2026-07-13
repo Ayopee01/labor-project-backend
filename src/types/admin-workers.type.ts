@@ -1,5 +1,3 @@
-import type { VehicleJobAssignmentDto, WorkerPresenceDto, WorkerQueueEntryDto } from "./worker.type";
-
 // Config role account ที่ระบบรองรับ
 export const ACCOUNT_ROLES = ["admin", "worker"] as const;
 
@@ -75,7 +73,9 @@ export interface AccountCreateInput {
 
 // Type ส่วน Repository input สำหรับแก้ไข account ของ user
 export interface UserAccountUpdateInput {
+  username?: string;
   full_name?: string;
+  position?: string | null;
 }
 
 // Type ส่วน Repository input สำหรับสร้าง profile
@@ -171,31 +171,60 @@ export interface FormattedSession {
   last_active_at: string;
 }
 
+// Type ส่วนตารางงานแบบย่อสำหรับ API list users
+export interface UserListSchedule {
+  work_date: string;
+  shift_start_time: string;
+  shift_end_time: string;
+  shift_name: string;
+}
+
 // Type ส่วน Response item ของ API list users
 export interface UserListItem {
-  id: number;
-  username: string;
-  role: AccountRole;
-  status: AccountStatus;
+  worker_code: string | null;
+  shirt_number: string | null;
   full_name: string;
-  profile: ProfileDto | null;
-  current_work_schedule: WorkScheduleWithShiftDto | null;
-  created_at: string;
+  work_schedule: UserListSchedule | null;
+  status: AccountStatus;
   updated_at: string;
 }
 
 // Type ส่วน Response ของ API user detail
-export interface UserDetailResponse {
-  account: SafeAccountDto;
-  profile: ProfileDto | null;
-  current_work_schedule: WorkScheduleWithShiftDto | null;
-  active_session: FormattedSession | null;
+export interface UserDetailInfo {
+  phone: string | null;
+  position: string | null;
+  shirt_number: string | null;
+  shirt_type: string | null;
+  work_date: string | null;
+  shift_start_time: string | null;
+  shift_end_time: string | null;
+  shift_name: string | null;
 }
 
-// Type ส่วน response สถานะ worker สำหรับ Admin ติดตาม queue, assignment และ heartbeat
+// Type ส่วน Response ของ API user detail
+export interface UserDetailResponse {
+  image_url: string | null;
+  worker_code: string | null;
+  full_name: string;
+  status: AccountStatus;
+  details: UserDetailInfo;
+}
+
+// Type ส่วน column status สำหรับบอร์ดติดตาม worker ใน Admin Jobs
+export type AdminWorkerBoardStatus =
+  | "open_app"
+  | "ready"
+  | "assigned"
+  | "working"
+  | "break";
+
+// Type ส่วน response สถานะ worker สำหรับ Admin Jobs board
 export type AdminWorkerStatusItem = {
-  worker: SafeAccountDto;
-  queue: WorkerQueueEntryDto | null;
-  current_assignment: VehicleJobAssignmentDto | null;
-  presence: WorkerPresenceDto;
+  full_name: string;
+  worker_code: string | null;
+  shirt_number: string | null;
+  image_url: string | null;
+  shift_name: string | null;
+  latest_activity_at: string | null;
+  status: AdminWorkerBoardStatus;
 };

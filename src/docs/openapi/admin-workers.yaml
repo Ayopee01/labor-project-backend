@@ -115,8 +115,8 @@ paths:
           name: id
           required: true
           schema:
-            type: integer
-          description: Worker account id.
+            type: string
+          description: Worker code or username, for example MN000115.
       responses:
         "200":
           description: Worker account details.
@@ -154,8 +154,8 @@ paths:
           name: id
           required: true
           schema:
-            type: integer
-          description: Worker account id.
+            type: string
+          description: Worker code or username, for example MN000115.
       requestBody:
         required: true
         content:
@@ -212,8 +212,8 @@ paths:
           name: id
           required: true
           schema:
-            type: integer
-          description: Worker account id.
+            type: string
+          description: Worker code or username, for example MN000115.
       requestBody:
         required: true
         content:
@@ -247,144 +247,6 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Worker account not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/users/{id}/work-schedules:
-    get:
-      tags:
-        - Admin Workers
-      summary: List current worker work schedule.
-      operationId: listUserWorkSchedules
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-          description: Worker account id.
-        - in: query
-          name: page
-          schema:
-            type: integer
-            minimum: 1
-            default: 1
-          description: Page number.
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 20
-          description: Number of records per page.
-      responses:
-        "200":
-          description: Paginated current worker work schedule.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WorkScheduleListResponse"
-        "401":
-          description: Missing or invalid access token.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Authenticated account is not an admin.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Worker account not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/users/worker-status:
-    get:
-      tags:
-        - Admin Workers
-      summary: List all worker queue states, active assignments, and heartbeat presence.
-      operationId: listAdminWorkerStatuses
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Worker status list for admin.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminWorkerStatusListResponse"
-  /api/admin/users/worker-status/{id}:
-    get:
-      tags:
-        - Admin Workers
-      summary: Get a worker queue state and active assignment for admin tracking.
-      operationId: getAdminWorkerStatus
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-          description: Worker account id.
-      responses:
-        "200":
-          description: Worker status for admin.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminWorkerStatusResponse"
-        "404":
-          description: Worker account not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/users/{id}/worker-status/force:
-    post:
-      tags:
-        - Admin Workers
-      summary: Force a worker status when admin must correct status on behalf of a worker.
-      operationId: forceAdminWorkerStatus
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-          description: Worker account id.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AdminForceWorkerStatusRequest"
-      responses:
-        "200":
-          description: Worker status forced.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminForceWorkerStatusResponse"
-        "403":
-          description: Worker is inactive or missing a schedule for forced break.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "409":
-          description: Worker has an active assignment or break limit reached.
           content:
             application/json:
               schema:

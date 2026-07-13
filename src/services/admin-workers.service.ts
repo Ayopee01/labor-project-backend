@@ -6,15 +6,16 @@ import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import { getRuntimeSettings } from "./admin-settings.service";
 import { publishNotification } from "./notifications.service";
-import type { AccessTokenPayload, SessionDto } from "../types/auth.type";
+import type { AccessTokenPayload } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
-import type { AccountDto, AdminWorkerStatusItem, FormattedSession, PaginationFilters, PaginationMeta, SafeAccountDto, UserDetailResponse, UserListItem, UserListFilters } from "../types/admin-workers.type";
+import type { AccountDto, AdminWorkerBoardStatus, AdminWorkerStatusItem, PaginationFilters, PaginationMeta, ProfileDto, ProfileUpdateInput, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleUpdateInput, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import type { VehicleJobAssignmentDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
-import { parseId, parseWithSchema, parseWorkScheduleInput } from "../validation/parser";
+import { parseWithSchema, parseWorkScheduleInput } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
-import { formatScheduleWithShift } from "../utils/shift";
+import { formatScheduleWithShift, isDateInWorkSchedule } from "../utils/shift";
+import { buildWorkerCodeFromShirtNumber } from "../utils/worker-code";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -23,8 +24,10 @@ async function requireUserAccount(
   id: number | string,
   connection?: DbConnection
 ): Promise<AccountDto> {
-  const accountId = parseId(id);
-  const account = await accountRepository.findUserById(accountId, connection);
+  const account =
+    typeof id === "number"
+      ? await accountRepository.findUserById(id, connection)
+      : await accountRepository.findUserByIdentifier(id, connection);
 
   if (!account) {
     throw new ApiError(404, "USER_NOT_FOUND", "User not found.");
@@ -39,19 +42,6 @@ function getActorId(auth?: AccessTokenPayload): number | null {
 }
 
 // Function จัดรูปแบบ session ให้ส่งเฉพาะข้อมูลที่ต้องใช้ใน response
-function formatSession(session: SessionDto | null): FormattedSession | null {
-  if (!session) {
-    return null;
-  }
-
-  return {
-    id: session.id,
-    device_id: session.device_id,
-    device_name: session.device_name,
-    last_active_at: session.last_active_at,
-  };
-}
-
 // Function สร้างข้อมูล pagination สำหรับ response แบบ list
 function buildPaginationMeta(
   page: number,
@@ -66,6 +56,22 @@ function buildPaginationMeta(
   };
 }
 
+// Function จัดรูปแบบตารางงานแบบย่อสำหรับหน้า list ให้ไม่ส่ง field ภายในที่ UI ไม่ต้องใช้
+function formatUserListSchedule(
+  schedule: WorkScheduleWithShiftDto | null
+): UserListSchedule | null {
+  if (!schedule) {
+    return null;
+  }
+
+  return {
+    work_date: schedule.work_date,
+    shift_start_time: schedule.shift_start_time,
+    shift_end_time: schedule.shift_end_time,
+    shift_name: schedule.shift_name,
+  };
+}
+
 // Function จัดรูปแบบข้อมูล user สำหรับหน้า list
 async function formatUserListItem(
   account: AccountDto,
@@ -77,14 +83,11 @@ async function formatUserListItem(
   ]);
 
   return {
-    id: account.id,
-    username: account.username,
-    role: account.role,
-    status: account.status,
+    worker_code: profile?.worker_code ?? null,
+    shirt_number: profile?.shirt_number ?? null,
     full_name: account.full_name,
-    profile,
-    current_work_schedule: formatScheduleWithShift(currentWorkSchedule),
-    created_at: account.created_at,
+    work_schedule: formatUserListSchedule(formatScheduleWithShift(currentWorkSchedule)),
+    status: account.status,
     updated_at: account.updated_at,
   };
 }
@@ -94,17 +97,27 @@ async function formatUserDetail(
   account: AccountDto,
   connection?: DbConnection
 ): Promise<UserDetailResponse> {
-  const [profile, currentWorkSchedule, activeSession] = await Promise.all([
+  const [profile, currentWorkSchedule] = await Promise.all([
     profileRepository.findByAccountId(account.id, connection),
     workScheduleRepository.findCurrentByAccountId(account.id, connection),
-    sessionRepository.findActiveByAccountId(account.id, connection),
   ]);
+  const schedule = formatScheduleWithShift(currentWorkSchedule);
 
   return {
-    account: accountRepository.sanitizeAccount(account),
-    profile,
-    current_work_schedule: formatScheduleWithShift(currentWorkSchedule),
-    active_session: formatSession(activeSession),
+    image_url: profile?.image_url ?? null,
+    worker_code: profile?.worker_code ?? null,
+    full_name: account.full_name,
+    status: account.status,
+    details: {
+      phone: profile?.phone ?? null,
+      position: account.position,
+      shirt_number: profile?.shirt_number ?? null,
+      shirt_type: profile?.shirt_type ?? null,
+      work_date: schedule?.work_date ?? null,
+      shift_start_time: schedule?.shift_start_time ?? null,
+      shift_end_time: schedule?.shift_end_time ?? null,
+      shift_name: schedule?.shift_name ?? null,
+    },
   };
 }
 
@@ -181,13 +194,14 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
     status,
     work_schedule: workScheduleInput,
   } = parseWithSchema(createUserBodySchema, body);
-  const username = requestedUsername ?? phone;
+  const workerCode = buildWorkerCodeFromShirtNumber(shirtNumber);
+  const username = requestedUsername ?? workerCode;
   const initialPassword = password ?? phone;
   const initialWorkStartDate = workStartDate ?? workScheduleInput.work_date;
   const nationalityCode = requestedNationalityCode ?? "UNKNOWN";
   const nationalityName = requestedNationalityName ?? nationality;
   const profileInput = {
-    worker_code: shirtNumber,
+    worker_code: workerCode,
     image_url: imageUrl ?? img ?? null,
     nationality,
     nationality_code: nationalityCode,
@@ -283,26 +297,81 @@ export async function updateUser(
   auth?: AccessTokenPayload
 ) {
   const {
+    worker_code: requestedWorkerCode,
+    image_url: imageUrl,
+    img,
     full_name: nextFullName,
+    phone,
+    position,
+    shirt_type: shirtType,
+    shirt_number: shirtNumber,
+    work_date: workDate,
+    shift_start_time: shiftStartTime,
+    shift_end_time: shiftEndTime,
     profile: profileInput,
     status,
     work_schedule: workScheduleBody,
   } = parseWithSchema(updateUserBodySchema, body);
-  const scheduleInput =
-    workScheduleBody === undefined
-      ? undefined
-      : parseWorkScheduleInput(workScheduleBody);
+  const hasFlatScheduleInput =
+    workDate !== undefined ||
+    shiftStartTime !== undefined ||
+    shiftEndTime !== undefined;
+  const scheduleInput: WorkScheduleUpdateInput | undefined =
+    workScheduleBody !== undefined
+      ? parseWorkScheduleInput(workScheduleBody)
+      : hasFlatScheduleInput
+        ? parseWorkScheduleInput({
+            work_date: workDate,
+            shift_start_time: shiftStartTime,
+            shift_end_time: shiftEndTime,
+          })
+        : undefined;
   const actorId = getActorId(auth);
 
   return withTransaction(async (transaction) => {
     const account = await requireUserAccount(id, transaction);
     let updatedAccount = account;
-    const hasProfileInput = profileInput !== undefined && hasProfileUpdates(profileInput);
+    const nextWorkerCode =
+      requestedWorkerCode ??
+      profileInput?.worker_code ??
+      (shirtNumber !== undefined
+        ? buildWorkerCodeFromShirtNumber(shirtNumber)
+        : undefined);
+    const mergedProfileInput: ProfileUpdateInput = {
+      ...(profileInput ?? {}),
+    };
+
+    if (nextWorkerCode !== undefined) {
+      mergedProfileInput.worker_code = nextWorkerCode;
+    }
+
+    if (imageUrl !== undefined || img !== undefined) {
+      mergedProfileInput.image_url = imageUrl ?? img ?? null;
+    }
+
+    if (phone !== undefined) {
+      mergedProfileInput.phone = phone;
+    }
+
+    if (shirtType !== undefined) {
+      mergedProfileInput.shirt_type = shirtType;
+    }
+
+    if (shirtNumber !== undefined) {
+      mergedProfileInput.shirt_number = shirtNumber;
+    }
+
+    const hasProfileInput = hasProfileUpdates(mergedProfileInput);
 
     if (hasProfileInput) {
-      if (profileInput.worker_code !== undefined) {
+      if (mergedProfileInput.worker_code !== undefined) {
         await assertWorkerCodeAvailable(
-          profileInput.worker_code,
+          mergedProfileInput.worker_code,
+          account.id,
+          transaction
+        );
+        await assertUsernameAvailable(
+          mergedProfileInput.worker_code,
           account.id,
           transaction
         );
@@ -310,22 +379,25 @@ export async function updateUser(
 
       await profileRepository.updateByAccountId(
         account.id,
-        profileInput,
+        mergedProfileInput,
         transaction
       );
     }
 
     if (
       hasProfileInput ||
-      (nextFullName !== undefined && nextFullName !== "")
+      (nextFullName !== undefined && nextFullName !== "") ||
+      position !== undefined
     ) {
       updatedAccount = await accountRepository.updateUserAccount(
         account.id,
         {
+          username: mergedProfileInput.worker_code,
           full_name:
             nextFullName !== undefined && nextFullName !== ""
               ? nextFullName
               : undefined,
+          position,
         },
         transaction
       );
@@ -433,76 +505,150 @@ function buildDeadline(durationMs: number): Date {
 }
 
 // Function สรุปจำนวน worker ตามสถานะ queue และ heartbeat
+// Function เลือกเวลาล่าสุดจาก timestamp ใน flow การทำงานของ worker
+function latestTimestamp(values: Array<string | null | undefined>): string | null {
+  const timestamps = values
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter((value) => !Number.isNaN(value));
+
+  if (timestamps.length === 0) {
+    return null;
+  }
+
+  return new Date(Math.max(...timestamps)).toISOString();
+}
+
+// Function แปลง queue/assignment status เป็น column สำหรับหน้าเข้าคิวแรงงาน
+function resolveWorkerBoardStatus(
+  queue: WorkerQueueEntryDto | null,
+  assignment: VehicleJobAssignmentDto | null
+): AdminWorkerBoardStatus {
+  if (queue?.status === "break") {
+    return "break";
+  }
+
+  if (assignment) {
+    if (["SCANNED", "COUNTING"].includes(assignment.status)) {
+      return "working";
+    }
+
+    return "assigned";
+  }
+
+  if (queue?.status === "ready") {
+    return "ready";
+  }
+
+  return "open_app";
+}
+
+// Function หาเวลาล่าสุดของขั้นตอนปัจจุบัน เช่น เข้าแอป เข้าคิว รับงาน สแกน QR หรือพัก
+function resolveLatestActivityAt(
+  queue: WorkerQueueEntryDto | null,
+  assignment: VehicleJobAssignmentDto | null,
+  presence: WorkerPresenceDto
+): string | null {
+  if (assignment) {
+    return latestTimestamp([
+      assignment.completed_at,
+      assignment.scanned_at,
+      assignment.accepted_at,
+      assignment.updated_at,
+      assignment.created_at,
+      queue?.updated_at,
+      presence.last_seen_at,
+    ]);
+  }
+
+  if (queue?.status === "ready") {
+    return latestTimestamp([queue.ready_at, queue.updated_at, presence.last_seen_at]);
+  }
+
+  return latestTimestamp([queue?.updated_at, presence.last_seen_at]);
+}
+
+// Function จัดรูปแบบ worker status item สำหรับ board โดยไม่ส่ง account/profile ดิบ
+function formatAdminWorkerStatusItem(
+  account: AccountDto,
+  profile: ProfileDto | null,
+  schedule: WorkScheduleDto | null,
+  queue: WorkerQueueEntryDto | null,
+  assignment: VehicleJobAssignmentDto | null,
+  presence: WorkerPresenceDto
+): AdminWorkerStatusItem {
+  const scheduleWithShift = formatScheduleWithShift(schedule);
+  const status = resolveWorkerBoardStatus(queue, assignment);
+
+  return {
+    full_name: account.full_name,
+    worker_code: profile?.worker_code ?? null,
+    shirt_number: profile?.shirt_number ?? null,
+    image_url: profile?.image_url ?? null,
+    shift_name: scheduleWithShift?.shift_name ?? null,
+    latest_activity_at: resolveLatestActivityAt(queue, assignment, presence),
+    status,
+  };
+}
+
 function buildAdminWorkerStatusSummary(items: AdminWorkerStatusItem[]): {
   total: number;
+  open_app: number;
   ready: number;
-  waiting: number;
+  assigned: number;
+  working: number;
   break: number;
-  busy: number;
-  offline: number;
-  alive: number;
-  stale: number;
 } {
   return items.reduce(
     (summary, item) => {
-      const status = item.queue?.status ?? "offline";
-
       summary.total += 1;
-
-      if (status === "ready") {
+      if (item.status === "open_app") {
+        summary.open_app += 1;
+      } else if (item.status === "ready") {
         summary.ready += 1;
-      } else if (status === "waiting") {
-        summary.waiting += 1;
-      } else if (status === "break") {
+      } else if (item.status === "assigned") {
+        summary.assigned += 1;
+      } else if (item.status === "working") {
+        summary.working += 1;
+      } else if (item.status === "break") {
         summary.break += 1;
-      } else if (status === "busy") {
-        summary.busy += 1;
-      } else {
-        summary.offline += 1;
-      }
-
-      if (item.presence.is_online) {
-        summary.alive += 1;
-      } else {
-        summary.stale += 1;
       }
 
       return summary;
     },
     {
       total: 0,
+      open_app: 0,
       ready: 0,
-      waiting: 0,
+      assigned: 0,
+      working: 0,
       break: 0,
-      busy: 0,
-      offline: 0,
-      alive: 0,
-      stale: 0,
     }
   );
 }
 
 // Function ให้ Admin ดูสถานะ worker รายคน
 export async function getAdminWorkerStatus(idParam: unknown): Promise<AdminWorkerStatusItem> {
-  const accountId = parseId(idParam);
-  const account = await accountRepository.findUserById(accountId);
+  const account = await requireUserAccount(
+    typeof idParam === "number" ? idParam : String(idParam)
+  );
 
-  if (!account) {
-    throw new ApiError(404, "USER_NOT_FOUND", "User not found.");
-  }
-
-  const [queueEntry, assignment, presence] = await Promise.all([
+  const [profile, currentSchedule, queueEntry, assignment, presence] = await Promise.all([
+    profileRepository.findByAccountId(account.id),
+    workScheduleRepository.findCurrentByAccountId(account.id),
     getWorkerQueueStatus(account.id),
     workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
     getWorkerPresence(account.id),
   ]);
 
-  return {
-    worker: accountRepository.sanitizeAccount(account),
-    queue: queueEntry,
-    current_assignment: assignment,
-    presence,
-  };
+  return formatAdminWorkerStatusItem(
+    account,
+    profile,
+    currentSchedule,
+    queueEntry,
+    assignment,
+    presence
+  );
 }
 
 // Function ให้ Admin ดูสถานะ worker ทั้งหมด
@@ -512,7 +658,7 @@ export async function listAdminWorkerStatuses(): Promise<{
 }> {
   const accounts = await accountRepository.listAllUsers();
   const accountIds = accounts.map((account) => account.id);
-  const [queueStatuses, presences, assignments, settings] = await Promise.all([
+  const [queueStatuses, presences, assignments, profiles, schedules, settings] = await Promise.all([
     getWorkerQueueStatuses(accountIds),
     getWorkerPresences(accountIds),
     Promise.all(
@@ -520,25 +666,59 @@ export async function listAdminWorkerStatuses(): Promise<{
         workerApplicationRepository.findCurrentAssignmentByWorker(accountId)
       )
     ),
+    Promise.all(
+      accountIds.map((accountId) =>
+        profileRepository.findByAccountId(accountId)
+      )
+    ),
+    Promise.all(
+      accountIds.map((accountId) =>
+        workScheduleRepository.findCurrentByAccountId(accountId)
+      )
+    ),
     getRuntimeSettings(),
   ]);
   const assignmentMap = new Map<number, VehicleJobAssignmentDto | null>();
+  const profileMap = new Map<number, ProfileDto | null>();
+  const scheduleMap = new Map<number, WorkScheduleDto | null>();
 
   accountIds.forEach((accountId, index) => {
     assignmentMap.set(accountId, assignments[index] ?? null);
+    profileMap.set(accountId, profiles[index] ?? null);
+    scheduleMap.set(accountId, schedules[index] ?? null);
   });
 
-  const data = accounts.map((account) => ({
-    worker: accountRepository.sanitizeAccount(account),
-    queue: queueStatuses.get(account.id) ?? null,
-    current_assignment: assignmentMap.get(account.id) ?? null,
-    presence:
-      presences.get(account.id) ?? {
-        is_online: false,
-        last_seen_at: null,
-        stale_after_seconds: settings.worker_presence_stale_seconds,
-      },
-  }));
+  const data = accounts
+    .map((account) => {
+      const schedule = scheduleMap.get(account.id) ?? null;
+      const presence =
+        presences.get(account.id) ?? {
+          is_online: false,
+          last_seen_at: null,
+          stale_after_seconds: settings.worker_presence_stale_seconds,
+        };
+
+      return {
+        account,
+        presence,
+        schedule,
+        item: formatAdminWorkerStatusItem(
+          account,
+          profileMap.get(account.id) ?? null,
+          schedule,
+          queueStatuses.get(account.id) ?? null,
+          assignmentMap.get(account.id) ?? null,
+          presence
+        ),
+      };
+    })
+    .filter(({ account, presence, schedule }) =>
+      account.status === "active" &&
+      presence.is_online &&
+      schedule !== null &&
+      isDateInWorkSchedule(schedule)
+    )
+    .map(({ item }) => item);
 
   return {
     summary: buildAdminWorkerStatusSummary(data),
@@ -550,21 +730,12 @@ export async function listAdminWorkerStatuses(): Promise<{
 export async function forceAdminWorkerStatus(
   idParam: unknown,
   body: unknown
-): Promise<{
-  message: string;
-  worker: SafeAccountDto;
-  queue: WorkerQueueEntryDto | null;
-  current_assignment: VehicleJobAssignmentDto | null;
-  presence: WorkerPresenceDto;
-}> {
-  const accountId = parseId(idParam);
+): Promise<AdminWorkerStatusItem & { message: string }> {
   const input = parseWithSchema(adminForceWorkerStatusBodySchema, body);
   const settings = await getRuntimeSettings();
-  const account = await accountRepository.findUserById(accountId);
-
-  if (!account) {
-    throw new ApiError(404, "USER_NOT_FOUND", "User not found.");
-  }
+  const account = await requireUserAccount(
+    typeof idParam === "number" ? idParam : String(idParam)
+  );
 
   if (account.status !== "active") {
     throw new ApiError(403, "WORKER_NOT_ACTIVE", "Worker account is not active.");
@@ -637,10 +808,14 @@ export async function forceAdminWorkerStatus(
     );
   }
 
-  const latest = await getAdminWorkerStatus(account.id);
+  const [latest, latestQueue, latestAssignment] = await Promise.all([
+    getAdminWorkerStatus(account.id),
+    getWorkerQueueStatus(account.id),
+    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
+  ]);
   sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
-    queue: latest.queue,
-    current_assignment: latest.current_assignment,
+    queue: latestQueue,
+    current_assignment: latestAssignment,
     reason: "admin_force_status",
   });
   publishNotification({
@@ -649,8 +824,8 @@ export async function forceAdminWorkerStatus(
     message: `Worker ${account.full_name} status was forced by admin.`,
     payload: {
       worker_account_id: account.id,
-      queue: latest.queue,
-      current_assignment: latest.current_assignment,
+      queue: latestQueue,
+      current_assignment: latestAssignment,
       reason: "admin_force_status",
     },
     audience: {
