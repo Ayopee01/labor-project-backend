@@ -100,6 +100,31 @@ export interface WorkerQueueEntryDto {
   updated_at: string;
 }
 
+export interface WorkerOnlineResponse {
+  full_name: string;
+  worker_code: string | null;
+  status: WorkerQueueStatus;
+  today_job_count: number;
+  break_count_used: number;
+  completed_job_count: number;
+}
+
+export interface WorkerStatusShift {
+  name: string;
+  start_time: string;
+  end_time: string;
+}
+
+export interface WorkerStatusResponse {
+  full_name: string;
+  worker_code: string | null;
+  image_url: string | null;
+  nationality: string | null;
+  work_start_date: string | null;
+  phone: string | null;
+  shift: WorkerStatusShift | null;
+}
+
 // Type ส่วน DTO ของ heartbeat/presence worker จาก Redis
 export interface WorkerPresenceDto {
   is_online: boolean;
@@ -129,6 +154,38 @@ export interface WorkerAssignmentHistoryItemDto {
 }
 
 // Type ส่วน response รายละเอียดงานรถพร้อมตลาด ตั๋ว และสินค้า
+export interface WorkerAssignmentTeamMemberDto {
+  full_name: string;
+  worker_code: string | null;
+  image_url: string | null;
+  scan_status: string;
+}
+
+export interface WorkerAssignmentProductDto {
+  name: string;
+  quantity: string;
+  unit: string;
+}
+
+export interface WorkerAssignmentStallDto {
+  stall_code: string | null;
+  stall_name: string | null;
+  product_count: number;
+  products: WorkerAssignmentProductDto[];
+}
+
+export interface WorkerAssignmentMarketDto {
+  market_name: string;
+  stall_count: number;
+  stalls: WorkerAssignmentStallDto[];
+}
+
+export interface WorkerAssignmentAcceptResponse {
+  license_plate: string;
+  team: WorkerAssignmentTeamMemberDto[];
+  markets: WorkerAssignmentMarketDto[];
+}
+
 export interface VehicleJobDetailResponse {
   vehicle_job: VehicleJobDto;
   markets: Array<

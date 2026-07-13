@@ -21,6 +21,25 @@ components:
         message:
           type: string
           example: Invalid or expired token.
+        shift:
+          type: object
+          nullable: true
+          description: Present on OUTSIDE_WORK_SHIFT errors.
+          properties:
+            name:
+              type: string
+              example: กะเช้า
+            start_time:
+              type: string
+              example: "06:00"
+            end_time:
+              type: string
+              example: "18:00"
+        remaining_time:
+          type: string
+          nullable: true
+          description: Human-readable remaining time until the next shift start. Present on OUTSIDE_WORK_SHIFT errors.
+          example: 28 นาที
     Account:
       type: object
       properties:
@@ -49,6 +68,14 @@ components:
           type: string
           nullable: true
           example: null
+        email:
+          type: string
+          nullable: true
+          example: admin@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0001
         permission_level:
           type: string
           nullable: true
@@ -65,6 +92,233 @@ components:
           type: string
           format: date-time
           example: 2026-07-01T09:00:00.000Z
+    AdminLoginAccount:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: System Admin
+        status:
+          type: string
+          example: active
+        position:
+          type: string
+          nullable: true
+          example: Administrator
+        email:
+          type: string
+          nullable: true
+          example: admin@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0001
+        image_url:
+          type: string
+          nullable: true
+          example: null
+        permission_level:
+          type: string
+          nullable: true
+          example: manager
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+        latest_active_at:
+          type: string
+          nullable: true
+          format: date-time
+          example: 2026-07-13T07:54:23.080Z
+    WorkerLoginAccount:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Worker Name
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000142.jpg
+        status:
+          type: string
+          example: active
+        shift:
+          $ref: "#/components/schemas/ProfileCardShift"
+        server_time:
+          type: string
+          description: Current server time in HH:mm format.
+          example: "09:42"
+    ProfileCardShift:
+      type: object
+      nullable: true
+      properties:
+        name:
+          type: string
+          example: day
+        start_time:
+          type: string
+          example: "06:00"
+        end_time:
+          type: string
+          example: "18:00"
+    AdminProfileCard:
+      type: object
+      properties:
+        role:
+          type: string
+          example: admin
+        full_name:
+          type: string
+          example: Admin Sinummuang
+        position:
+          type: string
+          nullable: true
+          example: Administrator
+        employee_code:
+          type: string
+          example: ADM0001
+        admin_code:
+          type: string
+          example: ADM0001
+        status:
+          type: string
+          example: active
+        email:
+          type: string
+          nullable: true
+          example: admin@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0001
+        permission_level:
+          type: string
+          nullable: true
+          example: owner
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+        latest_active_at:
+          type: string
+          nullable: true
+          format: date-time
+          example: 2026-07-13T02:07:55.618Z
+    WorkerProfileCard:
+      type: object
+      properties:
+        role:
+          type: string
+          example: worker
+        full_name:
+          type: string
+          example: Worker Name
+        employee_code:
+          type: string
+          nullable: true
+          example: MN000142
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000142.jpg
+        nationality:
+          type: string
+          nullable: true
+          example: Thai
+        nationality_code:
+          type: string
+          nullable: true
+          example: TH
+        nationality_name:
+          type: string
+          nullable: true
+          example: Thai
+        work_start_date:
+          type: string
+          nullable: true
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          nullable: true
+          example: 081-234-5678
+        shift:
+          $ref: "#/components/schemas/ProfileCardShift"
+    AuthProfileCard:
+      oneOf:
+        - $ref: "#/components/schemas/AdminProfileCard"
+        - $ref: "#/components/schemas/WorkerProfileCard"
+    AdminMeResponse:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: System Admin
+        position:
+          type: string
+          nullable: true
+          example: Administrator
+        admin_code:
+          type: string
+          example: ADM0001
+        status:
+          type: string
+          example: active
+        email:
+          type: string
+          nullable: true
+          example: admin@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0001
+        permission_level:
+          type: string
+          nullable: true
+          example: manager
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+        latest_active_at:
+          type: string
+          nullable: true
+          format: date-time
+          example: 2026-07-13T03:18:06.020Z
+    WorkerMeResponse:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Worker Name
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        nationality:
+          type: string
+          nullable: true
+          example: Thai
+        work_start_date:
+          type: string
+          nullable: true
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          nullable: true
+          example: 081-234-5678
+        shift:
+          $ref: "#/components/schemas/ProfileCardShift"
     WorkerProfile:
       type: object
       properties:
@@ -141,18 +395,9 @@ components:
           format: date-time
           example: 2026-07-01T09:00:00.000Z
     AuthenticatedAccount:
-      type: object
-      properties:
-        account:
-          $ref: "#/components/schemas/Account"
-        profile:
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/WorkerProfile"
-        current_work_schedule:
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/WorkSchedule"
+      oneOf:
+        - $ref: "#/components/schemas/AdminMeResponse"
+        - $ref: "#/components/schemas/WorkerMeResponse"
     LoginRequest:
       type: object
       required:
@@ -214,15 +459,10 @@ components:
           type: integer
           example: 900
         account:
-          $ref: "#/components/schemas/Account"
-        profile:
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/WorkerProfile"
-        current_work_schedule:
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/WorkSchedule"
+          description: Login returns only token fields and account. Admin account includes profile data, permissions, and latest activity. Worker account includes mobile start-work screen data.
+          oneOf:
+            - $ref: "#/components/schemas/AdminLoginAccount"
+            - $ref: "#/components/schemas/WorkerLoginAccount"
     RefreshSuccessResponse:
       type: object
       properties:
@@ -362,13 +602,13 @@ components:
     WorkScheduleInput:
       type: object
       required:
-        - work_date
         - shift_start_time
         - shift_end_time
       properties:
         work_date:
           type: string
           format: date
+          description: Optional legacy field. Shift availability is checked by shift_start_time and shift_end_time only.
           example: 2026-07-01
         shift_start_time:
           type: string
@@ -386,6 +626,7 @@ components:
         - nationality
         - shirt_type
         - shirt_number
+        - work_start_date
         - work_schedule
       properties:
         username:
@@ -428,7 +669,7 @@ components:
         work_start_date:
           type: string
           format: date
-          description: Optional. Defaults to work_schedule.work_date.
+          description: First working date for the worker profile.
           example: 2026-07-03
         status:
           type: string
@@ -447,7 +688,7 @@ components:
         - nationality
         - shirt_type
         - shirt_number
-        - work_date
+        - work_start_date
         - shift_start_time
         - shift_end_time
       properties:
@@ -491,7 +732,7 @@ components:
         work_start_date:
           type: string
           format: date
-          description: Optional. Defaults to work_date.
+          description: First working date for the worker profile.
           example: 2026-07-03
         status:
           type: string
@@ -503,6 +744,7 @@ components:
         work_date:
           type: string
           format: date
+          description: Optional legacy field. Shift availability is checked by shift_start_time and shift_end_time only.
           example: 2026-07-03
         shift_start_time:
           type: string
@@ -514,8 +756,8 @@ components:
           example: "17:00"
         work_schedule:
           type: string
-          description: Optional alternative to work_date/shift_start_time/shift_end_time. Send a JSON string with those fields.
-          example: '{"work_date":"2026-07-03","shift_start_time":"08:00","shift_end_time":"17:00"}'
+          description: Optional alternative to shift_start_time/shift_end_time. Send a JSON string with those fields. work_date is optional and kept only for backward compatibility.
+          example: '{"shift_start_time":"08:00","shift_end_time":"17:00"}'
     UpdateUserRequest:
       type: object
       properties:
@@ -550,9 +792,15 @@ components:
           type: string
           nullable: true
           example: "115"
+        work_start_date:
+          type: string
+          format: date
+          description: First working date for the worker profile.
+          example: 2026-07-03
         work_date:
           type: string
           format: date
+          description: Optional legacy field. Shift availability is checked by shift_start_time and shift_end_time only.
           example: 2026-07-03
         shift_start_time:
           type: string
@@ -619,6 +867,7 @@ components:
         work_date:
           type: string
           format: date
+          description: Legacy schedule date. Shift availability is checked by shift_start_time and shift_end_time only.
           example: 2026-07-03
         shift_start_time:
           type: string
@@ -700,6 +949,7 @@ components:
               type: string
               nullable: true
               format: date
+              description: Legacy schedule date. Shift availability is checked by shift_start_time and shift_end_time only.
               example: 2026-07-03
             shift_start_time:
               type: string
@@ -877,6 +1127,14 @@ components:
           type: string
           nullable: true
           example: Manager
+        email:
+          type: string
+          nullable: true
+          example: manager@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0002
         status:
           type: string
           enum:
@@ -1400,6 +1658,28 @@ components:
         break_count_limit:
           type: integer
           nullable: true
+    WorkerOnlineResponse:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Worker Name
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        status:
+          type: string
+          example: ready
+        today_job_count:
+          type: integer
+          example: 3
+        break_count_used:
+          type: integer
+          example: 1
+        completed_job_count:
+          type: integer
+          example: 2
     WorkerPresence:
       type: object
       properties:
@@ -1446,6 +1726,84 @@ components:
         updated_at:
           type: string
           format: date-time
+    WorkerAssignmentTeamMember:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Worker 51
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        image_url:
+          type: string
+          nullable: true
+        scan_status:
+          type: string
+          enum:
+            - pending
+            - accepted
+            - scanned
+            - completed
+          example: accepted
+    WorkerAssignmentProduct:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Apple
+        quantity:
+          type: string
+          example: "10"
+        unit:
+          type: string
+          example: kg
+    WorkerAssignmentStall:
+      type: object
+      properties:
+        stall_code:
+          type: string
+          nullable: true
+          example: GV1/25
+        stall_name:
+          type: string
+          nullable: true
+          example: Vendor A
+        product_count:
+          type: integer
+          example: 2
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentProduct"
+    WorkerAssignmentMarket:
+      type: object
+      properties:
+        market_name:
+          type: string
+          example: Market A
+        stall_count:
+          type: integer
+          example: 1
+        stalls:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentStall"
+    WorkerAssignmentAcceptResponse:
+      type: object
+      properties:
+        license_plate:
+          type: string
+          example: ABC-1234
+        team:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentTeamMember"
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentMarket"
     WorkerAssignmentHistoryItem:
       type: object
       properties:
@@ -1466,16 +1824,28 @@ components:
     WorkerStatusResponse:
       type: object
       properties:
-        queue:
+        full_name:
+          type: string
+          example: Worker Name
+        worker_code:
+          type: string
           nullable: true
-          allOf:
-            - $ref: "#/components/schemas/WorkerQueueEntry"
-        current_assignment:
+          example: MN000142
+        nationality:
+          type: string
           nullable: true
-          allOf:
-            - $ref: "#/components/schemas/VehicleJobAssignment"
-        presence:
-          $ref: "#/components/schemas/WorkerPresence"
+          example: Thai
+        work_start_date:
+          type: string
+          nullable: true
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          nullable: true
+          example: 081-234-5678
+        shift:
+          $ref: "#/components/schemas/ProfileCardShift"
     AdminWorkerStatusResponse:
       type: object
       properties:

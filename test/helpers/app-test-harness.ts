@@ -32,6 +32,9 @@ export type AccountRecord = {
   role: "admin" | "worker";
   status: string;
   full_name: string;
+  position?: string | null;
+  email?: string | null;
+  phone?: string | null;
   permission_level?: string | null;
 };
 
@@ -45,15 +48,24 @@ export type AssignmentRecord = {
   scan_deadline_at: string | null;
   accepted_at?: string | null;
   scanned_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 // Type record vehicle job จำลองสำหรับงานที่พร้อม dispatch ให้ worker
 type VehicleJobRecord = {
   id: number;
   vehicle_job_ref: string;
+  gate_transaction_ref: string;
+  license_plate: string;
+  vehicle_type: string | null;
   workers_required: number;
   status: string;
+  driver_qr_token: string;
   worker_qr_token: string;
+  created_at: string;
+  updated_at: string;
 };
 
 // Type record gate ticket จำลองสำหรับ flow complete งานและรอ vendor confirm
@@ -61,6 +73,8 @@ type GateTicketRecord = {
   id: number;
   vehicle_job_id: number;
   market_job_id: number;
+  market_job_ref?: string;
+  market_name?: string;
   stall_job_ref: string;
   ticket_no: string | null;
   stall_no: string | null;
@@ -68,6 +82,8 @@ type GateTicketRecord = {
   vendor_line_id: string | null;
   status: string;
   confirmation_status: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 // Type record product ใน ticket เพื่อทดสอบการกรอกจำนวนสินค้าให้ครบ
@@ -79,6 +95,8 @@ type TicketProductRecord = {
   quantity: string;
   confirmed_quantity: string | null;
   unit: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 // Type record ความสัมพันธ์ ticket กับ worker ที่รับงานใน flow complete ticket
@@ -305,6 +323,9 @@ export function addWorker(accountId: number, passwordHash = "hash"): AccountReco
     role: "worker",
     status: "active",
     full_name: `Worker ${accountId}`,
+    position: null,
+    email: null,
+    phone: `081-${String(accountId).padStart(7, "0")}`,
     permission_level: null,
   };
 
@@ -313,8 +334,17 @@ export function addWorker(accountId: number, passwordHash = "hash"): AccountReco
   state.authAccountsByUsername.set(worker.username, worker);
   state.authAccountsById.set(worker.id, worker);
   state.profiles.set(worker.id, {
+    id: worker.id,
     account_id: worker.id,
     worker_code: `W${worker.id}`,
+    image_url: null,
+    nationality: "Thai",
+    nationality_code: "TH",
+    nationality_name: "Thai",
+    work_start_date: "2026-01-01",
+    phone: worker.phone,
+    shirt_type: "standard",
+    shirt_number: String(worker.id),
   });
   state.authSchedules.set(worker.id, state.schedules.get(worker.id));
 
@@ -330,6 +360,9 @@ export function addAdmin(accountId: number, passwordHash = "hash"): AccountRecor
     role: "admin",
     status: "active",
     full_name: `Admin ${accountId}`,
+    position: "Administrator",
+    email: `admin-${accountId}@simmummuang.local`,
+    phone: `081-000-${String(accountId).padStart(4, "0")}`,
     permission_level: "manager",
   };
 
@@ -348,12 +381,19 @@ export function addAdmin(accountId: number, passwordHash = "hash"): AccountRecor
 
 // Function เพิ่ม vehicle job ที่พร้อม dispatch ให้ worker ตามจำนวนแรงงานที่ต้องการ
 export function addDispatchableJob(id: number, workersRequired: number): VehicleJobRecord {
+  const now = new Date().toISOString();
   const job = {
     id,
     vehicle_job_ref: `JOB-${id}`,
+    gate_transaction_ref: `GATE-${id}`,
+    license_plate: `TEST-${id}`,
+    vehicle_type: "truck",
     workers_required: workersRequired,
     status: "DISPATCH_NOW",
+    driver_qr_token: `driver-qr-${id}`,
     worker_qr_token: `worker-qr-${id}`,
+    created_at: now,
+    updated_at: now,
   };
 
   state.vehicleJobs.push(job);
@@ -368,6 +408,7 @@ export function addPendingAssignment(
   workerAccountId: number,
   deadlineMs = 60_000
 ): AssignmentRecord {
+  const now = new Date().toISOString();
   const assignment = {
     id,
     vehicle_job_id: vehicleJobId,
@@ -375,6 +416,11 @@ export function addPendingAssignment(
     status: "PENDING",
     accept_deadline_at: new Date(Date.now() + deadlineMs).toISOString(),
     scan_deadline_at: null,
+    accepted_at: null,
+    scanned_at: null,
+    completed_at: null,
+    created_at: now,
+    updated_at: now,
   };
 
   state.assignments.push(assignment);
@@ -387,10 +433,13 @@ export function addTicketForVehicleJob(
   vehicleJobId: number,
   ticketId = vehicleJobId + 1000
 ): GateTicketRecord {
+  const now = new Date().toISOString();
   const ticket = {
     id: ticketId,
     vehicle_job_id: vehicleJobId,
     market_job_id: vehicleJobId + 2000,
+    market_job_ref: `MARKET-${vehicleJobId}`,
+    market_name: "Market A",
     stall_job_ref: `STALL-${ticketId}`,
     ticket_no: `TICKET-${ticketId}`,
     stall_no: "A1",
@@ -398,6 +447,8 @@ export function addTicketForVehicleJob(
     vendor_line_id: "line-vendor-a",
     status: "IN_PROGRESS",
     confirmation_status: null,
+    created_at: now,
+    updated_at: now,
   };
 
   state.gateTickets.push(ticket);
@@ -410,6 +461,8 @@ export function addTicketForVehicleJob(
       quantity: "10",
       confirmed_quantity: null,
       unit: "kg",
+      created_at: now,
+      updated_at: now,
     },
     {
       id: ticketId * 10 + 2,
@@ -419,6 +472,8 @@ export function addTicketForVehicleJob(
       quantity: "5",
       confirmed_quantity: null,
       unit: "box",
+      created_at: now,
+      updated_at: now,
     }
   );
 
@@ -432,6 +487,10 @@ const workerApplicationRepositoryMock = {
   accountRepository: {
     findUserById: async (accountId: number) => state.workers.get(accountId) ?? null,
     listAdmins: async () => [],
+  },
+  profileRepository: {
+    findByAccountId: async (accountId: number) =>
+      state.profiles.get(accountId) ?? null,
   },
   workScheduleRepository: {
     findCurrentByAccountId: async (accountId: number) =>
@@ -471,6 +530,27 @@ const workerApplicationRepositoryMock = {
         assignment.id === assignmentId &&
         assignment.worker_account_id === workerAccountId
     ) ?? null,
+  findCurrentAssignmentByVehicleJobRefAndWorker: async (
+    vehicleJobRef: string,
+    workerAccountId: number
+  ) => {
+    const job = state.vehicleJobs.find(
+      (vehicleJob) => vehicleJob.vehicle_job_ref === vehicleJobRef
+    );
+
+    if (!job) {
+      return null;
+    }
+
+    return [...state.assignments]
+      .reverse()
+      .find(
+        (assignment) =>
+          assignment.vehicle_job_id === job.id &&
+          assignment.worker_account_id === workerAccountId &&
+          ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"].includes(assignment.status)
+      ) ?? null;
+  },
   findCurrentAssignmentByWorker: async (workerAccountId: number) =>
     state.assignments.find(
       (assignment) =>
@@ -485,6 +565,7 @@ const workerApplicationRepositoryMock = {
     }
 
     assignment.status = "TIMEOUT";
+    assignment.updated_at = new Date().toISOString();
     return assignment;
   },
   acceptAssignment: async (assignmentId: number, scanDeadlineAt: Date) => {
@@ -497,6 +578,7 @@ const workerApplicationRepositoryMock = {
     assignment.status = "ACCEPTED";
     assignment.scan_deadline_at = scanDeadlineAt.toISOString();
     assignment.accepted_at = new Date().toISOString();
+    assignment.updated_at = assignment.accepted_at;
     return assignment;
   },
   findVehicleJobById: async (vehicleJobId: number) =>
@@ -510,6 +592,7 @@ const workerApplicationRepositoryMock = {
 
     assignment.status = "SCANNED";
     assignment.scanned_at = new Date().toISOString();
+    assignment.updated_at = assignment.scanned_at;
     return assignment;
   },
   countScannedAssignments: async (vehicleJobId: number) =>
@@ -518,6 +601,38 @@ const workerApplicationRepositoryMock = {
         assignment.vehicle_job_id === vehicleJobId &&
         ["SCANNED", "COUNTING"].includes(assignment.status)
     ).length,
+  listVehicleJobAssignmentTeam: async (vehicleJobId: number) =>
+    state.assignments
+      .filter(
+        (assignment) =>
+          assignment.vehicle_job_id === vehicleJobId &&
+          ["PENDING", "ACCEPTED", "SCANNED", "COUNTING", "COMPLETED"].includes(
+            assignment.status
+          )
+      )
+      .map((assignment) => {
+        const worker =
+          state.workers.get(assignment.worker_account_id) ??
+          state.authAccountsById.get(assignment.worker_account_id);
+        const profile = state.profiles.get(assignment.worker_account_id) as
+          | { worker_code?: string; image_url?: string | null }
+          | undefined;
+        const scanStatus =
+          assignment.status === "COMPLETED" || assignment.completed_at
+            ? "completed"
+            : ["SCANNED", "COUNTING"].includes(assignment.status) || assignment.scanned_at
+              ? "scanned"
+              : assignment.status === "ACCEPTED" || assignment.accepted_at
+                ? "accepted"
+                : "pending";
+
+        return {
+          full_name: worker?.full_name ?? `Worker ${assignment.worker_account_id}`,
+          worker_code: profile?.worker_code ?? null,
+          image_url: profile?.image_url ?? null,
+          scan_status: scanStatus,
+        };
+      }),
   markVehicleJobInProgress: async (vehicleJobId: number) => {
     const job = state.vehicleJobs.find((item) => item.id === vehicleJobId);
 
@@ -528,7 +643,39 @@ const workerApplicationRepositoryMock = {
     job.status = "IN_PROGRESS";
     return job;
   },
-  listWorkerAssignmentHistoryByDate: async () => [],
+  listWorkerAssignmentHistoryByDate: async (
+    workerAccountId: number,
+    startAt: Date,
+    endAt: Date
+  ) =>
+    state.assignments
+      .filter((assignment) => {
+        const createdAt = new Date(assignment.created_at ?? Date.now());
+
+        return (
+          assignment.worker_account_id === workerAccountId &&
+          createdAt >= startAt &&
+          createdAt < endAt
+        );
+      })
+      .map((assignment) => ({
+        assignment,
+        vehicle_job: state.vehicleJobs.find(
+          (job) => job.id === assignment.vehicle_job_id
+        ) ?? {
+          id: assignment.vehicle_job_id,
+          vehicle_job_ref: `JOB-${assignment.vehicle_job_id}`,
+          gate_transaction_ref: `GATE-${assignment.vehicle_job_id}`,
+          license_plate: "TEST",
+          vehicle_type: null,
+          workers_required: 1,
+          status: "IN_PROGRESS",
+          driver_qr_token: `driver-qr-${assignment.vehicle_job_id}`,
+          worker_qr_token: `worker-qr-${assignment.vehicle_job_id}`,
+          created_at: assignment.created_at ?? new Date().toISOString(),
+          updated_at: assignment.created_at ?? new Date().toISOString(),
+        },
+      })),
   findGateTicketForCompletion: async (ticketId: number) =>
     state.gateTickets.find((ticket) => ticket.id === ticketId) ?? null,
   ensureTicketWorkersFromVehicleAssignments: async (
@@ -609,26 +756,40 @@ const workerApplicationRepositoryMock = {
     const job = state.vehicleJobs.find((item) => item.id === vehicleJobId);
 
     if (!job) {
-      throw new Error("Vehicle job not found.");
+      return null;
     }
+
+    const tickets = state.gateTickets.filter((ticket) => ticket.vehicle_job_id === vehicleJobId);
+    const marketIds = Array.from(new Set(tickets.map((ticket) => ticket.market_job_id)));
 
     return {
       vehicle_job: {
         id: job.id,
         vehicle_job_ref: job.vehicle_job_ref,
-        license_plate: "TEST-123",
-        vehicle_type: "truck",
+        gate_transaction_ref: job.gate_transaction_ref,
+        license_plate: job.license_plate,
+        vehicle_type: job.vehicle_type,
         workers_required: job.workers_required,
         status: job.status,
+        driver_qr_token: job.driver_qr_token,
         worker_qr_token: job.worker_qr_token,
       },
-      markets: [
-        {
-          id: vehicleJobId + 2000,
-          market_name: "Market A",
-          tickets: state.gateTickets.filter((ticket) => ticket.vehicle_job_id === vehicleJobId),
-        },
-      ],
+      markets: marketIds.map((marketJobId) => {
+        const marketTickets = tickets.filter((ticket) => ticket.market_job_id === marketJobId);
+        const firstTicket = marketTickets[0];
+
+        return {
+          id: marketJobId,
+          vehicle_job_id: vehicleJobId,
+          market_job_ref: firstTicket?.market_job_ref ?? `MARKET-${marketJobId}`,
+          market_name: firstTicket?.market_name ?? "Market A",
+          status: job.status,
+          tickets: marketTickets.map((ticket) => ({
+            ...ticket,
+            products: state.ticketProducts.filter((product) => product.ticket_id === ticket.id),
+          })),
+        };
+      }),
     };
   },
 };
@@ -726,6 +887,8 @@ const adminSettingsRepositoryMock = {
       status?: string;
       full_name: string;
       position?: string | null;
+      email?: string | null;
+      phone?: string | null;
       permission_level?: string | null;
       created_by?: number | null;
     }) => {
@@ -737,6 +900,9 @@ const adminSettingsRepositoryMock = {
         role: "admin",
         status: account.status ?? "active",
         full_name: account.full_name,
+        position: account.position ?? null,
+        email: account.email ?? null,
+        phone: account.phone ?? null,
         permission_level: account.permission_level ?? null,
       };
 

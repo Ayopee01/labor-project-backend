@@ -71,6 +71,8 @@ export function mapAccount(record: Account | null): AccountDto | null {
     status: record.status,
     full_name: record.fullName,
     position: record.position,
+    email: record.email,
+    phone: record.phone,
     permission_level: record.permissionLevel,
     created_by: record.createdBy,
     created_at: toIsoString(record.createdAt),

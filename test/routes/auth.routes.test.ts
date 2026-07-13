@@ -48,12 +48,72 @@ test("POST /api/auth/login allows admin login without device fields", async () =
 
   // Step Assert admin login ได้ token และไม่มี worker profile/schedule
   assert.equal(response.status, 200);
-  assert.equal(response.body.account.id, admin.id);
-  assert.equal(response.body.account.role, "admin");
-  assert.equal(response.body.profile, null);
-  assert.equal(response.body.current_work_schedule, null);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "access_token",
+    "account",
+    "expires_in",
+    "refresh_token",
+    "token_type",
+  ]);
+  assert.deepEqual(Object.keys(response.body.account).sort(), [
+    "email",
+    "full_name",
+    "image_url",
+    "latest_active_at",
+    "permission_level",
+    "permissions",
+    "phone",
+    "position",
+    "status",
+  ]);
+  assert.equal(response.body.account.full_name, admin.full_name);
+  assert.equal(response.body.account.status, "active");
+  assert.equal(response.body.account.position, admin.position);
+  assert.equal(response.body.account.email, admin.email);
+  assert.equal(response.body.account.phone, admin.phone);
+  assert.equal(response.body.account.image_url, null);
+  assert.equal(response.body.account.permission_level, "manager");
+  assert.ok(response.body.account.permissions.includes("admins:create"));
+  assert.ok(response.body.account.latest_active_at);
   assert.ok(response.body.access_token);
   assert.ok(response.body.refresh_token);
+});
+
+test("GET /api/auth/me returns only the admin profile fields", async () => {
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(1, passwordHash);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: admin.username,
+      password: "Admin@123456",
+    },
+  });
+
+  const response = await server.request("GET", "/api/auth/me", {
+    token: login.body.access_token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "admin_code",
+    "email",
+    "full_name",
+    "latest_active_at",
+    "permission_level",
+    "permissions",
+    "phone",
+    "position",
+    "status",
+  ]);
+  assert.equal(response.body.full_name, admin.full_name);
+  assert.equal(response.body.position, admin.position);
+  assert.equal(response.body.admin_code, "ADM0001");
+  assert.equal(response.body.status, "active");
+  assert.equal(response.body.email, admin.email);
+  assert.equal(response.body.phone, admin.phone);
+  assert.equal(response.body.permission_level, "manager");
+  assert.ok(response.body.permissions.includes("admins:create"));
+  assert.ok(response.body.latest_active_at);
 });
 
 // Test endpoint login ฝั่ง worker ว่าต้องส่ง device_id/device_name สำหรับ mobile session
@@ -89,6 +149,30 @@ test("GET /api/auth/me returns current worker account from access token", async 
     },
   });
 
+  assert.equal(login.status, 200);
+  assert.deepEqual(Object.keys(login.body).sort(), [
+    "access_token",
+    "account",
+    "expires_in",
+    "refresh_token",
+    "token_type",
+  ]);
+  assert.deepEqual(Object.keys(login.body.account).sort(), [
+    "full_name",
+    "image_url",
+    "server_time",
+    "shift",
+    "status",
+    "worker_code",
+  ]);
+  assert.equal(login.body.account.full_name, worker.full_name);
+  assert.equal(login.body.account.worker_code, `W${worker.id}`);
+  assert.equal(login.body.account.image_url, null);
+  assert.equal(login.body.account.status, "active");
+  assert.equal(login.body.account.shift.start_time, "00:00");
+  assert.equal(login.body.account.shift.end_time, "23:59");
+  assert.match(login.body.account.server_time, /^\d{2}:\d{2}$/);
+
   // Step Act เรียก /me ด้วย access token ที่ได้จาก login route
   const response = await server.request("GET", "/api/auth/me", {
     token: login.body.access_token,
@@ -96,9 +180,21 @@ test("GET /api/auth/me returns current worker account from access token", async 
 
   // Step Assert middleware auth/session และ auth service คืนข้อมูล worker ถูกต้อง
   assert.equal(response.status, 200);
-  assert.equal(response.body.account.id, worker.id);
-  assert.equal(response.body.account.role, "worker");
-  assert.equal(response.body.profile.worker_code, `W${worker.id}`);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "full_name",
+    "nationality",
+    "phone",
+    "shift",
+    "work_start_date",
+    "worker_code",
+  ]);
+  assert.equal(response.body.full_name, worker.full_name);
+  assert.equal(response.body.worker_code, `W${worker.id}`);
+  assert.equal(response.body.nationality, "Thai");
+  assert.equal(response.body.work_start_date, "2026-01-01");
+  assert.equal(response.body.phone, worker.phone);
+  assert.equal(response.body.shift.start_time, "00:00");
+  assert.equal(response.body.shift.end_time, "23:59");
 });
 
 // Test endpoint refresh ว่า refresh token เดิมสร้าง token ชุดใหม่ให้ active session ได้

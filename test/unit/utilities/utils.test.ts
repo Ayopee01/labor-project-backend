@@ -244,20 +244,42 @@ test("shift utility checks whether a time is inside work schedule", () => {
 
   // Step Assert กะกลางวันอยู่ในช่วง 08:00-17:00 แบบไม่รวมเวลาจบ
   assert.equal(
-    shift.isDateInWorkSchedule(morningSchedule, new Date(2026, 6, 7, 8, 30)),
+    shift.isTimeInWorkSchedule(
+      morningSchedule,
+      new Date("2026-07-13T08:30:00+07:00")
+    ),
     true
   );
   assert.equal(
-    shift.isDateInWorkSchedule(morningSchedule, new Date(2026, 6, 7, 17, 0)),
+    shift.isTimeInWorkSchedule(
+      morningSchedule,
+      new Date("2026-07-13T17:00:00+07:00")
+    ),
     false
   );
   // Step Assert กะกลางคืนรองรับช่วงเวลาหลังเที่ยงคืนของวันถัดไป
   assert.equal(
-    shift.isDateInWorkSchedule(nightSchedule, new Date(2026, 6, 8, 2, 0)),
+    shift.isTimeInWorkSchedule(
+      nightSchedule,
+      new Date("2026-07-14T02:00:00+07:00")
+    ),
     true
   );
   assert.equal(
-    shift.isDateInWorkSchedule(nightSchedule, new Date(2026, 6, 8, 7, 0)),
+    shift.isTimeInWorkSchedule(
+      nightSchedule,
+      new Date("2026-07-14T07:00:00+07:00")
+    ),
     false
   );
+
+  const waitInfo = shift.buildShiftWaitInfo(
+    morningSchedule,
+    new Date("2026-07-13T05:32:00+07:00")
+  );
+
+  assert.equal(waitInfo.shift.name, "กะเช้า");
+  assert.equal(waitInfo.shift.start_time, "08:00");
+  assert.equal(waitInfo.shift.end_time, "17:00");
+  assert.equal(waitInfo.remaining_time, "2 ชม. 28 นาที");
 });

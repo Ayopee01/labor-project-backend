@@ -90,9 +90,24 @@ test(
       });
 
       // Step Assert ตรวจว่า admin login แล้วไม่มี profile/schedule แบบ worker
-      assert.equal(adminLogin.account.role, "admin");
-      assert.equal(adminLogin.profile, null);
-      assert.equal(adminLogin.current_work_schedule, null);
+      assert.equal(
+        (adminLogin.account as { full_name?: string }).full_name,
+        "Service Admin"
+      );
+      assert.equal(
+        (adminLogin.account as { image_url?: string | null }).image_url,
+        null
+      );
+      assert.ok(
+        (adminLogin.account as { permissions?: string[] }).permissions?.length
+      );
+      assert.ok(
+        (adminLogin.account as { latest_active_at?: string | null })
+          .latest_active_at
+      );
+      assert.equal(adminLogin.profile, undefined);
+      assert.equal(adminLogin.current_work_schedule, undefined);
+      assert.equal(adminLogin.profile_card, undefined);
 
       // Step Assert ตรวจว่า worker role login ต้องส่ง device_id/device_name
       await assert.rejects(
@@ -121,6 +136,19 @@ test(
       assert.equal(login.token_type, "Bearer");
       assert.ok(login.access_token);
       assert.ok(login.refresh_token);
+      assert.equal(
+        (login.account as { worker_code?: string }).worker_code,
+        workerCode
+      );
+      assert.equal(
+        (login.account as { image_url?: string | null }).image_url,
+        "https://example.com/worker.jpg"
+      );
+      assert.equal((login.account as { status?: string }).status, "active");
+      assert.match(
+        (login.account as { server_time?: string }).server_time ?? "",
+        /^\d{2}:\d{2}$/
+      );
 
       // Step Act ขอ token ชุดใหม่จาก refresh token
       const refreshed = await authService.refresh({

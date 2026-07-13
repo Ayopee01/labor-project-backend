@@ -66,6 +66,8 @@ function buildAdminAccountCreateData(account: AccountCreateInput) {
     status: account.status ?? "active",
     fullName: account.full_name,
     position: account.position ?? null,
+    email: account.email ?? null,
+    phone: account.phone ?? null,
     permissionLevel: account.permission_level ?? null,
     createdBy: account.created_by ?? null,
   };

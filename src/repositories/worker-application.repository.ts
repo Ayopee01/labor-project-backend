@@ -1,5 +1,6 @@
 // import
 import * as accountRepository from "./shared/account.repository";
+import * as profileRepository from "./shared/profile.repository";
 import * as workScheduleRepository from "./shared/work-schedule.repository";
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct, mapTicketWorker, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
@@ -9,9 +10,9 @@ export { listTicketWorkers } from "./shared/ticket-worker.repository";
 
 // import Types
 import type { DbConnection } from "../types/common.type";
-import type { GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto, WorkerAssignmentHistoryItemDto } from "../types/worker.type";
+import type { GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto } from "../types/worker.type";
 
-export { accountRepository, workScheduleRepository };
+export { accountRepository, profileRepository, workScheduleRepository };
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -116,6 +117,61 @@ export async function countScannedAssignments(
 }
 
 // Function ดึงประวัติงานของ worker ตามช่วงวันที่ที่ระบุ
+function buildAssignmentScanStatus(assignment: VehicleJobAssignmentDto): string {
+  if (assignment.status === "COMPLETED" || assignment.completed_at) {
+    return "completed";
+  }
+
+  if (["SCANNED", "COUNTING"].includes(assignment.status) || assignment.scanned_at) {
+    return "scanned";
+  }
+
+  if (assignment.status === "ACCEPTED" || assignment.accepted_at) {
+    return "accepted";
+  }
+
+  return "pending";
+}
+
+export async function listVehicleJobAssignmentTeam(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<WorkerAssignmentTeamMemberDto[]> {
+  const db = client(connection);
+  const assignments = await db.vehicleJobAssignment.findMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: ["PENDING", "ACCEPTED", "SCANNED", "COUNTING", "COMPLETED"],
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+    include: {
+      worker: {
+        include: {
+          profile: true,
+        },
+      },
+    },
+  });
+
+  return assignments.map((assignment) => {
+    const assignmentDto = requireDto(
+      mapVehicleJobAssignment(assignment),
+      "vehicle job assignment"
+    );
+
+    return {
+      full_name: assignment.worker.fullName,
+      worker_code: assignment.worker.profile?.workerCode ?? null,
+      image_url: assignment.worker.profile?.imageUrl ?? null,
+      scan_status: buildAssignmentScanStatus(assignmentDto),
+    };
+  });
+}
+
 export async function listWorkerAssignmentHistoryByDate(
   workerAccountId: number,
   startAt: Date,
@@ -163,6 +219,30 @@ export async function findAssignmentByIdAndWorker(
 }
 
 // Function เปลี่ยน assignment เป็นรับงานแล้วและกำหนดเวลา scan QR
+export async function findCurrentAssignmentByVehicleJobRefAndWorker(
+  vehicleJobRef: string,
+  workerAccountId: number,
+  connection?: DbConnection
+): Promise<VehicleJobAssignmentDto | null> {
+  const db = client(connection);
+  const assignment = await db.vehicleJobAssignment.findFirst({
+    where: {
+      workerAccountId,
+      status: {
+        in: ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"],
+      },
+      vehicleJob: {
+        vehicleJobRef,
+      },
+    },
+    orderBy: {
+      id: "desc",
+    },
+  });
+
+  return mapVehicleJobAssignment(assignment);
+}
+
 export async function acceptAssignment(
   assignmentId: number,
   scanDeadlineAt: Date,

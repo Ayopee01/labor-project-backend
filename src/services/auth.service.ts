@@ -2,16 +2,16 @@ import { accountRepository, profileRepository, sessionRepository, workScheduleRe
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
 import { getAccountPermissions } from "./admin-settings.service";
 import { withTransaction } from "../db/prisma";
-import type { AccessTokenPayload, AccountResponse, AuthSuccessResponse, AuthTokens } from "../types/auth.type";
+import type { AccessTokenPayload, AccountResponse, AdminLoginAccountResponse, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto, WorkerLoginAccountResponse } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
-import type { AccountDto } from "../types/admin-workers.type";
+import type { AccountDto, ProfileDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import { parseWithSchema } from "../validation/parser";
 import { confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { signAccessToken, signLoginChallengeToken, signRefreshToken, verifyLoginChallengeToken, verifyRefreshToken } from "../utils/jwt";
 import { verifyPassword } from "../utils/password";
 import { hashRefreshToken, refreshTokenHashesMatch } from "../utils/refresh-token-hash";
-import { formatScheduleWithShift } from "../utils/shift";
+import { formatBangkokServerTime, formatScheduleWithShift } from "../utils/shift";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -30,6 +30,108 @@ function getDefaultSessionDeviceId(account: AccountDto): string {
 // Function สร้าง device name สำหรับ session ของ admin หรือ worker
 function getDefaultSessionDeviceName(account: AccountDto): string {
   return account.role === "admin" ? ADMIN_SESSION_DEVICE_NAME : `${account.role} Web`;
+}
+
+function buildAdminEmployeeCode(accountId: number): string {
+  return `ADM${String(accountId).padStart(4, "0")}`;
+}
+
+function formatProfileCardShift(
+  schedule: ReturnType<typeof formatScheduleWithShift>
+): ProfileCardShift | null {
+  if (!schedule) {
+    return null;
+  }
+
+  return {
+    name: schedule.shift_name,
+    start_time: schedule.shift_start_time,
+    end_time: schedule.shift_end_time,
+  };
+}
+
+function buildWorkerLoginAccountResponse(
+  account: AccountDto,
+  profile: ProfileDto | null,
+  schedule: WorkScheduleWithShiftDto | null
+): WorkerLoginAccountResponse {
+  return {
+    full_name: account.full_name,
+    worker_code: profile?.worker_code ?? null,
+    image_url: profile?.image_url ?? null,
+    status: account.status,
+    shift: formatProfileCardShift(schedule),
+    server_time: formatBangkokServerTime(),
+  };
+}
+
+function buildAdminLoginAccountResponse(
+  account: AccountDto,
+  permissions: AdminLoginAccountResponse["permissions"],
+  latestActiveAt: string | null
+): AdminLoginAccountResponse {
+  return {
+    full_name: account.full_name,
+    status: account.status,
+    position: account.position,
+    email: account.email,
+    phone: account.phone,
+    image_url: null,
+    permission_level: account.permission_level,
+    permissions,
+    latest_active_at: latestActiveAt,
+  };
+}
+
+async function resolveLatestSession(
+  account: AccountDto,
+  currentSession?: SessionDto | null,
+  connection?: DbConnection
+): Promise<SessionDto | null> {
+  if (currentSession) {
+    return currentSession;
+  }
+
+  return sessionRepository.findActiveByAccountId(account.id, connection);
+}
+
+async function buildMeResponse(
+  account: AccountDto,
+  currentSession?: SessionDto | null
+): Promise<MeResponse> {
+  const latestSession = await resolveLatestSession(account, currentSession);
+  const latestActiveAt = latestSession?.last_active_at ?? null;
+
+  if (account.role !== WORKER_ROLE) {
+    const accountPermissions = await getAccountPermissions(account);
+
+    return {
+      full_name: account.full_name,
+      position: account.position,
+      admin_code: buildAdminEmployeeCode(account.id),
+      status: account.status,
+      email: account.email,
+      phone: account.phone,
+      permission_level: account.permission_level,
+      permissions: accountPermissions.permissions,
+      latest_active_at: latestActiveAt,
+    };
+  }
+
+  const [profile, currentWorkSchedule] = await Promise.all([
+    profileRepository.findByAccountId(account.id),
+    workScheduleRepository.findCurrentByAccountId(account.id),
+  ]);
+  const schedule = formatScheduleWithShift(currentWorkSchedule);
+
+  return {
+    full_name: account.full_name,
+    worker_code: profile?.worker_code ?? null,
+    nationality: profile?.nationality_name ?? profile?.nationality ?? null,
+    work_start_date: profile?.work_start_date ?? null,
+    phone: profile?.phone ?? null,
+    shift: formatProfileCardShift(schedule),
+  };
 }
 
 // Function ตรวจสอบว่า worker ต้องมี device id และ device name ตอน login หรือไม่
@@ -89,15 +191,20 @@ function resolveLoginDevice(
 // Function สร้าง response ของ account พร้อม profile และตารางงานปัจจุบัน
 async function buildAccountResponse(
   account: AccountDto,
-  connection?: DbConnection
+  connection?: DbConnection,
+  currentSession?: SessionDto | null
 ): Promise<AccountResponse> {
-  const safeAccount = accountRepository.sanitizeAccount(account);
-
   if (account.role !== WORKER_ROLE) {
+    const latestSession = await resolveLatestSession(account, currentSession, connection);
+    const latestActiveAt = latestSession?.last_active_at ?? null;
+    const accountPermissions = await getAccountPermissions(account, connection);
+
     return {
-      account: safeAccount,
-      profile: null,
-      current_work_schedule: null,
+      account: buildAdminLoginAccountResponse(
+        account,
+        accountPermissions.permissions,
+        latestActiveAt
+      ),
     };
   }
 
@@ -106,10 +213,10 @@ async function buildAccountResponse(
     workScheduleRepository.findCurrentByAccountId(account.id, connection),
   ]);
 
+  const schedule = formatScheduleWithShift(currentWorkSchedule);
+
   return {
-    account: safeAccount,
-    profile,
-    current_work_schedule: formatScheduleWithShift(currentWorkSchedule),
+    account: buildWorkerLoginAccountResponse(account, profile, schedule),
   };
 }
 
@@ -363,7 +470,10 @@ export async function logout(auth?: AccessTokenPayload) {
 }
 
 // Function ดึงข้อมูลผู้ใช้จาก access token ปัจจุบัน
-export async function me(auth?: AccessTokenPayload) {
+export async function me(
+  auth?: AccessTokenPayload,
+  currentSession?: SessionDto | null
+): Promise<MeResponse> {
   if (!auth || !auth.account_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
   }
@@ -374,5 +484,5 @@ export async function me(auth?: AccessTokenPayload) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
   }
 
-  return buildAccountResponse(account);
+  return buildMeResponse(account, currentSession);
 }

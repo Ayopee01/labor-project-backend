@@ -77,8 +77,48 @@ test("POST /api/workers/me/online puts worker into queue", async () => {
 
   // Step Assert worker อยู่ใน queue ด้วยสถานะ ready
   assert.equal(response.status, 200);
-  assert.equal(response.body.account_id, worker.id);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "break_count_used",
+    "completed_job_count",
+    "full_name",
+    "status",
+    "today_job_count",
+    "worker_code",
+  ]);
+  assert.equal(response.body.full_name, worker.full_name);
+  assert.equal(response.body.worker_code, `W${worker.id}`);
   assert.equal(response.body.status, "ready");
+  assert.equal(response.body.today_job_count, 0);
+  assert.equal(response.body.break_count_used, 0);
+  assert.equal(response.body.completed_job_count, 0);
+});
+
+test("GET /api/workers/me/status returns worker profile and shift", async () => {
+  const { token, worker } = await loginWorker(102);
+
+  const response = await server.request("GET", "/api/workers/me/status", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "full_name",
+    "image_url",
+    "nationality",
+    "phone",
+    "shift",
+    "work_start_date",
+    "worker_code",
+  ]);
+  assert.equal(response.body.full_name, worker.full_name);
+  assert.equal(response.body.worker_code, `W${worker.id}`);
+  assert.equal(response.body.image_url, null);
+  assert.equal(response.body.nationality, "Thai");
+  assert.equal(response.body.work_start_date, "2026-01-01");
+  assert.equal(response.body.phone, worker.phone);
+  assert.equal(typeof response.body.shift.name, "string");
+  assert.equal(response.body.shift.start_time, "00:00");
+  assert.equal(response.body.shift.end_time, "23:59");
 });
 
 /* -------------------------------------- Worker Queue Function Tests -------------------------------------- */
@@ -114,7 +154,7 @@ test("worker queue keeps FIFO order when workers enter in the same millisecond",
 // Test dispatch function ว่าจ่ายงานให้ worker ที่ ready ตามลำดับ FIFO และเหลือคนถัดไปในคิว
 test("dispatch assigns ready workers in FIFO order", async () => {
   // Step Arrange งานต้องการ 2 คน และ worker online 3 คนตามลำดับ
-  addDispatchableJob(501, 2);
+  const job = addDispatchableJob(501, 2);
   state.connectedWorkers.add(11);
   state.connectedWorkers.add(12);
   state.connectedWorkers.add(13);
@@ -134,6 +174,29 @@ test("dispatch assigns ready workers in FIFO order", async () => {
   assert.equal((await workerQueue.getWorkerQueueStatus(11))?.status, "busy");
   assert.equal((await workerQueue.getWorkerQueueStatus(12))?.status, "busy");
   assert.equal((await workerQueue.getWorkerQueueStatus(13))?.status, "ready");
+  const assignedEvent = state.socketEvents.find(
+    (event) => event.event === "WORKER_ASSIGNED" && event.accountId === 11
+  );
+  const payload = assignedEvent?.payload as {
+    vehicle_job_ref: string;
+    gate_transaction_ref: string;
+    worker_qr_token: string;
+    assignment: { created_at: string; accept_deadline_at: string | null };
+  };
+
+  assert.deepEqual(Object.keys(payload).sort(), [
+    "assignment",
+    "gate_transaction_ref",
+    "vehicle_job_ref",
+    "worker_qr_token",
+  ]);
+  assert.equal(payload.vehicle_job_ref, job.vehicle_job_ref);
+  assert.equal(payload.gate_transaction_ref, job.gate_transaction_ref);
+  assert.equal(payload.worker_qr_token, job.worker_qr_token);
+  assert.deepEqual(Object.keys(payload.assignment).sort(), [
+    "accept_deadline_at",
+    "created_at",
+  ]);
 });
 
 // Test dispatch function ว่าข้าม worker ที่ socket หลุดและจ่ายงานให้ worker คนถัดไปที่ online
@@ -162,17 +225,54 @@ test("dispatch skips disconnected worker and assigns the next ready worker", asy
 test("POST /api/workers/me/assignments/:id/accept accepts pending assignment", async () => {
   // Step Arrange เตรียม worker และ pending assignment ที่ยังไม่หมดเวลา
   const { token, worker } = await loginWorker(51);
-  addPendingAssignment(951, 851, worker.id);
+  const job = addDispatchableJob(851, 1);
+  addTicketForVehicleJob(job.id, 1851);
+  const oldAssignment = addPendingAssignment(950, job.id, worker.id);
+  oldAssignment.status = "TIMEOUT";
+  addPendingAssignment(951, job.id, worker.id);
 
   // Step Act เรียก endpoint รับงาน
-  const response = await server.request("POST", "/api/workers/me/assignments/951/accept", {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.vehicle_job_ref}/accept`, {
     token,
   });
 
   // Step Assert assignment เปลี่ยนเป็น ACCEPTED และมี scan deadline
   assert.equal(response.status, 200);
-  assert.equal(response.body.status, "ACCEPTED");
-  assert.ok(response.body.scan_deadline_at);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "license_plate",
+    "markets",
+    "team",
+  ]);
+  assert.equal(response.body.license_plate, job.license_plate);
+  assert.equal(response.body.team.length, 1);
+  assert.deepEqual(Object.keys(response.body.team[0]).sort(), [
+    "full_name",
+    "image_url",
+    "scan_status",
+    "worker_code",
+  ]);
+  assert.equal(response.body.team[0].full_name, worker.full_name);
+  assert.equal(response.body.team[0].scan_status, "accepted");
+  assert.deepEqual(Object.keys(response.body.markets[0]).sort(), [
+    "market_name",
+    "stall_count",
+    "stalls",
+  ]);
+  assert.equal(response.body.markets[0].market_name, "Market A");
+  assert.equal(response.body.markets[0].stall_count, 1);
+  assert.deepEqual(Object.keys(response.body.markets[0].stalls[0]).sort(), [
+    "product_count",
+    "products",
+    "stall_code",
+    "stall_name",
+  ]);
+  assert.equal(response.body.markets[0].stalls[0].product_count, 2);
+  assert.deepEqual(Object.keys(response.body.markets[0].stalls[0].products[0]).sort(), [
+    "name",
+    "quantity",
+    "unit",
+  ]);
+  assert.equal(response.body.markets[0].stalls[0].products[0].name, "Apple");
 });
 
 // Test endpoint accept assignment ว่า accept ช้าเกิน deadline จะ timeout และ requeue worker ที่ยัง online
@@ -204,7 +304,7 @@ test("POST /api/workers/me/assignments/:id/check-in-qr scans correct QR", async 
   assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
 
   // Step Act scan QR ผ่าน endpoint worker
-  const response = await server.request("POST", "/api/workers/me/assignments/961/check-in-qr", {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.vehicle_job_ref}/check-in-qr`, {
     token,
     body: {
       qr_token: job.worker_qr_token,

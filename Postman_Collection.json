@@ -32,6 +32,12 @@
       "description": "Local backend base URL for testing."
     },
     {
+      "key": "wsBaseUrl",
+      "value": "ws://localhost:8080",
+      "type": "string",
+      "description": "Local backend WebSocket base URL for Worker Mobile realtime connection."
+    },
+    {
       "key": "accessToken",
       "value": "",
       "type": "string",
@@ -113,7 +119,7 @@
       "key": "workerQrToken",
       "value": "",
       "type": "string",
-      "description": "Worker QR token returned by POST /api/gate/vehicle-jobs."
+      "description": "Worker QR token returned by POST /api/gate/vehicle-jobs or WORKER_ASSIGNED."
     },
     {
       "key": "driverSessionToken",
@@ -125,7 +131,7 @@
       "key": "workerAssignmentId",
       "value": "",
       "type": "string",
-      "description": "Worker assignment id returned by GET /api/workers/me/status."
+      "description": "Worker assignment id or vehicle_job_ref for accept/check-in tests. Prefer vehicle_job_ref from WORKER_ASSIGNED."
     }
   ],
   "item": [
@@ -133,7 +139,7 @@
       "name": "Auth",
       "item": [
         {
-          "name": "POST /api/auth/login",
+          "name": "POST /api/auth/login - Admin",
           "event": [
             {
               "listen": "test",
@@ -183,7 +189,62 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Send username/password. Worker accounts must also send device_id and device_name. Backend decides login flow from account.role.\nNotes: Saves access_token and refresh_token into collection variables when login succeeds. Saves login_challenge_token when ACTIVE_SESSION_EXISTS is returned."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Admin username/password only.\nResponse: admin login returns tokens and account only. account contains full_name, status, position, email, phone, image_url, permission_level, permissions, and latest_active_at.\nNotes: Saves access_token and refresh_token into collection variables when login succeeds."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/login - Worker",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let body = {};",
+                  "try { body = pm.response.json(); } catch (error) {}",
+                  "if (body.access_token) pm.collectionVariables.set('accessToken', body.access_token);",
+                  "if (body.refresh_token) pm.collectionVariables.set('refreshToken', body.refresh_token);",
+                  "if (body.login_challenge_token) pm.collectionVariables.set('loginChallengeToken', body.login_challenge_token);",
+                  "if (body.details && body.details.login_challenge_token) pm.collectionVariables.set('loginChallengeToken', body.details.login_challenge_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text",
+                "description": "Required when sending JSON body."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"MN000012\",\n  \"password\": \"0812345678\",\n  \"device_id\": \"{{deviceId}}\",\n  \"device_name\": \"{{deviceName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username/password plus device_id and device_name.\nResponse: worker login returns tokens and account only. account contains full_name, worker_code, image_url, status, shift, and server_time.\nNotes: Saves access_token and refresh_token into collection variables when login succeeds. If another worker session exists on a different device, saves login_challenge_token for POST /api/auth/login/confirm-force. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
           "response": []
         },
@@ -350,7 +411,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/auth/me\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Returns current account from access token."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/auth/me\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Returns current account from access token. Admin response includes permission_level and permissions."
           },
           "response": []
         }
@@ -406,7 +467,7 @@
                   "type": "text"
                 },
                 {
-                  "key": "work_date",
+                  "key": "work_start_date",
                   "value": "2026-07-03",
                   "type": "text"
                 },
@@ -446,7 +507,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: full_name, phone, nationality, shirt_type, shirt_number, work_date, shift_start_time, shift_end_time, password, status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to worker_code generated from shirt_number, such as MN000004. password defaults to phone if omitted. nationality_name defaults to nationality and nationality_code defaults to UNKNOWN when omitted. shirt_number is saved separately and also used to generate worker_code. Uploaded image is stored under /uploads/workers and saved as profile.image_url. JSON body with image_url/img is still supported when no file upload is needed."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: full_name, phone, nationality, shirt_type, shirt_number, work_start_date, shift_start_time, shift_end_time, password, status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to worker_code generated from shirt_number, such as MN000004. password defaults to phone if omitted. nationality_name defaults to nationality and nationality_code defaults to UNKNOWN when omitted. work_start_date is the first working date. Shift availability uses only shift_start_time and shift_end_time; work_date is no longer required. shirt_number is saved separately and also used to generate worker_code. Uploaded image is stored under /uploads/workers and saved as profile.image_url. JSON body with image_url/img is still supported when no file upload is needed."
           },
           "response": []
         },
@@ -494,7 +555,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: worker_code, shirt_number, full_name, work_schedule, status, updated_at. work_schedule includes only work_date, shift_start_time, shift_end_time, and shift_name."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: worker_code, shirt_number, full_name, work_schedule, status, updated_at. Shift availability uses only shift_start_time and shift_end_time."
           },
           "response": []
         },
@@ -549,7 +610,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://example.com/uploads/workers/mn000115.jpg\",\n  \"full_name\": \"นายMANY MANY\",\n  \"phone\": \"0811111111\",\n  \"status\": \"active\",\n  \"position\": \"Worker\",\n  \"shirt_number\": \"115\",\n  \"shirt_type\": \"Navy\",\n  \"work_date\": \"2026-07-03\",\n  \"shift_start_time\": \"08:00\",\n  \"shift_end_time\": \"17:00\"\n}",
+              "raw": "{\n  \"image_url\": \"https://example.com/uploads/workers/mn000115.jpg\",\n  \"full_name\": \"นายMANY MANY\",\n  \"phone\": \"0811111111\",\n  \"status\": \"active\",\n  \"position\": \"Worker\",\n  \"shirt_number\": \"115\",\n  \"shirt_type\": \"Navy\",\n  \"work_start_date\": \"2026-07-03\",\n  \"shift_start_time\": \"08:00\",\n  \"shift_end_time\": \"17:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -571,7 +632,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: image_url/img, worker_code, full_name, phone, status, position, shirt_number, shirt_type, work_date, shift_start_time, shift_end_time. Nested profile/work_schedule is still supported for backward compatibility.\nNotes: Admin only. {{userId}} must be worker_code or username. If shirt_number is sent without worker_code, backend regenerates worker_code/username as MN + 6 digits. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: image_url/img, worker_code, full_name, phone, status, position, shirt_number, shirt_type, work_start_date, shift_start_time, shift_end_time. work_date is optional legacy only. Nested profile/work_schedule is still supported for backward compatibility.\nNotes: Admin only. {{userId}} must be worker_code or username. If shirt_number is sent without worker_code, backend regenerates worker_code/username as MN + 6 digits. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
           },
           "response": []
         },
@@ -1655,6 +1716,7 @@
     },
     {
       "name": "Worker Application",
+      "description": "WebSocket setup: Postman HTTP request items cannot open ws:// as a native WebSocket tab. Create it manually with New > WebSocket, then use {{wsBaseUrl}}/ws/workers?token={{accessToken}} and click Connect. Do this after POST /api/auth/login - Worker and before POST /api/workers/me/online. The socket only confirms the worker realtime connection is alive; the worker becomes online/ready after POST /api/workers/me/online.",
       "item": [
         {
           "name": "POST /api/workers/me/online",
@@ -1682,7 +1744,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/online\nAuth: Worker access token\nBody: None\nNotes: Puts worker into Redis FIFO queue only during the worker's current work schedule. Returns 403 if the worker has no current schedule or is outside the assigned shift."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/online\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, status, today_job_count, break_count_used, completed_job_count.\nNotes: Puts worker into Redis FIFO queue only during the assigned shift time. Returns 403 if the worker has no current schedule or is outside the assigned shift. OUTSIDE_WORK_SHIFT includes shift and remaining_time text for the mobile modal."
           },
           "response": []
         },
@@ -1742,24 +1804,12 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/break\nAuth: Worker access token\nBody: None\nNotes: Puts worker into break status for 15 minutes. Requires worker to be ready and inside the current shift. Max 5 breaks per shift. BullMQ returns worker to the tail of Redis queue automatically."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/break\nAuth: Worker access token\nBody: None\nNotes: Puts worker into break status for 15 minutes. Requires worker to be ready and inside the current shift time. OUTSIDE_WORK_SHIFT includes shift and remaining_time text for the mobile modal. Max 5 breaks per shift. BullMQ returns worker to the tail of Redis queue automatically."
           },
           "response": []
         },
         {
           "name": "GET /api/workers/me/status",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (body.current_assignment?.id) pm.collectionVariables.set('workerAssignmentId', String(body.current_assignment.id));"
-                ]
-              }
-            }
-          ],
           "request": {
             "method": "GET",
             "header": [
@@ -1784,7 +1834,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None"
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, image_url, nationality, work_start_date, phone, and shift name/start/end."
           },
           "response": []
         },
@@ -1828,6 +1878,20 @@
         },
         {
           "name": "POST /api/workers/me/assignments/:id/accept",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('accepted worker detail response', () => {",
+                  "  pm.expect(body).to.have.keys(['license_plate', 'team', 'markets']);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -1854,7 +1918,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{workerAssignmentId}}/accept\nAuth: Worker access token\nBody: None\nNotes: Assignment must be PENDING and accepted within 1 minute. BullMQ handles timeout; if it expires, backend marks it TIMEOUT and returns the worker to the tail of the Redis queue."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{workerAssignmentId}}/accept\nAuth: Worker access token\nBody: None\nPath: {{workerAssignmentId}} can be assignment id or vehicle_job_ref. Prefer vehicle_job_ref from WORKER_ASSIGNED.\nNotes: Assignment must be PENDING and accepted within 1 minute. Response is trimmed for the worker job detail screen only: license_plate, team[].full_name/worker_code/image_url/scan_status, markets[].market_name/stall_count/stalls[].stall_code/stall_name/product_count/products[].name/quantity/unit."
           },
           "response": []
         },
@@ -1900,7 +1964,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{workerAssignmentId}}/check-in-qr\nAuth: Worker access token\nBody: JSON qr_token from worker QR\nNotes: Checks worker into the job. If checked-in workers reach workers_required, vehicle job moves to IN_PROGRESS."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{workerAssignmentId}}/check-in-qr\nAuth: Worker access token\nPath: {{workerAssignmentId}} can be assignment id or vehicle_job_ref. Prefer vehicle_job_ref from WORKER_ASSIGNED.\nBody: JSON qr_token from worker QR\nNotes: Checks worker into the job. If checked-in workers reach workers_required, vehicle job moves to IN_PROGRESS."
           },
           "response": []
         },

@@ -10,6 +10,8 @@ const prisma = getPrisma();
 const SEED_ADMIN = {
   username: "admin",
   password: "Admin@123456",
+  email: "admin@simmummuang.local",
+  phone: "081-000-0001",
 };
 
 const SEED_RUNTIME_SETTINGS = {
@@ -40,6 +42,8 @@ async function main(): Promise<void> {
       username: SEED_ADMIN.username,
     },
     update: {
+      email: SEED_ADMIN.email,
+      phone: SEED_ADMIN.phone,
       permissionLevel: "owner",
     },
     create: {
@@ -49,6 +53,8 @@ async function main(): Promise<void> {
       status: "active",
       fullName: "System Admin",
       position: "Administrator",
+      email: SEED_ADMIN.email,
+      phone: SEED_ADMIN.phone,
       permissionLevel: "owner",
     },
   });

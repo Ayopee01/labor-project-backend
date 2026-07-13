@@ -6,6 +6,22 @@ import ApiError from "./api-error";
 
 const MORNING_SHIFT = "กะเช้า";
 const NIGHT_SHIFT = "กะกลางคืน";
+const BANGKOK_TIME_ZONE = "Asia/Bangkok";
+const bangkokTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: BANGKOK_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+export type ShiftWaitInfo = {
+  shift: {
+    name: string;
+    start_time: string;
+    end_time: string;
+  };
+  remaining_time: string;
+};
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -25,6 +41,57 @@ function parseTimeToMinutes(value: unknown): number | null {
   const minutes = Number(match[2]);
 
   return hours * 60 + minutes;
+}
+
+// Function แปลงเวลา Date เป็นจำนวนนาทีตั้งแต่ 00:00 ของเวลาในเขตเวลา Bangkok
+function getBangkokTimeToMinutes(value: Date): number {
+  const parts = bangkokTimeFormatter.formatToParts(value);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+
+  return hour * 60 + minute;
+}
+
+export function formatBangkokServerTime(value: Date = new Date()): string {
+  return bangkokTimeFormatter.format(value);
+}
+
+function formatRemainingTime(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const textParts = [];
+
+  if (hours > 0) {
+    textParts.push(`${hours} ชม.`);
+  }
+
+  if (minutes > 0 || textParts.length === 0) {
+    textParts.push(`${minutes} นาที`);
+  }
+
+  return textParts.join(" ");
+}
+
+// Function แปลง WorkScheduleDto เป็น object ที่มี startMinutes และ endMinutes
+function parseScheduleTimeRange(schedule: WorkScheduleDto): {
+  startMinutes: number;
+  endMinutes: number;
+} {
+  const startMinutes = parseTimeToMinutes(schedule.shift_start_time);
+  const endMinutes = parseTimeToMinutes(schedule.shift_end_time);
+
+  if (startMinutes === null || endMinutes === null) {
+    throw new ApiError(
+      400,
+      "INVALID_SHIFT_TIME",
+      "Shift time must use HH:mm format."
+    );
+  }
+
+  return {
+    startMinutes,
+    endMinutes,
+  };
 }
 
 // Function คำนวณชื่อกะจากเวลาเริ่มงาน
@@ -80,44 +147,43 @@ export function formatScheduleWithShift(
 }
 
 // Function ตรวจว่าเวลาที่ส่งมาอยู่ในช่วงกะของ schedule หรือไม่ รองรับกะข้ามวัน
-export function isDateInWorkSchedule(
+export function isTimeInWorkSchedule(
   schedule: WorkScheduleDto,
   value: Date = new Date()
 ): boolean {
-  const startMinutes = parseTimeToMinutes(schedule.shift_start_time);
-  const endMinutes = parseTimeToMinutes(schedule.shift_end_time);
-
-  if (startMinutes === null || endMinutes === null) {
-    throw new ApiError(
-      400,
-      "INVALID_SHIFT_TIME",
-      "Shift time must use HH:mm format."
-    );
-  }
-
-  const [year, month, day] = schedule.work_date.split("-").map(Number);
-  const startAt = new Date(
-    year,
-    month - 1,
-    day,
-    Math.floor(startMinutes / 60),
-    startMinutes % 60,
-    0,
-    0
-  );
-  const endAt = new Date(
-    year,
-    month - 1,
-    day,
-    Math.floor(endMinutes / 60),
-    endMinutes % 60,
-    0,
-    0
-  );
+  const { startMinutes, endMinutes } = parseScheduleTimeRange(schedule);
+  const currentMinutes = getBangkokTimeToMinutes(value);
 
   if (endMinutes <= startMinutes) {
-    endAt.setDate(endAt.getDate() + 1);
+    return currentMinutes >= startMinutes || currentMinutes < endMinutes;
   }
 
-  return value >= startAt && value < endAt;
+  return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+}
+
+export const isDateInWorkSchedule = isTimeInWorkSchedule;
+
+export function buildShiftWaitInfo(
+  schedule: WorkScheduleDto,
+  value: Date = new Date()
+): ShiftWaitInfo {
+  const { startMinutes } = parseScheduleTimeRange(schedule);
+  const currentMinutes = getBangkokTimeToMinutes(value);
+  let minutesUntilShiftStart = startMinutes - currentMinutes;
+
+  if (minutesUntilShiftStart <= 0) {
+    minutesUntilShiftStart += 24 * 60;
+  }
+
+  return {
+    shift: {
+      name: calculateShiftName(
+        schedule.shift_start_time,
+        schedule.shift_end_time
+      ),
+      start_time: schedule.shift_start_time,
+      end_time: schedule.shift_end_time,
+    },
+    remaining_time: formatRemainingTime(minutesUntilShiftStart),
+  };
 }

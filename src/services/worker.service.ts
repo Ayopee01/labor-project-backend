@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 // import
 import { withTransaction } from "../db/prisma";
 import { enqueueLineMessage } from "../queues/notification-queue";
-import { enqueueWorker, getWorkerBreakCount, getWorkerPresence, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOffline, removeAssignmentTimeout, scheduleWorkerBreakReturn } from "../queues/worker-queue";
+import { enqueueWorker, getWorkerBreakCount, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOffline, removeAssignmentTimeout, scheduleWorkerBreakReturn } from "../queues/worker-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as lineRepository from "../repositories/line.repository";
@@ -14,13 +14,14 @@ import { publishRealtimeEvent } from "./realtime.service";
 import { getRuntimeSettings } from "./admin-settings.service";
 // import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentHistoryItemDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
+import type { GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
+import type { AccountDto, WorkScheduleDto } from "../types/admin-workers.type";
 // import Validation
 import { parseId, parseWithSchema } from "../validation/parser";
 import { workerAssignmentHistoryQuerySchema, workerScanBodySchema, workerTicketCompleteBodySchema } from "../validation/schemas";
 // import Utils
 import ApiError from "../utils/api-error";
-import { isDateInWorkSchedule } from "../utils/shift";
+import { buildShiftWaitInfo, formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -40,6 +41,20 @@ function buildBangkokDateRange(date: string): { startAt: Date; endAt: Date } {
   };
 }
 
+function formatBangkokDate(value: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return `${year}-${month}-${day}`;
+}
+
 // Function เติมจำนวนครั้งพักใน response สถานะคิว
 function withBreakUsage(
   queueEntry: WorkerQueueEntryDto,
@@ -53,7 +68,65 @@ function withBreakUsage(
   };
 }
 
+async function buildWorkerOnlineResponse(
+  account: AccountDto,
+  queueEntry: WorkerQueueEntryDto,
+  schedule: WorkScheduleDto,
+  connection?: Parameters<typeof workerApplicationRepository.listWorkerAssignmentHistoryByDate>[3]
+): Promise<WorkerOnlineResponse> {
+  const today = formatBangkokDate();
+  const { startAt, endAt } = buildBangkokDateRange(today);
+  const [profile, assignmentHistory, breakCountUsed] = await Promise.all([
+    workerApplicationRepository.profileRepository.findByAccountId(account.id, connection),
+    workerApplicationRepository.listWorkerAssignmentHistoryByDate(
+      account.id,
+      startAt,
+      endAt,
+      connection
+    ),
+    getWorkerBreakCount(account.id, schedule.id),
+  ]);
+  const completedJobCount = assignmentHistory.filter(({ assignment }) =>
+    assignment.status === "COMPLETED" || Boolean(assignment.completed_at)
+  ).length;
+
+  return {
+    full_name: account.full_name,
+    worker_code: profile?.worker_code ?? null,
+    status: queueEntry.status,
+    today_job_count: assignmentHistory.length,
+    break_count_used: breakCountUsed,
+    completed_job_count: completedJobCount,
+  };
+}
+
 // Function ตรวจ auth ว่าเป็น worker ที่ active ก่อนทำงานใน Worker Mobile flow
+// Function builds the worker job detail payload after accepting an assignment.
+function buildWorkerAssignmentAcceptResponse(
+  detail: VehicleJobDetailResponse,
+  team: WorkerAssignmentTeamMemberDto[]
+): WorkerAssignmentAcceptResponse {
+  return {
+    license_plate: detail.vehicle_job.license_plate,
+    team,
+    markets: detail.markets.map((market) => ({
+      market_name: market.market_name,
+      stall_count: market.tickets.length,
+      stalls: market.tickets.map((ticket) => ({
+        stall_code: ticket.stall_no,
+        stall_name: ticket.vendor_name,
+        product_count: ticket.products.length,
+        products: ticket.products.map((product) => ({
+          name: product.name,
+          quantity: product.quantity,
+          unit: product.unit,
+        })),
+      })),
+    })),
+  };
+}
+
+// Function validates an active worker account before Worker Mobile actions.
 async function requireWorker(auth?: AccessTokenPayload) {
   if (!auth) {
     throw new ApiError(401, "UNAUTHORIZED", "Authentication is required.");
@@ -73,6 +146,42 @@ async function requireWorker(auth?: AccessTokenPayload) {
 }
 
 // Function สร้างข้อความส่งให้ vendor ตรวจยอดปิดงานของ ticket
+function parseAssignmentReference(value: unknown): string {
+  const reference = String(value ?? "").trim();
+
+  if (!reference) {
+    throw new ApiError(
+      400,
+      "INVALID_ASSIGNMENT_REF",
+      "Assignment id or vehicle job ref is invalid."
+    );
+  }
+
+  return reference;
+}
+
+async function findWorkerAssignmentByReference(
+  value: unknown,
+  workerAccountId: number,
+  connection?: Parameters<typeof workerApplicationRepository.findAssignmentByIdAndWorker>[2]
+): Promise<VehicleJobAssignmentDto | null> {
+  const reference = parseAssignmentReference(value);
+
+  if (/^\d+$/.test(reference)) {
+    return workerApplicationRepository.findAssignmentByIdAndWorker(
+      Number(reference),
+      workerAccountId,
+      connection
+    );
+  }
+
+  return workerApplicationRepository.findCurrentAssignmentByVehicleJobRefAndWorker(
+    reference,
+    workerAccountId,
+    connection
+  );
+}
+
 function buildVendorCompletionMessage(
   ticket: GateTicketDto,
   submission: TicketCompletionSubmissionDto,
@@ -167,7 +276,7 @@ async function buildTicketResultAudience(
 }
 
 // Function ให้ worker เข้า queue และ dispatch ถ้ามีงานรออยู่
-export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerQueueEntryDto> {
+export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnlineResponse> {
   const account = await requireWorker(auth);
 
   if (!isWorkerSocketConnected(account.id)) {
@@ -190,11 +299,12 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerQue
     );
   }
 
-  if (!isDateInWorkSchedule(currentSchedule)) {
+  if (!isTimeInWorkSchedule(currentSchedule)) {
     throw new ApiError(
       403,
       "OUTSIDE_WORK_SHIFT",
-      "Worker can go online only during the assigned work shift."
+      "Worker can go online only during the assigned work shift.",
+      buildShiftWaitInfo(currentSchedule)
     );
   }
 
@@ -218,6 +328,13 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerQue
       throw new ApiError(404, "WORKER_QUEUE_NOT_FOUND", "Worker queue entry not found.");
     }
 
+    const response = await buildWorkerOnlineResponse(
+      account,
+      latestQueueEntry,
+      currentSchedule,
+      transaction
+    );
+
     sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
       queue: latestQueueEntry,
     });
@@ -235,7 +352,7 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerQue
       },
     });
 
-    return latestQueueEntry;
+    return response;
   });
 }
 
@@ -280,11 +397,12 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerQueu
     );
   }
 
-  if (!isDateInWorkSchedule(currentSchedule)) {
+  if (!isTimeInWorkSchedule(currentSchedule)) {
     throw new ApiError(
       403,
       "OUTSIDE_WORK_SHIFT",
-      "Worker can take a break only during the assigned work shift."
+      "Worker can take a break only during the assigned work shift.",
+      buildShiftWaitInfo(currentSchedule)
     );
   }
 
@@ -354,23 +472,29 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerQueu
 }
 
 // Function ดึงสถานะ queue และ assignment ปัจจุบันของ worker
-export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<{
-  queue: WorkerQueueEntryDto | null;
-  current_assignment: VehicleJobAssignmentDto | null;
-  presence: WorkerPresenceDto;
-}> {
+export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<WorkerStatusResponse> {
   const account = await requireWorker(auth);
 
-  const [queueEntry, assignment, presence] = await Promise.all([
-    getWorkerQueueStatus(account.id),
-    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
-    getWorkerPresence(account.id),
+  const [profile, currentSchedule] = await Promise.all([
+    workerApplicationRepository.profileRepository.findByAccountId(account.id),
+    workScheduleRepository.findCurrentByAccountId(account.id),
   ]);
+  const schedule = formatScheduleWithShift(currentSchedule);
 
   return {
-    queue: queueEntry,
-    current_assignment: assignment,
-    presence,
+    full_name: account.full_name,
+    worker_code: profile?.worker_code ?? null,
+    image_url: profile?.image_url ?? null,
+    nationality: profile?.nationality_name ?? profile?.nationality ?? null,
+    work_start_date: profile?.work_start_date ?? null,
+    phone: profile?.phone ?? null,
+    shift: schedule
+      ? {
+          name: schedule.shift_name,
+          start_time: schedule.shift_start_time,
+          end_time: schedule.shift_end_time,
+        }
+      : null,
   };
 }
 
@@ -401,13 +525,9 @@ export async function listWorkerAssignmentHistory(
 export async function acceptWorkerAssignment(
   assignmentIdParam: unknown,
   auth?: AccessTokenPayload
-): Promise<VehicleJobAssignmentDto> {
+): Promise<WorkerAssignmentAcceptResponse> {
   const account = await requireWorker(auth);
-  const assignmentId = parseId(assignmentIdParam);
-  const assignment = await workerApplicationRepository.findAssignmentByIdAndWorker(
-    assignmentId,
-    account.id
-  );
+  const assignment = await findWorkerAssignmentByReference(assignmentIdParam, account.id);
 
   if (!assignment) {
     throw new ApiError(404, "ASSIGNMENT_NOT_FOUND", "Assignment not found.");
@@ -454,6 +574,19 @@ export async function acceptWorkerAssignment(
     assignment.id,
     buildDeadline(settings.worker_scan_deadline_minutes * 60 * 1000)
   );
+  const [vehicleJobDetail, team] = await Promise.all([
+    workerApplicationRepository.getVehicleJobDetail(acceptedAssignment.vehicle_job_id),
+    workerApplicationRepository.listVehicleJobAssignmentTeam(acceptedAssignment.vehicle_job_id),
+  ]);
+
+  if (!vehicleJobDetail) {
+    throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
+  }
+
+  const response = buildWorkerAssignmentAcceptResponse(
+    vehicleJobDetail,
+    team
+  );
 
   sendWorkerSocketEvent(account.id, "ASSIGNMENT_ACCEPTED", {
     assignment: acceptedAssignment,
@@ -474,7 +607,7 @@ export async function acceptWorkerAssignment(
     },
   });
 
-  return acceptedAssignment;
+  return response;
 }
 
 // Function ให้ worker scan QR เพื่อ check-in เข้างาน
@@ -484,12 +617,11 @@ export async function scanWorkerAssignment(
   auth?: AccessTokenPayload
 ): Promise<VehicleJobAssignmentDto> {
   const account = await requireWorker(auth);
-  const assignmentId = parseId(assignmentIdParam);
   const input = parseWithSchema(workerScanBodySchema, body);
 
   const scannedAssignment = await withTransaction(async (transaction) => {
-    const assignment = await workerApplicationRepository.findAssignmentByIdAndWorker(
-      assignmentId,
+    const assignment = await findWorkerAssignmentByReference(
+      assignmentIdParam,
       account.id,
       transaction
     );

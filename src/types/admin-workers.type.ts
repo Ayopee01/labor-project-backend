@@ -16,6 +16,8 @@ export interface AccountDto {
   status: AccountStatus;
   full_name: string;
   position: string | null;
+  email: string | null;
+  phone: string | null;
   permission_level: string | null;
   created_by: number | null;
   created_at: string;
@@ -67,6 +69,8 @@ export interface AccountCreateInput {
   status?: AccountStatus;
   full_name: string;
   position?: string | null;
+  email?: string | null;
+  phone?: string | null;
   permission_level?: string | null;
   created_by?: number | null;
 }
@@ -76,6 +80,8 @@ export interface UserAccountUpdateInput {
   username?: string;
   full_name?: string;
   position?: string | null;
+  email?: string | null;
+  phone?: string | null;
 }
 
 // Type ส่วน Repository input สำหรับสร้าง profile

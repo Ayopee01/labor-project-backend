@@ -17,6 +17,9 @@
         `TICKET_COMPLETION_SUBMITTED`, `TICKET_COMPLETION_RESULT`,
         `STALL_JOB_REOPENED`, `ASSIGNMENT_SCAN_DEADLINE_EXTENDED`,
         `STALL_JOB_CANCELLED`, `MARKET_JOB_CANCELLED`, and `VEHICLE_JOB_CANCELLED`.
+        `WORKER_ASSIGNED` sends `vehicle_job_ref`, `gate_transaction_ref`,
+        `worker_qr_token`, and `assignment.created_at/accept_deadline_at`.
+        It does not send `driver_qr_token`.
         Worker actions such as accept/check-in/complete still use the REST endpoints.
       operationId: connectWorkerWebSocket
       security:
@@ -32,20 +35,20 @@
     post:
       tags:
         - Worker Application
-      summary: Put the current worker into Redis FIFO queue during the assigned shift.
+      summary: Put the current worker into Redis FIFO queue during the assigned shift time.
       description: Worker Mobile must have an active `/ws/workers` WebSocket connection before going online.
       operationId: workerOnline
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Worker queue state.
+          description: Worker online summary.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkerQueueEntry"
+                $ref: "#/components/schemas/WorkerOnlineResponse"
         "403":
-          description: Worker is inactive, has no current schedule, or is outside the assigned shift.
+          description: Worker is inactive, has no current schedule, or is outside the assigned shift time. OUTSIDE_WORK_SHIFT includes shift and remaining time details.
           content:
             application/json:
               schema:
@@ -75,7 +78,7 @@
     post:
       tags:
         - Worker Application
-      summary: Put the current worker on a 15-minute break during the assigned shift.
+      summary: Put the current worker on a 15-minute break during the assigned shift time.
       operationId: workerBreak
       security:
         - bearerAuth: []
@@ -87,7 +90,7 @@
               schema:
                 $ref: "#/components/schemas/WorkerQueueEntry"
         "403":
-          description: Worker is inactive, has no current schedule, or is outside the assigned shift.
+          description: Worker is inactive, has no current schedule, or is outside the assigned shift time. OUTSIDE_WORK_SHIFT includes shift and remaining time details.
           content:
             application/json:
               schema:
@@ -102,13 +105,13 @@
     get:
       tags:
         - Worker Application
-      summary: Get current worker queue state and active assignment.
+      summary: Get current worker profile and shift.
       operationId: getWorkerStatus
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Worker status.
+          description: Worker profile and current shift.
           content:
             application/json:
               schema:
@@ -154,16 +157,18 @@
       parameters:
         - in: path
           name: id
+          description: Assignment id or vehicle_job_ref from WORKER_ASSIGNED.
           required: true
           schema:
-            type: integer
+            type: string
+            example: VEH-20260706-0003
       responses:
         "200":
-          description: Accepted assignment.
+          description: Accepted assignment and job detail for the worker job screen.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VehicleJobAssignment"
+                $ref: "#/components/schemas/WorkerAssignmentAcceptResponse"
   /api/workers/me/assignments/{id}/check-in-qr:
     post:
       tags:
@@ -175,9 +180,11 @@
       parameters:
         - in: path
           name: id
+          description: Assignment id or vehicle_job_ref from WORKER_ASSIGNED.
           required: true
           schema:
-            type: integer
+            type: string
+            example: VEH-20260706-0003
       requestBody:
         required: true
         content:

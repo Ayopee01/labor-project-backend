@@ -126,7 +126,7 @@ const updateProfileInputSchema = z.object({
 
 // Schema ข้อมูลวันทำงานและช่วงเวลางานของ worker
 export const workScheduleInputSchema = z.object({
-  work_date: dateString,
+  work_date: optionalDateString,
   shift_start_time: timeString,
   shift_end_time: timeString,
 });
@@ -144,7 +144,7 @@ export const createUserBodySchema = z.object({
   nationality_name: optionalTrimmedString,
   shirt_type: trimmedString,
   shirt_number: trimmedString,
-  work_start_date: optionalDateString,
+  work_start_date: dateString,
   status: defaultActiveStatusSchema,
   work_schedule: workScheduleInputSchema,
 });
@@ -159,6 +159,7 @@ export const updateUserBodySchema = z.object({
   position: optionalTrimmedString,
   shirt_type: optionalTrimmedString,
   shirt_number: optionalTrimmedString,
+  work_start_date: optionalDateString,
   work_date: optionalDateString,
   shift_start_time: z.preprocess(emptyStringToUndefined, timeString.optional()),
   shift_end_time: z.preprocess(emptyStringToUndefined, timeString.optional()),
@@ -299,6 +300,8 @@ export const createAdminAccountBodySchema = z.object({
   password: trimmedString,
   full_name: trimmedString,
   position: optionalTrimmedString,
+  email: optionalTrimmedString,
+  phone: optionalTrimmedString,
   status: defaultActiveStatusSchema,
   permission_level: z.enum(ADMIN_PERMISSION_LEVELS),
   permissions: z

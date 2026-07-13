@@ -337,7 +337,7 @@ export async function scheduleAssignmentTimeout(
     },
     {
       delay: delayMs,
-      jobId: `assignment-timeout:${assignmentId}`,
+      jobId: `assignment-timeout-${assignmentId}`,
       removeOnComplete: true,
       removeOnFail: 100,
     }
@@ -346,7 +346,7 @@ export async function scheduleAssignmentTimeout(
 
 // Function ยกเลิก BullMQ delayed job เมื่อ worker กดรับงานทันเวลา
 export async function removeAssignmentTimeout(assignmentId: number): Promise<void> {
-  const job = await assignmentTimeoutQueue.getJob(`assignment-timeout:${assignmentId}`);
+  const job = await assignmentTimeoutQueue.getJob(`assignment-timeout-${assignmentId}`);
 
   if (job) {
     await job.remove();
@@ -367,7 +367,7 @@ export async function scheduleWorkerBreakReturn(
     },
     {
       delay: delayMs,
-      jobId: `worker-break-return:${accountId}:${scheduleId}`,
+      jobId: `worker-break-return-${accountId}-${scheduleId}`,
       removeOnComplete: true,
       removeOnFail: 100,
     }
@@ -380,7 +380,7 @@ export async function removeWorkerBreakReturn(
   scheduleId: number
 ): Promise<void> {
   const job = await workerBreakReturnQueue.getJob(
-    `worker-break-return:${accountId}:${scheduleId}`
+    `worker-break-return-${accountId}-${scheduleId}`
   );
 
   if (job) {

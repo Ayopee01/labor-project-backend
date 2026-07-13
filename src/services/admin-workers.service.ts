@@ -8,16 +8,25 @@ import { getRuntimeSettings } from "./admin-settings.service";
 import { publishNotification } from "./notifications.service";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
-import type { AccountDto, AdminWorkerBoardStatus, AdminWorkerStatusItem, PaginationFilters, PaginationMeta, ProfileDto, ProfileUpdateInput, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleUpdateInput, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
+import type { AccountDto, AdminWorkerBoardStatus, AdminWorkerStatusItem, PaginationFilters, PaginationMeta, ProfileDto, ProfileUpdateInput, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import type { VehicleJobAssignmentDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
 import { parseWithSchema, parseWorkScheduleInput } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
-import { formatScheduleWithShift, isDateInWorkSchedule } from "../utils/shift";
+import { formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
 import { buildWorkerCodeFromShirtNumber } from "../utils/worker-code";
 
 /* -------------------------------------- Functions -------------------------------------- */
+
+function getBangkokDateString(value: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
+}
 
 // Function ค้นหา account ประเภท user และโยน error หากไม่พบ
 async function requireUserAccount(
@@ -197,7 +206,11 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
   const workerCode = buildWorkerCodeFromShirtNumber(shirtNumber);
   const username = requestedUsername ?? workerCode;
   const initialPassword = password ?? phone;
-  const initialWorkStartDate = workStartDate ?? workScheduleInput.work_date;
+  const initialWorkStartDate = workStartDate;
+  const initialScheduleInput = {
+    ...workScheduleInput,
+    work_date: workScheduleInput.work_date ?? initialWorkStartDate,
+  };
   const nationalityCode = requestedNationalityCode ?? "UNKNOWN";
   const nationalityName = requestedNationalityName ?? nationality;
   const profileInput = {
@@ -242,7 +255,7 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
     await workScheduleRepository.create(
       {
         account_id: account.id,
-        ...workScheduleInput,
+        ...initialScheduleInput,
         is_current: true,
         created_by: actorId,
         updated_by: actorId,
@@ -305,6 +318,7 @@ export async function updateUser(
     position,
     shirt_type: shirtType,
     shirt_number: shirtNumber,
+    work_start_date: workStartDate,
     work_date: workDate,
     shift_start_time: shiftStartTime,
     shift_end_time: shiftEndTime,
@@ -316,7 +330,7 @@ export async function updateUser(
     workDate !== undefined ||
     shiftStartTime !== undefined ||
     shiftEndTime !== undefined;
-  const scheduleInput: WorkScheduleUpdateInput | undefined =
+  const scheduleInput =
     workScheduleBody !== undefined
       ? parseWorkScheduleInput(workScheduleBody)
       : hasFlatScheduleInput
@@ -359,6 +373,10 @@ export async function updateUser(
 
     if (shirtNumber !== undefined) {
       mergedProfileInput.shirt_number = shirtNumber;
+    }
+
+    if (workStartDate !== undefined) {
+      mergedProfileInput.work_start_date = workStartDate;
     }
 
     const hasProfileInput = hasProfileUpdates(mergedProfileInput);
@@ -416,12 +434,27 @@ export async function updateUser(
     }
 
     if (scheduleInput !== undefined) {
-      let currentSchedule = await workScheduleRepository.updateCurrentByAccountId(
+      const currentProfile = await profileRepository.findByAccountId(
         account.id,
-        {
-          ...scheduleInput,
-          updated_by: actorId,
-        },
+        transaction
+      );
+      let currentSchedule = await workScheduleRepository.findCurrentByAccountId(
+        account.id,
+        transaction
+      );
+      const resolvedScheduleInput = {
+        ...scheduleInput,
+        work_date:
+          scheduleInput.work_date ??
+          currentSchedule?.work_date ??
+          currentProfile?.work_start_date ??
+          getBangkokDateString(),
+        updated_by: actorId,
+      };
+
+      currentSchedule = await workScheduleRepository.updateCurrentByAccountId(
+        account.id,
+        resolvedScheduleInput,
         transaction
       );
 
@@ -429,10 +462,9 @@ export async function updateUser(
         currentSchedule = await workScheduleRepository.create(
           {
             account_id: account.id,
-            ...scheduleInput,
+            ...resolvedScheduleInput,
             is_current: true,
             created_by: actorId,
-            updated_by: actorId,
           },
           transaction
         );
@@ -716,7 +748,7 @@ export async function listAdminWorkerStatuses(): Promise<{
       account.status === "active" &&
       presence.is_online &&
       schedule !== null &&
-      isDateInWorkSchedule(schedule)
+      isTimeInWorkSchedule(schedule)
     )
     .map(({ item }) => item);
 

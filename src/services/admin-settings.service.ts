@@ -225,6 +225,8 @@ export async function createAdminAccount(
         status: input.status,
         full_name: input.full_name,
         position: input.position ?? null,
+        email: input.email ?? null,
+        phone: input.phone ?? null,
         permission_level: input.permission_level,
         created_by: actorId,
       },

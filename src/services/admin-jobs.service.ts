@@ -17,6 +17,7 @@ import { parseId, parseWithSchema } from "../validation/parser";
 import { adminAssignWorkersBodySchema, adminCancelBodySchema, adminExtendScanDeadlineBodySchema, adminVehicleJobListQuerySchema } from "../validation/schemas";
 // import Utils
 import ApiError from "../utils/api-error";
+import { buildWorkerAssignedPayload } from "../utils/worker-assignment-event";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -311,7 +312,7 @@ export async function assignVehicleJobWorkers(
   const settings = await getRuntimeSettings();
   const acceptDeadlineMs = settings.worker_accept_deadline_seconds * 1000;
 
-  const assignments = await withTransaction(async (transaction) => {
+  const { assignments, vehicleJob } = await withTransaction(async (transaction) => {
     const vehicleJob = await adminJobsRepository.findVehicleJobById(
       vehicleJobId,
       transaction
@@ -359,7 +360,10 @@ export async function assignVehicleJobWorkers(
       createdAssignments.push(assignment);
     }
 
-    return createdAssignments;
+    return {
+      assignments: createdAssignments,
+      vehicleJob,
+    };
   });
 
   for (const assignment of assignments) {
@@ -369,12 +373,11 @@ export async function assignVehicleJobWorkers(
       assignment.worker_account_id,
       acceptDeadlineMs
     );
-    sendWorkerSocketEvent(assignment.worker_account_id, "WORKER_ASSIGNED", {
-      assignment,
-      vehicle_job_id: assignment.vehicle_job_id,
-      accept_deadline_at: assignment.accept_deadline_at,
-      source: "admin_assign",
-    });
+    sendWorkerSocketEvent(
+      assignment.worker_account_id,
+      "WORKER_ASSIGNED",
+      buildWorkerAssignedPayload(assignment, vehicleJob)
+    );
   }
   publishNotification({
     type: "ASSIGNMENT_CREATED_BY_ADMIN",

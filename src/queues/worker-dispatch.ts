@@ -7,7 +7,8 @@ import { publishNotification } from "../services/notifications.service";
 import { enqueueWorker, getWorkerQueueStatus, markWorkerBusy, markWorkerOffline, popReadyWorkers, scheduleAssignmentTimeout, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 // import Utils
-import { isDateInWorkSchedule } from "../utils/shift";
+import { isTimeInWorkSchedule } from "../utils/shift";
+import { buildWorkerAssignedPayload } from "../utils/worker-assignment-event";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -73,11 +74,11 @@ export async function dispatchReadyWorkers(
           worker.account_id,
           acceptDeadlineMs
         );
-        sendWorkerSocketEvent(worker.account_id, "WORKER_ASSIGNED", {
-          assignment,
-          vehicle_job: vehicleJob,
-          accept_deadline_at: assignment.accept_deadline_at,
-        });
+        sendWorkerSocketEvent(
+          worker.account_id,
+          "WORKER_ASSIGNED",
+          buildWorkerAssignedPayload(assignment, vehicleJob)
+        );
         publishNotification({
           type: "WORKER_ASSIGNED",
           title: "Worker assigned",
@@ -182,7 +183,7 @@ export function startAssignmentTimeoutProcessing(): void {
     if (
       currentSchedule &&
       currentSchedule.id === scheduleId &&
-      isDateInWorkSchedule(currentSchedule) &&
+      isTimeInWorkSchedule(currentSchedule) &&
       !currentAssignment
     ) {
       const queue = await enqueueWorker(accountId);

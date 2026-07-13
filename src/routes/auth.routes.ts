@@ -68,7 +68,7 @@ router.get(
   sessionMiddleware,
   async (req, res, next) => {
     try {
-      const result = await authService.me(req.auth);
+      const result = await authService.me(req.auth, req.session);
       res.json(result);
     } catch (error) {
       next(error);
