@@ -7,6 +7,7 @@ import sessionMiddleware from "../middlewares/session.middleware";
 // import Service
 import * as workerService from "../services/worker.service";
 
+// Config Express router สำหรับ Worker Application routes
 const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["worker"]));
@@ -81,11 +82,11 @@ router.get(
 
 // Route ให้ worker รับ assignment
 router.post(
-  "/me/assignments/:id/accept",
+  "/me/assignments/:vehicleJobRef/accept",
   async (req, res, next) => {
     try {
       const result = await workerService.acceptWorkerAssignment(
-        req.params.id,
+        req.params.vehicleJobRef,
         req.auth
       );
       res.json(result);
@@ -97,11 +98,11 @@ router.post(
 
 // Route ให้ worker scan QR เพื่อ check-in เข้างาน
 router.post(
-  "/me/assignments/:id/check-in-qr",
+  "/me/assignments/:vehicleJobRef/check-in-qr",
   async (req, res, next) => {
     try {
       const result = await workerService.scanWorkerAssignment(
-        req.params.id,
+        req.params.vehicleJobRef,
         req.body,
         req.auth
       );
@@ -114,11 +115,11 @@ router.post(
 
 // Route ให้ worker ส่งยอดปิดงานระดับ ticket
 router.post(
-  "/me/tickets/:id/complete",
+  "/me/tickets/:stallJobRef/complete",
   async (req, res, next) => {
     try {
       const result = await workerService.completeWorkerTicket(
-        req.params.id,
+        req.params.stallJobRef,
         req.body,
         req.auth
       );

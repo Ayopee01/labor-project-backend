@@ -169,14 +169,6 @@ export interface PaginationMeta {
   total_pages: number;
 }
 
-// Type ส่วน Response ของ session ที่แสดงใน user detail
-export interface FormattedSession {
-  id: number;
-  device_id: string;
-  device_name: string;
-  last_active_at: string;
-}
-
 // Type ส่วนตารางงานแบบย่อสำหรับ API list users
 export interface UserListSchedule {
   work_date: string;
@@ -196,7 +188,7 @@ export interface UserListItem {
 }
 
 // Type ส่วน Response ของ API user detail
-export interface UserDetailInfo {
+interface UserDetailInfo {
   phone: string | null;
   position: string | null;
   shirt_number: string | null;

@@ -15,6 +15,7 @@ import notificationRoutes from "./routes/notifications.routes";
 import systemRoutes from "./routes/system.routes";
 import workerRoutes from "./routes/worker.routes";
 
+// Config Express app หลักของ API
 const app = express();
 
 // Middleware

@@ -8,13 +8,28 @@ import { enqueueWorker, getWorkerQueueStatus, markWorkerBusy, markWorkerOffline,
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 // import Utils
 import { isTimeInWorkSchedule } from "../utils/shift";
+import { buildDeadline } from "../utils/time";
 import { buildWorkerAssignedPayload } from "../utils/worker-assignment-event";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้างเวลา deadline จากเวลาปัจจุบัน
-function buildDeadline(durationMs: number): Date {
-  return new Date(Date.now() + durationMs);
+// Function ดึงรหัสพนักงาน worker จาก account id สำหรับ notification/event
+async function getWorkerCode(accountId: number): Promise<string | null> {
+  const profile = await workerApplicationRepository.profileRepository.findByAccountId(
+    accountId
+  );
+
+  return profile?.worker_code ?? null;
+}
+
+async function getWorkerCodeMap(accountIds: number[]): Promise<Map<number, string>> {
+  const profiles = await workerApplicationRepository.profileRepository.findByAccountIds(
+    accountIds
+  );
+
+  return new Map(
+    profiles.map((profile) => [profile.account_id, profile.worker_code])
+  );
 }
 
 // Function dispatch คนงานจาก FIFO ให้ทุกงานที่พร้อมเรียก
@@ -42,16 +57,21 @@ export async function dispatchReadyWorkers(
       if (readyWorkers.length === 0) {
         break;
       }
+      const workerCodeMap = await getWorkerCodeMap(
+        readyWorkers.map((worker) => worker.account_id)
+      );
 
       for (const worker of readyWorkers) {
+        const workerCode = workerCodeMap.get(worker.account_id) ?? null;
+
         if (!isWorkerSocketConnected(worker.account_id)) {
           const queue = await markWorkerOffline(worker.account_id);
           publishNotification({
             type: "WORKER_STATUS_CHANGED",
             title: "Worker offline",
-            message: `Worker ${worker.account_id} was marked offline because WebSocket is not connected.`,
+            message: `Worker ${workerCode ?? worker.account_id} was marked offline because WebSocket is not connected.`,
             payload: {
-              worker_account_id: worker.account_id,
+              worker_code: workerCode,
               queue,
               reason: "socket_not_connected_during_dispatch",
             },
@@ -82,12 +102,10 @@ export async function dispatchReadyWorkers(
         publishNotification({
           type: "WORKER_ASSIGNED",
           title: "Worker assigned",
-          message: `Worker ${worker.account_id} was assigned to vehicle job ${vehicleJob.vehicle_job_ref}.`,
+          message: `Worker ${workerCode ?? worker.account_id} was assigned to vehicle job ${vehicleJob.vehicle_job_ref}.`,
           payload: {
-            assignment_id: assignment.id,
-            vehicle_job_id: assignment.vehicle_job_id,
             vehicle_job_ref: vehicleJob.vehicle_job_ref,
-            worker_account_id: worker.account_id,
+            worker_code: workerCode,
             status: assignment.status,
             accept_deadline_at: assignment.accept_deadline_at,
           },
@@ -114,15 +132,21 @@ export function startAssignmentTimeoutProcessing(): void {
         return;
       }
 
+      const vehicleJob = await workerApplicationRepository.findVehicleJobById(
+        assignment.vehicle_job_id,
+        transaction
+      );
+      const workerCode = await getWorkerCode(workerAccountId);
+
       await workerApplicationRepository.timeoutAssignment(assignment.id, transaction);
       if (isWorkerSocketConnected(workerAccountId)) {
         const queue = await enqueueWorker(workerAccountId);
         publishNotification({
           type: "WORKER_STATUS_CHANGED",
           title: "Worker returned to queue",
-          message: `Worker ${workerAccountId} returned to queue after assignment timeout.`,
+          message: `Worker ${workerCode ?? workerAccountId} returned to queue after assignment timeout.`,
           payload: {
-            worker_account_id: workerAccountId,
+            worker_code: workerCode,
             queue,
             reason: "assignment_timeout_requeue",
           },
@@ -135,9 +159,9 @@ export function startAssignmentTimeoutProcessing(): void {
         publishNotification({
           type: "WORKER_STATUS_CHANGED",
           title: "Worker offline",
-          message: `Worker ${workerAccountId} was marked offline after assignment timeout.`,
+          message: `Worker ${workerCode ?? workerAccountId} was marked offline after assignment timeout.`,
           payload: {
-            worker_account_id: workerAccountId,
+            worker_code: workerCode,
             queue,
             reason: "assignment_timeout_socket_disconnected",
           },
@@ -147,17 +171,15 @@ export function startAssignmentTimeoutProcessing(): void {
         });
       }
       sendWorkerSocketEvent(workerAccountId, "ASSIGNMENT_TIMEOUT", {
-        assignment_id: assignment.id,
-        vehicle_job_id: assignment.vehicle_job_id,
+        vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
       });
       publishNotification({
         type: "ASSIGNMENT_TIMEOUT",
         title: "Assignment timed out",
-        message: `Assignment ${assignment.id} timed out.`,
+        message: `Worker ${workerCode ?? workerAccountId} did not accept vehicle job ${vehicleJob?.vehicle_job_ref ?? "-"}.`,
         payload: {
-          assignment_id: assignment.id,
-          vehicle_job_id: assignment.vehicle_job_id,
-          worker_account_id: workerAccountId,
+          vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+          worker_code: workerCode,
           status: "TIMEOUT",
         },
         audience: {
@@ -184,15 +206,17 @@ export function startAssignmentTimeoutProcessing(): void {
       currentSchedule &&
       currentSchedule.id === scheduleId &&
       isTimeInWorkSchedule(currentSchedule) &&
-      !currentAssignment
+      !currentAssignment &&
+      isWorkerSocketConnected(accountId)
     ) {
       const queue = await enqueueWorker(accountId);
+      const workerCode = await getWorkerCode(accountId);
       publishNotification({
         type: "WORKER_STATUS_CHANGED",
         title: "Worker break finished",
-        message: `Worker ${accountId} returned to queue after break.`,
+        message: `Worker ${workerCode ?? accountId} returned to queue after break.`,
         payload: {
-          worker_account_id: accountId,
+          worker_code: workerCode,
           queue,
           reason: "break_finished_requeue",
         },
@@ -205,12 +229,13 @@ export function startAssignmentTimeoutProcessing(): void {
     }
 
     const queue = await markWorkerOffline(accountId);
+    const workerCode = await getWorkerCode(accountId);
     publishNotification({
       type: "WORKER_STATUS_CHANGED",
       title: "Worker offline",
-      message: `Worker ${accountId} was marked offline after break.`,
+      message: `Worker ${workerCode ?? accountId} was marked offline after break.`,
       payload: {
-        worker_account_id: accountId,
+        worker_code: workerCode,
         queue,
         reason: "break_finished_not_available",
       },

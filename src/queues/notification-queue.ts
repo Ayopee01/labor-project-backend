@@ -9,7 +9,10 @@ import type { LineMessageJobData } from "../types/line.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config แปลง REDIS_URL เป็น connection object สำหรับ BullMQ
 const redisUrl = new URL(REDIS_CONFIG.url);
+
+// Config connection object สำหรับ BullMQ queue/worker
 const bullConnection = {
   host: redisUrl.hostname,
   port: Number(redisUrl.port || 6379),
@@ -18,10 +21,12 @@ const bullConnection = {
   maxRetriesPerRequest: null,
 };
 
+// Config queue สำหรับส่ง LINE message แบบ background
 const lineMessageQueue = new Queue(REDIS_CONFIG.lineMessageQueueName, {
   connection: bullConnection,
 });
 
+// State เก็บ BullMQ worker เพื่อไม่ให้ start ซ้ำ
 let lineWorker: Worker | null = null;
 
 /* -------------------------------------- Functions -------------------------------------- */

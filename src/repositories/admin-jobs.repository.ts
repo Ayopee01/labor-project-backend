@@ -2,20 +2,23 @@
 import { Prisma } from "@prisma/client";
 
 // import
+import { ACTIVE_ASSIGNMENT_STATUSES } from "../constants/job-status";
 import * as accountRepository from "./shared/account.repository";
-import { mapGateTicket, mapMarketJob, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
+import * as profileRepository from "./shared/profile.repository";
+import { mapAccount, mapGateTicket, mapMarketJob, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
-export { findVehicleJobById, getVehicleJobDetail } from "./shared/vehicle-job.repository";
+export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail, getVehicleJobDetailByRef } from "./shared/vehicle-job.repository";
 export { countActiveAssignments, createAssignment, findAssignmentById, findCurrentAssignmentByWorker } from "./shared/vehicle-job-assignment.repository";
 export { listTicketWorkers } from "./shared/ticket-worker.repository";
 export { createMessageDeliveryLog } from "./line.repository";
 
 // import Types
 import type { DbConnection } from "../types/common.type";
+import type { AccountDto } from "../types/admin-workers.type";
 import type { GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 import type { VehicleJobListFilters, VehicleJobListResult } from "../types/admin-jobs.type";
 
-export { accountRepository };
+export { accountRepository, profileRepository };
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -152,19 +155,88 @@ export async function findMarketJobById(
   return mapMarketJob(marketJob);
 }
 
+// Function หา market job จากเลขอ้างอิงตลาด
+export async function findMarketJobByRef(
+  marketJobRef: string,
+  connection?: DbConnection
+): Promise<MarketJobDto | null> {
+  const db = client(connection);
+  const marketJob = await db.marketJob.findFirst({
+    where: {
+      marketJobRef,
+    },
+    orderBy: {
+      id: "desc",
+    },
+  });
+
+  return mapMarketJob(marketJob);
+}
+
 // Function หา gate ticket หรือ stall job จาก id
-export async function findGateTicketById(
-  id: number,
+// Function หา gate ticket/stall job จากเลขอ้างอิงแผง
+export async function findGateTicketByRef(
+  stallJobRef: string,
   connection?: DbConnection
 ): Promise<GateTicketDto | null> {
   const db = client(connection);
-  const ticket = await db.gateTicket.findUnique({
+  const ticket = await db.gateTicket.findFirst({
     where: {
-      id,
+      stallJobRef,
+    },
+    orderBy: {
+      id: "desc",
     },
   });
 
   return mapGateTicket(ticket);
+}
+
+// Function หา worker จากรหัสพนักงานสำหรับ Admin Jobs flow
+export async function findWorkerByCode(
+  workerCode: string,
+  connection?: DbConnection
+): Promise<AccountDto | null> {
+  const db = client(connection);
+  const account = await db.account.findFirst({
+    where: {
+      role: "worker",
+      profile: {
+        workerCode,
+      },
+    },
+  });
+
+  return mapAccount(account);
+}
+
+// Function หา assignment ปัจจุบันของ worker ในงานรถจาก vehicle_job_ref + worker_code
+export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
+  vehicleJobRef: string,
+  workerCode: string,
+  connection?: DbConnection
+): Promise<VehicleJobAssignmentDto | null> {
+  const db = client(connection);
+  const assignment = await db.vehicleJobAssignment.findFirst({
+    where: {
+      vehicleJob: {
+        vehicleJobRef,
+      },
+      worker: {
+        profile: {
+          workerCode,
+        },
+      },
+      status: {
+        in: ACTIVE_ASSIGNMENT_STATUSES,
+      },
+    },
+    orderBy: {
+      id: "desc",
+    },
+  });
+
+  return mapVehicleJobAssignment(assignment);
 }
 
 // Function ยกเลิกงานรถ พร้อมงานตลาด แผง และ active assignment ใต้รถ
@@ -178,7 +250,7 @@ export async function cancelVehicleJob(
     where: {
       vehicleJobId,
       status: {
-        in: ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"],
+        in: ACTIVE_ASSIGNMENT_STATUSES,
       },
     },
     data: {
@@ -316,7 +388,7 @@ export async function listActiveAssignmentsByVehicleJob(
     where: {
       vehicleJobId,
       status: {
-        in: ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"],
+        in: ACTIVE_ASSIGNMENT_STATUSES,
       },
     },
     orderBy: {
@@ -332,10 +404,29 @@ export async function listActiveAssignmentsByVehicleJob(
 // Function เปลี่ยน assignment เป็นรับงานแล้ว
 export async function listAcceptedAssignmentsByVehicleJob(
   vehicleJobId: number,
-  workerAccountIds?: number[],
+  workerCodes?: string[],
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto[]> {
   const db = client(connection);
+  const workerAccountIds = workerCodes && workerCodes.length > 0
+    ? (
+        await db.userProfile.findMany({
+          where: {
+            workerCode: {
+              in: workerCodes,
+            },
+          },
+          select: {
+            accountId: true,
+          },
+        })
+      ).map((profile) => profile.accountId)
+    : undefined;
+
+  if (workerCodes && workerCodes.length > 0 && workerAccountIds?.length === 0) {
+    return [];
+  }
+
   const assignments = await db.vehicleJobAssignment.findMany({
     where: {
       vehicleJobId,

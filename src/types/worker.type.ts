@@ -1,14 +1,14 @@
 // Type ส่วน Value ของ status งานรถและงานตลาด
-export type JobStatus = string;
+type JobStatus = string;
 
 // Type ส่วน Value ของ status ตั๋วหรือแผง
-export type TicketStatus = string;
+type TicketStatus = string;
 
 // Type ส่วน Value ของ status queue คนงาน
-export type WorkerQueueStatus = string;
+type WorkerQueueStatus = string;
 
 // Type ส่วน Value ของ status assignment คนงาน
-export type AssignmentStatus = string;
+type AssignmentStatus = string;
 
 // Type ส่วน DTO ของ table vehicle_jobs
 export interface VehicleJobDto {
@@ -53,9 +53,23 @@ export interface GateTicketDto {
 }
 
 // Type ส่วน DTO ของ table ticket_products
+export interface CurrentTicketProgressDto {
+  ticket: GateTicketDto;
+  market_job_ref: string;
+  market_name: string;
+}
+
+export interface VehicleWorkReadinessDto {
+  workers_required: number;
+  checked_in_count: number;
+  remaining_count: number;
+  is_ready: boolean;
+}
+
 export interface TicketProductDto {
   id: number;
   ticket_id: number;
+  product_ref: string;
   product_type: string | null;
   name: string;
   quantity: string;
@@ -100,6 +114,7 @@ export interface WorkerQueueEntryDto {
   updated_at: string;
 }
 
+// Type ส่วน response หลัง worker online/offline พร้อมสรุปงานและจำนวนพักในกะ
 export interface WorkerOnlineResponse {
   full_name: string;
   worker_code: string | null;
@@ -109,20 +124,42 @@ export interface WorkerOnlineResponse {
   completed_job_count: number;
 }
 
-export interface WorkerStatusShift {
+// Type ส่วน response หลัง worker กดพัก
+export interface WorkerBreakResponse {
+  full_name: string;
+  worker_code: string | null;
+  status: WorkerQueueStatus;
+  break_count_used: number;
+  break_count_limit: number;
+}
+
+// Type ส่วน shift ที่แสดงใน status ของ worker
+interface WorkerStatusShift {
   name: string;
   start_time: string;
   end_time: string;
 }
 
+// Type ส่วนเวลาพักที่เหลือเมื่อ worker อยู่สถานะ break
+interface WorkerStatusRemainingBreakTime {
+  total_seconds: number;
+  minutes: number;
+  seconds: number;
+  text: string;
+}
+
+// Type ส่วน response ของ GET /api/workers/me/status
 export interface WorkerStatusResponse {
   full_name: string;
   worker_code: string | null;
   image_url: string | null;
+  status: WorkerQueueStatus;
   nationality: string | null;
   work_start_date: string | null;
   phone: string | null;
   shift: WorkerStatusShift | null;
+  break_until?: string;
+  remaining_break_time?: WorkerStatusRemainingBreakTime;
 }
 
 // Type ส่วน DTO ของ heartbeat/presence worker จาก Redis
@@ -153,6 +190,17 @@ export interface WorkerAssignmentHistoryItemDto {
   vehicle_job: VehicleJobDto;
 }
 
+// Type ส่วน item response ประวัติงาน worker
+export interface WorkerAssignmentHistoryItemResponse {
+  vehicle_job_ref: string;
+  gate_transaction_ref: string;
+  license_plate: string;
+  status: AssignmentStatus;
+  accepted_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
 // Type ส่วน response รายละเอียดงานรถพร้อมตลาด ตั๋ว และสินค้า
 export interface WorkerAssignmentTeamMemberDto {
   full_name: string;
@@ -161,31 +209,46 @@ export interface WorkerAssignmentTeamMemberDto {
   scan_status: string;
 }
 
-export interface WorkerAssignmentProductDto {
+// Type ส่วนสินค้าใน response หลัง worker รับงาน
+interface WorkerAssignmentProductDto {
+  product_ref: string;
   name: string;
   quantity: string;
   unit: string;
 }
 
-export interface WorkerAssignmentStallDto {
+// Type ส่วนแผงใน response หลัง worker รับงาน
+interface WorkerAssignmentStallDto {
+  stall_job_ref: string;
   stall_code: string | null;
   stall_name: string | null;
   product_count: number;
   products: WorkerAssignmentProductDto[];
 }
 
-export interface WorkerAssignmentMarketDto {
+// Type ส่วนตลาดใน response หลัง worker รับงาน
+interface WorkerAssignmentMarketDto {
   market_name: string;
   stall_count: number;
   stalls: WorkerAssignmentStallDto[];
 }
 
+// Type ส่วน response หลัง worker รับ assignment
 export interface WorkerAssignmentAcceptResponse {
   license_plate: string;
   team: WorkerAssignmentTeamMemberDto[];
   markets: WorkerAssignmentMarketDto[];
 }
 
+// Type ส่วน response หลัง worker check-in ด้วย QR สำเร็จ
+export interface WorkerAssignmentCheckInResponse {
+  status: AssignmentStatus;
+  worker_code: string | null;
+  vehicle_job_ref: string;
+  worker_qr_token: string;
+}
+
+// Type ส่วนรายละเอียดงานรถพร้อมตลาด แผง และสินค้า
 export interface VehicleJobDetailResponse {
   vehicle_job: VehicleJobDto;
   markets: Array<
@@ -202,14 +265,33 @@ export interface VehicleJobDetailResponse {
 // Type ส่วน response หลัง worker ส่งยอดปิดงานระดับตั๋ว/แผง
 export interface TicketCompletionResponse {
   message: string;
-  ticket: GateTicketDto;
-  submission: TicketCompletionSubmissionDto;
-  products: TicketProductDto[];
+  vehicle_job_ref: string | null;
+  market_job_ref: string | null;
+  market_name: string | null;
+  stall_job_ref: string;
+  ticket_no: string | null;
+  stall_no: string | null;
+  stall_name: string | null;
+  status: TicketStatus;
+  confirmation_status: string;
+  submission_status: string;
+  items: Array<{
+    product_ref: string;
+    product_type: string | null;
+    name: string;
+    quantity: string;
+    confirmed_quantity: string | null;
+    unit: string;
+  }>;
+  debug_line_postback?: {
+    confirm: string;
+    reject: string;
+  };
 }
 
 // Type ส่วน input รายการสินค้าที่ worker ยืนยันยอดตอนปิดงาน
 export interface TicketProductConfirmationInput {
-  ticket_product_id: number;
+  product_ref: string;
   confirmed_quantity: number;
 }
 

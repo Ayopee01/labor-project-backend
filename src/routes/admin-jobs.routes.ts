@@ -10,6 +10,7 @@ import sessionMiddleware from "../middlewares/session.middleware";
 import * as adminJobsService from "../services/admin-jobs.service";
 import * as adminWorkersService from "../services/admin-workers.service";
 
+// Config Express router สำหรับ Admin Jobs routes
 const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
@@ -93,11 +94,11 @@ router.get(
 
 // Route ดึงรายละเอียดงานรถพร้อมตลาด ตั๋ว และสินค้า
 router.get(
-  "/vehicle-jobs/:id",
+  "/vehicle-jobs/:vehicleJobRef",
   permissionMiddleware(["jobs:read"]),
   async (req, res, next) => {
     try {
-      const result = await adminJobsService.getVehicleJob(req.params.id);
+      const result = await adminJobsService.getVehicleJob(req.params.vehicleJobRef);
       res.json(result);
     } catch (error) {
       next(error);
@@ -107,12 +108,12 @@ router.get(
 
 // Route ยกเลิกงานรถทั้งคัน
 router.post(
-  "/vehicle-jobs/:id/cancel",
+  "/vehicle-jobs/:vehicleJobRef/cancel",
   permissionMiddleware(["jobs:cancel"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.cancelVehicleJob(
-        req.params.id,
+        req.params.vehicleJobRef,
         req.body
       );
       res.json(result);
@@ -124,12 +125,12 @@ router.post(
 
 // Route ยกเลิกงานรถและนำ worker กลับเข้าคิว
 router.post(
-  "/vehicle-jobs/:id/cancel-and-requeue",
+  "/vehicle-jobs/:vehicleJobRef/cancel-and-requeue",
   permissionMiddleware(["jobs:cancel"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.cancelVehicleJobAndRequeue(
-        req.params.id,
+        req.params.vehicleJobRef,
         req.body
       );
       res.json(result);
@@ -141,12 +142,12 @@ router.post(
 
 // Route assign worker เข้างานรถแบบระบุรายคน
 router.post(
-  "/vehicle-jobs/:id/assign-workers",
+  "/vehicle-jobs/:vehicleJobRef/assign-workers",
   permissionMiddleware(["jobs:assign"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.assignVehicleJobWorkers(
-        req.params.id,
+        req.params.vehicleJobRef,
         req.body
       );
       res.status(201).json(result);
@@ -158,12 +159,12 @@ router.post(
 
 // Route ต่อเวลา scan QR ของงานรถ
 router.post(
-  "/vehicle-jobs/:id/scan-deadline/extend",
+  "/vehicle-jobs/:vehicleJobRef/scan-deadline/extend",
   permissionMiddleware(["jobs:extend_deadline"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.extendVehicleJobScanDeadline(
-        req.params.id,
+        req.params.vehicleJobRef,
         req.body
       );
       res.json(result);
@@ -175,12 +176,13 @@ router.post(
 
 // Route ยกเลิก assignment รายคน
 router.post(
-  "/assignments/:id/cancel",
+  "/vehicle-jobs/:vehicleJobRef/workers/:workerCode/assignment/cancel",
   permissionMiddleware(["jobs:cancel"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.cancelAssignment(
-        req.params.id,
+        req.params.vehicleJobRef,
+        req.params.workerCode,
         req.body
       );
       res.json(result);
@@ -192,12 +194,12 @@ router.post(
 
 // Route ยกเลิกงานตลาด
 router.post(
-  "/market-jobs/:id/cancel",
+  "/market-jobs/:marketJobRef/cancel",
   permissionMiddleware(["jobs:cancel"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.cancelMarketJob(
-        req.params.id,
+        req.params.marketJobRef,
         req.body
       );
       res.json(result);
@@ -209,12 +211,12 @@ router.post(
 
 // Route ยกเลิกงานแผงหรือตั๋วรายใบ
 router.post(
-  "/stall-jobs/:id/cancel",
+  "/stall-jobs/:stallJobRef/cancel",
   permissionMiddleware(["jobs:cancel"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.cancelStallJob(
-        req.params.id,
+        req.params.stallJobRef,
         req.body
       );
       res.json(result);
@@ -226,12 +228,12 @@ router.post(
 
 // Route เปิดงานแผงกลับมาให้ worker ส่งยอดใหม่
 router.post(
-  "/stall-jobs/:id/reopen",
+  "/stall-jobs/:stallJobRef/reopen",
   permissionMiddleware(["jobs:reopen"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.reopenStallJob(
-        req.params.id,
+        req.params.stallJobRef,
         req.auth
       );
       res.json(result);

@@ -4,6 +4,7 @@
       tags:
         - Gate
       summary: Mock Gate payload and create a vehicle job.
+      description: Set `dispatch_now` to `true` when the vehicle is already ready to unload. The backend creates the job as `DISPATCH_NOW` and immediately dispatches ready workers through WebSocket. Omit it or set `false` to keep the Driver ready flow.
       operationId: createVehicleJobFromGate
       requestBody:
         required: true
@@ -12,14 +13,26 @@
             schema:
               $ref: "#/components/schemas/GateVehicleJobRequest"
       responses:
+        "200":
+          description: Existing Gate request replayed by idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateVehicleJobResponse"
         "201":
-          description: Vehicle job created or replayed by idempotency key.
+          description: Vehicle job created.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GateVehicleJobResponse"
         "400":
           description: Invalid Gate payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Duplicate vehicle job ref or idempotency key payload mismatch.
           content:
             application/json:
               schema:

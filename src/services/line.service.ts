@@ -3,15 +3,23 @@ import crypto from "crypto";
 // import
 import { withTransaction } from "../db/prisma";
 import { enqueueLineMessage } from "../queues/notification-queue";
+import { dispatchReadyWorkers } from "../queues/worker-dispatch";
+import { enqueueWorker, markWorkerOffline } from "../queues/worker-queue";
 import * as lineRepository from "../repositories/line.repository";
 import * as workerApplicationRepository from "../repositories/worker-application.repository";
-import { accountRepository } from "../repositories/worker-application.repository";
+import { accountRepository, profileRepository, workScheduleRepository } from "../repositories/worker-application.repository";
+import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
+import { publishNotification } from "./notifications.service";
 import { publishRealtimeEvent } from "./realtime.service";
 // import Types
-import type { LineWebhookEvent } from "../types/line.type";
-import type { GateTicketDto } from "../types/worker.type";
+import type { LineWebhookEvent, VendorTicketAction, VendorTicketActionTokenPayload } from "../types/line.type";
+import type { GateTicketDto, VehicleJobDto } from "../types/worker.type";
 // import Utils
 import ApiError from "../utils/api-error";
+import { isTimeInWorkSchedule } from "../utils/shift";
+import { buildWorkerTicketPayload } from "../utils/ticket-payload";
+import { verifyVendorTicketActionToken } from "../utils/vendor-action-token";
+import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -61,26 +69,147 @@ async function buildTicketResultAudience(
 
 // Function อ่าน postback จาก LINE เป็น action และ ticket id
 function parseLinePostback(data: string | undefined): {
-  action: string | null;
-  ticketId: number | null;
+  action: VendorTicketAction | null;
+  token: string | null;
 } {
   if (!data) {
     return {
       action: null,
-      ticketId: null,
+      token: null,
     };
   }
 
   const params = new URLSearchParams(data);
-  const ticketId = Number(params.get("ticketId"));
+  const action = params.get("action");
 
   return {
-    action: params.get("action"),
-    ticketId: Number.isInteger(ticketId) && ticketId > 0 ? ticketId : null,
+    action:
+      action === "vendor_confirm_completion" ||
+      action === "vendor_reject_completion"
+        ? action
+        : null,
+    token: params.get("token"),
   };
 }
 
-// Function รับ LINE webhook จาก vendor เพื่อ confirm/reject ยอดปิดงาน
+// Function แปลงรายการสินค้าใน ticket เป็น payload สำหรับ Worker/Admin realtime
+// Function หา market ของ ticket จากรายละเอียดงานรถเพื่อเติมข้อมูลใน realtime payload
+// Function สร้าง payload ผลการปิด ticket สำหรับ Worker/Admin โดยใช้ reference แทน id ภายใน
+// Function แปลง account id ของ worker เป็นรหัสพนักงานสำหรับ response/event
+async function getWorkerCodesByAccountIds(
+  workerAccountIds: number[]
+): Promise<Array<string | null>> {
+  const profiles = await profileRepository.findByAccountIds(workerAccountIds);
+  const profileMap = new Map(
+    profiles.map((profile) => [profile.account_id, profile.worker_code])
+  );
+
+  return workerAccountIds.map((accountId) => profileMap.get(accountId) ?? null);
+}
+
+// Function ดึงรหัสพนักงาน worker รายคนจาก profile
+// Function สร้าง payload สถานะคิวสำหรับส่งเข้า Worker WebSocket
+// Function คืน worker ที่จบงานแล้วเข้า queue หรือ mark offline ตามสถานะ WebSocket และกะงาน
+async function returnCompletedWorkersToQueue(input: {
+  vehicle_job: VehicleJobDto;
+  completed_worker_account_ids: number[];
+} | null): Promise<Array<string | null>> {
+  if (!input || input.completed_worker_account_ids.length === 0) {
+    return [];
+  }
+
+  const requeuedWorkerCodes: Array<string | null> = [];
+  const workerCodeMap = new Map(
+    (await profileRepository.findByAccountIds(input.completed_worker_account_ids)).map(
+      (profile) => [profile.account_id, profile.worker_code]
+    )
+  );
+
+  for (const workerAccountId of input.completed_worker_account_ids) {
+    const workerCode = workerCodeMap.get(workerAccountId) ?? null;
+    const [currentSchedule, currentAssignment] = await Promise.all([
+      workScheduleRepository.findCurrentByAccountId(workerAccountId),
+      workerApplicationRepository.findCurrentAssignmentByWorker(workerAccountId),
+    ]);
+
+    if (currentAssignment) {
+      continue;
+    }
+
+    const canReturnToQueue =
+      currentSchedule &&
+      isTimeInWorkSchedule(currentSchedule) &&
+      isWorkerSocketConnected(workerAccountId);
+
+    if (canReturnToQueue) {
+      const queue = await enqueueWorker(workerAccountId);
+      requeuedWorkerCodes.push(workerCode);
+      sendWorkerSocketEvent(workerAccountId, "WORKER_STATUS_CHANGED", {
+        queue: buildWorkerQueueSocketPayload(queue, workerCode),
+      });
+      publishNotification({
+        type: "WORKER_STATUS_CHANGED",
+        title: "Worker returned to queue",
+        message: `Worker ${workerCode ?? workerAccountId} returned to queue after vehicle job completion.`,
+        payload: {
+          worker_code: workerCode,
+          vehicle_job_ref: input.vehicle_job.vehicle_job_ref,
+          queue,
+          reason: "vehicle_job_completed_requeue",
+        },
+        audience: {
+          roles: ["admin"],
+        },
+      });
+      continue;
+    }
+
+    const queue = await markWorkerOffline(workerAccountId);
+    if (isWorkerSocketConnected(workerAccountId)) {
+      sendWorkerSocketEvent(workerAccountId, "WORKER_STATUS_CHANGED", {
+        queue: buildWorkerQueueSocketPayload(queue, workerCode),
+      });
+    }
+    publishNotification({
+      type: "WORKER_STATUS_CHANGED",
+      title: "Worker offline",
+      message: `Worker ${workerCode ?? workerAccountId} was marked offline after vehicle job completion.`,
+      payload: {
+        worker_code: workerCode,
+        vehicle_job_ref: input.vehicle_job.vehicle_job_ref,
+        queue,
+        reason: "vehicle_job_completed_not_available",
+      },
+      audience: {
+        roles: ["admin"],
+      },
+    });
+  }
+
+  if (requeuedWorkerCodes.length > 0) {
+    await dispatchReadyWorkers();
+  }
+
+  return requeuedWorkerCodes;
+}
+
+// Function ตรวจ token ของ LINE postback และคืน payload เมื่อ action ตรงกัน
+function verifyLineActionToken(
+  action: VendorTicketAction,
+  token: string
+): VendorTicketActionTokenPayload | null {
+  try {
+    return verifyVendorTicketActionToken(token, action);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+// Function ประมวลผล LINE webhook สำหรับ vendor confirm/reject งานแผง
 export async function handleLineWebhook(
   body: unknown,
   signature?: unknown,
@@ -97,24 +226,34 @@ export async function handleLineWebhook(
   let processed = 0;
 
   for (const event of events) {
-    const { action, ticketId } = parseLinePostback(event.postback?.data);
+    const { action, token } = parseLinePostback(event.postback?.data);
 
     if (
       event.type !== "postback" ||
       !event.source?.userId ||
-      !ticketId ||
-      !["vendor_confirm_completion", "vendor_reject_completion"].includes(action ?? "")
+      !action ||
+      !token
     ) {
+      continue;
+    }
+
+    const tokenPayload = verifyLineActionToken(action, token);
+
+    if (!tokenPayload) {
       continue;
     }
 
     const result = await withTransaction(async (transaction) => {
       const ticket = await workerApplicationRepository.findGateTicketForCompletion(
-        ticketId,
+        tokenPayload.ticket_id,
         transaction
       );
 
-      if (!ticket || ticket.vendor_line_id !== event.source?.userId) {
+      if (
+        !ticket ||
+        ticket.vendor_line_id !== event.source?.userId ||
+        ticket.stall_job_ref !== tokenPayload.stall_job_ref
+      ) {
         return null;
       }
 
@@ -123,7 +262,7 @@ export async function handleLineWebhook(
         transaction
       );
 
-      if (!submission) {
+      if (!submission || submission.id !== tokenPayload.submission_id) {
         return null;
       }
 
@@ -140,6 +279,18 @@ export async function handleLineWebhook(
               transaction
             );
       const isConfirmed = action === "vendor_confirm_completion";
+      const completedVehicleJob = isConfirmed
+        ? await workerApplicationRepository.closeCompletedVehicleJobIfReady(
+            updated.ticket.vehicle_job_id,
+            transaction
+          )
+        : null;
+      const nextTicket = isConfirmed && !completedVehicleJob
+        ? await workerApplicationRepository.activateNextTicketIfReady(
+            updated.ticket.vehicle_job_id,
+            transaction
+          )
+        : null;
       const title = isConfirmed
         ? "Ticket completion confirmed"
         : "Ticket completion rejected";
@@ -154,15 +305,29 @@ export async function handleLineWebhook(
         updated.ticket.id,
         transaction
       );
+      const detail = await workerApplicationRepository.getVehicleJobDetail(
+        updated.ticket.vehicle_job_id,
+        transaction
+      );
+
+      const completedWorkerCodes = completedVehicleJob
+        ? await getWorkerCodesByAccountIds(
+            completedVehicleJob.completed_worker_account_ids
+          )
+        : [];
 
       return {
         ...updated,
         products,
+        detail,
         notificationEvent: {
           title,
           message: notificationMessage,
           receiverAccountIds,
         },
+        completedVehicleJob,
+        completedWorkerCodes,
+        nextTicket,
         vendorMessage: isConfirmed
           ? "Ticket completion confirmed. Thank you."
           : "Ticket completion rejected. Worker can resubmit the corrected quantities.",
@@ -172,6 +337,8 @@ export async function handleLineWebhook(
     if (!result) {
       continue;
     }
+
+    await returnCompletedWorkersToQueue(result.completedVehicleJob);
 
     const lineLogId = await lineRepository.createMessageDeliveryLog(
       "LINE",
@@ -199,13 +366,34 @@ export async function handleLineWebhook(
       title: result.notificationEvent.title,
       message: result.notificationEvent.message,
       payload: {
-        ticket_id: result.ticket.id,
-        vehicle_job_id: result.ticket.vehicle_job_id,
-        status: result.ticket.status,
-        confirmation_status: result.ticket.confirmation_status,
-        submission_id: result.submission.id,
-        submission_status: result.submission.status,
-        items: result.products,
+        ...buildWorkerTicketPayload(
+          result.ticket,
+          result.detail,
+          result.products,
+          {
+            submission_status: result.submission.status,
+            vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
+            completed_worker_codes: result.completedWorkerCodes,
+            next_market_job_ref: result.nextTicket?.market_job_ref ?? null,
+            next_stall_job_ref: result.nextTicket?.ticket.stall_job_ref ?? null,
+            next_ticket_status: result.nextTicket?.ticket.status ?? null,
+          }
+        ),
+      },
+      worker_payload: {
+        ...buildWorkerTicketPayload(
+          result.ticket,
+          result.detail,
+          result.products,
+          {
+            submission_status: result.submission.status,
+            vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
+            completed_worker_codes: result.completedWorkerCodes,
+            next_market_job_ref: result.nextTicket?.market_job_ref ?? null,
+            next_stall_job_ref: result.nextTicket?.ticket.stall_job_ref ?? null,
+            next_ticket_status: result.nextTicket?.ticket.status ?? null,
+          }
+        ),
       },
       admin: true,
       worker_account_ids: result.notificationEvent.receiverAccountIds,

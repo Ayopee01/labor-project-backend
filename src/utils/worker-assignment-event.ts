@@ -1,5 +1,8 @@
 import type { VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function สร้าง payload งานใหม่ที่ส่งเข้า Worker WebSocket โดยซ่อน id ภายใน
 export function buildWorkerAssignedPayload(
   assignment: VehicleJobAssignmentDto,
   vehicleJob: VehicleJobDto

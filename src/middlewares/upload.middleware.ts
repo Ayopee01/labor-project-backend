@@ -5,7 +5,10 @@ import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import ApiError from "../utils/api-error";
 
+// Config path สำหรับเก็บรูป worker ที่ upload เข้ามา
 const workerUploadDir = path.resolve(process.cwd(), "uploads", "workers");
+
+// Config MIME type รูป worker ที่อนุญาตให้อัปโหลด
 const allowedImageMimeTypes = new Set([
   "image/jpeg",
   "image/png",
@@ -17,6 +20,7 @@ function ensureUploadDir() {
   fs.mkdirSync(workerUploadDir, { recursive: true });
 }
 
+// Config storage ของ multer สำหรับบันทึกรูป worker ลง uploads/workers
 const storage = multer.diskStorage({
   destination: (_req, _file, callback) => {
     ensureUploadDir();

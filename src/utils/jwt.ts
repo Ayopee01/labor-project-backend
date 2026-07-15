@@ -1,4 +1,4 @@
-// import library
+// import Library
 import jwt, { type SignOptions } from "jsonwebtoken";
 import type { ZodType } from "zod";
 // import

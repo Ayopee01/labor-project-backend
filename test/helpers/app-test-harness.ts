@@ -90,6 +90,7 @@ type GateTicketRecord = {
 type TicketProductRecord = {
   id: number;
   ticket_id: number;
+  product_ref: string;
   product_type: string | null;
   name: string;
   quantity: string;
@@ -105,6 +106,22 @@ type TicketWorkerRecord = {
   ticket_id: number;
   worker_account_id: number;
   status: string;
+};
+
+type TicketCompletionSubmissionRecord = {
+  id: number;
+  ticket_id: number;
+  submitted_by_worker_account_id: number;
+  status: string;
+  confirmed_at: string | null;
+  rejected_at: string | null;
+};
+
+type GateRequestLogRecord = {
+  gate_transaction_ref: string;
+  vehicle_job_id: number | null;
+  payload_snapshot: unknown;
+  response_snapshot: unknown | null;
 };
 
 /* -------------------------------------- Shared Test State -------------------------------------- */
@@ -131,6 +148,8 @@ export const state = {
   gateTickets: [] as GateTicketRecord[],
   ticketProducts: [] as TicketProductRecord[],
   ticketWorkers: [] as TicketWorkerRecord[],
+  completionSubmissions: [] as TicketCompletionSubmissionRecord[],
+  gateRequestLogs: [] as GateRequestLogRecord[],
   authAccountsByUsername: new Map<string, AccountRecord>(),
   authAccountsById: new Map<number, AccountRecord>(),
   adminPermissions: new Map<number, string[]>(),
@@ -298,6 +317,8 @@ export function resetRouteTestState(): void {
   state.gateTickets.length = 0;
   state.ticketProducts.length = 0;
   state.ticketWorkers.length = 0;
+  state.completionSubmissions.length = 0;
+  state.gateRequestLogs.length = 0;
   state.authAccountsByUsername.clear();
   state.authAccountsById.clear();
   state.adminPermissions.clear();
@@ -456,6 +477,7 @@ export function addTicketForVehicleJob(
     {
       id: ticketId * 10 + 1,
       ticket_id: ticketId,
+      product_ref: `PRODUCT-${ticketId}-1`,
       product_type: "fruit",
       name: "Apple",
       quantity: "10",
@@ -467,6 +489,7 @@ export function addTicketForVehicleJob(
     {
       id: ticketId * 10 + 2,
       ticket_id: ticketId,
+      product_ref: `PRODUCT-${ticketId}-2`,
       product_type: "vegetable",
       name: "Cabbage",
       quantity: "5",
@@ -480,6 +503,53 @@ export function addTicketForVehicleJob(
   return ticket;
 }
 
+function findCurrentOpenTicketForVehicleJob(vehicleJobId: number): {
+  ticket: GateTicketRecord;
+  market_job_ref: string;
+  market_name: string;
+} | null {
+  const ticket = state.gateTickets
+    .filter(
+      (candidate) =>
+        candidate.vehicle_job_id === vehicleJobId &&
+        !["CLOSED", "CANCELLED"].includes(candidate.status)
+    )
+    .sort(
+      (a, b) =>
+        a.market_job_id - b.market_job_id ||
+        a.id - b.id
+    )[0];
+
+  if (!ticket) {
+    return null;
+  }
+
+  return {
+    ticket,
+    market_job_ref: ticket.market_job_ref ?? `MARKET-${ticket.market_job_id}`,
+    market_name: ticket.market_name ?? `Market ${ticket.market_job_id}`,
+  };
+}
+
+function activateNextTicketForVehicleJob(vehicleJobId: number): {
+  ticket: GateTicketRecord;
+  market_job_ref: string;
+  market_name: string;
+} | null {
+  const current = findCurrentOpenTicketForVehicleJob(vehicleJobId);
+
+  if (!current) {
+    return null;
+  }
+
+  if (["WAIT", "READY"].includes(current.ticket.status)) {
+    current.ticket.status = "IN_PROGRESS";
+    current.ticket.updated_at = new Date().toISOString();
+  }
+
+  return current;
+}
+
 /* -------------------------------------- Repository Mocks -------------------------------------- */
 
 // Mock repository ฝั่ง worker service โดยเก็บข้อมูลใน memory แต่ยังให้ service จริงเป็นคนตัดสิน business rule
@@ -491,6 +561,10 @@ const workerApplicationRepositoryMock = {
   profileRepository: {
     findByAccountId: async (accountId: number) =>
       state.profiles.get(accountId) ?? null,
+    findByAccountIds: async (accountIds: number[]) =>
+      accountIds
+        .map((accountId) => state.profiles.get(accountId) ?? null)
+        .filter((profile): profile is NonNullable<typeof profile> => profile !== null),
   },
   workScheduleRepository: {
     findCurrentByAccountId: async (accountId: number) =>
@@ -641,8 +715,29 @@ const workerApplicationRepositoryMock = {
     }
 
     job.status = "IN_PROGRESS";
+    activateNextTicketForVehicleJob(vehicleJobId);
     return job;
   },
+  findCurrentOpenTicketByVehicleJob: async (vehicleJobId: number) =>
+    findCurrentOpenTicketForVehicleJob(vehicleJobId),
+  getVehicleWorkReadiness: async (vehicleJobId: number) => {
+    const job = state.vehicleJobs.find((item) => item.id === vehicleJobId);
+    const workersRequired = job?.workers_required ?? 0;
+    const checkedInCount = state.assignments.filter(
+      (assignment) =>
+        assignment.vehicle_job_id === vehicleJobId &&
+        ["SCANNED", "COUNTING", "COMPLETED"].includes(assignment.status)
+    ).length;
+
+    return {
+      workers_required: workersRequired,
+      checked_in_count: checkedInCount,
+      remaining_count: Math.max(0, workersRequired - checkedInCount),
+      is_ready: workersRequired > 0 && checkedInCount >= workersRequired,
+    };
+  },
+  activateNextTicketIfReady: async (vehicleJobId: number) =>
+    activateNextTicketForVehicleJob(vehicleJobId),
   listWorkerAssignmentHistoryByDate: async (
     workerAccountId: number,
     startAt: Date,
@@ -678,6 +773,10 @@ const workerApplicationRepositoryMock = {
       })),
   findGateTicketForCompletion: async (ticketId: number) =>
     state.gateTickets.find((ticket) => ticket.id === ticketId) ?? null,
+  findGateTicketForCompletionByReference: async (reference: string) =>
+    state.gateTickets.find(
+      (ticket) => ticket.stall_job_ref === reference || ticket.ticket_no === reference
+    ) ?? null,
   ensureTicketWorkersFromVehicleAssignments: async (
     ticketId: number,
     vehicleJobId: number
@@ -724,23 +823,123 @@ const workerApplicationRepositoryMock = {
   createTicketCompletionSubmission: async (
     ticketId: number,
     workerAccountId: number
-  ) => ({
-    id: state.nextSubmissionId++,
-    ticket_id: ticketId,
-    submitted_by_worker_account_id: workerAccountId,
-    status: "WAITING_VENDOR_CONFIRM",
-    confirmed_at: null,
-    rejected_at: null,
-  }),
+  ) => {
+    const submission = {
+      id: state.nextSubmissionId++,
+      ticket_id: ticketId,
+      submitted_by_worker_account_id: workerAccountId,
+      status: "WAITING_VENDOR_CONFIRM",
+      confirmed_at: null,
+      rejected_at: null,
+    };
+
+    state.completionSubmissions.push(submission);
+    return submission;
+  },
+  findWaitingTicketCompletionSubmission: async (ticketId: number) =>
+    state.completionSubmissions
+      .filter(
+        (submission) =>
+          submission.ticket_id === ticketId &&
+          submission.status === "WAITING_VENDOR_CONFIRM"
+      )
+      .at(-1) ?? null,
+  confirmTicketCompletion: async (ticketId: number, submissionId: number) => {
+    const ticket = state.gateTickets.find((item) => item.id === ticketId);
+    const submission = state.completionSubmissions.find(
+      (item) => item.id === submissionId
+    );
+
+    if (!ticket || ticket.status !== "WAITING_VENDOR_CONFIRM" || !submission) {
+      throw new Error("Ticket confirm did not update a waiting ticket.");
+    }
+
+    ticket.status = "CLOSED";
+    ticket.confirmation_status = "CONFIRMED";
+    submission.status = "CONFIRMED";
+    submission.confirmed_at = new Date().toISOString();
+    state.ticketWorkers
+      .filter((worker) => worker.ticket_id === ticketId)
+      .forEach((worker) => {
+        worker.status = "COMPLETED";
+      });
+
+    return {
+      ticket,
+      submission,
+    };
+  },
+  rejectTicketCompletion: async (ticketId: number, submissionId: number) => {
+    const ticket = state.gateTickets.find((item) => item.id === ticketId);
+    const submission = state.completionSubmissions.find(
+      (item) => item.id === submissionId
+    );
+
+    if (!ticket || ticket.status !== "WAITING_VENDOR_CONFIRM" || !submission) {
+      throw new Error("Ticket reject did not update a waiting ticket.");
+    }
+
+    ticket.status = "COMPLETION_REJECTED";
+    ticket.confirmation_status = "REJECTED";
+    submission.status = "REJECTED";
+    submission.rejected_at = new Date().toISOString();
+    state.ticketWorkers
+      .filter((worker) => worker.ticket_id === ticketId)
+      .forEach((worker) => {
+        worker.status = "COMPLETION_REJECTED";
+      });
+
+    return {
+      ticket,
+      submission,
+    };
+  },
+  closeCompletedVehicleJobIfReady: async (vehicleJobId: number) => {
+    const job = state.vehicleJobs.find((item) => item.id === vehicleJobId);
+    const tickets = state.gateTickets.filter(
+      (ticket) => ticket.vehicle_job_id === vehicleJobId
+    );
+    const allTicketsTerminal =
+      tickets.length > 0 &&
+      tickets.every((ticket) => ["CLOSED", "CANCELLED"].includes(ticket.status));
+
+    if (!job || !allTicketsTerminal) {
+      return null;
+    }
+
+    job.status = tickets.every((ticket) => ticket.status === "CANCELLED")
+      ? "CANCELLED"
+      : "COMPLETED";
+
+    const activeAssignments = state.assignments.filter(
+      (assignment) =>
+        assignment.vehicle_job_id === vehicleJobId &&
+        ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"].includes(assignment.status)
+    );
+    const now = new Date().toISOString();
+
+    activeAssignments.forEach((assignment) => {
+      assignment.status = "COMPLETED";
+      assignment.completed_at = now;
+    });
+
+    return {
+      vehicle_job: job,
+      completed_assignment_ids: activeAssignments.map((assignment) => assignment.id),
+      completed_worker_account_ids: activeAssignments.map(
+        (assignment) => assignment.worker_account_id
+      ),
+    };
+  },
   updateTicketProductConfirmations: async (
     ticketId: number,
-    items: Array<{ ticket_product_id: number; confirmed_quantity: number }>
+    items: Array<{ product_ref: string; confirmed_quantity: number }>
   ) => {
     for (const item of items) {
       const product = state.ticketProducts.find(
         (candidate) =>
           candidate.ticket_id === ticketId &&
-          candidate.id === item.ticket_product_id
+          candidate.product_ref === item.product_ref
       );
 
       if (!product) {
@@ -773,6 +972,8 @@ const workerApplicationRepositoryMock = {
         status: job.status,
         driver_qr_token: job.driver_qr_token,
         worker_qr_token: job.worker_qr_token,
+        created_at: job.created_at,
+        updated_at: job.updated_at,
       },
       markets: marketIds.map((marketJobId) => {
         const marketTickets = tickets.filter((ticket) => ticket.market_job_id === marketJobId);
@@ -795,6 +996,144 @@ const workerApplicationRepositoryMock = {
 };
 
 // Mock repository ฝั่ง auth service สำหรับ login, session, refresh และ current user route
+const gateRepositoryMock = {
+  findGateRequestResponseByRef: async (gateTransactionRef: string) => {
+    const requestLog = state.gateRequestLogs.find(
+      (item) => item.gate_transaction_ref === gateTransactionRef
+    );
+
+    return requestLog?.response_snapshot ?? null;
+  },
+  findGateRequestReplayByRef: async (gateTransactionRef: string) => {
+    const requestLog = state.gateRequestLogs.find(
+      (item) => item.gate_transaction_ref === gateTransactionRef
+    );
+
+    if (!requestLog) {
+      return null;
+    }
+
+    return {
+      gate_transaction_ref: requestLog.gate_transaction_ref,
+      payload_snapshot: requestLog.payload_snapshot,
+      response_snapshot: requestLog.response_snapshot,
+    };
+  },
+  findVehicleJobByRef: async (vehicleJobRef: string) =>
+    state.vehicleJobs.find((job) => job.vehicle_job_ref === vehicleJobRef) ?? null,
+  createVehicleJobFromGate: async (input: {
+    gate_transaction_ref: string;
+    vehicle_job_ref: string;
+    license_plate: string;
+    vehicle_type?: string | null;
+    workers_required: number;
+    dispatch_now?: boolean;
+    markets: Array<{
+      market_job_ref: string;
+      market_name: string;
+      tickets: Array<{
+        stall_job_ref: string;
+        ticket_no?: string | null;
+        stall_no?: string | null;
+        vendor_name?: string | null;
+        vendor_line_id?: string | null;
+        products: Array<{
+          product_ref: string;
+          product_type?: string | null;
+          name: string;
+          quantity: number;
+          unit: string;
+        }>;
+      }>;
+    }>;
+  }, payloadSnapshot: unknown) => {
+    const now = new Date().toISOString();
+    const dispatchNow = input.dispatch_now === true;
+    const vehicleJobId = Math.max(0, ...state.vehicleJobs.map((job) => job.id)) + 1;
+    const vehicleJob = {
+      id: vehicleJobId,
+      vehicle_job_ref: input.vehicle_job_ref,
+      gate_transaction_ref: input.gate_transaction_ref,
+      license_plate: input.license_plate,
+      vehicle_type: input.vehicle_type ?? null,
+      workers_required: input.workers_required,
+      status: dispatchNow ? "DISPATCH_NOW" : "WAIT",
+      driver_qr_token: `driver-qr-${vehicleJobId}`,
+      worker_qr_token: `worker-qr-${vehicleJobId}`,
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.vehicleJobs.push(vehicleJob);
+
+    let marketJobId = Math.max(0, ...state.gateTickets.map((ticket) => ticket.market_job_id)) + 1;
+    let ticketId = Math.max(0, ...state.gateTickets.map((ticket) => ticket.id)) + 1;
+    let productId = Math.max(0, ...state.ticketProducts.map((product) => product.id)) + 1;
+
+    for (const market of input.markets) {
+      const currentMarketJobId = marketJobId++;
+
+      for (const ticketInput of market.tickets) {
+        const currentTicketId = ticketId++;
+        state.gateTickets.push({
+          id: currentTicketId,
+          vehicle_job_id: vehicleJob.id,
+          market_job_id: currentMarketJobId,
+          market_job_ref: market.market_job_ref,
+          market_name: market.market_name,
+          stall_job_ref: ticketInput.stall_job_ref,
+          ticket_no: ticketInput.ticket_no ?? null,
+          stall_no: ticketInput.stall_no ?? null,
+          vendor_name: ticketInput.vendor_name ?? null,
+          vendor_line_id: ticketInput.vendor_line_id ?? null,
+          status: dispatchNow ? "READY" : "WAIT",
+          confirmation_status: "NOT_SUBMITTED",
+          created_at: now,
+          updated_at: now,
+        });
+
+        ticketInput.products.forEach((product) => {
+          state.ticketProducts.push({
+            id: productId++,
+            ticket_id: currentTicketId,
+            product_ref: product.product_ref,
+            product_type: product.product_type ?? null,
+            name: product.name,
+            quantity: String(product.quantity),
+            confirmed_quantity: null,
+            unit: product.unit,
+            created_at: now,
+            updated_at: now,
+          });
+        });
+      }
+    }
+
+    state.gateRequestLogs.push({
+      gate_transaction_ref: input.gate_transaction_ref,
+      vehicle_job_id: vehicleJob.id,
+      payload_snapshot: payloadSnapshot,
+      response_snapshot: null,
+    });
+
+    return vehicleJob;
+  },
+  updateGateRequestResponse: async (
+    gateTransactionRef: string,
+    responseSnapshot: unknown
+  ) => {
+    const requestLog = state.gateRequestLogs.find(
+      (item) => item.gate_transaction_ref === gateTransactionRef
+    );
+
+    if (!requestLog) {
+      throw new Error("Gate request log not found.");
+    }
+
+    requestLog.response_snapshot = responseSnapshot;
+  },
+};
+
 const authRepositoryMock = {
   accountRepository: {
     findByUsername: async (username: string) =>
@@ -811,6 +1150,10 @@ const authRepositoryMock = {
   },
   profileRepository: {
     findByAccountId: async (accountId: number) => state.profiles.get(accountId) ?? null,
+    findByAccountIds: async (accountIds: number[]) =>
+      accountIds
+        .map((accountId) => state.profiles.get(accountId) ?? null)
+        .filter((profile): profile is NonNullable<typeof profile> => profile !== null),
   },
   workScheduleRepository: {
     findCurrentByAccountId: async (accountId: number) =>
@@ -984,6 +1327,10 @@ function patchModuleLoader(): void {
 
     if (request === "../repositories/worker-application.repository") {
       return workerApplicationRepositoryMock;
+    }
+
+    if (request === "../repositories/gate.repository") {
+      return gateRepositoryMock;
     }
 
     if (request === "../repositories/auth.repository") {

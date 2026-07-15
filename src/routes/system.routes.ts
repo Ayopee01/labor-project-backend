@@ -1,6 +1,7 @@
 // import Library
 import express from "express";
 
+// Config Express router สำหรับ System routes
 const router = express.Router();
 
 // Route แสดงสถานะพื้นฐานและ path เอกสาร API

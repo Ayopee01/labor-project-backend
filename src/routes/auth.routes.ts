@@ -5,6 +5,7 @@ import authMiddleware from "../middlewares/auth.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 import * as authService from "../services/auth.service";
 
+// Config Express router สำหรับ Auth routes
 const router = express.Router();
 
 // Route login ด้วย username/password และข้อมูล client

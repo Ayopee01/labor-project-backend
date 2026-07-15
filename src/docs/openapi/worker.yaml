@@ -69,11 +69,11 @@
         - bearerAuth: []
       responses:
         "200":
-          description: Worker queue state.
+          description: Worker offline summary.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkerQueueEntry"
+                $ref: "#/components/schemas/WorkerOnlineResponse"
   /api/workers/me/break:
     post:
       tags:
@@ -84,11 +84,11 @@
         - bearerAuth: []
       responses:
         "200":
-          description: Worker break state.
+          description: Worker break summary.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkerQueueEntry"
+                $ref: "#/components/schemas/WorkerBreakResponse"
         "403":
           description: Worker is inactive, has no current schedule, or is outside the assigned shift time. OUTSIDE_WORK_SHIFT includes shift and remaining time details.
           content:
@@ -146,7 +146,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/workers/me/assignments/{id}/accept:
+  /api/workers/me/assignments/{vehicleJobRef}/accept:
     post:
       tags:
         - Worker Application
@@ -156,8 +156,8 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
-          description: Assignment id or vehicle_job_ref from WORKER_ASSIGNED.
+          name: vehicleJobRef
+          description: vehicle_job_ref from WORKER_ASSIGNED.
           required: true
           schema:
             type: string
@@ -169,7 +169,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkerAssignmentAcceptResponse"
-  /api/workers/me/assignments/{id}/check-in-qr:
+  /api/workers/me/assignments/{vehicleJobRef}/check-in-qr:
     post:
       tags:
         - Worker Application
@@ -179,8 +179,8 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
-          description: Assignment id or vehicle_job_ref from WORKER_ASSIGNED.
+          name: vehicleJobRef
+          description: vehicle_job_ref from WORKER_ASSIGNED.
           required: true
           schema:
             type: string
@@ -196,14 +196,21 @@
               properties:
                 qr_token:
                   type: string
+                  description: worker_qr_token from Gate/Driver ready response or a QR rendered by another checked-in worker.
       responses:
         "200":
-          description: Checked-in assignment.
+          description: Checked-in assignment status.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VehicleJobAssignment"
-  /api/workers/me/tickets/{id}/complete:
+                $ref: "#/components/schemas/WorkerAssignmentCheckInResponse"
+        "409":
+          description: Assignment is not accepted or QR scan window expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/tickets/{stallJobRef}/complete:
     post:
       tags:
         - Worker Application
@@ -213,11 +220,12 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: stallJobRef
           required: true
           schema:
-            type: integer
-          description: GateTicket id. This is the stall/vendor-level ticket.
+            type: string
+            example: STALLJOB-001
+          description: stall_job_ref from the accepted job payload.
       requestBody:
         required: true
         content:

@@ -191,7 +191,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminVehicleJobListResponse"
-  /api/admin/vehicle-jobs/{id}:
+  /api/admin/vehicle-jobs/{vehicleJobRef}:
     get:
       tags:
         - Admin Jobs
@@ -201,10 +201,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: vehicleJobRef
           required: true
           schema:
-            type: integer
+            type: string
+            example: VEH-20260706-0001
       responses:
         "200":
           description: Vehicle job detail.
@@ -218,7 +219,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/vehicle-jobs/{id}/cancel:
+  /api/admin/vehicle-jobs/{vehicleJobRef}/cancel:
     post:
       tags:
         - Admin Jobs
@@ -228,10 +229,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: vehicleJobRef
           required: true
           schema:
-            type: integer
+            type: string
+            example: VEH-20260706-0001
       requestBody:
         required: false
         content:
@@ -245,7 +247,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminCancelVehicleJobResponse"
-  /api/admin/vehicle-jobs/{id}/cancel-and-requeue:
+  /api/admin/vehicle-jobs/{vehicleJobRef}/cancel-and-requeue:
     post:
       tags:
         - Admin Jobs
@@ -255,10 +257,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: vehicleJobRef
           required: true
           schema:
-            type: integer
+            type: string
+            example: VEH-20260706-0001
       requestBody:
         required: false
         content:
@@ -272,7 +275,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminCancelVehicleJobRequeueResponse"
-  /api/admin/vehicle-jobs/{id}/assign-workers:
+  /api/admin/vehicle-jobs/{vehicleJobRef}/assign-workers:
     post:
       tags:
         - Admin Jobs
@@ -282,10 +285,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: vehicleJobRef
           required: true
           schema:
-            type: integer
+            type: string
+            example: VEH-20260706-0001
       requestBody:
         required: true
         content:
@@ -299,7 +303,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminAssignWorkersResponse"
-  /api/admin/vehicle-jobs/{id}/scan-deadline/extend:
+  /api/admin/vehicle-jobs/{vehicleJobRef}/scan-deadline/extend:
     post:
       tags:
         - Admin Jobs
@@ -309,10 +313,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: vehicleJobRef
           required: true
           schema:
-            type: integer
+            type: string
+            example: VEH-20260706-0001
       requestBody:
         required: true
         content:
@@ -326,7 +331,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminExtendScanDeadlineResponse"
-  /api/admin/assignments/{id}/cancel:
+  /api/admin/vehicle-jobs/{vehicleJobRef}/workers/{workerCode}/assignment/cancel:
     post:
       tags:
         - Admin Jobs
@@ -336,10 +341,17 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: vehicleJobRef
           required: true
           schema:
-            type: integer
+            type: string
+            example: VEH-20260706-0001
+        - in: path
+          name: workerCode
+          required: true
+          schema:
+            type: string
+            example: MN000115
       requestBody:
         required: false
         content:
@@ -353,7 +365,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminCancelAssignmentResponse"
-  /api/admin/market-jobs/{id}/cancel:
+  /api/admin/market-jobs/{marketJobRef}/cancel:
     post:
       tags:
         - Admin Jobs
@@ -363,10 +375,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: marketJobRef
           required: true
           schema:
-            type: integer
+            type: string
+            example: MARKETJOB-001
       requestBody:
         required: false
         content:
@@ -380,7 +393,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminCancelMarketJobResponse"
-  /api/admin/stall-jobs/{id}/cancel:
+  /api/admin/stall-jobs/{stallJobRef}/cancel:
     post:
       tags:
         - Admin Jobs
@@ -390,10 +403,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: stallJobRef
           required: true
           schema:
-            type: integer
+            type: string
+            example: STALLJOB-001
       requestBody:
         required: false
         content:
@@ -407,7 +421,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminCancelStallJobResponse"
-  /api/admin/stall-jobs/{id}/reopen:
+  /api/admin/stall-jobs/{stallJobRef}/reopen:
     post:
       tags:
         - Admin Jobs
@@ -417,11 +431,12 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: stallJobRef
           required: true
           schema:
-            type: integer
-          description: GateTicket id at stall/vendor level.
+            type: string
+            example: STALLJOB-001
+          description: stall_job_ref at stall/vendor level.
       responses:
         "200":
           description: Stall job reopened.

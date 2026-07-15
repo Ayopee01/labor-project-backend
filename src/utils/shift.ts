@@ -4,9 +4,16 @@ import ApiError from "./api-error";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config ชื่อกะสำหรับช่วงเช้า
 const MORNING_SHIFT = "กะเช้า";
+
+// Config ชื่อกะสำหรับช่วงกลางคืน
 const NIGHT_SHIFT = "กะกลางคืน";
+
+// Config timezone กลางที่ใช้คำนวณกะงานและเวลา server
 const BANGKOK_TIME_ZONE = "Asia/Bangkok";
+
+// Config formatter เวลา Bangkok แบบ HH:mm
 const bangkokTimeFormatter = new Intl.DateTimeFormat("en-GB", {
   timeZone: BANGKOK_TIME_ZONE,
   hour: "2-digit",
@@ -14,6 +21,15 @@ const bangkokTimeFormatter = new Intl.DateTimeFormat("en-GB", {
   hourCycle: "h23",
 });
 
+// Config formatter วันที่ Bangkok แบบ YYYY-MM-DD
+const bangkokDateFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: BANGKOK_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+// Type ส่วนข้อมูลที่ส่งกลับเมื่อ worker ยังไม่ถึงเวลาเข้ากะ
 export type ShiftWaitInfo = {
   shift: {
     name: string;
@@ -52,10 +68,45 @@ function getBangkokTimeToMinutes(value: Date): number {
   return hour * 60 + minute;
 }
 
-export function formatBangkokServerTime(value: Date = new Date()): string {
-  return bangkokTimeFormatter.format(value);
+// Function format วันที่ตามเขตเวลา Bangkok เป็น YYYY-MM-DD
+function getBangkokDateString(value: Date): string {
+  const parts = bangkokDateFormatter.formatToParts(value);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return `${year}-${month}-${day}`;
 }
 
+// Function บวก/ลบวันจาก date string แบบ YYYY-MM-DD
+function addDaysToDateString(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + days));
+
+  return [
+    String(next.getUTCFullYear()),
+    String(next.getUTCMonth() + 1).padStart(2, "0"),
+    String(next.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+// Function สร้าง key ของกะงานเพื่อใช้ reset counter ตามกะจริงแม้กะข้ามวัน
+export function buildWorkScheduleShiftInstanceKey(
+  schedule: WorkScheduleDto,
+  value: Date = new Date()
+): string {
+  const { startMinutes, endMinutes } = parseScheduleTimeRange(schedule);
+  const currentMinutes = getBangkokTimeToMinutes(value);
+  const currentDate = getBangkokDateString(value);
+  const shiftStartDate =
+    endMinutes <= startMinutes && currentMinutes < endMinutes
+      ? addDaysToDateString(currentDate, -1)
+      : currentDate;
+
+  return `${shiftStartDate}:${schedule.shift_start_time}-${schedule.shift_end_time}`;
+}
+
+// Function แปลงจำนวนนาทีที่เหลือเป็นข้อความภาษาไทย
 function formatRemainingTime(totalMinutes: number): string {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
@@ -129,7 +180,7 @@ export function calculateShiftName(
   return MORNING_SHIFT;
 }
 
-// Function format work schedule with shift name
+// Function จัดรูป work schedule พร้อมชื่อกะจากเวลาเริ่มและจบงาน
 export function formatScheduleWithShift(
   schedule: WorkScheduleDto | null
 ): WorkScheduleWithShiftDto | null {
@@ -161,8 +212,10 @@ export function isTimeInWorkSchedule(
   return currentMinutes >= startMinutes && currentMinutes < endMinutes;
 }
 
+// Function alias เดิมสำหรับตรวจวันที่ใน schedule โดยใช้ logic เดียวกับเวลากะ
 export const isDateInWorkSchedule = isTimeInWorkSchedule;
 
+// Function สร้าง response ย่อเมื่อ worker online นอกเวลางาน พร้อมชื่อกะและเวลาที่เหลือ
 export function buildShiftWaitInfo(
   schedule: WorkScheduleDto,
   value: Date = new Date()

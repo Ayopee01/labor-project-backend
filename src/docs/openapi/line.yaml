@@ -4,6 +4,7 @@
       tags:
         - LINE
       summary: Receive LINE webhook postback for vendor ticket completion confirm/reject.
+      description: Vendor confirm/reject uses the signed `token` generated in the LINE message after a worker completes a stall job. Confirm closes the waiting ticket. When all tickets under the vehicle job are terminal, the backend closes related market jobs, vehicle job, and active worker assignments so workers can go online for the next job.
       operationId: handleLineWebhook
       parameters:
         - in: header

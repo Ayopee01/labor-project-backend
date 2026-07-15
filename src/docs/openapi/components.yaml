@@ -92,67 +92,6 @@ components:
           type: string
           format: date-time
           example: 2026-07-01T09:00:00.000Z
-    AdminLoginAccount:
-      type: object
-      properties:
-        full_name:
-          type: string
-          example: System Admin
-        status:
-          type: string
-          example: active
-        position:
-          type: string
-          nullable: true
-          example: Administrator
-        email:
-          type: string
-          nullable: true
-          example: admin@simmummuang.local
-        phone:
-          type: string
-          nullable: true
-          example: 081-000-0001
-        image_url:
-          type: string
-          nullable: true
-          example: null
-        permission_level:
-          type: string
-          nullable: true
-          example: manager
-        permissions:
-          type: array
-          items:
-            $ref: "#/components/schemas/AdminPermission"
-        latest_active_at:
-          type: string
-          nullable: true
-          format: date-time
-          example: 2026-07-13T07:54:23.080Z
-    WorkerLoginAccount:
-      type: object
-      properties:
-        full_name:
-          type: string
-          example: Worker Name
-        worker_code:
-          type: string
-          nullable: true
-          example: MN000142
-        image_url:
-          type: string
-          nullable: true
-          example: https://example.com/uploads/workers/mn000142.jpg
-        status:
-          type: string
-          example: active
-        shift:
-          $ref: "#/components/schemas/ProfileCardShift"
-        server_time:
-          type: string
-          description: Current server time in HH:mm format.
-          example: "09:42"
     ProfileCardShift:
       type: object
       nullable: true
@@ -304,6 +243,13 @@ components:
           type: string
           nullable: true
           example: MN000142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000142.jpg
+        status:
+          type: string
+          example: ready
         nationality:
           type: string
           nullable: true
@@ -458,11 +404,6 @@ components:
         expires_in:
           type: integer
           example: 900
-        account:
-          description: Login returns only token fields and account. Admin account includes profile data, permissions, and latest activity. Worker account includes mobile start-work screen data.
-          oneOf:
-            - $ref: "#/components/schemas/AdminLoginAccount"
-            - $ref: "#/components/schemas/WorkerLoginAccount"
     RefreshSuccessResponse:
       type: object
       properties:
@@ -1191,10 +1132,15 @@ components:
     GateProductInput:
       type: object
       required:
+        - product_ref
         - name
         - quantity
         - unit
       properties:
+        product_ref:
+          type: string
+          example: PRODUCT-001
+          description: Product reference from Gate. Worker uses this value when submitting counted quantities.
         product_type:
           type: string
           nullable: true
@@ -1277,6 +1223,11 @@ components:
         workers_required:
           type: integer
           example: 2
+        dispatch_now:
+          type: boolean
+          default: false
+          example: true
+          description: Set true when the vehicle is ready to unload and workers should be dispatched immediately without waiting for Driver ready.
         markets:
           type: array
           items:
@@ -1284,71 +1235,99 @@ components:
     VehicleJob:
       type: object
       properties:
-        id:
-          type: integer
         vehicle_job_ref:
           type: string
+          example: VEH-20260706-0001
         gate_transaction_ref:
           type: string
+          example: GATE-REQ-001
         license_plate:
           type: string
+          example: ABC-1234
         vehicle_type:
           type: string
           nullable: true
+          example: Six-wheel truck
         workers_required:
           type: integer
+          example: 1
         status:
           type: string
+          example: WAIT
         driver_qr_token:
           type: string
+          description: Present only in admin/gate QR contexts.
         worker_qr_token:
           type: string
+          description: Present only in admin/gate/driver QR contexts.
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+    AdminVehicleJobListItem:
+      type: object
+      properties:
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0001
+        gate_transaction_ref:
+          type: string
+          example: GATE-REQ-001
+        license_plate:
+          type: string
+          example: ABC-1234
+        vehicle_type:
+          type: string
+          nullable: true
+          example: Six-wheel truck
+        workers_required:
+          type: integer
+          example: 1
+        status:
+          type: string
+          example: WAIT
     MarketJob:
       type: object
       properties:
-        id:
-          type: integer
-        vehicle_job_id:
-          type: integer
         market_job_ref:
           type: string
+          example: MARKETJOB-001
         market_name:
           type: string
+          example: Market A
         status:
           type: string
+          example: WAIT
     GateTicket:
       type: object
       properties:
-        id:
-          type: integer
-        vehicle_job_id:
-          type: integer
-        market_job_id:
-          type: integer
         stall_job_ref:
           type: string
+          example: STALLJOB-001
         ticket_no:
           type: string
           nullable: true
+          example: BILL-88991
         stall_no:
           type: string
           nullable: true
+          example: A-01
         vendor_name:
           type: string
           nullable: true
+          example: Vendor A
         vendor_line_id:
           type: string
           nullable: true
+          example: line-vendor-a
         status:
           type: string
+          example: WAIT
         confirmation_status:
           type: string
+          example: PENDING
     WorkerTicketCompleteRequest:
       type: object
       required:
@@ -1361,56 +1340,72 @@ components:
           items:
             type: object
             required:
-              - ticket_product_id
+              - product_ref
               - confirmed_quantity
             properties:
-              ticket_product_id:
-                type: integer
-                example: 1
+              product_ref:
+                type: string
+                example: PRODUCT-001
               confirmed_quantity:
                 type: number
                 minimum: 0
                 example: 8
-    TicketCompletionSubmission:
-      type: object
-      properties:
-        id:
-          type: integer
-        ticket_id:
-          type: integer
-        submitted_by_worker_account_id:
-          type: integer
-        status:
-          type: string
-          example: WAITING_VENDOR_CONFIRM
-        confirmed_at:
-          type: string
-          format: date-time
-          nullable: true
-        rejected_at:
-          type: string
-          format: date-time
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
     TicketCompletionResponse:
       type: object
       properties:
         message:
           type: string
           example: Ticket completion submitted and waiting for vendor confirmation.
-        ticket:
-          $ref: "#/components/schemas/GateTicket"
-        submission:
-          $ref: "#/components/schemas/TicketCompletionSubmission"
-        products:
+        vehicle_job_ref:
+          type: string
+          nullable: true
+          example: VEH-20260706-0001
+        market_job_ref:
+          type: string
+          nullable: true
+          example: MARKETJOB-001
+        market_name:
+          type: string
+          nullable: true
+          example: Market A
+        stall_job_ref:
+          type: string
+          example: STALLJOB-001
+        ticket_no:
+          type: string
+          nullable: true
+          example: BILL-88991
+        stall_no:
+          type: string
+          nullable: true
+          example: A-01
+        stall_name:
+          type: string
+          nullable: true
+          example: Vendor A
+        status:
+          type: string
+          example: WAITING_VENDOR_CONFIRM
+        confirmation_status:
+          type: string
+          example: WAITING_VENDOR_CONFIRM
+        submission_status:
+          type: string
+          example: WAITING_VENDOR_CONFIRM
+        items:
           type: array
           items:
             $ref: "#/components/schemas/TicketProduct"
+        debug_line_postback:
+          type: object
+          description: Present only when LINE_DEBUG_POSTBACK_RESPONSE=true for local/Postman testing. Do not enable in production.
+          properties:
+            confirm:
+              type: string
+              example: action=vendor_confirm_completion&token=debug-confirm-token
+            reject:
+              type: string
+              example: action=vendor_reject_completion&token=debug-reject-token
     LineWebhookRequest:
       type: object
       properties:
@@ -1433,7 +1428,7 @@ components:
                 properties:
                   data:
                     type: string
-                    example: action=vendor_confirm_completion&ticketId=1
+                    example: action=vendor_confirm_completion&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
     LineWebhookResponse:
       type: object
       properties:
@@ -1446,22 +1441,26 @@ components:
     TicketProduct:
       type: object
       properties:
-        id:
-          type: integer
-        ticket_id:
-          type: integer
+        product_ref:
+          type: string
+          example: PRODUCT-001
         product_type:
           type: string
           nullable: true
+          example: Vegetable
         name:
           type: string
+          example: Cabbage
         quantity:
           type: string
+          example: "10"
         confirmed_quantity:
           type: string
           nullable: true
+          example: "8"
         unit:
           type: string
+          example: crate
     VehicleJobDetailResponse:
       type: object
       properties:
@@ -1486,19 +1485,51 @@ components:
                               items:
                                 $ref: "#/components/schemas/TicketProduct"
     GateVehicleJobResponse:
-      allOf:
-        - $ref: "#/components/schemas/VehicleJobDetailResponse"
-        - type: object
+      type: object
+      required:
+        - result
+        - message
+        - vehicle_job
+        - qr
+      properties:
+        result:
+          type: string
+          enum:
+            - CREATED
+            - REPLAYED
+          example: CREATED
+        message:
+          type: string
+        vehicle_job:
+          type: object
+          required:
+            - vehicle_job_ref
+            - gate_transaction_ref
+            - license_plate
+            - status
           properties:
-            message:
+            vehicle_job_ref:
               type: string
-            qr:
-              type: object
-              properties:
-                driver_qr_token:
-                  type: string
-                worker_qr_token:
-                  type: string
+              example: VEH-20260706-0001
+            gate_transaction_ref:
+              type: string
+              example: GATE-REQ-001
+            license_plate:
+              type: string
+              example: ABC-1234
+            status:
+              type: string
+              example: DISPATCH_NOW
+        qr:
+          type: object
+          required:
+            - driver_qr_token
+            - worker_qr_token
+          properties:
+            driver_qr_token:
+              type: string
+            worker_qr_token:
+              type: string
     DriverSessionResponse:
       type: object
       properties:
@@ -1512,6 +1543,21 @@ components:
           format: date-time
         vehicle_job:
           $ref: "#/components/schemas/VehicleJob"
+    DriverJobReadyResponse:
+      type: object
+      properties:
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0001
+        license_plate:
+          type: string
+          example: ABC-1234
+        status:
+          type: string
+          example: DISPATCH_NOW
+        worker_qr_token:
+          type: string
+          example: worker_qr_52abfcfddedb5a04ac17edc21dc2606dd2d3adc3ddb47f22
     AdminCancelRequest:
       type: object
       properties:
@@ -1524,7 +1570,7 @@ components:
         data:
           type: array
           items:
-            $ref: "#/components/schemas/VehicleJob"
+            $ref: "#/components/schemas/AdminVehicleJobListItem"
         pagination:
           nullable: true
           type: object
@@ -1542,37 +1588,50 @@ components:
       properties:
         message:
           type: string
-        vehicle_job:
-          $ref: "#/components/schemas/VehicleJob"
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0001
+        status:
+          type: string
+          example: CANCELLED
     AdminCancelVehicleJobRequeueResponse:
       type: object
       properties:
         message:
           type: string
-        vehicle_job:
-          $ref: "#/components/schemas/VehicleJob"
-        requeued_worker_account_ids:
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0001
+        status:
+          type: string
+          example: CANCELLED
+        requeued_worker_codes:
           type: array
           items:
-            type: integer
+            type: string
+          example:
+            - MN000115
     AdminAssignWorkersRequest:
       type: object
       required:
-        - worker_account_ids
+        - worker_codes
       properties:
-        worker_account_ids:
+        worker_codes:
           type: array
           minItems: 1
           items:
-            type: integer
+            type: string
           example:
-            - 2
-            - 3
+            - MN000115
+            - MN000116
     AdminAssignWorkersResponse:
       type: object
       properties:
         message:
           type: string
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0001
         assignments:
           type: array
           items:
@@ -1582,8 +1641,17 @@ components:
       properties:
         message:
           type: string
-        assignment:
-          $ref: "#/components/schemas/VehicleJobAssignment"
+        vehicle_job_ref:
+          type: string
+          nullable: true
+          example: VEH-20260706-0001
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        status:
+          type: string
+          example: CANCELLED
     AdminExtendScanDeadlineRequest:
       type: object
       required:
@@ -1594,15 +1662,15 @@ components:
           minimum: 1
           maximum: 240
           example: 10
-        worker_account_ids:
+        worker_codes:
           type: array
           minItems: 1
           nullable: true
           description: Optional. Use only when extending selected workers under a vehicle job.
           items:
-            type: integer
+            type: string
           example:
-            - 2
+            - MN000115
         reason:
           type: string
           example: Worker needs more time to reach QR scan point.
@@ -1611,31 +1679,98 @@ components:
       properties:
         message:
           type: string
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0001
+        worker_qr_token:
+          type: string
+          description: Existing worker QR token for this vehicle job. It is not rotated by scan deadline extension.
+          example: worker_qr_52abfcfddedb5a04ac17edc21dc2606dd2d3adc3ddb47f22
         assignments:
           type: array
           items:
-            $ref: "#/components/schemas/VehicleJobAssignment"
+            $ref: "#/components/schemas/AdminScanDeadlineAssignment"
+    AdminScanDeadlineAssignment:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        status:
+          type: string
+          example: ACCEPTED
+        scan_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
     AdminCancelMarketJobResponse:
       type: object
       properties:
         message:
           type: string
-        market_job:
-          $ref: "#/components/schemas/MarketJob"
+        vehicle_job_ref:
+          type: string
+          nullable: true
+          example: VEH-20260706-0001
+        market_job_ref:
+          type: string
+          example: MARKETJOB-001
+        status:
+          type: string
+          example: CANCELLED
     AdminCancelStallJobResponse:
       type: object
       properties:
         message:
           type: string
-        stall_job:
-          $ref: "#/components/schemas/GateTicket"
+        vehicle_job_ref:
+          type: string
+          nullable: true
+          example: VEH-20260706-0001
+        market_job_ref:
+          type: string
+          nullable: true
+          example: MARKETJOB-001
+        stall_job_ref:
+          type: string
+          example: STALLJOB-001
+        ticket_no:
+          type: string
+          nullable: true
+          example: BILL-88991
+        status:
+          type: string
+          example: CANCELLED
+        confirmation_status:
+          type: string
+          example: CANCELLED
     AdminReopenStallJobResponse:
       type: object
       properties:
         message:
           type: string
-        stall_job:
-          $ref: "#/components/schemas/GateTicket"
+        vehicle_job_ref:
+          type: string
+          nullable: true
+          example: VEH-20260706-0001
+        market_job_ref:
+          type: string
+          nullable: true
+          example: MARKETJOB-001
+        stall_job_ref:
+          type: string
+          example: STALLJOB-001
+        ticket_no:
+          type: string
+          nullable: true
+          example: BILL-88991
+        status:
+          type: string
+          example: IN_PROGRESS
+        confirmation_status:
+          type: string
+          example: COMPLETION_REJECTED
     WorkerQueueEntry:
       type: object
       properties:
@@ -1680,6 +1815,25 @@ components:
         completed_job_count:
           type: integer
           example: 2
+    WorkerBreakResponse:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Worker Name
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        status:
+          type: string
+          example: break
+        break_count_used:
+          type: integer
+          example: 1
+        break_count_limit:
+          type: integer
+          example: 5
     WorkerPresence:
       type: object
       properties:
@@ -1696,12 +1850,13 @@ components:
     VehicleJobAssignment:
       type: object
       properties:
-        id:
-          type: integer
-        vehicle_job_id:
-          type: integer
-        worker_account_id:
-          type: integer
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0001
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
         status:
           type: string
           example: PENDING
@@ -1750,6 +1905,9 @@ components:
     WorkerAssignmentProduct:
       type: object
       properties:
+        product_ref:
+          type: string
+          example: PRODUCT-001
         name:
           type: string
           example: Apple
@@ -1762,6 +1920,9 @@ components:
     WorkerAssignmentStall:
       type: object
       properties:
+        stall_job_ref:
+          type: string
+          example: STALLJOB-001
         stall_code:
           type: string
           nullable: true
@@ -1804,13 +1965,54 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkerAssignmentMarket"
+    WorkerAssignmentCheckInResponse:
+      type: object
+      required:
+        - status
+        - worker_code
+        - vehicle_job_ref
+        - worker_qr_token
+      properties:
+        status:
+          type: string
+          example: SCANNED
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0003
+        worker_qr_token:
+          type: string
+          description: Worker QR token that was just scanned. The mobile app can render this token as a QR for other assigned workers in the same vehicle job.
+          example: worker_qr_52abfcfddedb5a04ac17edc21dc2606dd2d3adc3ddb47f22
     WorkerAssignmentHistoryItem:
       type: object
       properties:
-        assignment:
-          $ref: "#/components/schemas/VehicleJobAssignment"
-        vehicle_job:
-          $ref: "#/components/schemas/VehicleJob"
+        vehicle_job_ref:
+          type: string
+          example: VEH-20260706-0001
+        gate_transaction_ref:
+          type: string
+          example: GATE-REQ-001
+        license_plate:
+          type: string
+          example: ABC-1234
+        status:
+          type: string
+          example: COMPLETED
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
     WorkerAssignmentHistoryResponse:
       type: object
       properties:
@@ -1831,6 +2033,13 @@ components:
           type: string
           nullable: true
           example: MN000142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000142.jpg
+        status:
+          type: string
+          example: break
         nationality:
           type: string
           nullable: true
@@ -1846,6 +2055,27 @@ components:
           example: 081-234-5678
         shift:
           $ref: "#/components/schemas/ProfileCardShift"
+        break_until:
+          type: string
+          format: date-time
+          description: Present only when status is break.
+          example: 2026-07-14T05:30:00.000Z
+        remaining_break_time:
+          type: object
+          description: Present only when status is break.
+          properties:
+            total_seconds:
+              type: integer
+              example: 420
+            minutes:
+              type: integer
+              example: 7
+            seconds:
+              type: integer
+              example: 0
+            text:
+              type: string
+              example: 7 นาที
     AdminWorkerStatusResponse:
       type: object
       properties:

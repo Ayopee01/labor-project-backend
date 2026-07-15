@@ -11,11 +11,15 @@ import type { WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.typ
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config Redis client สำหรับเก็บ worker queue/status/presence
 const redis = new IORedis(REDIS_CONFIG.url, {
   maxRetriesPerRequest: null,
 });
 
+// Config แปลง REDIS_URL เป็น connection object สำหรับ BullMQ
 const redisUrl = new URL(REDIS_CONFIG.url);
+
+// Config connection object สำหรับ BullMQ queue/worker
 const bullConnection = {
   host: redisUrl.hostname,
   port: Number(redisUrl.port || 6379),
@@ -24,15 +28,21 @@ const bullConnection = {
   maxRetriesPerRequest: null,
 };
 
+// Config queue สำหรับ assignment timeout
 const assignmentTimeoutQueue = new Queue(REDIS_CONFIG.assignmentTimeoutQueueName, {
   connection: bullConnection,
 });
+
+// Config queue สำหรับคืน worker จาก break เมื่อครบเวลา
 const workerBreakReturnQueue = new Queue(REDIS_CONFIG.workerBreakReturnQueueName, {
   connection: bullConnection,
 });
 
+// State เก็บ BullMQ worker เพื่อไม่ให้ start ซ้ำ
 let timeoutWorker: Worker | null = null;
 let breakReturnWorker: Worker | null = null;
+
+// State score ล่าสุดของ Redis FIFO queue เพื่อกัน score ชนกันใน millisecond เดียว
 let lastWorkerQueueScore = 0;
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -48,8 +58,8 @@ function buildWorkerPresenceKey(accountId: number): string {
 }
 
 // Function สร้าง Redis key สำหรับนับจำนวนพักของ worker ในแต่ละกะ
-function buildWorkerBreakCountKey(accountId: number, scheduleId: number): string {
-  return `${REDIS_CONFIG.workerBreakCountKeyPrefix}${accountId}:${scheduleId}`;
+function buildWorkerBreakCountKey(accountId: number, shiftInstanceKey: string): string {
+  return `${REDIS_CONFIG.workerBreakCountKeyPrefix}${accountId}:${shiftInstanceKey}`;
 }
 
 // Function แปลงค่า hash จาก Redis เป็น response สถานะคิว
@@ -302,9 +312,9 @@ export async function getWorkerPresences(
 // Function ดึงจำนวนครั้งพักของ worker ในกะนั้น
 export async function getWorkerBreakCount(
   accountId: number,
-  scheduleId: number
+  shiftInstanceKey: string
 ): Promise<number> {
-  const value = await redis.get(buildWorkerBreakCountKey(accountId, scheduleId));
+  const value = await redis.get(buildWorkerBreakCountKey(accountId, shiftInstanceKey));
 
   return value ? Number(value) : 0;
 }
@@ -312,9 +322,9 @@ export async function getWorkerBreakCount(
 // Function เพิ่มจำนวนครั้งพักของ worker ในกะนั้น
 export async function incrementWorkerBreakCount(
   accountId: number,
-  scheduleId: number
+  shiftInstanceKey: string
 ): Promise<number> {
-  const key = buildWorkerBreakCountKey(accountId, scheduleId);
+  const key = buildWorkerBreakCountKey(accountId, shiftInstanceKey);
   const count = await redis.incr(key);
   const settings = await getRuntimeSettings();
 

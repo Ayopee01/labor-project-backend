@@ -7,6 +7,7 @@ import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 import * as adminSettingsService from "../services/admin-settings.service";
 
+// Config Express router สำหรับ Admin Settings routes
 const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
@@ -56,7 +57,6 @@ router.get(
   }
 );
 
-// Route ดึง permission ของ admin user รายคน
 // Route สร้าง admin account ใหม่ผ่าน Settings/Permissions โดย admin ผู้สร้างต้องมี level สูงกว่า level ที่จะสร้าง
 router.post(
   "/admins",
@@ -74,6 +74,7 @@ router.post(
   }
 );
 
+// Route ดึง permission ของ admin user รายคน
 router.get(
   "/users/:id/permissions",
   permissionMiddleware(["permissions:read"]),

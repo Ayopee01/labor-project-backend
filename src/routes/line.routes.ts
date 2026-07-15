@@ -3,6 +3,7 @@ import express from "express";
 // import Service
 import * as lineService from "../services/line.service";
 
+// Config Express router สำหรับ LINE webhook routes
 const router = express.Router();
 
 // Route รับ LINE webhook จาก vendor สำหรับ confirm/reject งาน

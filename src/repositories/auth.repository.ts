@@ -11,7 +11,12 @@ import type { DbConnection } from "../types/common.type";
 import type { PendingSessionInput, SessionDto } from "../types/auth.type";
 import type { AccountDto } from "../types/admin-workers.type";
 
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config ค่า placeholder ก่อน update refresh token hash จริงหลังสร้าง session
 const PENDING_REFRESH_TOKEN_HASH = "";
+
+/* -------------------------------------- Functions -------------------------------------- */
 
 // Function หา account จาก username สำหรับ flow login
 async function findByUsername(
@@ -27,6 +32,7 @@ async function findByUsername(
   return mapAccount(account);
 }
 
+// Function รวม account repository ของ Auth พร้อม method login ด้วย username
 const authAccountRepository = {
   ...accountRepository,
   findByUsername,
@@ -137,6 +143,7 @@ async function revoke(
   );
 }
 
+// Function รวม session repository ของ Auth พร้อม method ออกและ revoke token
 const authSessionRepository = {
   ...sessionRepository,
   findActiveById,

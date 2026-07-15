@@ -25,6 +25,7 @@ const timeString = trimmedString.pipe(
 const emptyStringToUndefined = (value: unknown): unknown =>
   value === "" ? undefined : value;
 
+// Format วันที่ optional ที่แปลง empty string เป็น undefined ก่อน validate
 const optionalDateString = z.preprocess(
   emptyStringToUndefined,
   dateString.optional()
@@ -36,6 +37,7 @@ const optionalTrimmedString = z.preprocess(
   z.string().trim().optional()
 );
 
+// Format status ค่า default เป็น active เมื่อไม่ได้ส่งมา
 const defaultActiveStatusSchema = z.preprocess(
   emptyStringToUndefined,
   activeStatusSchema.default("active")
@@ -177,6 +179,7 @@ export const resetPasswordBodySchema = z.object({
 
 // Schema สินค้าในตั๋วที่ Gate ส่งมา
 const gateProductInputSchema = z.object({
+  product_ref: trimmedString,
   product_type: optionalTrimmedString,
   name: trimmedString,
   quantity: z.coerce.number().positive(),
@@ -207,6 +210,7 @@ export const gateVehicleJobBodySchema = z.object({
   license_plate: trimmedString,
   vehicle_type: optionalTrimmedString,
   workers_required: z.coerce.number().int().positive(),
+  dispatch_now: z.boolean().optional(),
   markets: z.array(gateMarketInputSchema).min(1),
 });
 
@@ -220,8 +224,9 @@ export const workerScanBodySchema = z.object({
   qr_token: trimmedString,
 });
 
+// Schema item สินค้าที่ worker ส่งยอดยืนยันตอนปิดงาน
 const workerTicketCompleteItemSchema = z.object({
-  ticket_product_id: idSchema,
+  product_ref: trimmedString,
   confirmed_quantity: z.coerce.number().min(0),
 });
 
@@ -249,20 +254,19 @@ export const adminCancelBodySchema = z.object({
   reason: optionalTrimmedString,
 });
 
-// Schema body สำหรับ Admin force status worker
-// Schema body for Admin manually assigning workers to a vehicle job
+// Schema body สำหรับ Admin assign worker เข้างานรถแบบระบุรหัสพนักงาน
 export const adminAssignWorkersBodySchema = z.object({
-  worker_account_ids: z.array(idSchema).min(1),
+  worker_codes: z.array(trimmedString).min(1),
 });
 
-// Schema body for Admin extending worker scan deadline
+// Schema body สำหรับ Admin ต่อเวลา scan deadline แบบทั้งรถหรือราย worker
 export const adminExtendScanDeadlineBodySchema = z.object({
   minutes: z.coerce.number().int().positive().max(240),
-  worker_account_ids: z.array(idSchema).min(1).optional(),
+  worker_codes: z.array(trimmedString).min(1).optional(),
   reason: optionalTrimmedString,
 });
 
-// Schema body for Admin forcing worker status
+// Schema body สำหรับ Admin force status worker
 export const adminForceWorkerStatusBodySchema = z.object({
   status: z.enum(["ready", "waiting", "offline", "break"]),
   reason: optionalTrimmedString,
@@ -293,7 +297,6 @@ export const updateAccountPermissionsBodySchema = z.object({
     .default([]),
 });
 
-// Schema runtime settings หลังอ่านค่าจาก DB และแปลงเป็น number พร้อมใช้งาน
 // Schema body สำหรับ Admin สร้าง admin account ใหม่พร้อมกำหนด permission level และ permissions เริ่มต้น
 export const createAdminAccountBodySchema = z.object({
   username: trimmedString,
@@ -309,6 +312,7 @@ export const createAdminAccountBodySchema = z.object({
     .default([]),
 });
 
+// Schema runtime settings หลังอ่านค่าจาก DB และแปลงเป็น number พร้อมใช้งาน
 export const runtimeSettingsSchema = z.object({
   driver_session_ttl_hours: z.coerce
     .number()

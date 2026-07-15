@@ -50,7 +50,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/driver/jobs/{id}/ready:
+  /api/driver/jobs/{vehicleJobRef}/ready:
     post:
       tags:
         - Driver
@@ -60,17 +60,18 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: vehicleJobRef
           required: true
           schema:
-            type: integer
+            type: string
+            example: VEH-20260706-0001
       responses:
         "200":
-          description: Vehicle job detail after ready state update.
+          description: Vehicle job ready acknowledgement.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VehicleJobDetailResponse"
+                $ref: "#/components/schemas/DriverJobReadyResponse"
         "403":
           description: Driver session does not belong to this job.
           content:

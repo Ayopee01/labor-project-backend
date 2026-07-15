@@ -11,6 +11,7 @@ import { normalizeCreateUserMultipartBody, uploadWorkerImage } from "../middlewa
 // import Service
 import * as adminWorkersService from "../services/admin-workers.service";
 
+// Config Express router สำหรับ Admin Workers routes
 const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));

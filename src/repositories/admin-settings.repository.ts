@@ -10,12 +10,14 @@ import type { DbConnection } from "../types/common.type";
 import type { SystemSettingDto } from "../types/admin-settings.type";
 import type { AccountCreateInput, AccountDto } from "../types/admin-workers.type";
 
-export {
-  permissionRepository,
-  sessionRepository,
-};
+export { permissionRepository, sessionRepository };
 
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config role หลักของ repository นี้
 const ADMIN_ROLE = "admin";
+
+/* -------------------------------------- Functions -------------------------------------- */
 
 // Function แปลง account id จาก path/string ให้เป็น number สำหรับ Prisma query
 function toAccountId(id: number | string): number {
@@ -38,7 +40,6 @@ async function findAdminById(
   return mapAccount(account);
 }
 
-// Function อัปเดต permission level ของ admin account
 // Function ตรวจว่า username ถูกใช้แล้วหรือยังสำหรับสร้าง admin account
 async function usernameExists(
   username: string,
@@ -86,6 +87,7 @@ async function createAdmin(
   return requireMapped(mapAccount(createdAccount), "Admin account", "create");
 }
 
+// Function อัปเดต permission level ของ admin account
 async function updatePermissionLevel(
   id: number | string,
   permissionLevel?: string | null,
@@ -104,6 +106,7 @@ async function updatePermissionLevel(
   return requireMapped(mapAccount(updatedAccount), "Account", "permission level update");
 }
 
+// Function รวม account repository ของ Admin Settings พร้อม method เฉพาะ admin account
 const adminSettingsAccountRepository = {
   ...accountRepository,
   createAdmin,

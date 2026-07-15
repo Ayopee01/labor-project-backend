@@ -14,18 +14,35 @@ import { parseWithSchema, parseWorkScheduleInput } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
-import { formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
+import { buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
+import { WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
+import { buildDeadline, formatBangkokDate } from "../utils/time";
+import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 import { buildWorkerCodeFromShirtNumber } from "../utils/worker-code";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-function getBangkokDateString(value: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Bangkok",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(value);
+// Function สร้าง payload assignment ปัจจุบันสำหรับ Admin worker status
+async function buildWorkerAssignmentSocketPayload(
+  assignment: VehicleJobAssignmentDto | null
+) {
+  if (!assignment) {
+    return null;
+  }
+
+  const vehicleJob = await workerApplicationRepository.findVehicleJobById(
+    assignment.vehicle_job_id
+  );
+
+  return {
+    vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+    status: assignment.status,
+    accept_deadline_at: assignment.accept_deadline_at,
+    scan_deadline_at: assignment.scan_deadline_at,
+    accepted_at: assignment.accepted_at,
+    scanned_at: assignment.scanned_at,
+    completed_at: assignment.completed_at,
+  };
 }
 
 // Function ค้นหา account ประเภท user และโยน error หากไม่พบ
@@ -50,7 +67,6 @@ function getActorId(auth?: AccessTokenPayload): number | null {
   return auth?.account_id ?? null;
 }
 
-// Function จัดรูปแบบ session ให้ส่งเฉพาะข้อมูลที่ต้องใช้ใน response
 // Function สร้างข้อมูล pagination สำหรับ response แบบ list
 function buildPaginationMeta(
   page: number,
@@ -448,7 +464,7 @@ export async function updateUser(
           scheduleInput.work_date ??
           currentSchedule?.work_date ??
           currentProfile?.work_start_date ??
-          getBangkokDateString(),
+          formatBangkokDate(),
         updated_by: actorId,
       };
 
@@ -532,10 +548,6 @@ export async function listWorkSchedules(
 }
 
 // Function สร้างเวลา deadline จากเวลาปัจจุบัน
-function buildDeadline(durationMs: number): Date {
-  return new Date(Date.now() + durationMs);
-}
-
 // Function สรุปจำนวน worker ตามสถานะ queue และ heartbeat
 // Function เลือกเวลาล่าสุดจาก timestamp ใน flow การทำงานของ worker
 function latestTimestamp(values: Array<string | null | undefined>): string | null {
@@ -561,7 +573,7 @@ function resolveWorkerBoardStatus(
   }
 
   if (assignment) {
-    if (["SCANNED", "COUNTING"].includes(assignment.status)) {
+    if (WORKING_ASSIGNMENT_STATUSES.includes(assignment.status)) {
       return "working";
     }
 
@@ -623,6 +635,7 @@ function formatAdminWorkerStatusItem(
   };
 }
 
+// Function สรุปจำนวน worker ในแต่ละสถานะสำหรับหน้า Admin worker board
 function buildAdminWorkerStatusSummary(items: AdminWorkerStatusItem[]): {
   total: number;
   open_app: number;
@@ -698,11 +711,7 @@ export async function listAdminWorkerStatuses(): Promise<{
         workerApplicationRepository.findCurrentAssignmentByWorker(accountId)
       )
     ),
-    Promise.all(
-      accountIds.map((accountId) =>
-        profileRepository.findByAccountId(accountId)
-      )
-    ),
+    profileRepository.findByAccountIds(accountIds),
     Promise.all(
       accountIds.map((accountId) =>
         workScheduleRepository.findCurrentByAccountId(accountId)
@@ -716,8 +725,10 @@ export async function listAdminWorkerStatuses(): Promise<{
 
   accountIds.forEach((accountId, index) => {
     assignmentMap.set(accountId, assignments[index] ?? null);
-    profileMap.set(accountId, profiles[index] ?? null);
     scheduleMap.set(accountId, schedules[index] ?? null);
+  });
+  profiles.forEach((profile) => {
+    profileMap.set(profile.account_id, profile);
   });
 
   const data = accounts
@@ -814,9 +825,10 @@ export async function forceAdminWorkerStatus(
     }
 
     if (queueEntry?.status !== "break") {
+      const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
       const currentBreakCount = await getWorkerBreakCount(
         account.id,
-        currentSchedule.id
+        shiftInstanceKey
       );
 
       if (currentBreakCount >= settings.worker_break_limit) {
@@ -827,7 +839,7 @@ export async function forceAdminWorkerStatus(
         );
       }
 
-      await incrementWorkerBreakCount(account.id, currentSchedule.id);
+      await incrementWorkerBreakCount(account.id, shiftInstanceKey);
     }
 
     const breakDurationMs = settings.worker_break_duration_minutes * 60 * 1000;
@@ -845,9 +857,12 @@ export async function forceAdminWorkerStatus(
     getWorkerQueueStatus(account.id),
     workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
   ]);
+  const latestAssignmentPayload = await buildWorkerAssignmentSocketPayload(
+    latestAssignment
+  );
   sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
-    queue: latestQueue,
-    current_assignment: latestAssignment,
+    queue: buildWorkerQueueSocketPayload(latestQueue, latest.worker_code),
+    current_assignment: latestAssignmentPayload,
     reason: "admin_force_status",
   });
   publishNotification({

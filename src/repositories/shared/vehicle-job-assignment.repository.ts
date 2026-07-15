@@ -1,4 +1,5 @@
 // import
+import { ACTIVE_ASSIGNMENT_STATUSES } from "../../constants/job-status";
 import { mapVehicleJobAssignment } from "./mappers";
 import { client, requireDto } from "./repository-utils";
 
@@ -18,7 +19,7 @@ export async function countActiveAssignments(
     where: {
       vehicleJobId,
       status: {
-        in: ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"],
+        in: ACTIVE_ASSIGNMENT_STATUSES,
       },
     },
   });
@@ -54,7 +55,7 @@ export async function findCurrentAssignmentByWorker(
     where: {
       workerAccountId,
       status: {
-        in: ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"],
+        in: ACTIVE_ASSIGNMENT_STATUSES,
       },
     },
     orderBy: {

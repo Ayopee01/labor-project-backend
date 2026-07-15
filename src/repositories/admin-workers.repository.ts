@@ -9,26 +9,20 @@ import { requireMapped, toId } from "./shared/repository-utils";
 
 import type { Prisma } from "@prisma/client";
 import type { DbConnection } from "../types/common.type";
-import type {
-  AccountCreateInput,
-  AccountDto,
-  ProfileCreateInput,
-  ProfileCreateData,
-  ProfileData,
-  ProfileDataInput,
-  ProfileDto,
-  ProfileUpdateInput,
-  PaginationFilters,
-  UserAccountUpdateInput,
-  UserListFilters,
-  WorkScheduleCreateInput,
-  WorkScheduleDto,
-  WorkScheduleUpdateInput,
-} from "../types/admin-workers.type";
+import type { AccountCreateInput, AccountDto, ProfileCreateInput, ProfileCreateData, ProfileData, ProfileDataInput, ProfileDto, ProfileUpdateInput, PaginationFilters, UserAccountUpdateInput, UserListFilters, WorkScheduleCreateInput, WorkScheduleDto, WorkScheduleUpdateInput } from "../types/admin-workers.type";
 
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config role หลักของ repository นี้
 const WORKER_ROLE = "worker";
+
+// Config status default เมื่อสร้าง account worker ใหม่
 const DEFAULT_ACCOUNT_STATUS = "active";
+
+// Config search mode สำหรับ Prisma contains filter
 const SEARCH_MODE = "insensitive" as const;
+
+/* -------------------------------------- Functions -------------------------------------- */
 
 // Function เลือก prisma client ปกติ หรือ transaction client ที่ส่งเข้ามา
 function client(connection?: DbConnection): DbConnection {
@@ -120,7 +114,6 @@ function buildUserWhere(filters: Partial<UserListFilters> = {}): Prisma.AccountW
   return where;
 }
 
-// Function สร้างเงื่อนไขตรวจ username ซ้ำโดยยกเว้น account ปัจจุบันได้
 // Function สร้างเงื่อนไขค้นหา worker จาก username หรือ worker_code
 function buildUserIdentifierWhere(identifier: string): Prisma.AccountWhereInput {
   return {
@@ -140,6 +133,7 @@ function buildUserIdentifierWhere(identifier: string): Prisma.AccountWhereInput 
   };
 }
 
+// Function สร้างเงื่อนไขตรวจ username ซ้ำโดยยกเว้น account ปัจจุบันได้
 function buildUsernameExistsWhere(
   username: string,
   exceptAccountId?: number | string | null
@@ -342,7 +336,6 @@ async function countUsers(
   });
 }
 
-// Function อัปเดตข้อมูล account ของ worker
 // Function ค้นหา worker จาก username หรือ worker_code
 async function findUserByIdentifier(
   identifier: string,
@@ -356,6 +349,7 @@ async function findUserByIdentifier(
   return mapAccount(account);
 }
 
+// Function อัปเดตข้อมูล account ของ worker
 async function updateUserAccount(
   id: number | string,
   fields: UserAccountUpdateInput,
@@ -567,6 +561,7 @@ async function countWorkSchedulesByAccountId(
   });
 }
 
+// Function รวม account repository ของ Admin Workers พร้อม method เฉพาะ worker
 const adminWorkersAccountRepository = {
   ...accountRepository,
   usernameExists,
@@ -579,6 +574,7 @@ const adminWorkersAccountRepository = {
   updateStatus,
 };
 
+// Function รวม profile repository ของ Admin Workers พร้อม method เฉพาะ worker profile
 const adminWorkersProfileRepository = {
   ...profileRepository,
   workerCodeExists,
@@ -586,6 +582,7 @@ const adminWorkersProfileRepository = {
   updateByAccountId: updateProfileByAccountId,
 };
 
+// Function รวม work schedule repository ของ Admin Workers พร้อม method จัดการ schedule
 const adminWorkersWorkScheduleRepository = {
   ...workScheduleRepository,
   create: createWorkSchedule,

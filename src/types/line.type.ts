@@ -18,3 +18,17 @@ export type LineMessageJobData = {
     text: string;
   }>;
 };
+
+export type VendorTicketAction =
+  | "vendor_confirm_completion"
+  | "vendor_reject_completion";
+
+export interface VendorTicketActionTokenPayload {
+  token_type: "vendor_ticket_action";
+  action: VendorTicketAction;
+  ticket_id: number;
+  submission_id: number;
+  stall_job_ref: string;
+  iat: number;
+  exp: number;
+}

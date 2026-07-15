@@ -10,7 +10,10 @@ import type { AccountDto } from "../../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config role worker สำหรับ query account ฝั่ง worker
 const WORKER_ROLE = "worker";
+
+// Config role admin สำหรับ query account ฝั่ง admin
 const ADMIN_ROLE = "admin";
 
 /* -------------------------------------- Functions -------------------------------------- */

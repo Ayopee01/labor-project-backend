@@ -7,6 +7,7 @@ import sessionMiddleware from "../middlewares/session.middleware";
 // import Service
 import * as notificationsService from "../services/notifications.service";
 
+// Config Express router สำหรับ Admin Realtime routes
 const router = express.Router();
 
 // Route เปิด SSE stream สำหรับ notification ฝั่ง Admin

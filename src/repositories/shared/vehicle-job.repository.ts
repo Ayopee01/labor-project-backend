@@ -54,6 +54,21 @@ export async function findVehicleJobById(
   return mapVehicleJob(vehicleJob);
 }
 
+// Function หา VehicleJob จากเลขอ้างอิงงานรถสำหรับ public/admin API
+export async function findVehicleJobByRef(
+  vehicleJobRef: string,
+  connection?: DbConnection
+): Promise<VehicleJobDto | null> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      vehicleJobRef,
+    },
+  });
+
+  return mapVehicleJob(vehicleJob);
+}
+
 // Function ดึงรายละเอียดงานรถพร้อมตลาด ตั๋ว และสินค้า
 export async function getVehicleJobDetail(
   id: number,
@@ -63,6 +78,42 @@ export async function getVehicleJobDetail(
   const vehicleJob = await db.vehicleJob.findUnique({
     where: {
       id,
+    },
+    include: {
+      marketJobs: {
+        orderBy: {
+          id: "asc",
+        },
+        include: {
+          tickets: {
+            orderBy: {
+              id: "asc",
+            },
+            include: {
+              products: {
+                orderBy: {
+                  id: "asc",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return vehicleJob ? mapVehicleJobDetail(vehicleJob) : null;
+}
+
+// Function ดึงรายละเอียดงานรถจากเลขอ้างอิงงานรถสำหรับ public/admin API
+export async function getVehicleJobDetailByRef(
+  vehicleJobRef: string,
+  connection?: DbConnection
+): Promise<VehicleJobDetailResponse | null> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      vehicleJobRef,
     },
     include: {
       marketJobs: {

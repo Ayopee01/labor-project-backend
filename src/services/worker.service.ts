@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 // import
 import { withTransaction } from "../db/prisma";
 import { enqueueLineMessage } from "../queues/notification-queue";
-import { enqueueWorker, getWorkerBreakCount, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOffline, removeAssignmentTimeout, scheduleWorkerBreakReturn } from "../queues/worker-queue";
+import { enqueueWorker, getWorkerBreakCount, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOffline, removeAssignmentTimeout, removeWorkerBreakReturn, scheduleWorkerBreakReturn } from "../queues/worker-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as lineRepository from "../repositories/line.repository";
@@ -14,45 +14,52 @@ import { publishRealtimeEvent } from "./realtime.service";
 import { getRuntimeSettings } from "./admin-settings.service";
 // import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
+import type { GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
 import type { AccountDto, WorkScheduleDto } from "../types/admin-workers.type";
 // import Validation
-import { parseId, parseWithSchema } from "../validation/parser";
+import { parseWithSchema } from "../validation/parser";
 import { workerAssignmentHistoryQuerySchema, workerScanBodySchema, workerTicketCompleteBodySchema } from "../validation/schemas";
 // import Utils
 import ApiError from "../utils/api-error";
-import { buildShiftWaitInfo, formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
+import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
+import { buildBangkokDateRange, buildDeadline, formatBangkokDate } from "../utils/time";
+import { buildWorkerTicketPayload } from "../utils/ticket-payload";
+import { signVendorTicketActionToken } from "../utils/vendor-action-token";
+import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้างเวลา deadline จากเวลาปัจจุบัน
-function buildDeadline(durationMs: number): Date {
-  return new Date(Date.now() + durationMs);
-}
+// Function สร้างข้อมูลเวลาพักที่เหลือสำหรับ response เมื่อ worker อยู่สถานะ break
+function buildRemainingBreakTime(
+  breakUntil: string | null | undefined
+): WorkerStatusResponse["remaining_break_time"] | null {
+  if (!breakUntil) {
+    return null;
+  }
 
-// Function สร้างช่วงเวลาของวันที่ไทยเพื่อใช้ query ประวัติงานรายวัน
-function buildBangkokDateRange(date: string): { startAt: Date; endAt: Date } {
-  const startAt = new Date(`${date}T00:00:00.000+07:00`);
-  const endAt = new Date(startAt.getTime() + 24 * 60 * 60 * 1000);
+  const breakUntilMs = new Date(breakUntil).getTime();
+
+  if (Number.isNaN(breakUntilMs)) {
+    return null;
+  }
+
+  const totalSeconds = Math.max(
+    0,
+    Math.ceil((breakUntilMs - Date.now()) / 1000)
+  );
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const textParts = [
+    minutes > 0 ? `${minutes} นาที` : null,
+    seconds > 0 || minutes === 0 ? `${seconds} วินาที` : null,
+  ].filter((part): part is string => Boolean(part));
 
   return {
-    startAt,
-    endAt,
+    total_seconds: totalSeconds,
+    minutes,
+    seconds,
+    text: textParts.join(" "),
   };
-}
-
-function formatBangkokDate(value: Date = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Bangkok",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(value);
-  const year = parts.find((part) => part.type === "year")?.value;
-  const month = parts.find((part) => part.type === "month")?.value;
-  const day = parts.find((part) => part.type === "day")?.value;
-
-  return `${year}-${month}-${day}`;
 }
 
 // Function เติมจำนวนครั้งพักใน response สถานะคิว
@@ -68,14 +75,16 @@ function withBreakUsage(
   };
 }
 
+// Function สร้าง response หลัง worker online/offline พร้อมสรุปงานและจำนวนพักของวัน/กะ
 async function buildWorkerOnlineResponse(
   account: AccountDto,
   queueEntry: WorkerQueueEntryDto,
-  schedule: WorkScheduleDto,
+  schedule: WorkScheduleDto | null,
   connection?: Parameters<typeof workerApplicationRepository.listWorkerAssignmentHistoryByDate>[3]
 ): Promise<WorkerOnlineResponse> {
   const today = formatBangkokDate();
   const { startAt, endAt } = buildBangkokDateRange(today);
+  const shiftInstanceKey = schedule ? buildWorkScheduleShiftInstanceKey(schedule) : null;
   const [profile, assignmentHistory, breakCountUsed] = await Promise.all([
     workerApplicationRepository.profileRepository.findByAccountId(account.id, connection),
     workerApplicationRepository.listWorkerAssignmentHistoryByDate(
@@ -84,24 +93,26 @@ async function buildWorkerOnlineResponse(
       endAt,
       connection
     ),
-    getWorkerBreakCount(account.id, schedule.id),
+    shiftInstanceKey ? getWorkerBreakCount(account.id, shiftInstanceKey) : 0,
   ]);
   const completedJobCount = assignmentHistory.filter(({ assignment }) =>
     assignment.status === "COMPLETED" || Boolean(assignment.completed_at)
+  ).length;
+  const todayJobCount = assignmentHistory.filter(
+    ({ assignment }) => assignment.status !== "TIMEOUT"
   ).length;
 
   return {
     full_name: account.full_name,
     worker_code: profile?.worker_code ?? null,
     status: queueEntry.status,
-    today_job_count: assignmentHistory.length,
+    today_job_count: todayJobCount,
     break_count_used: breakCountUsed,
     completed_job_count: completedJobCount,
   };
 }
 
-// Function ตรวจ auth ว่าเป็น worker ที่ active ก่อนทำงานใน Worker Mobile flow
-// Function builds the worker job detail payload after accepting an assignment.
+// Function สร้างรายละเอียดงานหลัง worker กดรับ assignment
 function buildWorkerAssignmentAcceptResponse(
   detail: VehicleJobDetailResponse,
   team: WorkerAssignmentTeamMemberDto[]
@@ -113,10 +124,12 @@ function buildWorkerAssignmentAcceptResponse(
       market_name: market.market_name,
       stall_count: market.tickets.length,
       stalls: market.tickets.map((ticket) => ({
+        stall_job_ref: ticket.stall_job_ref,
         stall_code: ticket.stall_no,
         stall_name: ticket.vendor_name,
         product_count: ticket.products.length,
         products: ticket.products.map((product) => ({
+          product_ref: product.product_ref,
           name: product.name,
           quantity: product.quantity,
           unit: product.unit,
@@ -126,7 +139,49 @@ function buildWorkerAssignmentAcceptResponse(
   };
 }
 
-// Function validates an active worker account before Worker Mobile actions.
+// Function สร้าง item ประวัติงาน worker โดยซ่อน id ภายในและใช้ reference ที่ UI/API ใช้งาน
+function buildWorkerAssignmentHistoryItemResponse(
+  item: WorkerAssignmentHistoryItemDto
+): WorkerAssignmentHistoryItemResponse {
+  return {
+    vehicle_job_ref: item.vehicle_job.vehicle_job_ref,
+    gate_transaction_ref: item.vehicle_job.gate_transaction_ref,
+    license_plate: item.vehicle_job.license_plate,
+    status: item.assignment.status,
+    accepted_at: item.assignment.accepted_at,
+    completed_at: item.assignment.completed_at,
+    created_at: item.assignment.created_at,
+  };
+}
+
+// Function สร้าง payload แจ้ง worker ว่ารับงานสำเร็จแล้ว
+function buildAssignmentAcceptedSocketPayload(
+  assignment: VehicleJobAssignmentDto,
+  detail: VehicleJobDetailResponse,
+  workerCode: string | null
+) {
+  return {
+    worker_code: workerCode,
+    status: assignment.status,
+    vehicle_job_ref: detail.vehicle_job.vehicle_job_ref,
+    gate_transaction_ref: detail.vehicle_job.gate_transaction_ref,
+    accepted_at: assignment.accepted_at,
+    scan_deadline_at: assignment.scan_deadline_at,
+  };
+}
+
+// Function ตรวจว่า scan deadline หมดอายุแล้วหรือยัง
+function isScanDeadlineExpired(scanDeadlineAt: string | null): boolean {
+  if (!scanDeadlineAt) {
+    return true;
+  }
+
+  const deadlineMs = new Date(scanDeadlineAt).getTime();
+
+  return !Number.isFinite(deadlineMs) || deadlineMs <= Date.now();
+}
+
+// Function ตรวจ auth ว่าเป็น worker ที่ active ก่อนทำงานใน Worker Mobile flow
 async function requireWorker(auth?: AccessTokenPayload) {
   if (!auth) {
     throw new ApiError(401, "UNAUTHORIZED", "Authentication is required.");
@@ -145,7 +200,7 @@ async function requireWorker(auth?: AccessTokenPayload) {
   return account;
 }
 
-// Function สร้างข้อความส่งให้ vendor ตรวจยอดปิดงานของ ticket
+// Function อ่าน reference ของ assignment จาก path param
 function parseAssignmentReference(value: unknown): string {
   const reference = String(value ?? "").trim();
 
@@ -153,27 +208,20 @@ function parseAssignmentReference(value: unknown): string {
     throw new ApiError(
       400,
       "INVALID_ASSIGNMENT_REF",
-      "Assignment id or vehicle job ref is invalid."
+      "Vehicle job ref is invalid."
     );
   }
 
   return reference;
 }
 
+// Function หา assignment ปัจจุบันของ worker ด้วย vehicle_job_ref ที่ส่งมาจาก API
 async function findWorkerAssignmentByReference(
   value: unknown,
   workerAccountId: number,
   connection?: Parameters<typeof workerApplicationRepository.findAssignmentByIdAndWorker>[2]
 ): Promise<VehicleJobAssignmentDto | null> {
   const reference = parseAssignmentReference(value);
-
-  if (/^\d+$/.test(reference)) {
-    return workerApplicationRepository.findAssignmentByIdAndWorker(
-      Number(reference),
-      workerAccountId,
-      connection
-    );
-  }
 
   return workerApplicationRepository.findCurrentAssignmentByVehicleJobRefAndWorker(
     reference,
@@ -182,9 +230,56 @@ async function findWorkerAssignmentByReference(
   );
 }
 
+// Function หา ticket ที่ worker จะส่งยอดปิดงานด้วย stall_job_ref หรือ ticket reference
+async function findGateTicketForCompletionByReference(
+  value: unknown,
+  connection?: Parameters<typeof workerApplicationRepository.findGateTicketForCompletion>[1]
+): Promise<GateTicketDto | null> {
+  const reference = String(value ?? "").trim();
+
+  if (!reference) {
+    throw new ApiError(400, "INVALID_TICKET_REF", "Ticket ref is invalid.");
+  }
+
+  return workerApplicationRepository.findGateTicketForCompletionByReference(
+    reference,
+    connection
+  );
+}
+
+// Function ตรวจ flag สำหรับส่ง LINE postback token กลับใน response ตอน debug
+function shouldIncludeDebugLinePostback(): boolean {
+  return process.env.LINE_DEBUG_POSTBACK_RESPONSE === "true";
+}
+
+// Function สร้าง postback data ที่มี signed token สำหรับ vendor confirm/reject ผ่าน LINE
+function buildVendorCompletionPostbackData(
+  ticket: GateTicketDto,
+  submission: TicketCompletionSubmissionDto
+): { confirm: string; reject: string } {
+  const confirmToken = signVendorTicketActionToken({
+    action: "vendor_confirm_completion",
+    ticket_id: ticket.id,
+    submission_id: submission.id,
+    stall_job_ref: ticket.stall_job_ref,
+  });
+  const rejectToken = signVendorTicketActionToken({
+    action: "vendor_reject_completion",
+    ticket_id: ticket.id,
+    submission_id: submission.id,
+    stall_job_ref: ticket.stall_job_ref,
+  });
+
+  return {
+    confirm: `action=vendor_confirm_completion&token=${confirmToken}`,
+    reject: `action=vendor_reject_completion&token=${rejectToken}`,
+  };
+}
+
+// Function สร้างข้อความ LINE ส่งให้ vendor ตรวจยอดปิดงานของ ticket
 function buildVendorCompletionMessage(
   ticket: GateTicketDto,
-  submission: TicketCompletionSubmissionDto,
+  postbackData: { confirm: string; reject: string },
   detail: VehicleJobDetailResponse | null,
   products: TicketProductDto[]
 ): string {
@@ -211,12 +306,12 @@ function buildVendorCompletionMessage(
     `Vehicle type: ${detail?.vehicle_job.vehicle_type ?? "-"}`,
     `Market: ${market?.market_name ?? "-"}`,
     `Ticket: ${ticket.ticket_no ?? ticket.stall_job_ref}`,
+    `Stall job: ${ticket.stall_job_ref}`,
     `Stall: ${ticket.stall_no ?? "-"}`,
-    `Submission: ${submission.id}`,
     "Products:",
     ...productLines,
-    `Confirm: action=vendor_confirm_completion&ticketId=${ticket.id}`,
-    `Reject: action=vendor_reject_completion&ticketId=${ticket.id}`,
+    `Confirm: ${postbackData.confirm}`,
+    `Reject: ${postbackData.reject}`,
   ]
     .join("\n");
 }
@@ -224,13 +319,13 @@ function buildVendorCompletionMessage(
 // Function ตรวจรายการสินค้าที่ worker ส่งว่าครบ ตรง ticket และไม่ซ้ำ
 function validateTicketCompletionItems(
   products: TicketProductDto[],
-  items: Array<{ ticket_product_id: number; confirmed_quantity: number }>
+  items: Array<{ product_ref: string; confirmed_quantity: number }>
 ): void {
-  const productIds = new Set(products.map((product) => product.id));
-  const itemIds = new Set<number>();
+  const productRefs = new Set(products.map((product) => product.product_ref));
+  const itemRefs = new Set<string>();
 
   for (const item of items) {
-    if (!productIds.has(item.ticket_product_id)) {
+    if (!productRefs.has(item.product_ref)) {
       throw new ApiError(
         400,
         "INVALID_TICKET_PRODUCT",
@@ -238,7 +333,7 @@ function validateTicketCompletionItems(
       );
     }
 
-    if (itemIds.has(item.ticket_product_id)) {
+    if (itemRefs.has(item.product_ref)) {
       throw new ApiError(
         400,
         "DUPLICATE_TICKET_PRODUCT",
@@ -246,10 +341,10 @@ function validateTicketCompletionItems(
       );
     }
 
-    itemIds.add(item.ticket_product_id);
+    itemRefs.add(item.product_ref);
   }
 
-  if (itemIds.size !== products.length) {
+  if (itemRefs.size !== products.length) {
     throw new ApiError(
       400,
       "INCOMPLETE_TICKET_PRODUCTS",
@@ -315,7 +410,24 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
     );
 
     if (currentAssignment) {
-      throw new ApiError(409, "WORKER_BUSY", "Worker already has an active assignment.");
+      await workerApplicationRepository.closeCompletedVehicleJobIfReady(
+        currentAssignment.vehicle_job_id,
+        transaction
+      );
+      const refreshedAssignment = await workerApplicationRepository.findCurrentAssignmentByWorker(
+        account.id,
+        transaction
+      );
+
+      if (refreshedAssignment) {
+        throw new ApiError(409, "WORKER_BUSY", "Worker already has an active assignment.");
+      }
+    }
+
+    const currentQueueEntry = await getWorkerQueueStatus(account.id);
+
+    if (currentQueueEntry?.status === "break") {
+      await removeWorkerBreakReturn(account.id, currentSchedule.id);
     }
 
     await enqueueWorker(account.id);
@@ -336,14 +448,17 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
     );
 
     sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
-      queue: latestQueueEntry,
+      queue: buildWorkerQueueSocketPayload(
+        latestQueueEntry,
+        response.worker_code
+      ),
     });
     publishNotification({
       type: "WORKER_STATUS_CHANGED",
       title: "Worker online",
       message: `Worker ${account.full_name} is ready for work.`,
       payload: {
-        worker_account_id: account.id,
+        worker_code: response.worker_code,
         queue: latestQueueEntry,
         reason: "worker_online",
       },
@@ -357,19 +472,36 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
 }
 
 // Function ให้ worker ออกจาก queue
-export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerQueueEntryDto> {
+export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOnlineResponse> {
   const account = await requireWorker(auth);
+  const [currentSchedule, currentQueueEntry] = await Promise.all([
+    workScheduleRepository.findCurrentByAccountId(account.id),
+    getWorkerQueueStatus(account.id),
+  ]);
+
+  if (currentQueueEntry?.status === "break" && currentSchedule) {
+    await removeWorkerBreakReturn(account.id, currentSchedule.id);
+  }
 
   const queueEntry = await markWorkerOffline(account.id);
+  const response = await buildWorkerOnlineResponse(
+    account,
+    queueEntry,
+    currentSchedule
+  );
+
   sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
-    queue: queueEntry,
+    queue: buildWorkerQueueSocketPayload(
+      queueEntry,
+      response.worker_code
+    ),
   });
   publishNotification({
     type: "WORKER_STATUS_CHANGED",
     title: "Worker offline",
     message: `Worker ${account.full_name} went offline.`,
     payload: {
-      worker_account_id: account.id,
+      worker_code: response.worker_code,
       queue: queueEntry,
       reason: "worker_offline",
     },
@@ -378,11 +510,11 @@ export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerQu
     },
   });
 
-  return queueEntry;
+  return response;
 }
 
 // Function ให้ worker พักชั่วคราว 15 นาที และกลับท้ายคิวอัตโนมัติ
-export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerQueueEntryDto> {
+export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBreakResponse> {
   const account = await requireWorker(auth);
   const settings = await getRuntimeSettings();
   const currentSchedule = await workScheduleRepository.findCurrentByAccountId(
@@ -406,10 +538,11 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerQueu
     );
   }
 
+  const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
   const [queueEntry, currentAssignment, currentBreakCount] = await Promise.all([
     getWorkerQueueStatus(account.id),
     workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
-    getWorkerBreakCount(account.id, currentSchedule.id),
+    getWorkerBreakCount(account.id, shiftInstanceKey),
   ]);
 
   if (currentAssignment) {
@@ -434,7 +567,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerQueu
 
   const breakCountUsed = await incrementWorkerBreakCount(
     account.id,
-    currentSchedule.id
+    shiftInstanceKey
   );
   const breakDurationMs = settings.worker_break_duration_minutes * 60 * 1000;
   const breakUntil = buildDeadline(breakDurationMs);
@@ -451,15 +584,21 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerQueu
     breakCountUsed,
     settings.worker_break_limit
   );
+  const profile = await workerApplicationRepository.profileRepository.findByAccountId(
+    account.id
+  );
   sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
-    queue: breakQueueEntry,
+    queue: buildWorkerQueueSocketPayload(
+      breakQueueEntry,
+      profile?.worker_code ?? null
+    ),
   });
   publishNotification({
     type: "WORKER_STATUS_CHANGED",
     title: "Worker on break",
     message: `Worker ${account.full_name} is on break.`,
     payload: {
-      worker_account_id: account.id,
+      worker_code: profile?.worker_code ?? null,
       queue: breakQueueEntry,
       reason: "worker_break",
     },
@@ -468,23 +607,31 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerQueu
     },
   });
 
-  return breakQueueEntry;
+  return {
+    full_name: account.full_name,
+    worker_code: profile?.worker_code ?? null,
+    status: breakQueueEntry.status,
+    break_count_used: breakCountUsed,
+    break_count_limit: settings.worker_break_limit,
+  };
 }
 
 // Function ดึงสถานะ queue และ assignment ปัจจุบันของ worker
 export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<WorkerStatusResponse> {
   const account = await requireWorker(auth);
 
-  const [profile, currentSchedule] = await Promise.all([
+  const [profile, currentSchedule, queueEntry] = await Promise.all([
     workerApplicationRepository.profileRepository.findByAccountId(account.id),
     workScheduleRepository.findCurrentByAccountId(account.id),
+    getWorkerQueueStatus(account.id),
   ]);
   const schedule = formatScheduleWithShift(currentSchedule);
-
-  return {
+  const status = queueEntry?.status ?? "offline";
+  const response: WorkerStatusResponse = {
     full_name: account.full_name,
     worker_code: profile?.worker_code ?? null,
     image_url: profile?.image_url ?? null,
+    status,
     nationality: profile?.nationality_name ?? profile?.nationality ?? null,
     work_start_date: profile?.work_start_date ?? null,
     phone: profile?.phone ?? null,
@@ -496,6 +643,16 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
         }
       : null,
   };
+  const remainingBreakTime = status === "break"
+    ? buildRemainingBreakTime(queueEntry?.break_until)
+    : null;
+
+  if (status === "break" && queueEntry?.break_until && remainingBreakTime) {
+    response.break_until = queueEntry.break_until;
+    response.remaining_break_time = remainingBreakTime;
+  }
+
+  return response;
 }
 
 // Function ดึงประวัติงานของ worker ตามวันที่ที่ระบุ
@@ -504,7 +661,7 @@ export async function listWorkerAssignmentHistory(
   auth?: AccessTokenPayload
 ): Promise<{
   date: string;
-  data: WorkerAssignmentHistoryItemDto[];
+  data: WorkerAssignmentHistoryItemResponse[];
 }> {
   const account = await requireWorker(auth);
   const input = parseWithSchema(workerAssignmentHistoryQuerySchema, query);
@@ -517,7 +674,7 @@ export async function listWorkerAssignmentHistory(
 
   return {
     date: input.date,
-    data: history,
+    data: history.map(buildWorkerAssignmentHistoryItemResponse),
   };
 }
 
@@ -541,23 +698,29 @@ export async function acceptWorkerAssignment(
     assignment.accept_deadline_at &&
     new Date(assignment.accept_deadline_at).getTime() <= Date.now()
   ) {
+    const vehicleJob = await workerApplicationRepository.findVehicleJobById(
+      assignment.vehicle_job_id
+    );
+    const profile = await workerApplicationRepository.profileRepository.findByAccountId(
+      account.id
+    );
+
     await withTransaction(async (transaction) => {
       await workerApplicationRepository.timeoutAssignment(assignment.id, transaction);
       await enqueueWorker(account.id);
       await dispatchReadyWorkers(transaction);
     });
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
-      assignment_id: assignment.id,
-      vehicle_job_id: assignment.vehicle_job_id,
+      vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
     });
     publishNotification({
       type: "ASSIGNMENT_TIMEOUT",
       title: "Assignment timed out",
       message: `Worker ${account.full_name} did not accept assignment ${assignment.id} in time.`,
       payload: {
-        assignment_id: assignment.id,
-        vehicle_job_id: assignment.vehicle_job_id,
-        worker_account_id: account.id,
+        vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+        worker_code: profile?.worker_code ?? null,
+        status: "TIMEOUT",
       },
       audience: {
         roles: ["admin"],
@@ -587,18 +750,26 @@ export async function acceptWorkerAssignment(
     vehicleJobDetail,
     team
   );
+  const profile = await workerApplicationRepository.profileRepository.findByAccountId(
+    account.id
+  );
 
-  sendWorkerSocketEvent(account.id, "ASSIGNMENT_ACCEPTED", {
-    assignment: acceptedAssignment,
-  });
+  sendWorkerSocketEvent(
+    account.id,
+    "ASSIGNMENT_ACCEPTED",
+    buildAssignmentAcceptedSocketPayload(
+      acceptedAssignment,
+      vehicleJobDetail,
+      profile?.worker_code ?? null
+    )
+  );
   publishNotification({
     type: "ASSIGNMENT_ACCEPTED",
     title: "Assignment accepted",
     message: `Worker ${account.full_name} accepted assignment ${acceptedAssignment.id}.`,
     payload: {
-      assignment_id: acceptedAssignment.id,
-      vehicle_job_id: acceptedAssignment.vehicle_job_id,
-      worker_account_id: account.id,
+      vehicle_job_ref: vehicleJobDetail.vehicle_job.vehicle_job_ref,
+      worker_code: profile?.worker_code ?? null,
       status: acceptedAssignment.status,
       scan_deadline_at: acceptedAssignment.scan_deadline_at,
     },
@@ -615,11 +786,11 @@ export async function scanWorkerAssignment(
   assignmentIdParam: unknown,
   body: unknown,
   auth?: AccessTokenPayload
-): Promise<VehicleJobAssignmentDto> {
+): Promise<WorkerAssignmentCheckInResponse> {
   const account = await requireWorker(auth);
   const input = parseWithSchema(workerScanBodySchema, body);
 
-  const scannedAssignment = await withTransaction(async (transaction) => {
+  const { scannedAssignment, vehicleJob } = await withTransaction(async (transaction) => {
     const assignment = await findWorkerAssignmentByReference(
       assignmentIdParam,
       account.id,
@@ -632,6 +803,10 @@ export async function scanWorkerAssignment(
 
     if (assignment.status !== "ACCEPTED") {
       throw new ApiError(409, "ASSIGNMENT_NOT_ACCEPTED", "Assignment is not accepted.");
+    }
+
+    if (isScanDeadlineExpired(assignment.scan_deadline_at)) {
+      throw new ApiError(409, "QR_EXPIRED", "Worker QR scan time expired.");
     }
 
     const vehicleJob = await workerApplicationRepository.findVehicleJobById(
@@ -659,17 +834,22 @@ export async function scanWorkerAssignment(
       );
     }
 
-    return scannedAssignment;
+    return {
+      scannedAssignment,
+      vehicleJob,
+    };
   });
+  const profile = await workerApplicationRepository.profileRepository.findByAccountId(
+    account.id
+  );
 
   publishNotification({
     type: "ASSIGNMENT_CHECKED_IN",
     title: "Assignment checked in",
     message: `Worker ${account.full_name} checked in assignment ${scannedAssignment.id}.`,
     payload: {
-      assignment_id: scannedAssignment.id,
-      vehicle_job_id: scannedAssignment.vehicle_job_id,
-      worker_account_id: account.id,
+      vehicle_job_ref: vehicleJob.vehicle_job_ref,
+      worker_code: profile?.worker_code ?? null,
       status: scannedAssignment.status,
       scanned_at: scannedAssignment.scanned_at,
     },
@@ -678,7 +858,12 @@ export async function scanWorkerAssignment(
     },
   });
 
-  return scannedAssignment;
+  return {
+    status: scannedAssignment.status,
+    worker_code: profile?.worker_code ?? null,
+    vehicle_job_ref: vehicleJob.vehicle_job_ref,
+    worker_qr_token: vehicleJob.worker_qr_token,
+  };
 }
 
 // Function ให้ worker ส่งยอดปิดงานระดับ ticket เพื่อรอ vendor ตรวจผ่าน LINE
@@ -688,11 +873,10 @@ export async function completeWorkerTicket(
   auth?: AccessTokenPayload
 ): Promise<TicketCompletionResponse> {
   const account = await requireWorker(auth);
-  const ticketId = parseId(ticketIdParam);
   const input = parseWithSchema(workerTicketCompleteBodySchema, body);
   const result = await withTransaction(async (transaction) => {
-    const ticket = await workerApplicationRepository.findGateTicketForCompletion(
-      ticketId,
+    const ticket = await findGateTicketForCompletionByReference(
+      ticketIdParam,
       transaction
     );
 
@@ -705,6 +889,42 @@ export async function completeWorkerTicket(
         409,
         "TICKET_VENDOR_LINE_NOT_CONFIGURED",
         "Ticket vendor LINE id is not configured."
+      );
+    }
+
+    if (ticket.status === "CLOSED") {
+      throw new ApiError(409, "TICKET_ALREADY_CLOSED", "Ticket is already closed.");
+    }
+
+    const readiness = await workerApplicationRepository.getVehicleWorkReadiness(
+      ticket.vehicle_job_id,
+      transaction
+    );
+
+    if (!readiness.is_ready) {
+      throw new ApiError(
+        409,
+        "WORKERS_NOT_CHECKED_IN",
+        "All assigned workers must check in before this stall job can be completed.",
+        readiness
+      );
+    }
+
+    const currentTicket = await workerApplicationRepository.findCurrentOpenTicketByVehicleJob(
+      ticket.vehicle_job_id,
+      transaction
+    );
+
+    if (!currentTicket || currentTicket.ticket.stall_job_ref !== ticket.stall_job_ref) {
+      throw new ApiError(
+        409,
+        "CURRENT_STALL_NOT_COMPLETED",
+        "Current stall job must be completed before moving to the next stall.",
+        {
+          current_market_job_ref: currentTicket?.market_job_ref ?? null,
+          current_stall_job_ref: currentTicket?.ticket.stall_job_ref ?? null,
+          requested_stall_job_ref: ticket.stall_job_ref,
+        }
       );
     }
 
@@ -740,10 +960,6 @@ export async function completeWorkerTicket(
           "TICKET_ALREADY_SUBMITTED",
           "Ticket completion is already waiting for vendor confirmation."
         );
-      }
-
-      if (ticket.status === "CLOSED") {
-        throw new ApiError(409, "TICKET_ALREADY_CLOSED", "Ticket is already closed.");
       }
 
       throw new ApiError(
@@ -784,6 +1000,10 @@ export async function completeWorkerTicket(
     };
   });
   const detail = await workerApplicationRepository.getVehicleJobDetail(result.ticket.vehicle_job_id);
+  const linePostbackData = buildVendorCompletionPostbackData(
+    result.ticket,
+    result.submission
+  );
   const lineLogId = await lineRepository.createMessageDeliveryLog(
     "LINE",
     "send_vendor_ticket_completion",
@@ -804,7 +1024,7 @@ export async function completeWorkerTicket(
         type: "text",
         text: buildVendorCompletionMessage(
           result.ticket,
-          result.submission,
+          linePostbackData,
           detail,
           result.products
         ),
@@ -816,22 +1036,37 @@ export async function completeWorkerTicket(
     title: "Ticket completion submitted",
     message: `Ticket ${result.ticket.ticket_no ?? result.ticket.stall_job_ref} is waiting for vendor confirmation.`,
     payload: {
-      ticket_id: result.ticket.id,
-      vehicle_job_id: result.ticket.vehicle_job_id,
-      status: result.ticket.status,
-      confirmation_status: result.ticket.confirmation_status,
-      submission_id: result.submission.id,
-      submission_status: result.submission.status,
-      items: result.products,
+      ...buildWorkerTicketPayload(
+        result.ticket,
+        detail,
+        result.products,
+        { submission_status: result.submission.status }
+      ),
+    },
+    worker_payload: {
+      ...buildWorkerTicketPayload(
+        result.ticket,
+        detail,
+        result.products,
+        { submission_status: result.submission.status }
+      ),
     },
     admin: true,
     worker_account_ids: result.receiverAccountIds,
   });
 
+  const responsePayload = buildWorkerTicketPayload(
+    result.ticket,
+    detail,
+    result.products,
+    { submission_status: result.submission.status }
+  ) as Omit<TicketCompletionResponse, "message">;
+
   return {
     message: "Ticket completion submitted and waiting for vendor confirmation.",
-    ticket: result.ticket,
-    submission: result.submission,
-    products: result.products,
+    ...responsePayload,
+    ...(shouldIncludeDebugLinePostback()
+      ? { debug_line_postback: linePostbackData }
+      : {}),
   };
 }

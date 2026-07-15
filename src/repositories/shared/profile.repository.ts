@@ -34,3 +34,30 @@ export async function findByAccountId(
 
   return mapProfile(profile);
 }
+
+// Function ค้นหา profile หลาย account id ใน query เดียวเพื่อลด N+1 query
+export async function findByAccountIds(
+  accountIds: Array<number | string>,
+  connection?: DbConnection
+): Promise<ProfileDto[]> {
+  const ids = [...new Set(accountIds.map(toAccountId))].filter((id) =>
+    Number.isFinite(id)
+  );
+
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const db = client(connection);
+  const profiles = await db.userProfile.findMany({
+    where: {
+      accountId: {
+        in: ids,
+      },
+    },
+  });
+
+  return profiles
+    .map((profile) => mapProfile(profile))
+    .filter((profile): profile is ProfileDto => profile !== null);
+}

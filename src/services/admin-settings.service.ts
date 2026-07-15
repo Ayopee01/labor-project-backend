@@ -79,7 +79,6 @@ async function assertCanManageAdminPermissions(
   }
 }
 
-// Function แปลง settings จาก DB แล้ว validate เป็น number โดยไม่ใช้ค่า fallback
 // Function ตรวจว่า admin ผู้สร้างมี permission level สูงกว่า admin level ที่จะสร้าง
 async function assertCanCreateAdminLevel(
   nextPermissionLevel: string,
@@ -119,6 +118,7 @@ async function assertAdminUsernameAvailable(username: string): Promise<void> {
   }
 }
 
+// Function แปลง settings จาก DB แล้ว validate เป็น number โดยไม่ใช้ค่า fallback
 function mergeRuntimeSettings(
   storedSettings: { key: string; value: string }[]
 ): RuntimeSettingsResponse {
@@ -204,7 +204,6 @@ export async function listRoles() {
   };
 }
 
-// Function ดึง permissions จาก DB ของ account เท่านั้น
 // Function สร้าง admin account ใหม่ผ่าน Settings/Permissions พร้อม permission level และ permissions เริ่มต้น
 export async function createAdminAccount(
   body: unknown,
@@ -247,6 +246,7 @@ export async function createAdminAccount(
   });
 }
 
+// Function ดึง permissions จาก DB ของ account เท่านั้น
 export async function getAccountPermissions(
   account: AccountDto,
   connection?: DbConnection

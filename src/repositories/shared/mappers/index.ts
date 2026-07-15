@@ -213,6 +213,7 @@ export function mapTicketProduct(record: TicketProduct | null): TicketProductDto
   return {
     id: record.id,
     ticket_id: record.ticketId,
+    product_ref: record.productRef,
     product_type: record.productType,
     name: record.name,
     quantity: record.quantity.toString(),

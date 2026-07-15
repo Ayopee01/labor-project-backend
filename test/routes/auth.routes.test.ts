@@ -50,31 +50,11 @@ test("POST /api/auth/login allows admin login without device fields", async () =
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
     "access_token",
-    "account",
     "expires_in",
     "refresh_token",
     "token_type",
   ]);
-  assert.deepEqual(Object.keys(response.body.account).sort(), [
-    "email",
-    "full_name",
-    "image_url",
-    "latest_active_at",
-    "permission_level",
-    "permissions",
-    "phone",
-    "position",
-    "status",
-  ]);
-  assert.equal(response.body.account.full_name, admin.full_name);
-  assert.equal(response.body.account.status, "active");
-  assert.equal(response.body.account.position, admin.position);
-  assert.equal(response.body.account.email, admin.email);
-  assert.equal(response.body.account.phone, admin.phone);
-  assert.equal(response.body.account.image_url, null);
-  assert.equal(response.body.account.permission_level, "manager");
-  assert.ok(response.body.account.permissions.includes("admins:create"));
-  assert.ok(response.body.account.latest_active_at);
+  assert.equal(response.body.account, undefined);
   assert.ok(response.body.access_token);
   assert.ok(response.body.refresh_token);
 });
@@ -152,26 +132,11 @@ test("GET /api/auth/me returns current worker account from access token", async 
   assert.equal(login.status, 200);
   assert.deepEqual(Object.keys(login.body).sort(), [
     "access_token",
-    "account",
     "expires_in",
     "refresh_token",
     "token_type",
   ]);
-  assert.deepEqual(Object.keys(login.body.account).sort(), [
-    "full_name",
-    "image_url",
-    "server_time",
-    "shift",
-    "status",
-    "worker_code",
-  ]);
-  assert.equal(login.body.account.full_name, worker.full_name);
-  assert.equal(login.body.account.worker_code, `W${worker.id}`);
-  assert.equal(login.body.account.image_url, null);
-  assert.equal(login.body.account.status, "active");
-  assert.equal(login.body.account.shift.start_time, "00:00");
-  assert.equal(login.body.account.shift.end_time, "23:59");
-  assert.match(login.body.account.server_time, /^\d{2}:\d{2}$/);
+  assert.equal(login.body.account, undefined);
 
   // Step Act เรียก /me ด้วย access token ที่ได้จาก login route
   const response = await server.request("GET", "/api/auth/me", {

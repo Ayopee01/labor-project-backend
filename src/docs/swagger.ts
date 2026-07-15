@@ -50,15 +50,15 @@ function sortSwaggerOperations(
     "get /api/admin/jobs/workers/status/{id}": 27,
     "post /api/admin/jobs/workers/{id}/status/force": 28,
     "get /api/admin/vehicle-jobs": 29,
-    "get /api/admin/vehicle-jobs/{id}": 30,
-    "post /api/admin/vehicle-jobs/{id}/cancel": 31,
-    "post /api/admin/vehicle-jobs/{id}/cancel-and-requeue": 32,
-    "post /api/admin/vehicle-jobs/{id}/assign-workers": 33,
-    "post /api/admin/vehicle-jobs/{id}/scan-deadline/extend": 34,
-    "post /api/admin/assignments/{id}/cancel": 35,
-    "post /api/admin/market-jobs/{id}/cancel": 36,
-    "post /api/admin/stall-jobs/{id}/cancel": 37,
-    "post /api/admin/stall-jobs/{id}/reopen": 38,
+    "get /api/admin/vehicle-jobs/{vehicleJobRef}": 30,
+    "post /api/admin/vehicle-jobs/{vehicleJobRef}/cancel": 31,
+    "post /api/admin/vehicle-jobs/{vehicleJobRef}/cancel-and-requeue": 32,
+    "post /api/admin/vehicle-jobs/{vehicleJobRef}/assign-workers": 33,
+    "post /api/admin/vehicle-jobs/{vehicleJobRef}/scan-deadline/extend": 34,
+    "post /api/admin/vehicle-jobs/{vehicleJobRef}/workers/{workerCode}/assignment/cancel": 35,
+    "post /api/admin/market-jobs/{marketJobRef}/cancel": 36,
+    "post /api/admin/stall-jobs/{stallJobRef}/cancel": 37,
+    "post /api/admin/stall-jobs/{stallJobRef}/reopen": 38,
     "get /api/admin/settings": 39,
     "patch /api/admin/settings": 40,
     "get /api/admin/roles": 41,
@@ -68,7 +68,7 @@ function sortSwaggerOperations(
     // Driver
     "post /api/driver/qr-sessions": 60,
     "get /api/driver/jobs/current": 61,
-    "post /api/driver/jobs/{id}/ready": 62,
+    "post /api/driver/jobs/{vehicleJobRef}/ready": 62,
     // Worker Application
     "get /ws/workers": 70,
     "get /api/workers/me/status": 71,
@@ -76,9 +76,9 @@ function sortSwaggerOperations(
     "post /api/workers/me/online": 73,
     "post /api/workers/me/offline": 74,
     "post /api/workers/me/break": 75,
-    "post /api/workers/me/assignments/{id}/accept": 76,
-    "post /api/workers/me/assignments/{id}/check-in-qr": 77,
-    "post /api/workers/me/tickets/{id}/complete": 78,
+    "post /api/workers/me/assignments/{vehicleJobRef}/accept": 76,
+    "post /api/workers/me/assignments/{vehicleJobRef}/check-in-qr": 77,
+    "post /api/workers/me/tickets/{stallJobRef}/complete": 78,
     "get /api/admin/events": 85,
     "post /api/line/webhook": 90,
   };
@@ -90,6 +90,7 @@ function sortSwaggerOperations(
   return firstOrder - secondOrder || firstKey.localeCompare(secondKey);
 }
 
+// Config OpenAPI specification จากไฟล์ YAML ของแต่ละ Swagger tag
 const openapi = swaggerJsdoc({
   definition: {
     openapi: "3.0.0",

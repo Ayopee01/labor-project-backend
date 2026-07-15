@@ -2,15 +2,16 @@
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import * as workScheduleRepository from "./shared/work-schedule.repository";
+import { ACTIVE_ASSIGNMENT_STATUSES, FINISHED_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct, mapTicketWorker, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
-export { findVehicleJobById, getVehicleJobDetail } from "./shared/vehicle-job.repository";
+export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail } from "./shared/vehicle-job.repository";
 export { countActiveAssignments, createAssignment, findAssignmentById, findCurrentAssignmentByWorker } from "./shared/vehicle-job-assignment.repository";
 export { listTicketWorkers } from "./shared/ticket-worker.repository";
 
 // import Types
 import type { DbConnection } from "../types/common.type";
-import type { GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto } from "../types/worker.type";
+import type { CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto } from "../types/worker.type";
 
 export { accountRepository, profileRepository, workScheduleRepository };
 
@@ -27,60 +28,131 @@ export async function markVehicleJobInProgress(
       id: vehicleJobId,
     },
     data: {
-      status: "IN_PROGRESS",
-      marketJobs: {
-        updateMany: {
-          where: {
-            status: {
-              in: ["WAIT", "DISPATCH_NOW"],
-            },
-          },
-          data: {
-            status: "IN_PROGRESS",
-          },
-        },
-      },
-      tickets: {
-        updateMany: {
-          where: {
-            status: {
-              in: ["WAIT", "READY"],
-            },
-          },
-          data: {
-            status: "IN_PROGRESS",
-          },
-        },
-      },
+      status: VEHICLE_JOB_STATUS.IN_PROGRESS,
     },
   });
+
+  await activateNextTicketIfReady(vehicleJobId, connection);
 
   return requireDto(mapVehicleJob(vehicleJob), "vehicle job progress");
 }
 
-// Function ดึง assignment ที่หมดเวลารับงานแล้ว
-export async function listExpiredPendingAssignments(
-  now = new Date(),
+// Find the first non-terminal ticket by gate creation order.
+export async function findCurrentOpenTicketByVehicleJob(
+  vehicleJobId: number,
   connection?: DbConnection
-): Promise<VehicleJobAssignmentDto[]> {
+): Promise<CurrentTicketProgressDto | null> {
   const db = client(connection);
-  const assignments = await db.vehicleJobAssignment.findMany({
+  const vehicleJob = await db.vehicleJob.findUnique({
     where: {
-      status: "PENDING",
-      acceptDeadlineAt: {
-        lte: now,
-      },
+      id: vehicleJobId,
     },
-    orderBy: {
-      id: "asc",
+    include: {
+      marketJobs: {
+        orderBy: {
+          id: "asc",
+        },
+        include: {
+          tickets: {
+            orderBy: {
+              id: "asc",
+            },
+          },
+        },
+      },
     },
   });
 
-  return assignments
-    .map((assignment) => mapVehicleJobAssignment(assignment))
-    .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
+  if (!vehicleJob) {
+    return null;
+  }
+
+  for (const market of vehicleJob.marketJobs) {
+    const ticket = market.tickets.find(
+      (candidate) => !TERMINAL_TICKET_STATUSES.includes(candidate.status)
+    );
+
+    if (!ticket) {
+      continue;
+    }
+
+    return {
+      ticket: requireDto(mapGateTicket(ticket), "current gate ticket"),
+      market_job_ref: market.marketJobRef,
+      market_name: market.marketName,
+    };
+  }
+
+  return null;
 }
 
+export async function getVehicleWorkReadiness(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<VehicleWorkReadinessDto> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      id: vehicleJobId,
+    },
+    select: {
+      workersRequired: true,
+    },
+  });
+  const workersRequired = vehicleJob?.workersRequired ?? 0;
+  const checkedInCount = await countScannedAssignments(vehicleJobId, connection);
+  const remainingCount = Math.max(0, workersRequired - checkedInCount);
+
+  return {
+    workers_required: workersRequired,
+    checked_in_count: checkedInCount,
+    remaining_count: remainingCount,
+    is_ready: workersRequired > 0 && checkedInCount >= workersRequired,
+  };
+}
+
+export async function activateNextTicketIfReady(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<CurrentTicketProgressDto | null> {
+  const db = client(connection);
+  const current = await findCurrentOpenTicketByVehicleJob(vehicleJobId, connection);
+
+  if (!current) {
+    return null;
+  }
+
+  await db.marketJob.update({
+    where: {
+      id: current.ticket.market_job_id,
+    },
+    data: {
+      status: VEHICLE_JOB_STATUS.IN_PROGRESS,
+    },
+  });
+
+  const activatableTicketStatuses: string[] = [TICKET_STATUS.WAIT, TICKET_STATUS.READY];
+
+  if (!activatableTicketStatuses.includes(current.ticket.status)) {
+    return current;
+  }
+
+  const ticket = await db.gateTicket.update({
+    where: {
+      id: current.ticket.id,
+    },
+    data: {
+      status: TICKET_STATUS.IN_PROGRESS,
+    },
+  });
+
+  return {
+    ...current,
+    ticket: requireDto(mapGateTicket(ticket), "activated gate ticket"),
+  };
+}
+
+// Function ดึง assignment ที่หมดเวลารับงานแล้ว
 // Function ดึงงานรถที่พร้อม dispatch ตามลำดับการสร้าง
 export async function listDispatchableVehicleJobs(
   connection?: DbConnection
@@ -110,19 +182,19 @@ export async function countScannedAssignments(
     where: {
       vehicleJobId,
       status: {
-        in: ["SCANNED", "COUNTING", "COMPLETED"],
+        in: SCANNED_ASSIGNMENT_STATUSES,
       },
     },
   });
 }
 
-// Function ดึงประวัติงานของ worker ตามช่วงวันที่ที่ระบุ
+// Function แปลงสถานะ scan ของ assignment เป็นค่าที่ UI ใช้แสดงทีมในงานรถ
 function buildAssignmentScanStatus(assignment: VehicleJobAssignmentDto): string {
   if (assignment.status === "COMPLETED" || assignment.completed_at) {
     return "completed";
   }
 
-  if (["SCANNED", "COUNTING"].includes(assignment.status) || assignment.scanned_at) {
+  if (WORKING_ASSIGNMENT_STATUSES.includes(assignment.status) || assignment.scanned_at) {
     return "scanned";
   }
 
@@ -133,6 +205,7 @@ function buildAssignmentScanStatus(assignment: VehicleJobAssignmentDto): string 
   return "pending";
 }
 
+// Function ดึงรายชื่อทีม worker ในงานรถพร้อมสถานะ scan
 export async function listVehicleJobAssignmentTeam(
   vehicleJobId: number,
   connection?: DbConnection
@@ -142,7 +215,7 @@ export async function listVehicleJobAssignmentTeam(
     where: {
       vehicleJobId,
       status: {
-        in: ["PENDING", "ACCEPTED", "SCANNED", "COUNTING", "COMPLETED"],
+        in: FINISHED_ASSIGNMENT_STATUSES,
       },
     },
     orderBy: {
@@ -172,6 +245,7 @@ export async function listVehicleJobAssignmentTeam(
   });
 }
 
+// Function ดึงประวัติงานของ worker ตามช่วงวันที่ที่ระบุ
 export async function listWorkerAssignmentHistoryByDate(
   workerAccountId: number,
   startAt: Date,
@@ -218,7 +292,7 @@ export async function findAssignmentByIdAndWorker(
   return mapVehicleJobAssignment(assignment);
 }
 
-// Function เปลี่ยน assignment เป็นรับงานแล้วและกำหนดเวลา scan QR
+// Function หา assignment ปัจจุบันของ worker ด้วย vehicle_job_ref
 export async function findCurrentAssignmentByVehicleJobRefAndWorker(
   vehicleJobRef: string,
   workerAccountId: number,
@@ -229,7 +303,7 @@ export async function findCurrentAssignmentByVehicleJobRefAndWorker(
     where: {
       workerAccountId,
       status: {
-        in: ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"],
+        in: ACTIVE_ASSIGNMENT_STATUSES,
       },
       vehicleJob: {
         vehicleJobRef,
@@ -243,6 +317,7 @@ export async function findCurrentAssignmentByVehicleJobRefAndWorker(
   return mapVehicleJobAssignment(assignment);
 }
 
+// Function เปลี่ยน assignment เป็นรับงานแล้วและกำหนดเวลา scan QR
 export async function acceptAssignment(
   assignmentId: number,
   scanDeadlineAt: Date,
@@ -315,6 +390,31 @@ export async function findGateTicketForCompletion(
   return mapGateTicket(ticket);
 }
 
+// Function หา gate ticket ด้วย stall_job_ref หรือ ticket_no สำหรับ worker ปิดงาน
+export async function findGateTicketForCompletionByReference(
+  reference: string,
+  connection?: DbConnection
+): Promise<GateTicketDto | null> {
+  const db = client(connection);
+  const ticket = await db.gateTicket.findFirst({
+    where: {
+      OR: [
+        {
+          stallJobRef: reference,
+        },
+        {
+          ticketNo: reference,
+        },
+      ],
+    },
+    orderBy: {
+      id: "desc",
+    },
+  });
+
+  return mapGateTicket(ticket);
+}
+
 // Function ดึงรายการสินค้าใน ticket ตามลำดับที่สร้าง
 export async function listTicketProducts(
   ticketId: number,
@@ -346,8 +446,8 @@ export async function updateTicketProductConfirmations(
   for (const item of items) {
     const result = await db.ticketProduct.updateMany({
       where: {
-        id: item.ticket_product_id,
         ticketId,
+        productRef: item.product_ref,
       },
       data: {
         confirmedQuantity: item.confirmed_quantity,
@@ -388,7 +488,7 @@ export async function ensureTicketWorkersFromVehicleAssignments(
     where: {
       vehicleJobId,
       status: {
-        in: ["SCANNED", "COUNTING", "COMPLETED"],
+        in: SCANNED_ASSIGNMENT_STATUSES,
       },
     },
     orderBy: {
@@ -546,6 +646,136 @@ export async function confirmTicketCompletion(
 }
 
 // Function reject การปิด ticket จาก vendor เพื่อให้ worker ส่งยอดใหม่ได้
+export async function closeCompletedVehicleJobIfReady(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<{
+  vehicle_job: VehicleJobDto;
+  completed_assignment_ids: number[];
+  completed_worker_account_ids: number[];
+} | null> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      id: vehicleJobId,
+    },
+    include: {
+      marketJobs: {
+        include: {
+          tickets: true,
+        },
+      },
+    },
+  });
+
+  if (!vehicleJob) {
+    return null;
+  }
+
+  for (const market of vehicleJob.marketJobs) {
+    const allTicketsTerminal =
+      market.tickets.length > 0 &&
+      market.tickets.every((ticket) =>
+        TERMINAL_TICKET_STATUSES.includes(ticket.status)
+      );
+
+    if (allTicketsTerminal && !TERMINAL_JOB_STATUSES.includes(market.status)) {
+      const marketStatus = market.tickets.every(
+        (ticket) => ticket.status === "CANCELLED"
+      )
+        ? "CANCELLED"
+        : "COMPLETED";
+
+      await db.marketJob.update({
+        where: {
+          id: market.id,
+        },
+        data: {
+          status: marketStatus,
+        },
+      });
+    }
+  }
+
+  const refreshedVehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      id: vehicleJobId,
+    },
+    include: {
+      marketJobs: {
+        include: {
+          tickets: true,
+        },
+      },
+      assignments: true,
+    },
+  });
+
+  if (!refreshedVehicleJob) {
+    return null;
+  }
+
+  const isVehicleComplete =
+    refreshedVehicleJob.marketJobs.length > 0 &&
+    refreshedVehicleJob.marketJobs.every(
+      (market) =>
+        TERMINAL_JOB_STATUSES.includes(market.status) &&
+        market.tickets.length > 0 &&
+        market.tickets.every((ticket) =>
+          TERMINAL_TICKET_STATUSES.includes(ticket.status)
+        )
+    );
+
+  if (!isVehicleComplete) {
+    return null;
+  }
+
+  const vehicleStatus = refreshedVehicleJob.marketJobs.every(
+    (market) => market.status === "CANCELLED"
+  )
+    ? "CANCELLED"
+    : "COMPLETED";
+
+  const updatedVehicleJob = TERMINAL_JOB_STATUSES.includes(refreshedVehicleJob.status)
+    ? refreshedVehicleJob
+    : await db.vehicleJob.update({
+        where: {
+          id: vehicleJobId,
+        },
+        data: {
+          status: vehicleStatus,
+        },
+      });
+  const activeAssignments = refreshedVehicleJob.assignments.filter((assignment) =>
+    ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
+  );
+  const completedAssignmentIds = activeAssignments.map((assignment) => assignment.id);
+  const completedWorkerAccountIds = activeAssignments.map(
+    (assignment) => assignment.workerAccountId
+  );
+
+  if (completedAssignmentIds.length > 0) {
+    await db.vehicleJobAssignment.updateMany({
+      where: {
+        id: {
+          in: completedAssignmentIds,
+        },
+      },
+      data: {
+        status: "COMPLETED",
+        completedAt: new Date(),
+      },
+    });
+  }
+
+  return {
+    vehicle_job: requireDto(mapVehicleJob(updatedVehicleJob), "vehicle job close"),
+    completed_assignment_ids: completedAssignmentIds,
+    completed_worker_account_ids: completedWorkerAccountIds,
+  };
+}
+
+// Function reject ยอดปิดงานจาก vendor และเปิด ticket ให้ worker ส่งยอดใหม่
 export async function rejectTicketCompletion(
   ticketId: number,
   submissionId: number,

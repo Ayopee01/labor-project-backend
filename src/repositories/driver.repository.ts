@@ -1,7 +1,7 @@
 // import
 import { mapDriverSession, mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
-export { findVehicleJobById, getVehicleJobDetail } from "./shared/vehicle-job.repository";
+export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail } from "./shared/vehicle-job.repository";
 
 // import Types
 import type { DbConnection } from "../types/common.type";

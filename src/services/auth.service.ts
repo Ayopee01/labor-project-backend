@@ -2,20 +2,23 @@ import { accountRepository, profileRepository, sessionRepository, workScheduleRe
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
 import { getAccountPermissions } from "./admin-settings.service";
 import { withTransaction } from "../db/prisma";
-import type { AccessTokenPayload, AccountResponse, AdminLoginAccountResponse, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto, WorkerLoginAccountResponse } from "../types/auth.type";
+import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
-import type { AccountDto, ProfileDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
+import type { AccountDto } from "../types/admin-workers.type";
 import { parseWithSchema } from "../validation/parser";
 import { confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { signAccessToken, signLoginChallengeToken, signRefreshToken, verifyLoginChallengeToken, verifyRefreshToken } from "../utils/jwt";
 import { verifyPassword } from "../utils/password";
 import { hashRefreshToken, refreshTokenHashesMatch } from "../utils/refresh-token-hash";
-import { formatBangkokServerTime, formatScheduleWithShift } from "../utils/shift";
+import { formatScheduleWithShift } from "../utils/shift";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config role ที่ต้องบังคับส่ง device id/name ตอน login
 const WORKER_ROLE = "worker";
+
+// Config device name default สำหรับ session ฝั่ง Admin Web
 const ADMIN_SESSION_DEVICE_NAME = "Admin Web";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -32,10 +35,12 @@ function getDefaultSessionDeviceName(account: AccountDto): string {
   return account.role === "admin" ? ADMIN_SESSION_DEVICE_NAME : `${account.role} Web`;
 }
 
+// Function สร้างรหัสพนักงาน admin จาก account id เป็นรูปแบบ ADM0001
 function buildAdminEmployeeCode(accountId: number): string {
   return `ADM${String(accountId).padStart(4, "0")}`;
 }
 
+// Function แปลง schedule เป็น shift สั้นๆ สำหรับ response auth/me
 function formatProfileCardShift(
   schedule: ReturnType<typeof formatScheduleWithShift>
 ): ProfileCardShift | null {
@@ -50,39 +55,7 @@ function formatProfileCardShift(
   };
 }
 
-function buildWorkerLoginAccountResponse(
-  account: AccountDto,
-  profile: ProfileDto | null,
-  schedule: WorkScheduleWithShiftDto | null
-): WorkerLoginAccountResponse {
-  return {
-    full_name: account.full_name,
-    worker_code: profile?.worker_code ?? null,
-    image_url: profile?.image_url ?? null,
-    status: account.status,
-    shift: formatProfileCardShift(schedule),
-    server_time: formatBangkokServerTime(),
-  };
-}
-
-function buildAdminLoginAccountResponse(
-  account: AccountDto,
-  permissions: AdminLoginAccountResponse["permissions"],
-  latestActiveAt: string | null
-): AdminLoginAccountResponse {
-  return {
-    full_name: account.full_name,
-    status: account.status,
-    position: account.position,
-    email: account.email,
-    phone: account.phone,
-    image_url: null,
-    permission_level: account.permission_level,
-    permissions,
-    latest_active_at: latestActiveAt,
-  };
-}
-
+// Function หา session ล่าสุดของ account โดยใช้ current session ถ้ามี
 async function resolveLatestSession(
   account: AccountDto,
   currentSession?: SessionDto | null,
@@ -95,6 +68,7 @@ async function resolveLatestSession(
   return sessionRepository.findActiveByAccountId(account.id, connection);
 }
 
+// Function สร้าง response ของ GET /api/auth/me โดยแยก shape ตาม role
 async function buildMeResponse(
   account: AccountDto,
   currentSession?: SessionDto | null
@@ -188,38 +162,6 @@ function resolveLoginDevice(
   };
 }
 
-// Function สร้าง response ของ account พร้อม profile และตารางงานปัจจุบัน
-async function buildAccountResponse(
-  account: AccountDto,
-  connection?: DbConnection,
-  currentSession?: SessionDto | null
-): Promise<AccountResponse> {
-  if (account.role !== WORKER_ROLE) {
-    const latestSession = await resolveLatestSession(account, currentSession, connection);
-    const latestActiveAt = latestSession?.last_active_at ?? null;
-    const accountPermissions = await getAccountPermissions(account, connection);
-
-    return {
-      account: buildAdminLoginAccountResponse(
-        account,
-        accountPermissions.permissions,
-        latestActiveAt
-      ),
-    };
-  }
-
-  const [profile, currentWorkSchedule] = await Promise.all([
-    profileRepository.findByAccountId(account.id, connection),
-    workScheduleRepository.findCurrentByAccountId(account.id, connection),
-  ]);
-
-  const schedule = formatScheduleWithShift(currentWorkSchedule);
-
-  return {
-    account: buildWorkerLoginAccountResponse(account, profile, schedule),
-  };
-}
-
 // Function สร้าง session และออก access token กับ refresh token
 async function createSession(
   account: AccountDto,
@@ -264,18 +206,15 @@ async function createSession(
   };
 }
 
-// Function รวม token กับข้อมูล account เป็น response สำหรับ auth
+// Function รวม token เป็น response สำหรับ auth
 async function buildAuthSuccessResponse(
-  account: AccountDto,
-  tokens: AuthTokens,
-  connection?: DbConnection
+  tokens: AuthTokens
 ): Promise<AuthSuccessResponse> {
   return {
     access_token: tokens.accessToken,
     refresh_token: tokens.refreshToken,
     token_type: "Bearer",
     expires_in: getAccessTokenExpiresInSeconds(),
-    ...(await buildAccountResponse(account, connection)),
   };
 }
 
@@ -344,7 +283,7 @@ export async function login(body: unknown) {
       transaction
     );
 
-    return buildAuthSuccessResponse(account, tokens, transaction);
+    return buildAuthSuccessResponse(tokens);
   });
 }
 
@@ -396,7 +335,7 @@ export async function confirmForceLogin(body: unknown) {
 
     const tokens = await createSession(account, deviceId, deviceName, transaction);
 
-    return buildAuthSuccessResponse(account, tokens, transaction);
+    return buildAuthSuccessResponse(tokens);
   });
 }
 

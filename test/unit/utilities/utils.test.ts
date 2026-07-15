@@ -178,6 +178,79 @@ test("login body schema allows device fields to be omitted", () => {
 
 // Test update user schema รองรับ partial profile update
 // Test ตรวจ schema update worker ว่ารับ partial update ของ profile และ schedule ได้
+test("gate vehicle job schema accepts optional dispatch_now flag", () => {
+  const gateBody = schemas.gateVehicleJobBodySchema.parse({
+    gate_transaction_ref: "GATE-REQ-DISPATCH-NOW",
+    vehicle_job_ref: "VEH-DISPATCH-NOW",
+    license_plate: "ABC-1234",
+    vehicle_type: "Six-wheel truck",
+    workers_required: 1,
+    dispatch_now: true,
+    markets: [
+      {
+        market_job_ref: "MARKETJOB-DISPATCH-NOW",
+        market_name: "Market A",
+        tickets: [
+          {
+            stall_job_ref: "STALLJOB-DISPATCH-NOW",
+            ticket_no: "BILL-0001",
+            stall_no: "A-01",
+            vendor_name: "Vendor A",
+            products: [
+              {
+                product_ref: "PRODUCT-DISPATCH-NOW",
+                product_type: "Vegetable",
+                name: "Cabbage",
+                quantity: 10,
+                unit: "crate",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(gateBody.dispatch_now, true);
+});
+
+test("shift utility builds a stable break counter key for one shift instance", () => {
+  const schedule = {
+    id: 1,
+    account_id: 1,
+    work_date: "2026-07-13",
+    shift_start_time: "18:00",
+    shift_end_time: "08:00",
+    is_current: true,
+    created_by: null,
+    updated_by: null,
+    created_at: "2026-07-13T00:00:00.000Z",
+    updated_at: "2026-07-13T00:00:00.000Z",
+  };
+
+  assert.equal(
+    shift.buildWorkScheduleShiftInstanceKey(
+      schedule,
+      new Date("2026-07-13T19:00:00+07:00")
+    ),
+    "2026-07-13:18:00-08:00"
+  );
+  assert.equal(
+    shift.buildWorkScheduleShiftInstanceKey(
+      schedule,
+      new Date("2026-07-14T02:00:00+07:00")
+    ),
+    "2026-07-13:18:00-08:00"
+  );
+  assert.equal(
+    shift.buildWorkScheduleShiftInstanceKey(
+      schedule,
+      new Date("2026-07-14T19:00:00+07:00")
+    ),
+    "2026-07-14:18:00-08:00"
+  );
+});
+
 test("update user schema allows partial profile updates", () => {
   // Step Act parse body ที่ส่งมาแค่ image_url ใน profile
   const updateBody = schemas.updateUserBodySchema.parse({

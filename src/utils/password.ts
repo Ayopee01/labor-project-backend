@@ -1,4 +1,4 @@
-// import library
+// import Library
 import argon2 from "argon2";
 
 /* -------------------------------------- Config -------------------------------------- */

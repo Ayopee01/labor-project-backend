@@ -5,7 +5,7 @@ import type { Duplex } from "stream";
 import { WebSocket, WebSocketServer } from "ws";
 
 // import
-import { accountRepository } from "../repositories/worker-application.repository";
+import { accountRepository, profileRepository } from "../repositories/worker-application.repository";
 import { findActiveByIdAndAccountId } from "../repositories/shared/session.repository";
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
 import { getWorkerQueueStatus, markWorkerOffline, recordWorkerHeartbeat } from "../queues/worker-queue";
@@ -18,31 +18,40 @@ import type { WorkerSocketEvent, WorkerSocketEventType } from "../types/worker.t
 // import Utils
 import ApiError from "../utils/api-error";
 import { verifyAccessToken } from "../utils/jwt";
+import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config path ของ Worker WebSocket endpoint
 const WORKER_SOCKET_PATH = "/ws/workers";
+
+// Config ระยะ grace period หลัง socket หลุดก่อน mark worker offline
 const WORKER_SOCKET_DISCONNECT_GRACE_MS = Number(
   process.env.WORKER_SOCKET_DISCONNECT_GRACE_MS || 15000
 );
 
 /* -------------------------------------- Types -------------------------------------- */
 
+// Type ส่วน WebSocket instance ที่ผูก account id และ heartbeat state
 type WorkerSocket = WebSocket & {
   accountId?: number;
   isAlive?: boolean;
 };
 
+// Type ส่วน payload ที่ส่งเข้า Worker WebSocket event
 type WorkerSocketPayload = Record<string, unknown>;
 
 /* -------------------------------------- State -------------------------------------- */
 
+// State เก็บ socket ที่เปิดอยู่ของ worker แต่ละคน
 const workerSockets = new Map<number, Set<WorkerSocket>>();
+
+// State เก็บ timer grace period หลัง socket ของ worker หลุด
 const disconnectTimers = new Map<number, NodeJS.Timeout>();
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึง token จาก query หรือ header ของ WebSocket upgrade request
+// Function ดึง token จาก query, Authorization header หรือ Sec-WebSocket-Protocol
 function getSocketToken(request: IncomingMessage): string {
   const url = new URL(request.url || "", "http://localhost");
   const queryToken = url.searchParams.get("token");
@@ -173,17 +182,26 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
   ]);
 
   if (!assignment && queueEntry?.status === "ready") {
-    const latestQueue = await markWorkerOffline(accountId);
+    const [latestQueue, profile] = await Promise.all([
+      markWorkerOffline(accountId),
+      profileRepository.findByAccountId(accountId).catch((error) => {
+        console.error("Failed to load worker profile for disconnect event.", error);
+        return null;
+      }),
+    ]);
     sendWorkerSocketEvent(accountId, "WORKER_STATUS_CHANGED", {
-      queue: latestQueue,
+      queue: buildWorkerQueueSocketPayload(
+        latestQueue,
+        profile?.worker_code ?? null
+      ),
       reason: "socket_disconnected",
     });
     publishNotification({
       type: "WORKER_STATUS_CHANGED",
       title: "Worker offline",
-      message: `Worker ${accountId} was marked offline because WebSocket disconnected.`,
+      message: `Worker ${profile?.worker_code ?? accountId} was marked offline because WebSocket disconnected.`,
       payload: {
-        worker_account_id: accountId,
+        worker_code: profile?.worker_code ?? null,
         queue: latestQueue,
         reason: "socket_disconnected",
       },
@@ -233,6 +251,18 @@ export function isWorkerSocketConnected(accountId: number): boolean {
   return Array.from(sockets).some((socket) => socket.readyState === WebSocket.OPEN);
 }
 
+// Function ส่ง event แรกหลัง worker ต่อ WebSocket สำเร็จพร้อม worker_code
+async function sendWorkerConnectedEvent(accountId: number): Promise<void> {
+  const profile = await profileRepository.findByAccountId(accountId).catch((error) => {
+    console.error("Failed to load worker profile for WebSocket connection.", error);
+    return null;
+  });
+
+  sendWorkerSocketEvent(accountId, "WORKER_CONNECTED", {
+    worker_code: profile?.worker_code ?? null,
+  });
+}
+
 // Function ตั้ง WebSocket server สำหรับ Worker Mobile
 export function setupWorkerWebSocket(server: Server): void {
   const webSocketServer = new WebSocketServer({
@@ -264,9 +294,7 @@ export function setupWorkerWebSocket(server: Server): void {
     (socket: WorkerSocket, _request: IncomingMessage, auth: AccessTokenPayload) => {
       registerWorkerSocket(auth.account_id, socket);
       void recordWorkerHeartbeat(auth.account_id);
-      sendWorkerSocketEvent(auth.account_id, "WORKER_CONNECTED", {
-        account_id: auth.account_id,
-      });
+      void sendWorkerConnectedEvent(auth.account_id);
 
       socket.on("pong", () => {
         socket.isAlive = true;

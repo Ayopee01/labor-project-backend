@@ -1,4 +1,4 @@
-// import library
+// import Library
 import crypto from "node:crypto";
 
 /* -------------------------------------- Config -------------------------------------- */

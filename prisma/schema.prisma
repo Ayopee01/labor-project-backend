@@ -210,6 +210,7 @@ model MessageDeliveryLog {
 model TicketProduct {
   id                Int      @id @default(autoincrement())
   ticketId          Int      @map("ticket_id")
+  productRef        String   @map("product_ref") @db.VarChar(100)
   productType       String?  @map("product_type") @db.VarChar(100)
   name              String   @db.VarChar(255)
   quantity          Decimal  @db.Decimal(12, 2)
@@ -220,6 +221,7 @@ model TicketProduct {
 
   ticket GateTicket @relation(fields: [ticketId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@unique([ticketId, productRef])
   @@index([ticketId])
   @@map("ticket_products")
 }

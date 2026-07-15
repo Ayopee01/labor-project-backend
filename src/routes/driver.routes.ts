@@ -5,6 +5,7 @@ import driverSessionMiddleware from "../middlewares/driver-session.middleware";
 // import Service
 import * as driverService from "../services/driver.service";
 
+// Config Express router สำหรับ Driver Flow routes
 const router = express.Router();
 
 // Route เปิด driver session จาก QR token
@@ -36,12 +37,12 @@ router.get(
 
 // Route ให้ driver แจ้งว่างานรถพร้อมเรียก worker
 router.post(
-  "/jobs/:id/ready",
+  "/jobs/:vehicleJobRef/ready",
   driverSessionMiddleware,
   async (req, res, next) => {
     try {
       const result = await driverService.markDriverJobReady(
-        req.params.id,
+        req.params.vehicleJobRef,
         req.driverSession
       );
       res.json(result);
