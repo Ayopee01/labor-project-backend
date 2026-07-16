@@ -100,10 +100,10 @@ async function buildMeResponse(
 
   return {
     full_name: account.full_name,
-    worker_code: profile?.worker_code ?? null,
-    nationality: profile?.nationality_name ?? profile?.nationality ?? null,
+    worker_code: account.username,
+    nationality: profile?.nationality ?? null,
     work_start_date: profile?.work_start_date ?? null,
-    phone: profile?.phone ?? null,
+    phone: account.phone,
     shift: formatProfileCardShift(schedule),
   };
 }

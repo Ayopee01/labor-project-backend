@@ -23,11 +23,11 @@ model Account {
 
   creator         Account?           @relation("AccountCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdAccounts Account[]          @relation("AccountCreatedBy")
-  profile         UserProfile?
+  profile         WorkerProfile?
   sessions        UserSession[]
-  workSchedules   UserWorkSchedule[] @relation("ScheduleAccount")
-  createdSchedules UserWorkSchedule[] @relation("ScheduleCreatedBy")
-  updatedSchedules UserWorkSchedule[] @relation("ScheduleUpdatedBy")
+  workSchedules   WorkerWorkSchedule[] @relation("ScheduleAccount")
+  createdSchedules WorkerWorkSchedule[] @relation("ScheduleCreatedBy")
+  updatedSchedules WorkerWorkSchedule[] @relation("ScheduleUpdatedBy")
   jobAssignments VehicleJobAssignment[] @relation("AssignmentWorker")
   permissions     AccountPermission[]
   ticketWorkers   TicketWorker[]
@@ -262,22 +262,18 @@ model VehicleJobAssignment {
   @@map("vehicle_job_assignments")
 }
 
-model UserProfile {
+model WorkerProfile {
   id              Int     @id @default(autoincrement())
   accountId       Int     @unique @map("account_id")
-  workerCode      String  @unique @map("worker_code") @db.VarChar(50)
   imageUrl        String? @map("image_url") @db.VarChar(512)
   nationality     String  @db.VarChar(100)
-  nationalityCode String  @map("nationality_code") @db.VarChar(20)
-  nationalityName String  @map("nationality_name") @db.VarChar(100)
   workStartDate   String  @map("work_start_date") @db.Char(10)
-  phone           String  @db.VarChar(50)
   shirtType       String? @map("shirt_type") @db.VarChar(50)
-  shirtNumber     String? @map("shirt_number") @db.VarChar(50)
+  shirtNumber     String? @unique @map("shirt_number") @db.VarChar(50)
 
   account Account @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@map("user_profiles")
+  @@map("worker_profiles")
 }
 
 model UserSession {
@@ -301,9 +297,10 @@ model UserSession {
   @@map("user_sessions")
 }
 
-model UserWorkSchedule {
+model WorkerWorkSchedule {
   id             Int      @id @default(autoincrement())
   accountId      Int      @map("account_id")
+  shiftNo        Int      @default(1) @map("shift_no")
   workDate       String   @map("work_date") @db.Char(10)
   shiftStartTime String   @map("shift_start_time") @db.Char(5)
   shiftEndTime   String   @map("shift_end_time") @db.Char(5)
@@ -318,5 +315,5 @@ model UserWorkSchedule {
   updatedByAccount Account? @relation("ScheduleUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([accountId, isCurrent])
-  @@map("user_work_schedules")
+  @@map("worker_work_schedules")
 }

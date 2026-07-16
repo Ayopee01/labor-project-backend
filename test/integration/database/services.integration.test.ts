@@ -35,7 +35,7 @@ test(
     );
     const userService = await import("../../../src/services/admin-workers.service");
     const { closePrisma } = await import("../../../src/db/prisma");
-    const { hashPassword } = await import("../../../src/utils/password");
+    const { hashPassword, verifyPassword } = await import("../../../src/utils/password");
     const suffix = Date.now().toString(36);
     const phone = `service-phone-${suffix}`;
     const shirtNumber = "130";
@@ -45,20 +45,26 @@ test(
       // Step Act สร้าง worker ผ่าน admin-workers service พร้อม profile และ work schedule
       const created = await userService.createUser(
         {
-          password: "123456",
           img: "https://example.com/worker.jpg",
           full_name: "Service Worker",
           phone,
-          nationality: "Thai",
+          nationality: "Myanmar",
           shirt_type: "Navy",
           shirt_number: shirtNumber,
           work_start_date: "2024-07-15",
           status: "active",
-          work_schedule: {
-            work_date: "2026-07-01",
-            shift_start_time: "06:00",
-            shift_end_time: "18:00",
-          },
+          work_schedules: [
+            {
+              work_date: "2026-07-01",
+              shift_start_time: "06:00",
+              shift_end_time: "12:00",
+            },
+            {
+              work_date: "2026-07-01",
+              shift_start_time: "13:00",
+              shift_end_time: "18:00",
+            },
+          ],
         },
         {
           account_id: 1,
@@ -70,6 +76,10 @@ test(
 
       // Step Assert ตรวจว่าสร้าง worker สำเร็จ
       assert.equal(created.message, "Worker created successfully.");
+      const workerAccount = await accountRepository.findUserByIdentifier(workerCode);
+      assert.ok(workerAccount);
+      assert.equal(workerAccount.phone, phone);
+      assert.equal(await verifyPassword(phone, workerAccount.password_hash), true);
 
       // Step Arrange สร้าง admin account เพื่อทดสอบ login ฝั่ง Admin Web
       const admin = await accountRepository.create({
@@ -109,7 +119,7 @@ test(
         () =>
           authService.login({
             username: workerCode,
-            password: "123456",
+            password: phone,
           }),
         (error) =>
           Boolean(
@@ -122,7 +132,7 @@ test(
       // Step Act login ด้วย worker พร้อมข้อมูลอุปกรณ์
       const login = await authService.login({
         username: workerCode,
-        password: "123456",
+        password: phone,
         device_id: `browser-device-${suffix}`,
         device_name: "Chrome on Windows",
       });
@@ -165,12 +175,26 @@ test(
       assert.equal(createdUser.shirt_number, shirtNumber);
       assert.equal(createdUser.full_name, "Service Worker");
       assert.equal(createdUser.status, "active");
-      assert.deepEqual(createdUser.work_schedule, {
-        work_date: "2026-07-01",
-        shift_start_time: "06:00",
-        shift_end_time: "18:00",
-        shift_name: createdUser.work_schedule?.shift_name,
-      });
+      assert.equal(createdUser.work_schedules?.length, 2);
+      assert.deepEqual(
+        createdUser.work_schedules?.map((schedule) => ({
+          work_date: schedule.work_date,
+          shift_start_time: schedule.shift_start_time,
+          shift_end_time: schedule.shift_end_time,
+        })),
+        [
+          {
+            work_date: "2026-07-01",
+            shift_start_time: "06:00",
+            shift_end_time: "12:00",
+          },
+          {
+            work_date: "2026-07-01",
+            shift_start_time: "13:00",
+            shift_end_time: "18:00",
+          },
+        ]
+      );
       assert.ok(createdUser.work_schedule?.shift_name);
       assert.equal(
         (createdUser.work_schedule as { id?: number } | null)?.id,
@@ -206,9 +230,18 @@ test(
         {
           status: "inactive",
           position: "Worker",
-          work_date: "2026-07-02",
-          shift_start_time: "18:00",
-          shift_end_time: "06:00",
+          work_schedules: [
+            {
+              work_date: "2026-07-02",
+              shift_start_time: "06:00",
+              shift_end_time: "12:00",
+            },
+            {
+              work_date: "2026-07-02",
+              shift_start_time: "18:00",
+              shift_end_time: "06:00",
+            },
+          ],
         },
         {
           account_id: 1,
@@ -222,7 +255,26 @@ test(
       assert.equal(updated.status, "inactive");
       assert.equal(updated.worker_code, workerCode);
       assert.equal(updated.details.position, "Worker");
-      assert.equal(updated.details.work_date, "2026-07-02");
+      assert.equal(updated.details.work_schedules?.length, 2);
+      assert.deepEqual(
+        updated.details.work_schedules?.map((schedule) => ({
+          work_date: schedule.work_date,
+          shift_start_time: schedule.shift_start_time,
+          shift_end_time: schedule.shift_end_time,
+        })),
+        [
+          {
+            work_date: "2026-07-02",
+            shift_start_time: "06:00",
+            shift_end_time: "12:00",
+          },
+          {
+            work_date: "2026-07-02",
+            shift_start_time: "18:00",
+            shift_end_time: "06:00",
+          },
+        ]
+      );
       assert.ok(updated.details.shift_name);
     } finally {
       // Step Cleanup ปิด Prisma connection หลังจบ integration test

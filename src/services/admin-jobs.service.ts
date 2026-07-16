@@ -229,7 +229,7 @@ function extendDeadline(currentDeadline: string | null, minutes: number): Date {
   return new Date(baseTime + minutes * 60 * 1000);
 }
 
-async function getWorkerCodeMapByAccountIds(workerIds: number[]): Promise<Map<number, string>> {
+async function getWorkerCodeMapByAccountIds(workerIds: number[]): Promise<Map<number, string | null>> {
   const profiles = await adminJobsRepository.profileRepository.findByAccountIds(workerIds);
 
   return new Map(

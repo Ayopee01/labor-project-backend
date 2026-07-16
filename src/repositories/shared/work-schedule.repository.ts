@@ -3,6 +3,7 @@ import { prisma } from "../../db/prisma";
 
 // import Mapper
 import { mapSchedule } from "./mappers";
+import { findActiveWorkSchedule, findNextWorkSchedule } from "../../utils/shift";
 
 // import Types
 import type { DbConnection } from "../../types/common.type";
@@ -25,16 +26,32 @@ export async function findCurrentByAccountId(
   accountId: number | string,
   connection?: DbConnection
 ): Promise<WorkScheduleDto | null> {
+  const schedules = await listCurrentByAccountId(accountId, connection);
+
+  return findActiveWorkSchedule(schedules) ?? findNextWorkSchedule(schedules);
+}
+
+export async function listCurrentByAccountId(
+  accountId: number | string,
+  connection?: DbConnection
+): Promise<WorkScheduleDto[]> {
   const db = client(connection);
-  const schedule = await db.userWorkSchedule.findFirst({
+  const schedules = await db.workerWorkSchedule.findMany({
     where: {
       accountId: toAccountId(accountId),
       isCurrent: true,
     },
-    orderBy: {
-      id: "desc",
-    },
+    orderBy: [
+      {
+        shiftNo: "asc",
+      },
+      {
+        id: "asc",
+      },
+    ],
   });
 
-  return mapSchedule(schedule);
+  return schedules
+    .map((schedule) => mapSchedule(schedule))
+    .filter((schedule): schedule is WorkScheduleDto => schedule !== null);
 }

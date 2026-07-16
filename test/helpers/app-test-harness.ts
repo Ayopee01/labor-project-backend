@@ -289,6 +289,7 @@ function todaySchedule(accountId: number) {
   return {
     id: accountId,
     account_id: accountId,
+    shift_no: 1,
     work_date: `${year}-${month}-${day}`,
     shift_start_time: "00:00",
     shift_end_time: "23:59",
@@ -337,9 +338,10 @@ export function resetRouteTestState(): void {
 
 // Function เพิ่ม worker account พร้อม profile/schedule ลง mock repository state
 export function addWorker(accountId: number, passwordHash = "hash"): AccountRecord {
+  const workerCode = `W${accountId}`;
   const worker: AccountRecord = {
     id: accountId,
-    username: `worker-${accountId}`,
+    username: workerCode,
     password_hash: passwordHash,
     role: "worker",
     status: "active",
@@ -357,11 +359,9 @@ export function addWorker(accountId: number, passwordHash = "hash"): AccountReco
   state.profiles.set(worker.id, {
     id: worker.id,
     account_id: worker.id,
-    worker_code: `W${worker.id}`,
+    worker_code: workerCode,
     image_url: null,
     nationality: "Thai",
-    nationality_code: "TH",
-    nationality_name: "Thai",
     work_start_date: "2026-01-01",
     phone: worker.phone,
     shirt_type: "standard",

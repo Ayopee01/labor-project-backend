@@ -1,5 +1,5 @@
 // import Library
-import type { Account, DriverSession, GateTicket, MarketJob, TicketCompletionSubmission, TicketProduct, TicketWorker, UserProfile, UserSession, UserWorkSchedule, VehicleJob, VehicleJobAssignment } from "@prisma/client";
+import type { Account, DriverSession, GateTicket, MarketJob, TicketCompletionSubmission, TicketProduct, TicketWorker, UserSession, WorkerWorkSchedule, VehicleJob, VehicleJobAssignment, WorkerProfile } from "@prisma/client";
 
 // import Types
 import type { SessionDto } from "../../../types/auth.type";
@@ -80,8 +80,12 @@ export function mapAccount(record: Account | null): AccountDto | null {
   };
 }
 
-// Function แปลง record จาก table user_profiles เป็น ProfileDto
-export function mapProfile(record: UserProfile | null): ProfileDto | null {
+type WorkerProfileWithAccount = WorkerProfile & {
+  account?: Pick<Account, "username" | "phone"> | null;
+};
+
+// Function แปลง record จาก table worker_profiles เป็น ProfileDto
+export function mapProfile(record: WorkerProfileWithAccount | null): ProfileDto | null {
   if (!record) {
     return null;
   }
@@ -89,20 +93,18 @@ export function mapProfile(record: UserProfile | null): ProfileDto | null {
   return {
     id: record.id,
     account_id: record.accountId,
-    worker_code: record.workerCode,
+    worker_code: record.account?.username ?? null,
     image_url: record.imageUrl,
     nationality: record.nationality,
-    nationality_code: record.nationalityCode,
-    nationality_name: record.nationalityName,
     work_start_date: toDateString(record.workStartDate),
-    phone: record.phone,
+    phone: record.account?.phone ?? null,
     shirt_type: record.shirtType,
     shirt_number: record.shirtNumber,
   };
 }
 
-// Function แปลง record จาก table user_work_schedules เป็น WorkScheduleDto
-export function mapSchedule(record: UserWorkSchedule | null): WorkScheduleDto | null {
+// Function แปลง record จาก table worker_work_schedules เป็น WorkScheduleDto
+export function mapSchedule(record: WorkerWorkSchedule | null): WorkScheduleDto | null {
   if (!record) {
     return null;
   }
@@ -110,6 +112,7 @@ export function mapSchedule(record: UserWorkSchedule | null): WorkScheduleDto | 
   return {
     id: record.id,
     account_id: record.accountId,
+    shift_no: record.shiftNo,
     work_date: toDateString(record.workDate),
     shift_start_time: record.shiftStartTime,
     shift_end_time: record.shiftEndTime,

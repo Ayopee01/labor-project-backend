@@ -85,8 +85,7 @@ async function buildWorkerOnlineResponse(
   const today = formatBangkokDate();
   const { startAt, endAt } = buildBangkokDateRange(today);
   const shiftInstanceKey = schedule ? buildWorkScheduleShiftInstanceKey(schedule) : null;
-  const [profile, assignmentHistory, breakCountUsed] = await Promise.all([
-    workerApplicationRepository.profileRepository.findByAccountId(account.id, connection),
+  const [assignmentHistory, breakCountUsed] = await Promise.all([
     workerApplicationRepository.listWorkerAssignmentHistoryByDate(
       account.id,
       startAt,
@@ -104,7 +103,7 @@ async function buildWorkerOnlineResponse(
 
   return {
     full_name: account.full_name,
-    worker_code: profile?.worker_code ?? null,
+    worker_code: account.username,
     status: queueEntry.status,
     today_job_count: todayJobCount,
     break_count_used: breakCountUsed,
@@ -584,13 +583,11 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
     breakCountUsed,
     settings.worker_break_limit
   );
-  const profile = await workerApplicationRepository.profileRepository.findByAccountId(
-    account.id
-  );
+  const workerCode = account.username;
   sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
     queue: buildWorkerQueueSocketPayload(
       breakQueueEntry,
-      profile?.worker_code ?? null
+      workerCode
     ),
   });
   publishNotification({
@@ -598,7 +595,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
     title: "Worker on break",
     message: `Worker ${account.full_name} is on break.`,
     payload: {
-      worker_code: profile?.worker_code ?? null,
+      worker_code: workerCode,
       queue: breakQueueEntry,
       reason: "worker_break",
     },
@@ -609,7 +606,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
 
   return {
     full_name: account.full_name,
-    worker_code: profile?.worker_code ?? null,
+    worker_code: workerCode,
     status: breakQueueEntry.status,
     break_count_used: breakCountUsed,
     break_count_limit: settings.worker_break_limit,
@@ -629,12 +626,12 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
   const status = queueEntry?.status ?? "offline";
   const response: WorkerStatusResponse = {
     full_name: account.full_name,
-    worker_code: profile?.worker_code ?? null,
+    worker_code: account.username,
     image_url: profile?.image_url ?? null,
     status,
-    nationality: profile?.nationality_name ?? profile?.nationality ?? null,
+    nationality: profile?.nationality ?? null,
     work_start_date: profile?.work_start_date ?? null,
-    phone: profile?.phone ?? null,
+    phone: account.phone,
     shift: schedule
       ? {
           name: schedule.shift_name,
@@ -701,9 +698,7 @@ export async function acceptWorkerAssignment(
     const vehicleJob = await workerApplicationRepository.findVehicleJobById(
       assignment.vehicle_job_id
     );
-    const profile = await workerApplicationRepository.profileRepository.findByAccountId(
-      account.id
-    );
+    const workerCode = account.username;
 
     await withTransaction(async (transaction) => {
       await workerApplicationRepository.timeoutAssignment(assignment.id, transaction);
@@ -719,7 +714,7 @@ export async function acceptWorkerAssignment(
       message: `Worker ${account.full_name} did not accept assignment ${assignment.id} in time.`,
       payload: {
         vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
-        worker_code: profile?.worker_code ?? null,
+        worker_code: workerCode,
         status: "TIMEOUT",
       },
       audience: {
@@ -750,9 +745,7 @@ export async function acceptWorkerAssignment(
     vehicleJobDetail,
     team
   );
-  const profile = await workerApplicationRepository.profileRepository.findByAccountId(
-    account.id
-  );
+  const workerCode = account.username;
 
   sendWorkerSocketEvent(
     account.id,
@@ -760,7 +753,7 @@ export async function acceptWorkerAssignment(
     buildAssignmentAcceptedSocketPayload(
       acceptedAssignment,
       vehicleJobDetail,
-      profile?.worker_code ?? null
+      workerCode
     )
   );
   publishNotification({
@@ -769,7 +762,7 @@ export async function acceptWorkerAssignment(
     message: `Worker ${account.full_name} accepted assignment ${acceptedAssignment.id}.`,
     payload: {
       vehicle_job_ref: vehicleJobDetail.vehicle_job.vehicle_job_ref,
-      worker_code: profile?.worker_code ?? null,
+      worker_code: workerCode,
       status: acceptedAssignment.status,
       scan_deadline_at: acceptedAssignment.scan_deadline_at,
     },
@@ -839,9 +832,7 @@ export async function scanWorkerAssignment(
       vehicleJob,
     };
   });
-  const profile = await workerApplicationRepository.profileRepository.findByAccountId(
-    account.id
-  );
+  const workerCode = account.username;
 
   publishNotification({
     type: "ASSIGNMENT_CHECKED_IN",
@@ -849,7 +840,7 @@ export async function scanWorkerAssignment(
     message: `Worker ${account.full_name} checked in assignment ${scannedAssignment.id}.`,
     payload: {
       vehicle_job_ref: vehicleJob.vehicle_job_ref,
-      worker_code: profile?.worker_code ?? null,
+      worker_code: workerCode,
       status: scannedAssignment.status,
       scanned_at: scannedAssignment.scanned_at,
     },
@@ -860,7 +851,7 @@ export async function scanWorkerAssignment(
 
   return {
     status: scannedAssignment.status,
-    worker_code: profile?.worker_code ?? null,
+    worker_code: workerCode,
     vehicle_job_ref: vehicleJob.vehicle_job_ref,
     worker_qr_token: vehicleJob.worker_qr_token,
   };

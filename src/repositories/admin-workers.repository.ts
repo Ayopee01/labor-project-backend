@@ -57,16 +57,6 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
     {
       profile: {
         is: {
-          workerCode: {
-            contains: search,
-            mode: SEARCH_MODE,
-          },
-        },
-      },
-    },
-    {
-      profile: {
-        is: {
           nationality: {
             contains: search,
             mode: SEARCH_MODE,
@@ -75,13 +65,9 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
       },
     },
     {
-      profile: {
-        is: {
-          phone: {
-            contains: search,
-            mode: SEARCH_MODE,
-          },
-        },
+      phone: {
+        contains: search,
+        mode: SEARCH_MODE,
       },
     },
     {
@@ -118,18 +104,7 @@ function buildUserWhere(filters: Partial<UserListFilters> = {}): Prisma.AccountW
 function buildUserIdentifierWhere(identifier: string): Prisma.AccountWhereInput {
   return {
     role: WORKER_ROLE,
-    OR: [
-      {
-        username: identifier,
-      },
-      {
-        profile: {
-          is: {
-            workerCode: identifier,
-          },
-        },
-      },
-    ],
+    username: identifier,
   };
 }
 
@@ -158,6 +133,8 @@ function buildAccountCreateData(account: AccountCreateInput): Prisma.AccountUnch
     status: account.status ?? DEFAULT_ACCOUNT_STATUS,
     fullName: account.full_name,
     position: account.position ?? null,
+    email: account.email ?? null,
+    phone: account.phone ?? null,
     permissionLevel: account.permission_level ?? null,
     createdBy: account.created_by ?? null,
   };
@@ -179,16 +156,20 @@ function buildUserAccountUpdateData(fields: UserAccountUpdateInput): Prisma.Acco
     data.position = fields.position;
   }
 
+  if (fields.email !== undefined) {
+    data.email = fields.email;
+  }
+
+  if (fields.phone !== undefined) {
+    data.phone = fields.phone;
+  }
+
   return data;
 }
 
 // Function แปลง input profile เป็น data เฉพาะ field ที่ส่งมา
 function buildProfileData(profile: ProfileDataInput): ProfileData {
   const data: ProfileData = {};
-
-  if (profile.worker_code !== undefined) {
-    data.workerCode = profile.worker_code;
-  }
 
   if (profile.image_url !== undefined) {
     data.imageUrl = profile.image_url;
@@ -198,20 +179,8 @@ function buildProfileData(profile: ProfileDataInput): ProfileData {
     data.nationality = profile.nationality;
   }
 
-  if (profile.nationality_code !== undefined) {
-    data.nationalityCode = profile.nationality_code;
-  }
-
-  if (profile.nationality_name !== undefined) {
-    data.nationalityName = profile.nationality_name;
-  }
-
   if (profile.work_start_date !== undefined) {
     data.workStartDate = profile.work_start_date;
-  }
-
-  if (profile.phone !== undefined) {
-    data.phone = profile.phone;
   }
 
   if (profile.shirt_type !== undefined) {
@@ -228,13 +197,9 @@ function buildProfileData(profile: ProfileDataInput): ProfileData {
 // Function แปลง input สร้าง profile เป็น Prisma create data
 function buildProfileCreateData(profile: ProfileCreateInput): ProfileCreateData {
   return {
-    workerCode: profile.worker_code,
     imageUrl: profile.image_url,
     nationality: profile.nationality,
-    nationalityCode: profile.nationality_code,
-    nationalityName: profile.nationality_name,
     workStartDate: profile.work_start_date,
-    phone: profile.phone,
     shirtType: profile.shirt_type,
     shirtNumber: profile.shirt_number,
   };
@@ -248,9 +213,10 @@ function isWorkScheduleDto(schedule: WorkScheduleDto | null): schedule is WorkSc
 // Function แปลง input สร้างตารางงานเป็น Prisma create data
 function buildScheduleCreateData(
   schedule: WorkScheduleCreateInput
-): Prisma.UserWorkScheduleUncheckedCreateInput {
+): Prisma.WorkerWorkScheduleUncheckedCreateInput {
   return {
     accountId: toAccountId(schedule.account_id),
+    shiftNo: schedule.shift_no ?? 1,
     workDate: schedule.work_date,
     shiftStartTime: schedule.shift_start_time,
     shiftEndTime: schedule.shift_end_time,
@@ -263,8 +229,9 @@ function buildScheduleCreateData(
 // Function แปลง input แก้ไขตารางงานปัจจุบันเป็น Prisma update data
 function buildScheduleUpdateData(
   schedule: WorkScheduleUpdateInput
-): Prisma.UserWorkScheduleUncheckedUpdateInput {
+): Prisma.WorkerWorkScheduleUncheckedUpdateInput {
   return {
+    ...(schedule.shift_no !== undefined && { shiftNo: schedule.shift_no }),
     workDate: schedule.work_date,
     shiftStartTime: schedule.shift_start_time,
     shiftEndTime: schedule.shift_end_time,
@@ -314,9 +281,14 @@ async function listUsers(
   const db = client(connection);
   const accounts = await db.account.findMany({
     where: buildUserWhere(filters),
-    orderBy: {
-      id: "desc",
-    },
+    orderBy: [
+      {
+        shiftNo: "asc",
+      },
+      {
+        id: "asc",
+      },
+    ],
     skip: filters.offset,
     take: filters.limit,
   });
@@ -411,9 +383,34 @@ async function workerCodeExists(
   connection?: DbConnection
 ): Promise<boolean> {
   const db = client(connection);
-  const profile = await db.userProfile.findFirst({
+  const account = await db.account.findFirst({
     where: {
-      workerCode,
+      username: workerCode,
+      role: WORKER_ROLE,
+      ...(exceptAccountId !== undefined &&
+        exceptAccountId !== null && {
+          id: {
+            not: toAccountId(exceptAccountId),
+          },
+        }),
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return Boolean(account);
+}
+
+async function shirtNumberExists(
+  shirtNumber: string,
+  exceptAccountId?: number | string | null,
+  connection?: DbConnection
+): Promise<boolean> {
+  const db = client(connection);
+  const profile = await db.workerProfile.findFirst({
+    where: {
+      shirtNumber,
       ...(exceptAccountId !== undefined &&
         exceptAccountId !== null && {
           accountId: {
@@ -435,10 +432,18 @@ async function createProfile(
   connection?: DbConnection
 ): Promise<ProfileDto> {
   const db = client(connection);
-  const createdProfile = await db.userProfile.create({
+  const createdProfile = await db.workerProfile.create({
     data: {
       accountId: toAccountId(profile.account_id),
       ...buildProfileCreateData(profile),
+    },
+    include: {
+      account: {
+        select: {
+          username: true,
+          phone: true,
+        },
+      },
     },
   });
 
@@ -452,11 +457,19 @@ async function updateProfileByAccountId(
   connection?: DbConnection
 ): Promise<ProfileDto> {
   const db = client(connection);
-  const updatedProfile = await db.userProfile.update({
+  const updatedProfile = await db.workerProfile.update({
     where: {
       accountId: toAccountId(accountId),
     },
     data: buildProfileData(profile),
+    include: {
+      account: {
+        select: {
+          username: true,
+          phone: true,
+        },
+      },
+    },
   });
 
   return requireMapped(mapProfile(updatedProfile), "Profile", "update");
@@ -468,7 +481,7 @@ async function createWorkSchedule(
   connection?: DbConnection
 ): Promise<WorkScheduleDto> {
   const db = client(connection);
-  const createdSchedule = await db.userWorkSchedule.create({
+  const createdSchedule = await db.workerWorkSchedule.create({
     data: buildScheduleCreateData(schedule),
   });
 
@@ -482,21 +495,26 @@ async function updateCurrentWorkScheduleByAccountId(
   connection?: DbConnection
 ): Promise<WorkScheduleDto | null> {
   const db = client(connection);
-  const currentSchedule = await db.userWorkSchedule.findFirst({
+  const currentSchedule = await db.workerWorkSchedule.findFirst({
     where: {
       accountId: toAccountId(accountId),
       isCurrent: true,
     },
-    orderBy: {
-      id: "desc",
-    },
+    orderBy: [
+      {
+        shiftNo: "asc",
+      },
+      {
+        id: "asc",
+      },
+    ],
   });
 
   if (!currentSchedule) {
     return null;
   }
 
-  const updatedSchedule = await db.userWorkSchedule.update({
+  const updatedSchedule = await db.workerWorkSchedule.update({
     where: {
       id: currentSchedule.id,
     },
@@ -514,12 +532,26 @@ async function deleteOtherWorkSchedulesByAccountId(
 ): Promise<void> {
   const db = client(connection);
 
-  await db.userWorkSchedule.deleteMany({
+  await db.workerWorkSchedule.deleteMany({
     where: {
       accountId: toAccountId(accountId),
       id: {
         not: Number(keepScheduleId),
       },
+    },
+  });
+}
+
+async function deleteCurrentWorkSchedulesByAccountId(
+  accountId: number | string,
+  connection?: DbConnection
+): Promise<void> {
+  const db = client(connection);
+
+  await db.workerWorkSchedule.deleteMany({
+    where: {
+      accountId: toAccountId(accountId),
+      isCurrent: true,
     },
   });
 }
@@ -531,14 +563,19 @@ async function listWorkSchedulesByAccountId(
   connection?: DbConnection
 ): Promise<WorkScheduleDto[]> {
   const db = client(connection);
-  const schedules = await db.userWorkSchedule.findMany({
+  const schedules = await db.workerWorkSchedule.findMany({
     where: {
       accountId: toAccountId(accountId),
       isCurrent: true,
     },
-    orderBy: {
-      id: "desc",
-    },
+    orderBy: [
+      {
+        shiftNo: "asc",
+      },
+      {
+        id: "asc",
+      },
+    ],
     skip: filters.offset,
     take: filters.limit,
   });
@@ -553,7 +590,7 @@ async function countWorkSchedulesByAccountId(
 ): Promise<number> {
   const db = client(connection);
 
-  return db.userWorkSchedule.count({
+  return db.workerWorkSchedule.count({
     where: {
       accountId: toAccountId(accountId),
       isCurrent: true,
@@ -578,6 +615,7 @@ const adminWorkersAccountRepository = {
 const adminWorkersProfileRepository = {
   ...profileRepository,
   workerCodeExists,
+  shirtNumberExists,
   create: createProfile,
   updateByAccountId: updateProfileByAccountId,
 };
@@ -588,6 +626,7 @@ const adminWorkersWorkScheduleRepository = {
   create: createWorkSchedule,
   updateCurrentByAccountId: updateCurrentWorkScheduleByAccountId,
   deleteOtherByAccountId: deleteOtherWorkSchedulesByAccountId,
+  deleteCurrentByAccountId: deleteCurrentWorkSchedulesByAccountId,
   listByAccountId: listWorkSchedulesByAccountId,
   countByAccountId: countWorkSchedulesByAccountId,
 };

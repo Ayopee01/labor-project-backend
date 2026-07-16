@@ -22,7 +22,7 @@ async function getWorkerCode(accountId: number): Promise<string | null> {
   return profile?.worker_code ?? null;
 }
 
-async function getWorkerCodeMap(accountIds: number[]): Promise<Map<number, string>> {
+async function getWorkerCodeMap(accountIds: number[]): Promise<Map<number, string | null>> {
   const profiles = await workerApplicationRepository.profileRepository.findByAccountIds(
     accountIds
   );

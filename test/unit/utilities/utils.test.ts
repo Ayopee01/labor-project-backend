@@ -218,6 +218,7 @@ test("shift utility builds a stable break counter key for one shift instance", (
   const schedule = {
     id: 1,
     account_id: 1,
+    shift_no: 1,
     work_date: "2026-07-13",
     shift_start_time: "18:00",
     shift_end_time: "08:00",
@@ -264,7 +265,7 @@ test("update user schema allows partial profile updates", () => {
     updateBody.profile?.image_url,
     "https://example.com/new-worker-image.jpg"
   );
-  assert.equal(updateBody.profile?.worker_code, undefined);
+  assert.equal("worker_code" in (updateBody.profile ?? {}), false);
 });
 
 /* -------------------------------------- Shift Tests -------------------------------------- */
@@ -300,6 +301,7 @@ test("shift utility checks whether a time is inside work schedule", () => {
   const morningSchedule = {
     id: 1,
     account_id: 1,
+    shift_no: 1,
     work_date: "2026-07-07",
     shift_start_time: "08:00",
     shift_end_time: "17:00",

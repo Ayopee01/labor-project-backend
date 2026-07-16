@@ -197,6 +197,14 @@ export function formatScheduleWithShift(
   };
 }
 
+export function formatSchedulesWithShift(
+  schedules: WorkScheduleDto[]
+): WorkScheduleWithShiftDto[] {
+  return schedules
+    .map((schedule) => formatScheduleWithShift(schedule))
+    .filter((schedule): schedule is WorkScheduleWithShiftDto => schedule !== null);
+}
+
 // Function ตรวจว่าเวลาที่ส่งมาอยู่ในช่วงกะของ schedule หรือไม่ รองรับกะข้ามวัน
 export function isTimeInWorkSchedule(
   schedule: WorkScheduleDto,
@@ -210,6 +218,33 @@ export function isTimeInWorkSchedule(
   }
 
   return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+}
+
+export function findActiveWorkSchedule(
+  schedules: WorkScheduleDto[],
+  value: Date = new Date()
+): WorkScheduleDto | null {
+  return schedules.find((schedule) => isTimeInWorkSchedule(schedule, value)) ?? null;
+}
+
+export function findNextWorkSchedule(
+  schedules: WorkScheduleDto[],
+  value: Date = new Date()
+): WorkScheduleDto | null {
+  if (schedules.length === 0) {
+    return null;
+  }
+
+  const currentMinutes = getBangkokTimeToMinutes(value);
+
+  return [...schedules].sort((first, second) => {
+    const firstStart = parseScheduleTimeRange(first).startMinutes;
+    const secondStart = parseScheduleTimeRange(second).startMinutes;
+    const firstWait = (firstStart - currentMinutes + 24 * 60) % (24 * 60);
+    const secondWait = (secondStart - currentMinutes + 24 * 60) % (24 * 60);
+
+    return firstWait - secondWait;
+  })[0];
 }
 
 // Function alias เดิมสำหรับตรวจวันที่ใน schedule โดยใช้ logic เดียวกับเวลากะ

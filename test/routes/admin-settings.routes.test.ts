@@ -73,6 +73,8 @@ test("POST /api/admin/admins allows owner to create lower level admin", async ()
       password: "Manager@123456",
       full_name: "Branch Manager",
       position: "Manager",
+      email: "manager01@simmummuang.local",
+      phone: "081-000-0002",
       permission_level: "manager",
       permissions: ["workers:read", "workers:create"],
     },
@@ -83,6 +85,8 @@ test("POST /api/admin/admins allows owner to create lower level admin", async ()
   assert.equal(response.body.message, "Admin account created successfully.");
   assert.equal(response.body.account.role, "admin");
   assert.equal(response.body.account.username, "manager01");
+  assert.equal(response.body.account.email, "manager01@simmummuang.local");
+  assert.equal(response.body.account.phone, "081-000-0002");
   assert.equal(response.body.account.password_hash, undefined);
   assert.equal(response.body.permission_level, "manager");
   assert.deepEqual(response.body.permissions, ["workers:read", "workers:create"]);

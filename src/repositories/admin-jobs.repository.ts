@@ -201,9 +201,7 @@ export async function findWorkerByCode(
   const account = await db.account.findFirst({
     where: {
       role: "worker",
-      profile: {
-        workerCode,
-      },
+      username: workerCode,
     },
   });
 
@@ -223,9 +221,7 @@ export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
         vehicleJobRef,
       },
       worker: {
-        profile: {
-          workerCode,
-        },
+        username: workerCode,
       },
       status: {
         in: ACTIVE_ASSIGNMENT_STATUSES,
@@ -410,17 +406,18 @@ export async function listAcceptedAssignmentsByVehicleJob(
   const db = client(connection);
   const workerAccountIds = workerCodes && workerCodes.length > 0
     ? (
-        await db.userProfile.findMany({
+        await db.account.findMany({
           where: {
-            workerCode: {
+            role: "worker",
+            username: {
               in: workerCodes,
             },
           },
           select: {
-            accountId: true,
+            id: true,
           },
         })
-      ).map((profile) => profile.accountId)
+      ).map((account) => account.id)
     : undefined;
 
   if (workerCodes && workerCodes.length > 0 && workerAccountIds?.length === 0) {

@@ -1,5 +1,5 @@
 // import Library
-import type { z, ZodError, ZodType } from "zod";
+import { z, type ZodError, type ZodType } from "zod";
 // import
 import type { ParseOptions, ValidationIssueResponse } from "../types/common.type";
 import ApiError from "../utils/api-error";
@@ -67,6 +67,27 @@ export function parseWorkScheduleInput(
         issue.code === "invalid_format"
       );
     });
+
+    throw createValidationError(result.error, {
+      code: hasShiftTimeError ? "INVALID_SHIFT_TIME" : "VALIDATION_ERROR",
+      message: hasShiftTimeError
+        ? "Shift time must use HH:mm format."
+        : "Invalid request data.",
+    });
+  }
+
+  return result.data;
+}
+
+export function parseWorkScheduleInputs(
+  input: unknown
+): Array<z.infer<typeof workScheduleInputSchema>> {
+  const result = z.array(workScheduleInputSchema).min(1).max(2).safeParse(input);
+
+  if (!result.success) {
+    const hasShiftTimeError = result.error.issues.some((issue) =>
+      issue.path.includes("shift_start_time") || issue.path.includes("shift_end_time")
+    );
 
     throw createValidationError(result.error, {
       code: hasShiftTimeError ? "INVALID_SHIFT_TIME" : "VALIDATION_ERROR",

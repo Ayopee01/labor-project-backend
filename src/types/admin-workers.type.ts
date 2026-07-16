@@ -27,25 +27,24 @@ export interface AccountDto {
 // Type ส่วน DTO ของ account ที่ปลอดภัยสำหรับ response
 export type SafeAccountDto = Omit<AccountDto, "password_hash">;
 
-// Type ส่วน DTO ของ table user_profiles
+// Type ส่วน DTO ของ worker profile. worker_code/phone มาจาก accounts เพื่อไม่เก็บซ้ำใน worker_profiles
 export interface ProfileDto {
   id: number;
   account_id: number;
-  worker_code: string;
+  worker_code: string | null;
   image_url: string | null;
   nationality: string;
-  nationality_code: string;
-  nationality_name: string;
   work_start_date: string;
-  phone: string;
+  phone: string | null;
   shirt_type: string | null;
   shirt_number: string | null;
 }
 
-// Type ส่วน DTO ของ table user_work_schedules
+// Type ส่วน DTO ของ table worker_work_schedules
 export interface WorkScheduleDto {
   id: number;
   account_id: number;
+  shift_no: number;
   work_date: string;
   shift_start_time: string;
   shift_end_time: string;
@@ -87,13 +86,9 @@ export interface UserAccountUpdateInput {
 // Type ส่วน Repository input สำหรับสร้าง profile
 export interface ProfileCreateInput {
   account_id: number;
-  worker_code: string;
   image_url?: string | null;
   nationality: string;
-  nationality_code: string;
-  nationality_name: string;
   work_start_date: string;
-  phone: string;
   shirt_type?: string | null;
   shirt_number?: string | null;
 }
@@ -106,26 +101,18 @@ export type ProfileDataInput = ProfileCreateInput | ProfileUpdateInput;
 
 // Type ส่วน data สำหรับ update profile ผ่าน Prisma
 export type ProfileData = {
-  workerCode?: string;
   imageUrl?: string | null;
   nationality?: string;
-  nationalityCode?: string;
-  nationalityName?: string;
   workStartDate?: string;
-  phone?: string;
   shirtType?: string | null;
   shirtNumber?: string | null;
 };
 
 // Type ส่วน data สำหรับ create profile ผ่าน Prisma
 export type ProfileCreateData = {
-  workerCode: string;
   imageUrl?: string | null;
   nationality: string;
-  nationalityCode: string;
-  nationalityName: string;
   workStartDate: string;
-  phone: string;
   shirtType?: string | null;
   shirtNumber?: string | null;
 };
@@ -133,6 +120,7 @@ export type ProfileCreateData = {
 // Type ส่วน Repository input สำหรับสร้างตารางงาน
 export interface WorkScheduleCreateInput {
   account_id: number;
+  shift_no?: number;
   work_date: string;
   shift_start_time: string;
   shift_end_time: string;
@@ -143,6 +131,7 @@ export interface WorkScheduleCreateInput {
 
 // Type ส่วน Repository input สำหรับแก้ไขตารางงานปัจจุบัน
 export interface WorkScheduleUpdateInput {
+  shift_no?: number;
   work_date: string;
   shift_start_time: string;
   shift_end_time: string;
@@ -171,6 +160,7 @@ export interface PaginationMeta {
 
 // Type ส่วนตารางงานแบบย่อสำหรับ API list users
 export interface UserListSchedule {
+  shift_no: number;
   work_date: string;
   shift_start_time: string;
   shift_end_time: string;
@@ -183,6 +173,7 @@ export interface UserListItem {
   shirt_number: string | null;
   full_name: string;
   work_schedule: UserListSchedule | null;
+  work_schedules?: UserListSchedule[];
   status: AccountStatus;
   updated_at: string;
 }
@@ -191,12 +182,14 @@ export interface UserListItem {
 interface UserDetailInfo {
   phone: string | null;
   position: string | null;
+  nationality: string | null;
   shirt_number: string | null;
   shirt_type: string | null;
   work_date: string | null;
   shift_start_time: string | null;
   shift_end_time: string | null;
   shift_name: string | null;
+  work_schedules?: UserListSchedule[];
 }
 
 // Type ส่วน Response ของ API user detail

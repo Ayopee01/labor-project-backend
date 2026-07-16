@@ -172,15 +172,10 @@ components:
         nationality:
           type: string
           nullable: true
-          example: Thai
-        nationality_code:
-          type: string
-          nullable: true
-          example: TH
-        nationality_name:
-          type: string
-          nullable: true
-          example: Thai
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
         work_start_date:
           type: string
           nullable: true
@@ -253,7 +248,10 @@ components:
         nationality:
           type: string
           nullable: true
-          example: Thai
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
         work_start_date:
           type: string
           nullable: true
@@ -276,19 +274,16 @@ components:
           example: 1
         worker_code:
           type: string
-          example: MNO00142
+          example: MN000142
         image_url:
           type: string
           nullable: true
           example: https://example.com/uploads/workers/mno00142.jpg
         nationality:
           type: string
-          example: Myanmar
-        nationality_code:
-          type: string
-          example: MM
-        nationality_name:
-          type: string
+          enum:
+            - Myanmar
+            - Cambodia
           example: Myanmar
         work_start_date:
           type: string
@@ -300,6 +295,10 @@ components:
         shirt_type:
           type: string
           nullable: true
+          enum:
+            - Navy
+            - Blue
+            - Green
           example: Navy
         shirt_number:
           type: string
@@ -313,6 +312,13 @@ components:
           example: 25
         account_id:
           type: integer
+          example: 1
+        shift_no:
+          type: integer
+          enum:
+            - 1
+            - 2
+          description: Current shift order for the worker.
           example: 1
         work_date:
           type: string
@@ -473,37 +479,29 @@ components:
     WorkerProfileInput:
       type: object
       required:
-        - worker_code
-        - nationality_code
-        - nationality_name
+        - nationality
         - work_start_date
-        - phone
       properties:
-        worker_code:
-          type: string
-          example: MNO00142
         image_url:
           type: string
           nullable: true
           example: https://example.com/uploads/workers/mno00142.jpg
         nationality:
           type: string
-          example: Myanmar
-        nationality_code:
-          type: string
-          example: MM
-        nationality_name:
-          type: string
+          enum:
+            - Myanmar
+            - Cambodia
           example: Myanmar
         work_start_date:
           type: string
           format: date
           example: 2024-07-15
-        phone:
-          type: string
-          example: 081-234-5678
         shirt_type:
           type: string
+          enum:
+            - Navy
+            - Blue
+            - Green
           example: Navy
         shirt_number:
           type: string
@@ -511,31 +509,26 @@ components:
     UpdateWorkerProfileInput:
       type: object
       properties:
-        worker_code:
-          type: string
-          example: MNO00142
         image_url:
           type: string
           nullable: true
           example: https://example.com/uploads/workers/mno00142-updated.jpg
         nationality:
           type: string
-          example: Myanmar
-        nationality_code:
-          type: string
-          example: MM
-        nationality_name:
-          type: string
+          enum:
+            - Myanmar
+            - Cambodia
           example: Myanmar
         work_start_date:
           type: string
           format: date
           example: 2024-07-15
-        phone:
-          type: string
-          example: 0899999999
         shirt_type:
           type: string
+          enum:
+            - Navy
+            - Blue
+            - Green
           example: Navy
         shirt_number:
           type: string
@@ -568,17 +561,11 @@ components:
         - shirt_type
         - shirt_number
         - work_start_date
-        - work_schedule
       properties:
         username:
           type: string
-          description: Optional. If omitted, backend uses worker_code generated from shirt_number, for example MN000004.
+          description: Optional. If omitted, backend uses worker_code generated from nationality + shirt_type + shirt_number, for example MN000004.
           example: MN000004
-        password:
-          type: string
-          format: password
-          description: Optional. If omitted, phone is used as the initial password.
-          example: "0812345678"
         img:
           type: string
           description: Optional image URL from the UI. Stored as image_url.
@@ -588,24 +575,24 @@ components:
           example: Worker One
         phone:
           type: string
+          description: Saved to accounts.phone. The initial worker password is the hashed value of this phone.
           example: "0812345678"
         nationality:
           type: string
-          example: Myanmar
-        nationality_code:
-          type: string
-          description: Optional. Defaults to UNKNOWN when omitted.
-          example: MM
-        nationality_name:
-          type: string
-          description: Optional. Defaults to nationality when omitted.
+          enum:
+            - Myanmar
+            - Cambodia
           example: Myanmar
         shirt_type:
           type: string
+          enum:
+            - Navy
+            - Blue
+            - Green
           example: Navy
         shirt_number:
           type: string
-          description: Used to generate worker_code and default username with MN prefix and 6 digits.
+          description: Unique. Used with nationality and shirt_type to generate worker_code and default username.
           example: "4"
         work_start_date:
           type: string
@@ -620,7 +607,15 @@ components:
           default: active
           example: active
         work_schedule:
+          description: Legacy single-shift input. Send either work_schedule or work_schedules.
           $ref: "#/components/schemas/WorkScheduleInput"
+        work_schedules:
+          type: array
+          description: Preferred input for current worker shifts. Send 1-2 schedules. The backend assigns shift_no by array order.
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/WorkScheduleInput"
     CreateUserMultipartRequest:
       type: object
       required:
@@ -630,8 +625,6 @@ components:
         - shirt_type
         - shirt_number
         - work_start_date
-        - shift_start_time
-        - shift_end_time
       properties:
         image:
           type: string
@@ -639,36 +632,31 @@ components:
           description: "Optional worker profile image. Allowed types: jpg, png, webp. Max size: 5 MB."
         username:
           type: string
-          description: Optional. If omitted, backend uses worker_code generated from shirt_number, for example MN000004.
+          description: Optional. If omitted, backend uses worker_code generated from nationality + shirt_type + shirt_number, for example MN000004.
           example: MN000004
-        password:
-          type: string
-          format: password
-          description: Optional. If omitted, phone is used as the initial password.
-          example: "0812345678"
         full_name:
           type: string
           example: Worker One
         phone:
           type: string
+          description: Saved to accounts.phone. The initial worker password is the hashed value of this phone.
           example: "0812345678"
         nationality:
           type: string
-          example: Myanmar
-        nationality_code:
-          type: string
-          description: Optional. Defaults to UNKNOWN when omitted.
-          example: MM
-        nationality_name:
-          type: string
-          description: Optional. Defaults to nationality when omitted.
+          enum:
+            - Myanmar
+            - Cambodia
           example: Myanmar
         shirt_type:
           type: string
+          enum:
+            - Navy
+            - Blue
+            - Green
           example: Navy
         shirt_number:
           type: string
-          description: Used to generate worker_code and default username with MN prefix and 6 digits.
+          description: Unique. Used with nationality and shirt_type to generate worker_code and default username.
           example: "4"
         work_start_date:
           type: string
@@ -697,14 +685,18 @@ components:
           example: "17:00"
         work_schedule:
           type: string
-          description: Optional alternative to shift_start_time/shift_end_time. Send a JSON string with those fields. work_date is optional and kept only for backward compatibility.
+          description: Legacy single-shift input. Send a JSON string with shift_start_time and shift_end_time. work_date is optional and kept only for backward compatibility.
           example: '{"shift_start_time":"08:00","shift_end_time":"17:00"}'
+        work_schedules:
+          type: string
+          description: Preferred input for current worker shifts. Send a JSON string array with 1-2 schedules. The backend assigns shift_no by array order.
+          example: '[{"shift_start_time":"08:00","shift_end_time":"12:00"},{"shift_start_time":"13:00","shift_end_time":"17:00"}]'
     UpdateUserRequest:
       type: object
       properties:
         worker_code:
           type: string
-          description: Optional. If omitted and shirt_number is sent, backend regenerates worker_code and username from shirt_number.
+          description: Optional. If omitted and nationality, shirt_type, or shirt_number is sent, backend regenerates worker_code and username from nationality + shirt_type + shirt_number using existing profile values for fields omitted from the request.
           example: MN000115
         image_url:
           type: string
@@ -721,6 +713,12 @@ components:
         phone:
           type: string
           example: "0811111111"
+        nationality:
+          type: string
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
         position:
           type: string
           nullable: true
@@ -728,10 +726,15 @@ components:
         shirt_type:
           type: string
           nullable: true
+          enum:
+            - Navy
+            - Blue
+            - Green
           example: Navy
         shirt_number:
           type: string
           nullable: true
+          description: Unique. If worker_code is omitted, backend regenerates worker_code and username from nationality + shirt_type + shirt_number.
           example: "115"
         work_start_date:
           type: string
@@ -762,9 +765,16 @@ components:
             - inactive
           example: active
         work_schedule:
-          description: Optional. Updates the current worker work schedule in place and removes other schedule rows for that worker.
+          description: Optional legacy single-shift input. Replaces the current worker schedule rows.
           allOf:
             - $ref: "#/components/schemas/WorkScheduleInput"
+        work_schedules:
+          type: array
+          description: Preferred input for current worker shifts. Replaces current schedule rows with 1-2 schedules. The backend assigns shift_no by array order.
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/WorkScheduleInput"
     ResetPasswordRequest:
       type: object
       required:
@@ -792,6 +802,10 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/UserListSchedule"
+        work_schedules:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserListSchedule"
         status:
           type: string
           enum:
@@ -805,6 +819,12 @@ components:
     UserListSchedule:
       type: object
       properties:
+        shift_no:
+          type: integer
+          enum:
+            - 1
+            - 2
+          example: 1
         work_date:
           type: string
           format: date
@@ -878,6 +898,13 @@ components:
               type: string
               nullable: true
               example: Worker
+            nationality:
+              type: string
+              nullable: true
+              enum:
+                - Myanmar
+                - Cambodia
+              example: Myanmar
             shirt_number:
               type: string
               nullable: true
@@ -885,6 +912,10 @@ components:
             shirt_type:
               type: string
               nullable: true
+              enum:
+                - Navy
+                - Blue
+                - Green
               example: Navy
             work_date:
               type: string
@@ -904,6 +935,10 @@ components:
               type: string
               nullable: true
               example: เธเธฐเน€เธเนเธฒ
+            work_schedules:
+              type: array
+              items:
+                $ref: "#/components/schemas/UserListSchedule"
     WorkScheduleResponse:
       type: object
       properties:
@@ -2043,7 +2078,10 @@ components:
         nationality:
           type: string
           nullable: true
-          example: Thai
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
         work_start_date:
           type: string
           nullable: true

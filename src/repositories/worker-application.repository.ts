@@ -238,7 +238,7 @@ export async function listVehicleJobAssignmentTeam(
 
     return {
       full_name: assignment.worker.fullName,
-      worker_code: assignment.worker.profile?.workerCode ?? null,
+      worker_code: assignment.worker.username,
       image_url: assignment.worker.profile?.imageUrl ?? null,
       scan_status: buildAssignmentScanStatus(assignmentDto),
     };

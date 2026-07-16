@@ -69,9 +69,9 @@
     },
     {
       "key": "userId",
-      "value": "MN000115",
+      "value": "MN000012",
       "type": "string",
-      "description": "Worker code or username used by Admin Workers /:id routes, for example MN000115."
+      "description": "Worker code or username used by Admin Workers /:id routes, for example MN000012."
     },
     {
       "key": "adminUserId",
@@ -135,7 +135,7 @@
     },
     {
       "key": "workerCode",
-      "value": "MN000115",
+      "value": "MN000012",
       "type": "string",
       "description": "Worker code used by admin assignment APIs."
     }
@@ -250,7 +250,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username/password plus device_id and device_name.\nResponse: login returns tokens only: access_token, refresh_token, token_type, expires_in.\nNotes: Saves access_token and refresh_token into collection variables when login succeeds. If another worker session exists on a different device, saves login_challenge_token for POST /api/auth/login/confirm-force. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone from worker creation, device_id, and device_name.\nResponse: login returns tokens only: access_token, refresh_token, token_type, expires_in.\nNotes: Saves access_token and refresh_token into collection variables when login succeeds. If another worker session exists on a different device, saves login_challenge_token for POST /api/auth/login/confirm-force. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
           "response": []
         },
@@ -478,19 +478,10 @@
                   "type": "text"
                 },
                 {
-                  "key": "shift_start_time",
-                  "value": "08:00",
-                  "type": "text"
-                },
-                {
-                  "key": "shift_end_time",
-                  "value": "17:00",
-                  "type": "text"
-                },
-                {
-                  "key": "password",
-                  "value": "0812345678",
-                  "type": "text"
+                  "key": "work_schedules",
+                  "value": "[{\"shift_start_time\":\"08:00\",\"shift_end_time\":\"12:00\"},{\"shift_start_time\":\"13:00\",\"shift_end_time\":\"17:00\"}]",
+                  "type": "text",
+                  "description": "JSON string array. Send 1-2 current shifts for the worker. Backend assigns shift_no by array order."
                 },
                 {
                   "key": "status",
@@ -513,7 +504,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: full_name, phone, nationality, shirt_type, shirt_number, work_start_date, shift_start_time, shift_end_time, password, status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to worker_code generated from shirt_number, such as MN000004. password defaults to phone if omitted. nationality_name defaults to nationality and nationality_code defaults to UNKNOWN when omitted. work_start_date is the first working date. Shift availability uses only shift_start_time and shift_end_time; work_date is no longer required. shirt_number is saved separately and also used to generate worker_code. Uploaded image is stored under /uploads/workers and saved as profile.image_url. JSON body with image_url/img is still supported when no file upload is needed."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: full_name, phone, nationality, shirt_type, shirt_number, work_start_date, work_schedules, status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to worker_code generated from nationality + shirt_type + shirt_number, such as MN000012. nationality accepts Myanmar or Cambodia. shirt_type accepts Navy, Blue, or Green. shirt_number is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. work_schedules is a JSON string array with 1-2 current shifts; backend assigns shift_no by array order. nationality is stored directly in worker_profiles. work_start_date is the first working date. Legacy shift_start_time/shift_end_time or work_schedule are still supported. Uploaded image is stored under /uploads/workers and saved as profile.image_url. JSON body with image_url/img is still supported when no file upload is needed."
           },
           "response": []
         },
@@ -561,7 +552,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: worker_code, shirt_number, full_name, work_schedule, status, updated_at. Shift availability uses only shift_start_time and shift_end_time."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: worker_code, shirt_number, full_name, work_schedule, work_schedules, status, updated_at. Shift availability uses only shift_start_time and shift_end_time."
           },
           "response": []
         },
@@ -592,7 +583,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{userId}} must be worker_code or username, for example MN000115. Response is trimmed for worker edit UI: image_url, worker_code, full_name, status, and details."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{userId}} must be worker_code or username, for example MN000012. Response is trimmed for worker edit UI: image_url, worker_code, full_name, status, and details. details includes phone, position, nationality, shirt_number, shirt_type, and all current work_schedules."
           },
           "response": []
         },
@@ -616,7 +607,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://example.com/uploads/workers/mn000115.jpg\",\n  \"full_name\": \"นายMANY MANY\",\n  \"phone\": \"0811111111\",\n  \"status\": \"active\",\n  \"position\": \"Worker\",\n  \"shirt_number\": \"115\",\n  \"shirt_type\": \"Navy\",\n  \"work_start_date\": \"2026-07-03\",\n  \"shift_start_time\": \"08:00\",\n  \"shift_end_time\": \"17:00\"\n}",
+              "raw": "{\n  \"image_url\": \"https://example.com/uploads/workers/mn000012.jpg\",\n  \"full_name\": \"Worker One Updated\",\n  \"phone\": \"0811111111\",\n  \"nationality\": \"Myanmar\",\n  \"status\": \"active\",\n  \"position\": \"Worker\",\n  \"shirt_number\": \"12\",\n  \"shirt_type\": \"Navy\",\n  \"work_start_date\": \"2026-07-03\",\n  \"work_schedules\": [\n    {\n      \"shift_start_time\": \"08:00\",\n      \"shift_end_time\": \"12:00\"\n    },\n    {\n      \"shift_start_time\": \"13:00\",\n      \"shift_end_time\": \"17:00\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -638,7 +629,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: image_url/img, worker_code, full_name, phone, status, position, shirt_number, shirt_type, work_start_date, shift_start_time, shift_end_time. work_date is optional legacy only. Nested profile/work_schedule is still supported for backward compatibility.\nNotes: Admin only. {{userId}} must be worker_code or username. If shirt_number is sent without worker_code, backend regenerates worker_code/username as MN + 6 digits. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: image_url/img, worker_code, full_name, phone, nationality, status, position, shirt_number, shirt_type, work_start_date, work_schedules. nationality accepts Myanmar or Cambodia. shirt_type accepts Navy, Blue, or Green. shirt_number is unique and cannot be reused. work_schedules replaces current schedule rows, accepts 1-2 shifts, and backend assigns shift_no by array order. work_date, shift_start_time/shift_end_time, nested profile, and work_schedule are still supported for backward compatibility.\nNotes: Admin only. {{userId}} must be worker_code or username. If nationality, shirt_type, or shirt_number is sent without worker_code, backend regenerates worker_code/username from nationality + shirt_type + shirt_number, using existing profile values for fields omitted from the request. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
           },
           "response": []
         },
@@ -1446,7 +1437,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"manager01\",\n  \"password\": \"Manager@123456\",\n  \"full_name\": \"Branch Manager\",\n  \"position\": \"Manager\",\n  \"permission_level\": \"manager\",\n  \"permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:reopen\",\n    \"jobs:extend_deadline\"\n  ]\n}",
+              "raw": "{\n  \"username\": \"manager01\",\n  \"password\": \"Manager@123456\",\n  \"full_name\": \"Branch Manager\",\n  \"position\": \"Manager\",\n  \"email\": \"manager@simmummuang.local\",\n  \"phone\": \"081-000-0002\",\n  \"permission_level\": \"manager\",\n  \"permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:reopen\",\n    \"jobs:extend_deadline\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1467,7 +1458,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/admins\nAuth: Admin access token with admins:create permission\nBody: username, password, full_name, optional position/status, permission_level owner|manager|supervisor, and permissions array\nNotes: Creates role=admin only. Seed owner admin can create manager/supervisor. Manager can create supervisor only. No API can create owner because the actor must have a higher permission_level than the new account. Saves created account id to {{adminUserId}}."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/admins\nAuth: Admin access token with admins:create permission\nBody: username, password, full_name, optional position/email/phone/status, permission_level owner|manager|supervisor, and permissions array\nNotes: Creates role=admin only and saves email/phone to accounts.email/accounts.phone when provided. Seed owner admin can create manager/supervisor. Manager can create supervisor only. No API can create owner because the actor must have a higher permission_level than the new account. Saves created account id to {{adminUserId}}."
           },
           "response": []
         },

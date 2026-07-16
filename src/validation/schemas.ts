@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS } from "../config/permission.config";
 import { ACCOUNT_ROLES } from "../types/admin-workers.type";
+import { WORKER_NATIONALITIES, WORKER_SHIRT_TYPES } from "../utils/worker-code";
 
 /* -------------------------------------- Formats -------------------------------------- */
 
@@ -47,6 +48,19 @@ const defaultActiveStatusSchema = z.preprocess(
 const optionalActiveStatusSchema = z.preprocess(
   emptyStringToUndefined,
   activeStatusSchema.optional()
+);
+
+const workerNationalitySchema = z.enum(WORKER_NATIONALITIES);
+const workerShirtTypeSchema = z.enum(WORKER_SHIRT_TYPES);
+
+const optionalWorkerNationalitySchema = z.preprocess(
+  emptyStringToUndefined,
+  workerNationalitySchema.optional()
+);
+
+const optionalWorkerShirtTypeSchema = z.preprocess(
+  emptyStringToUndefined,
+  workerShirtTypeSchema.optional()
 );
 
 // Format ข้อความ optional ที่ trim แล้วแปลงเป็น lowercase เหมาะกับ search/filter
@@ -102,27 +116,19 @@ export const refreshBodySchema = z.object({
 
 // Schema ข้อมูล profile ของ worker ที่ผูกกับ user account
 export const profileInputSchema = z.object({
-  worker_code: trimmedString,
   image_url: optionalTrimmedString,
-  nationality: optionalTrimmedString,
-  nationality_code: trimmedString,
-  nationality_name: trimmedString,
+  nationality: optionalWorkerNationalitySchema,
   work_start_date: dateString,
-  phone: trimmedString,
-  shirt_type: optionalTrimmedString,
+  shirt_type: optionalWorkerShirtTypeSchema,
   shirt_number: optionalTrimmedString,
 });
 
 // Schema ข้อมูล profile แบบ partial สำหรับ PATCH worker
 const updateProfileInputSchema = z.object({
-  worker_code: optionalTrimmedString,
   image_url: optionalTrimmedString,
-  nationality: optionalTrimmedString,
-  nationality_code: optionalTrimmedString,
-  nationality_name: optionalTrimmedString,
+  nationality: optionalWorkerNationalitySchema,
   work_start_date: optionalDateString,
-  phone: optionalTrimmedString,
-  shirt_type: optionalTrimmedString,
+  shirt_type: optionalWorkerShirtTypeSchema,
   shirt_number: optionalTrimmedString,
 });
 
@@ -133,23 +139,31 @@ export const workScheduleInputSchema = z.object({
   shift_end_time: timeString,
 });
 
+const workSchedulesInputSchema = z
+  .array(workScheduleInputSchema)
+  .min(1)
+  .max(2, "A worker can have at most 2 current shifts.");
+
 // Schema body สำหรับสร้าง worker พร้อม profile และ schedule เริ่มต้น
-export const createUserBodySchema = z.object({
-  username: optionalTrimmedString,
-  password: optionalTrimmedString,
-  img: optionalTrimmedString,
-  image_url: optionalTrimmedString,
-  full_name: trimmedString,
-  phone: trimmedString,
-  nationality: trimmedString,
-  nationality_code: optionalTrimmedString,
-  nationality_name: optionalTrimmedString,
-  shirt_type: trimmedString,
-  shirt_number: trimmedString,
-  work_start_date: dateString,
-  status: defaultActiveStatusSchema,
-  work_schedule: workScheduleInputSchema,
-});
+export const createUserBodySchema = z
+  .object({
+    username: optionalTrimmedString,
+    img: optionalTrimmedString,
+    image_url: optionalTrimmedString,
+    full_name: trimmedString,
+    phone: trimmedString,
+    nationality: workerNationalitySchema,
+    shirt_type: workerShirtTypeSchema,
+    shirt_number: trimmedString,
+    work_start_date: dateString,
+    status: defaultActiveStatusSchema,
+    work_schedule: workScheduleInputSchema.optional(),
+    work_schedules: workSchedulesInputSchema.optional(),
+  })
+  .refine((value) => value.work_schedule !== undefined || value.work_schedules !== undefined, {
+    path: ["work_schedule"],
+    message: "work_schedule or work_schedules is required.",
+  });
 
 // Schema body สำหรับแก้ไขข้อมูล worker ผ่านเส้นหลัก
 export const updateUserBodySchema = z.object({
@@ -158,8 +172,9 @@ export const updateUserBodySchema = z.object({
   img: optionalTrimmedString,
   full_name: optionalTrimmedString,
   phone: optionalTrimmedString,
+  nationality: optionalWorkerNationalitySchema,
   position: optionalTrimmedString,
-  shirt_type: optionalTrimmedString,
+  shirt_type: optionalWorkerShirtTypeSchema,
   shirt_number: optionalTrimmedString,
   work_start_date: optionalDateString,
   work_date: optionalDateString,
@@ -168,6 +183,7 @@ export const updateUserBodySchema = z.object({
   profile: updateProfileInputSchema.optional(),
   status: optionalActiveStatusSchema,
   work_schedule: z.unknown().optional(),
+  work_schedules: z.unknown().optional(),
 });
 
 // Schema body สำหรับ reset password ของ worker
