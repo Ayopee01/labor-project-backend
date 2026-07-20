@@ -545,7 +545,8 @@
                 },
                 {
                   "key": "status",
-                  "value": ""
+                  "value": "",
+                  "description": "Optional. Matches vehicle/market/stall/confirmation/assignment status. Supported examples: WAIT, IN_PROGRESS, DELIVERED, REJECT, COMPLETED, CANCELLED, PENDING, ACCEPTED, SCANNED, WORKING, TIMEOUT."
                 }
               ]
             },
@@ -755,39 +756,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/jobs/workers/status\nAuth: Admin access token\nBody: None\nNotes: Admin Jobs. Lists only active workers who are online and inside their current shift. Response is shaped for the worker queue board with full_name, worker_code, shirt_number, image_url, shift_name, latest_activity_at, and one status only. UI maps status to its own columns. Board status values: open_app, ready, assigned, working, break."
-          },
-          "response": []
-        },
-        {
-          "name": "GET /api/admin/jobs/workers/status/:id",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/jobs/workers/status/{{userId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "jobs",
-                "workers",
-                "status",
-                "{{userId}}"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/jobs/workers/status/{{userId}}\nAuth: Admin access token\nBody: None\nNotes: Admin Jobs. {{userId}} must be worker_code or username. Shows one worker queue status, active assignment, and heartbeat presence."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/jobs/workers/status\nAuth: Admin access token\nBody: None\nNotes: Admin Jobs. Lists only active workers who are online and inside their current shift. Response is shaped for the worker queue board with full_name, worker_code, shirt_number, image_url, shift_name, latest_activity_at, status_entered_at, queue_position, and one status only. Data is already sorted by board column order and the real order inside each status. Ready workers use Redis queue_position. Board status values: open_app, ready, assigned, working, break."
           },
           "response": []
         },
@@ -809,7 +778,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"waiting\",\n  \"reason\": \"Worker contacted admin for status correction.\"\n}",
+              "raw": "{\n  \"status\": \"open_app\",\n  \"reason\": \"Worker contacted admin for status correction.\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -834,12 +803,74 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/workers/{{userId}}/status/force\nAuth: Admin access token\nBody: status ready|waiting|offline|break, optional reason\nNotes: Admin Jobs. {{userId}} must be worker_code or username. ready puts worker into Redis queue, waiting removes worker from dispatch queue, break starts a 15-minute break and consumes a break count, offline removes worker from queue."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/workers/{{userId}}/status/force\nAuth: Admin access token\nBody: status open_app|ready|break, optional reason\nNotes: Admin Jobs. {{userId}} must be worker_code or username. open_app removes worker from dispatch queue and shows the worker as open_app, ready puts worker into Redis queue, break starts a configured break, default 15 minutes, and consumes a break count."
           },
           "response": []
         },
         {
-          "name": "GET /api/admin/vehicle-jobs",
+          "name": "POST /api/admin/jobs/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_type\": \"vehicle\",\n  \"target_ref\": \"{{vehicleJobRef}}\",\n  \"worker_action\": \"requeue\",\n  \"reason\": \"Admin cancelled this job.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/jobs/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "jobs",
+                "cancel"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/cancel\nAuth: Admin access token with jobs:cancel permission\nBody: target_type vehicle|market|stall, target_ref, optional worker_action and reason. For vehicle, worker_action defaults to requeue and returns cancelled workers to the front of the queue in assignment accept order. Use open_app only when admin does not want to return workers to queue. For market/stall, omit worker_action or send none.\nExamples:\nVehicle requeue: { \"target_type\": \"vehicle\", \"target_ref\": \"{{vehicleJobRef}}\" }\nVehicle open_app: { \"target_type\": \"vehicle\", \"target_ref\": \"{{vehicleJobRef}}\", \"worker_action\": \"open_app\" }\nMarket: { \"target_type\": \"market\", \"target_ref\": \"{{marketJobRef}}\" }\nStall: { \"target_type\": \"stall\", \"target_ref\": \"{{stallJobRef}}\" }"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/admin/vehicle-jobs/history",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const firstItem = body.data?.[0];",
+                  "const firstMarket = firstItem?.markets?.[0];",
+                  "const firstTicket = firstMarket?.tickets?.[0];",
+                  "if (firstItem?.vehicle_job?.vehicle_job_ref) pm.collectionVariables.set('vehicleJobRef', String(firstItem.vehicle_job.vehicle_job_ref));",
+                  "if (firstMarket?.market_job_ref) pm.collectionVariables.set('marketJobRef', String(firstMarket.market_job_ref));",
+                  "if (firstTicket?.stall_job_ref) pm.collectionVariables.set('stallJobRef', String(firstTicket.stall_job_ref));",
+                  "if (firstTicket?.products?.[0]?.product_ref) pm.collectionVariables.set('productRef', String(firstTicket.products[0].product_ref));"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
@@ -850,20 +881,26 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/vehicle-jobs?date=2026-07-07&page=1&limit=20&search=&status=",
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/history?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&status=",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "admin",
-                "vehicle-jobs"
+                "vehicle-jobs",
+                "history"
               ],
               "query": [
                 {
-                  "key": "date",
+                  "key": "date_from",
+                  "value": "2026-07-01",
+                  "description": "Optional date range start in YYYY-MM-DD."
+                },
+                {
+                  "key": "date_to",
                   "value": "2026-07-07",
-                  "description": "Optional. If omitted, all dates are returned."
+                  "description": "Optional date range end in YYYY-MM-DD, inclusive."
                 },
                 {
                   "key": "page",
@@ -888,144 +925,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs?date=2026-07-07&page=1&limit=20&search=&status=\nAuth: Admin access token\nQuery: date/search/status optional. page optional; when page is omitted backend returns all matching rows ordered by latest created_at. When page is sent backend returns that page and pagination metadata.\nResponse: trimmed list rows only: vehicle_job_ref, gate_transaction_ref, license_plate, vehicle_type, workers_required, status. QR tokens are available from the detail/QR flows, not this list.\nNotes: Search can match vehicle, market, stall, ticket, or license plate references."
-          },
-          "response": []
-        },
-        {
-          "name": "GET /api/admin/vehicle-jobs/:vehicleJobRef",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const firstTicket = body.markets?.[0]?.tickets?.[0] ?? body.vehicle_job?.markets?.[0]?.tickets?.[0];",
-                  "if (body.result) pm.collectionVariables.set('gateResult', String(body.result));",
-                  "if (body.vehicle_job?.vehicle_job_ref) pm.collectionVariables.set('vehicleJobRef', String(body.vehicle_job.vehicle_job_ref));",
-                  "if (body.markets?.[0]?.market_job_ref) pm.collectionVariables.set('marketJobRef', String(body.markets[0].market_job_ref));",
-                  "if (firstTicket?.stall_job_ref) pm.collectionVariables.set('stallJobRef', String(firstTicket.stall_job_ref));",
-                  "if (firstTicket?.products?.[0]?.product_ref) pm.collectionVariables.set('productRef', String(firstTicket.products[0].product_ref));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "vehicle-jobs",
-                "{{vehicleJobRef}}"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}\nAuth: Admin access token\nNotes: Returns vehicle job detail with markets, stall jobs, and products. Saves first marketJobRef, stallJobRef, and productRef when available."
-          },
-          "response": []
-        },
-        {
-          "name": "POST /api/admin/vehicle-jobs/:vehicleJobRef/cancel",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"reason\": \"Cancel entire vehicle job.\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "vehicle-jobs",
-                "{{vehicleJobRef}}",
-                "cancel"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/cancel\nAuth: Admin access token\nResponse: message, vehicle_job_ref, status.\nNotes: Cancels the entire vehicle job, all markets, all stall jobs, and active assignments. Workers from active assignments are moved to waiting."
-          },
-          "response": []
-        },
-        {
-          "name": "POST /api/admin/vehicle-jobs/:vehicleJobRef/cancel-and-requeue",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"reason\": \"Cancel vehicle job and requeue assigned workers.\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/cancel-and-requeue",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "vehicle-jobs",
-                "{{vehicleJobRef}}",
-                "cancel-and-requeue"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/cancel-and-requeue\nAuth: Admin access token\nBody: optional reason\nResponse: message, vehicle_job_ref, status, requeued_worker_codes.\nNotes: Cancels the whole vehicle job and returns affected workers to the tail of the Redis queue. If multiple workers are affected, backend randomly shuffles that group before enqueueing."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/history?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&status=\nAuth: Admin access token\nQuery: date_from/date_to/search/status optional. date is still supported as a legacy single-day filter. status can match vehicle, market, stall, stall confirmation, or worker assignment status. page optional; when page is omitted backend returns all matching rows ordered by latest created_at. When page is sent backend returns that page and pagination metadata.\nSupported status examples: WAIT, IN_PROGRESS, DELIVERED, REJECT, COMPLETED, CANCELLED, PENDING, ACCEPTED, SCANNED, WORKING, TIMEOUT.\nResponse: data[].vehicle_job plus markets[].tickets[].products[] for the Admin history report. Search can match vehicle job ref, license plate, gate transaction ref, market ref/name, stall job ref, ticket no, or stall no.\nNotes: Use search with a license plate to see what that vehicle delivered, use market ref/name to see vehicles that delivered to that market, or use stall ref/no to see vehicles and products for that stall in the selected date range."
           },
           "response": []
         },
@@ -1082,7 +982,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/assign-workers\nAuth: Admin access token\nBody: worker_codes array\nNotes: Admin manually assigns the vehicle job to selected workers. Workers must be active and must not already have an active assignment. Backend marks them busy and starts the 1-minute accept timeout."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/assign-workers\nAuth: Admin access token\nBody: worker_codes array\nNotes: Admin manually assigns the vehicle job to selected workers. Workers must be active, must not already have an active assignment, and must currently be ready in the Redis queue. Backend marks them assigned for UI, removes them from ready queue, and starts the 1-minute accept timeout."
           },
           "response": []
         },
@@ -1128,7 +1028,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/scan-deadline/extend\nAuth: Admin access token\nBody: minutes required. Omit worker_codes to extend all ACCEPTED workers in the vehicle job; send worker_codes to extend selected workers only.\nExample selected worker body: { \"minutes\": 10, \"worker_codes\": [\"MN000115\"] }\nResponse: vehicle_job_ref, worker_qr_token, assignments[].worker_code/status/scan_deadline_at.\nNotes: Extends scan_deadline_at only. worker_qr_token stays the same and is reused for check-in after extension."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/scan-deadline/extend\nAuth: Admin access token\nBody: minutes required. Omit worker_codes to extend all ACCEPTED workers whose scan deadline has not expired; send worker_codes to extend selected workers only.\nExample selected worker body: { \"minutes\": 10, \"worker_codes\": [\"MN000115\"] }\nResponse: vehicle_job_ref, worker_qr_token, assignments[].worker_code/status/scan_deadline_at.\nNotes: Extends scan_deadline_at and reschedules the background scan timeout for the updated ACCEPTED assignments. Expired assignments are not extended. worker_qr_token stays the same and is reused for check-in after extension."
           },
           "response": []
         },
@@ -1176,128 +1076,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/workers/{{workerCode}}/assignment/cancel\nAuth: Admin access token\nBody: optional reason\nNotes: Cancels one active worker assignment by vehicle_job_ref + worker_code and moves that worker to waiting. Backend does not auto-fill a replacement worker."
-          },
-          "response": []
-        },
-        {
-          "name": "POST /api/admin/market-jobs/:marketJobRef/cancel",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"reason\": \"Cancel market job.\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/market-jobs/{{marketJobRef}}/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "market-jobs",
-                "{{marketJobRef}}",
-                "cancel"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/market-jobs/{{marketJobRef}}/cancel\nAuth: Admin access token\nNotes: Cancels one market job and all stall jobs under that market."
-          },
-          "response": []
-        },
-        {
-          "name": "POST /api/admin/stall-jobs/:stallJobRef/cancel",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"reason\": \"Cancel stall job.\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/stall-jobs/{{stallJobRef}}/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "stall-jobs",
-                "{{stallJobRef}}",
-                "cancel"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/stall-jobs/{{stallJobRef}}/cancel\nAuth: Admin access token\nNotes: Cancels one stall job only."
-          },
-          "response": []
-        },
-        {
-          "name": "POST /api/admin/stall-jobs/:stallJobRef/reopen",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/stall-jobs/{{stallJobRef}}/reopen",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "stall-jobs",
-                "{{stallJobRef}}",
-                "reopen"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/stall-jobs/{{stallJobRef}}/reopen\nAuth: Admin access token with jobs:reopen permission\nBody: None\nNotes: Reopens one closed stall job so workers can submit corrected quantities again."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{vehicleJobRef}}/workers/{{workerCode}}/assignment/cancel\nAuth: Admin access token\nBody: optional reason\nNotes: Cancels one active worker assignment by vehicle_job_ref + worker_code, removes that worker from dispatch queue, and shows the worker as open_app. Backend does not auto-fill a replacement worker."
           },
           "response": []
         }
@@ -1353,7 +1132,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"driver_session_ttl_hours\": 24,\n  \"worker_accept_deadline_seconds\": 60,\n  \"worker_scan_deadline_minutes\": 15,\n  \"worker_break_duration_minutes\": 15,\n  \"worker_break_limit\": 5,\n  \"worker_break_count_ttl_hours\": 48,\n  \"worker_presence_stale_seconds\": 90\n}",
+              "raw": "{\n  \"driver_session_ttl_hours\": 24,\n  \"worker_accept_deadline_seconds\": 60,\n  \"worker_accept_timeout_limit\": 3,\n  \"worker_scan_deadline_minutes\": 15,\n  \"worker_scan_warning_before_minutes\": 2,\n  \"worker_scan_team_remaining_minutes\": 5,\n  \"worker_break_duration_minutes\": 15,\n  \"worker_break_limit\": 4,\n  \"worker_break_count_ttl_hours\": 48,\n  \"worker_presence_stale_seconds\": 90,\n  \"vendor_confirm_timeout_hours\": 24,\n  \"vendor_reconfirm_timeout_hours\": 4\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1374,7 +1153,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/settings\nAuth: Admin access token with settings:update permission\nBody: Partial JSON is allowed. Updated settings affect new calculations after this request; existing assignment deadlines already saved in DB remain unchanged."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/settings\nAuth: Admin access token with settings:update permission\nBody: Partial JSON is allowed. Updated settings affect new calculations after this request; existing assignment deadlines already saved in DB remain unchanged. worker_accept_timeout_limit controls how many consecutive accept timeouts are allowed before the worker is taken offline for the shift. worker_scan_warning_before_minutes controls when Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING for ACCEPTED workers who have not checked in. worker_scan_team_remaining_minutes controls the shortened scan window for remaining team members after the first worker checks in. vendor_confirm_timeout_hours auto-confirms first submitted totals after vendor timeout, and vendor_reconfirm_timeout_hours does the same after a rejected ticket is resubmitted."
           },
           "response": []
         },
@@ -1437,7 +1216,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"manager01\",\n  \"password\": \"Manager@123456\",\n  \"full_name\": \"Branch Manager\",\n  \"position\": \"Manager\",\n  \"email\": \"manager@simmummuang.local\",\n  \"phone\": \"081-000-0002\",\n  \"permission_level\": \"manager\",\n  \"permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:reopen\",\n    \"jobs:extend_deadline\"\n  ]\n}",
+              "raw": "{\n  \"username\": \"manager01\",\n  \"password\": \"Manager@123456\",\n  \"full_name\": \"Branch Manager\",\n  \"position\": \"Manager\",\n  \"email\": \"manager@simmummuang.local\",\n  \"phone\": \"081-000-0002\",\n  \"permission_level\": \"manager\",\n  \"permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:extend_deadline\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1511,7 +1290,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"permission_level\": \"supervisor\",\n  \"permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:reopen\",\n    \"jobs:extend_deadline\"\n  ]\n}",
+              "raw": "{\n  \"permission_level\": \"supervisor\",\n  \"permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:extend_deadline\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1592,7 +1371,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/vehicle-jobs\nAuth: No auth required in mock phase\nHeaders: Content-Type: application/json\nBody: Gate mock payload. gate_transaction_ref is idempotency key, vehicle_job_ref identifies the vehicle job, market_job_ref identifies each market job, stall_job_ref identifies each stall job, product_ref identifies each product, and ticket_no is an optional external bill number for driver/admin lookup. Set dispatch_now true when the vehicle is ready to unload immediately; omit or false to keep the Driver ready flow.\nResponse: trimmed acknowledgement only: result, message, vehicle_job.vehicle_job_ref/gate_transaction_ref/license_plate/status, and qr driver/worker tokens.\nResult: 201 + result CREATED for a new job, 200 + result REPLAYED when gate_transaction_ref is retried with the same payload, 409 when vehicle_job_ref already exists or gate_transaction_ref is reused with a different payload.\nNotes: Saves gateResult, vehicleJobRef, driverQrToken, and workerQrToken collection variables. Market/stall/product refs come from the request body or Admin detail endpoint. With dispatch_now true, backend creates the job as DISPATCH_NOW and immediately dispatches ready workers through WebSocket."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/vehicle-jobs\nAuth: No auth required in mock phase\nHeaders: Content-Type: application/json\nBody: Gate mock payload. gate_transaction_ref is idempotency key, vehicle_job_ref identifies the vehicle job, market_job_ref identifies each market job, stall_job_ref identifies each stall job, product_ref identifies each product, and ticket_no is an optional external bill number for driver/admin lookup. Set dispatch_now true when the vehicle is ready to unload immediately; omit or false to keep the Driver ready flow.\nResponse: trimmed acknowledgement only: result, message, vehicle_job.vehicle_job_ref/gate_transaction_ref/license_plate/status, and qr driver/worker tokens.\nResult: 201 + result CREATED for a new job, 200 + result REPLAYED when gate_transaction_ref is retried with the same payload, 409 when vehicle_job_ref already exists or gate_transaction_ref is reused with a different payload.\nNotes: Saves gateResult, vehicleJobRef, driverQrToken, and workerQrToken collection variables. Market/stall/product refs come from the request body or Admin history endpoint. With dispatch_now true, backend creates the job as IN_PROGRESS and immediately dispatches ready workers through WebSocket."
           },
           "response": []
         }
@@ -1709,7 +1488,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/driver/jobs/{{vehicleJobRef}}/ready\nAuth: Driver guest session\nBody: None\nResponse: vehicle_job_ref, license_plate, status, worker_qr_token.\nNotes: Marks vehicle job DISPATCH_NOW and dispatches ready workers from Redis FIFO queue."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/driver/jobs/{{vehicleJobRef}}/ready\nAuth: Driver guest session\nBody: None\nResponse: vehicle_job_ref, license_plate, status, worker_qr_token.\nNotes: Marks vehicle job IN_PROGRESS and dispatches ready workers from Redis FIFO queue."
           },
           "response": []
         }
@@ -1745,7 +1524,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/online\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, status, today_job_count, break_count_used, completed_job_count.\nNotes: Puts worker into Redis FIFO queue only during the assigned shift time. Returns 403 if the worker has no current schedule or is outside the assigned shift. OUTSIDE_WORK_SHIFT includes shift and remaining_time text for the mobile modal."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/online\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, status, today_job_count, break_count_used, completed_job_count.\nNotes: Requires active /ws/workers WebSocket. From open_app, worker can enter queue only once per shift/day. If current status is break, worker can call this endpoint to return early before break timer ends. Returns 403 if the worker has no current schedule or is outside the assigned shift. OUTSIDE_WORK_SHIFT includes shift and remaining_time text for the mobile modal."
           },
           "response": []
         },
@@ -1775,7 +1554,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/offline\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, status, today_job_count, break_count_used, completed_job_count. status is offline after the worker is removed from Redis queue."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/offline\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, status, today_job_count, break_count_used, completed_job_count. The worker is removed from Redis queue internally, response status is open_app, and the current shift is closed so the worker cannot re-enter queue in the same shift."
           },
           "response": []
         },
@@ -1805,7 +1584,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/break\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, status, break_count_used, break_count_limit. status is break.\nNotes: Puts worker into break status for 15 minutes. Requires worker to be ready and inside the current shift time. OUTSIDE_WORK_SHIFT includes shift and remaining_time text for the mobile modal. Max 5 breaks per shift. BullMQ returns worker to the tail of Redis queue automatically."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/break\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, status, break_count_used, break_count_limit. status is break.\nNotes: Puts worker into break status for the configured duration, default 15 minutes. Requires worker to be ready and inside the current shift time. OUTSIDE_WORK_SHIFT includes shift and remaining_time text for the mobile modal. Default max is 4 breaks per shift from worker_break_limit. BullMQ returns worker to the tail of Redis queue automatically when break ends; worker can call /online early while status is break."
           },
           "response": []
         },
@@ -1835,7 +1614,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, image_url, status, nationality, work_start_date, phone, and shift name/start/end. status comes from current worker queue state; if no queue state exists it returns offline. When status is break, response also includes break_until and remaining_break_time with total_seconds, minutes, seconds, and text."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: full_name, worker_code, image_url, status, nationality, work_start_date, phone, and shift name/start/end. status is one of open_app, ready, assigned, working, break. When status is break, response also includes break_until and remaining_break_time with total_seconds, minutes, seconds, and text."
           },
           "response": []
         },
@@ -1921,7 +1700,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{vehicleJobRef}}/accept\nAuth: Worker access token\nBody: None\nPath: {{vehicleJobRef}} comes from WORKER_ASSIGNED.vehicle_job_ref.\nNotes: Assignment must be PENDING and accepted within 1 minute. Response is trimmed for the worker job detail screen only: license_plate, team[].full_name/worker_code/image_url/scan_status, markets[].market_name/stall_count/stalls[].stall_job_ref/stall_code/stall_name/product_count/products[].product_ref/name/quantity/unit. Use stalls[].stall_job_ref later with POST /api/workers/me/tickets/{{stallJobRef}}/complete."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{vehicleJobRef}}/accept\nAuth: Worker access token\nBody: None\nPath: {{vehicleJobRef}} comes from WORKER_ASSIGNED.vehicle_job_ref.\nNotes: Assignment must be PENDING and accepted within worker_accept_deadline_seconds, default 60 seconds. If not accepted in time, assignment becomes TIMEOUT and the connected worker returns to the tail of the queue. After worker_accept_timeout_limit consecutive accept timeouts, default 3, the worker is taken offline for the shift. Response is trimmed for the worker job detail screen only: license_plate, team[].full_name/worker_code/image_url/scan_status, markets[].market_name/stall_count/stalls[].stall_job_ref/stall_code/stall_name/product_count/products[].product_ref/name/quantity/unit. Use stalls[].stall_job_ref later with POST /api/workers/me/tickets/{{stallJobRef}}/complete."
           },
           "response": []
         },
@@ -1967,7 +1746,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{vehicleJobRef}}/check-in-qr\nAuth: Worker access token\nPath: {{vehicleJobRef}} comes from WORKER_ASSIGNED.vehicle_job_ref.\nBody: JSON qr_token from worker QR\nResponse: status, worker_code, vehicle_job_ref, worker_qr_token. Normally { \"status\": \"SCANNED\", \"worker_code\": \"MN000142\", \"vehicle_job_ref\": \"VEH-20260706-0001\", \"worker_qr_token\": \"worker_qr_xxx\" }.\nNotes: Checks worker into the job only while scan_deadline_at is still valid. If expired, returns QR_EXPIRED. Admin can extend scan_deadline_at and the worker can retry using the same worker_qr_token. The returned worker_qr_token is the same QR value that was scanned and can be rendered by the mobile app so other assigned workers can scan from this worker screen. If checked-in workers reach workers_required, vehicle job moves to IN_PROGRESS."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{vehicleJobRef}}/check-in-qr\nAuth: Worker access token\nPath: {{vehicleJobRef}} comes from WORKER_ASSIGNED.vehicle_job_ref.\nBody: JSON qr_token from worker QR\nResponse: status, worker_code, vehicle_job_ref, worker_qr_token. Normally { \"status\": \"SCANNED\", \"worker_code\": \"MN000142\", \"vehicle_job_ref\": \"VEH-20260706-0001\", \"worker_qr_token\": \"worker_qr_xxx\" }.\nNotes: Checks worker into the job only while scan_deadline_at is still valid. Default scan window comes from worker_scan_deadline_minutes after accept. Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING when an ACCEPTED worker has not checked in and remaining scan time is below worker_scan_warning_before_minutes. In a multi-worker team, once the first worker checks in, remaining ACCEPTED workers receive ASSIGNMENT_SCAN_DEADLINE_SHORTENED and their scan_deadline_at is shortened by worker_scan_team_remaining_minutes from that first check-in. If scan time expires by API call or background timeout, the assignment becomes TIMEOUT and worker status returns to open_app. Admin can extend scan_deadline_at and the worker can retry using the same worker_qr_token if the assignment is still ACCEPTED. The returned worker_qr_token is the same QR value that was scanned and can be rendered by the mobile app so other assigned workers can scan from this worker screen. If checked-in workers reach workers_required, vehicle job moves to IN_PROGRESS."
           },
           "response": []
         },
@@ -2028,7 +1807,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/tickets/{{stallJobRef}}/complete\nAuth: Worker access token\nBody: items required. Send every product_ref in the ticket with confirmed_quantity counted by the worker.\nNotes: {{stallJobRef}} is the stall_job_ref from Gate payload/response, such as STALLJOB-001. Any worker mapped to this ticket can submit, but only the first request while the ticket is IN_PROGRESS or COMPLETION_REJECTED succeeds. The ticket becomes WAITING_VENDOR_CONFIRM and vendor is notified via LINE queue with signed confirm/reject tokens. When LINE_DEBUG_POSTBACK_RESPONSE=true, response includes debug_line_postback and this request saves vendorConfirmToken/vendorRejectToken automatically."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/tickets/{{stallJobRef}}/complete\nAuth: Worker access token\nBody: items required. Send every product_ref in the ticket with confirmed_quantity counted by the worker.\nNotes: {{stallJobRef}} is the stall_job_ref from Gate payload/response, such as STALLJOB-001. Any worker mapped to this ticket can submit after the assigned team has checked in, and stalls/markets in the same vehicle job can be submitted in any order. The first request while the ticket is WAIT/IN_PROGRESS/REJECT succeeds. The ticket and assignment_status become DELIVERED, and vendor is notified via LINE queue with signed confirm/reject tokens. If vendor rejects, ticket and assignment_status become REJECT so worker must resubmit. If vendor does not respond, backend auto-confirms after vendor_confirm_timeout_hours for first submission or vendor_reconfirm_timeout_hours after a rejected resubmission. When LINE_DEBUG_POSTBACK_RESPONSE=true, response includes debug_line_postback and this request saves vendorConfirmToken/vendorRejectToken automatically."
           },
           "response": []
         }
@@ -2067,7 +1846,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/events\nAuth: Admin access token\nHeaders: Authorization: Bearer {{accessToken}}, Accept: text/event-stream\nBody: None\nNotes: This is an Admin-only SSE stream, not a JSON list. It stays open and receives realtime dashboard events. Snapshot/latest state should still be loaded from Admin REST APIs."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/events\nAuth: Admin access token\nHeaders: Authorization: Bearer {{accessToken}}, Accept: text/event-stream\nBody: None\nNotes: This is an Admin-only SSE stream, not a JSON list. It stays open and receives realtime dashboard events including ASSIGNMENT_SCAN_DEADLINE_WARNING when an ACCEPTED worker has not checked in and remaining scan time is below worker_scan_warning_before_minutes. Snapshot/latest state should still be loaded from Admin REST APIs."
           },
           "response": []
         }
@@ -2110,7 +1889,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Mock LINE postback. userId must match vendor_line_id. Copy vendorConfirmToken from the LINE completion message token= value. Confirms the waiting ticket completion and notifies worker/admin. If this confirmation makes every ticket in the vehicle job terminal, backend closes the market/vehicle job and completes active worker assignments so workers can go online for the next job."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Mock LINE postback. userId must match vendor_line_id. Copy vendorConfirmToken from the LINE completion message token= value. Confirms the waiting ticket completion and notifies worker/admin. If this confirmation makes every ticket in the vehicle job terminal, backend closes the market/vehicle job and sets assignment_status to COMPLETED so workers can go online for the next job. If there is another stall job, assignment_status returns to WORKING."
           },
           "response": []
         },
@@ -2148,7 +1927,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Mock LINE postback. userId must match vendor_line_id. Copy vendorRejectToken from the LINE completion message token= value. Rejects the waiting ticket completion, then the worker can submit the ticket completion again."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Mock LINE postback. userId must match vendor_line_id. Copy vendorRejectToken from the LINE completion message token= value. Rejects the waiting ticket completion, sets assignment_status to REJECT, then the worker can submit the ticket completion again."
           },
           "response": []
         }

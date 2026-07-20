@@ -77,8 +77,8 @@ export async function createVehicleJobFromGate(
 ): Promise<VehicleJobDto> {
   const db = client(connection);
   const dispatchNow = input.dispatch_now === true;
-  const vehicleStatus = dispatchNow ? "DISPATCH_NOW" : "WAIT";
-  const ticketStatus = dispatchNow ? "READY" : "WAIT";
+  const vehicleStatus = dispatchNow ? "IN_PROGRESS" : "WAIT";
+  const ticketStatus = "WAIT";
   const vehicleJob = await db.vehicleJob.create({
     data: {
       vehicleJobRef: input.vehicle_job_ref,
@@ -113,7 +113,7 @@ export async function createVehicleJobFromGate(
           vendorName: ticket.vendor_name ?? null,
           vendorLineId: ticket.vendor_line_id ?? null,
           status: ticketStatus,
-          confirmationStatus: "NOT_SUBMITTED",
+          confirmationStatus: ticketStatus,
           products: {
             create: ticket.products.map((product) => ({
               productRef: product.product_ref,

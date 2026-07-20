@@ -31,6 +31,20 @@ export async function findCurrentByAccountId(
   return findActiveWorkSchedule(schedules) ?? findNextWorkSchedule(schedules);
 }
 
+export async function findById(
+  scheduleId: number,
+  connection?: DbConnection
+): Promise<WorkScheduleDto | null> {
+  const db = client(connection);
+  const schedule = await db.workerWorkSchedule.findUnique({
+    where: {
+      id: scheduleId,
+    },
+  });
+
+  return mapSchedule(schedule);
+}
+
 export async function listCurrentByAccountId(
   accountId: number | string,
   connection?: DbConnection

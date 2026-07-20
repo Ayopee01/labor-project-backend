@@ -1,5 +1,5 @@
 import { withTransaction } from "../db/prisma";
-import { enqueueWorker, getWorkerBreakCount, getWorkerPresence, getWorkerPresences, getWorkerQueueStatus, getWorkerQueueStatuses, incrementWorkerBreakCount, markWorkerBreak, markWorkerOffline, markWorkerWaiting, removeWorkerBreakReturn, scheduleWorkerBreakReturn } from "../queues/worker-queue";
+import { enqueueWorker, getWorkerBreakCount, getWorkerPresence, getWorkerPresences, getWorkerQueueStatus, getWorkerQueueStatuses, getWorkerReadyQueueRanks, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, removeWorkerBreakReturn, scheduleWorkerBreakReturn } from "../queues/worker-queue";
 import { accountRepository, profileRepository, sessionRepository, workScheduleRepository } from "../repositories/admin-workers.repository";
 import * as workerApplicationRepository from "../repositories/worker-application.repository";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
@@ -15,10 +15,10 @@ import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuery
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
 import { buildWorkScheduleShiftInstanceKey, findActiveWorkSchedule, formatScheduleWithShift, formatSchedulesWithShift, isTimeInWorkSchedule } from "../utils/shift";
-import { WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
 import { buildDeadline, formatBangkokDate } from "../utils/time";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 import { buildWorkerCode } from "../utils/worker-code";
+import { resolveWorkerWorkStatus } from "../utils/worker-status";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -630,30 +630,81 @@ function latestTimestamp(values: Array<string | null | undefined>): string | nul
 }
 
 // Function แปลง queue/assignment status เป็น column สำหรับหน้าเข้าคิวแรงงาน
-function resolveWorkerBoardStatus(
-  queue: WorkerQueueEntryDto | null,
-  assignment: VehicleJobAssignmentDto | null
-): AdminWorkerBoardStatus {
-  if (queue?.status === "break") {
-    return "break";
+// Function หาเวลาล่าสุดของขั้นตอนปัจจุบัน เช่น เข้าแอป เข้าคิว รับงาน สแกน QR หรือพัก
+const ADMIN_WORKER_STATUS_ORDER = {
+  open_app: 0,
+  ready: 1,
+  assigned: 2,
+  working: 3,
+  break: 4,
+} as const;
+
+function timestampToSortValue(value: string | null): number {
+  if (!value) {
+    return Number.POSITIVE_INFINITY;
   }
 
-  if (assignment) {
-    if (WORKING_ASSIGNMENT_STATUSES.includes(assignment.status)) {
-      return "working";
-    }
+  const timestamp = new Date(value).getTime();
 
-    return "assigned";
-  }
-
-  if (queue?.status === "ready") {
-    return "ready";
-  }
-
-  return "open_app";
+  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
 }
 
-// Function หาเวลาล่าสุดของขั้นตอนปัจจุบัน เช่น เข้าแอป เข้าคิว รับงาน สแกน QR หรือพัก
+function resolveStatusEnteredAt(
+  status: AdminWorkerBoardStatus,
+  queue: WorkerQueueEntryDto | null,
+  assignment: VehicleJobAssignmentDto | null,
+  presence: WorkerPresenceDto
+): string | null {
+  if (status === "ready") {
+    return queue?.ready_at ?? queue?.updated_at ?? presence.last_seen_at;
+  }
+
+  if (status === "assigned") {
+    return assignment?.accepted_at ?? assignment?.created_at ?? queue?.updated_at ?? presence.last_seen_at;
+  }
+
+  if (status === "working") {
+    return assignment?.scanned_at ?? assignment?.updated_at ?? assignment?.accepted_at ?? queue?.updated_at ?? presence.last_seen_at;
+  }
+
+  if (status === "break") {
+    return queue?.updated_at ?? presence.last_seen_at;
+  }
+
+  return queue?.updated_at ?? presence.last_seen_at;
+}
+
+function compareAdminWorkerStatusItems(
+  left: AdminWorkerStatusItem,
+  right: AdminWorkerStatusItem
+): number {
+  const statusOrderDiff =
+    ADMIN_WORKER_STATUS_ORDER[left.status] - ADMIN_WORKER_STATUS_ORDER[right.status];
+
+  if (statusOrderDiff !== 0) {
+    return statusOrderDiff;
+  }
+
+  if (left.status === "ready" && right.status === "ready") {
+    const leftQueuePosition = left.queue_position ?? Number.POSITIVE_INFINITY;
+    const rightQueuePosition = right.queue_position ?? Number.POSITIVE_INFINITY;
+
+    if (leftQueuePosition !== rightQueuePosition) {
+      return leftQueuePosition - rightQueuePosition;
+    }
+  }
+
+  const timestampDiff =
+    timestampToSortValue(left.status_entered_at) -
+    timestampToSortValue(right.status_entered_at);
+
+  if (timestampDiff !== 0) {
+    return timestampDiff;
+  }
+
+  return String(left.worker_code ?? "").localeCompare(String(right.worker_code ?? ""));
+}
+
 function resolveLatestActivityAt(
   queue: WorkerQueueEntryDto | null,
   assignment: VehicleJobAssignmentDto | null,
@@ -685,10 +736,11 @@ function formatAdminWorkerStatusItem(
   schedule: WorkScheduleDto | null,
   queue: WorkerQueueEntryDto | null,
   assignment: VehicleJobAssignmentDto | null,
-  presence: WorkerPresenceDto
+  presence: WorkerPresenceDto,
+  queueRank: number | null = null
 ): AdminWorkerStatusItem {
   const scheduleWithShift = formatScheduleWithShift(schedule);
-  const status = resolveWorkerBoardStatus(queue, assignment);
+  const status = resolveWorkerWorkStatus(queue, assignment);
 
   return {
     full_name: account.full_name,
@@ -697,6 +749,8 @@ function formatAdminWorkerStatusItem(
     image_url: profile?.image_url ?? null,
     shift_name: scheduleWithShift?.shift_name ?? null,
     latest_activity_at: resolveLatestActivityAt(queue, assignment, presence),
+    status_entered_at: resolveStatusEnteredAt(status, queue, assignment, presence),
+    queue_position: status === "ready" && queueRank !== null ? queueRank + 1 : null,
     status,
   };
 }
@@ -744,12 +798,13 @@ export async function getAdminWorkerStatus(idParam: unknown): Promise<AdminWorke
     typeof idParam === "number" ? idParam : String(idParam)
   );
 
-  const [profile, currentSchedule, queueEntry, assignment, presence] = await Promise.all([
+  const [profile, currentSchedule, queueEntry, assignment, presence, queueRanks] = await Promise.all([
     profileRepository.findByAccountId(account.id),
     workScheduleRepository.findCurrentByAccountId(account.id),
     getWorkerQueueStatus(account.id),
     workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
     getWorkerPresence(account.id),
+    getWorkerReadyQueueRanks([account.id]),
   ]);
 
   return formatAdminWorkerStatusItem(
@@ -758,7 +813,8 @@ export async function getAdminWorkerStatus(idParam: unknown): Promise<AdminWorke
     currentSchedule,
     queueEntry,
     assignment,
-    presence
+    presence,
+    queueRanks.get(account.id) ?? null
   );
 }
 
@@ -769,8 +825,9 @@ export async function listAdminWorkerStatuses(): Promise<{
 }> {
   const accounts = await accountRepository.listAllUsers();
   const accountIds = accounts.map((account) => account.id);
-  const [queueStatuses, presences, assignments, profiles, schedules, settings] = await Promise.all([
+  const [queueStatuses, queueRanks, presences, assignments, profiles, schedules, settings] = await Promise.all([
     getWorkerQueueStatuses(accountIds),
+    getWorkerReadyQueueRanks(accountIds),
     getWorkerPresences(accountIds),
     Promise.all(
       accountIds.map((accountId) =>
@@ -817,7 +874,8 @@ export async function listAdminWorkerStatuses(): Promise<{
           schedule,
           queueStatuses.get(account.id) ?? null,
           assignmentMap.get(account.id) ?? null,
-          presence
+          presence,
+          queueRanks.get(account.id) ?? null
         ),
       };
     })
@@ -827,7 +885,8 @@ export async function listAdminWorkerStatuses(): Promise<{
       schedule !== null &&
       isTimeInWorkSchedule(schedule)
     )
-    .map(({ item }) => item);
+    .map(({ item }) => item)
+    .sort(compareAdminWorkerStatusItems);
 
   return {
     summary: buildAdminWorkerStatusSummary(data),
@@ -856,7 +915,10 @@ export async function forceAdminWorkerStatus(
     workScheduleRepository.findCurrentByAccountId(account.id),
   ]);
 
-  if (currentAssignment) {
+  if (
+    currentAssignment &&
+    !(input.status === "ready" && currentAssignment.status === "DELIVERED")
+  ) {
     throw new ApiError(
       409,
       "WORKER_HAS_ACTIVE_ASSIGNMENT",
@@ -873,12 +935,8 @@ export async function forceAdminWorkerStatus(
     await dispatchReadyWorkers();
   }
 
-  if (input.status === "waiting") {
-    await markWorkerWaiting(account.id);
-  }
-
-  if (input.status === "offline") {
-    await markWorkerOffline(account.id);
+  if (input.status === "open_app") {
+    await markWorkerOpenApp(account.id);
   }
 
   if (input.status === "break") {
@@ -927,7 +985,11 @@ export async function forceAdminWorkerStatus(
     latestAssignment
   );
   sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
-    queue: buildWorkerQueueSocketPayload(latestQueue, latest.worker_code),
+    queue: buildWorkerQueueSocketPayload(
+      latestQueue,
+      latest.worker_code,
+      latestAssignment
+    ),
     current_assignment: latestAssignmentPayload,
     reason: "admin_force_status",
   });
@@ -937,7 +999,11 @@ export async function forceAdminWorkerStatus(
     message: `Worker ${account.full_name} status was forced by admin.`,
     payload: {
       worker_account_id: account.id,
-      queue: latestQueue,
+      queue: buildWorkerQueueSocketPayload(
+        latestQueue,
+        latest.worker_code,
+        latestAssignment
+      ),
       current_assignment: latestAssignment,
       reason: "admin_force_status",
     },

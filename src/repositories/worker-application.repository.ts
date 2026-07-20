@@ -131,7 +131,7 @@ export async function activateNextTicketIfReady(
     },
   });
 
-  const activatableTicketStatuses: string[] = [TICKET_STATUS.WAIT, TICKET_STATUS.READY];
+  const activatableTicketStatuses: string[] = [TICKET_STATUS.WAIT];
 
   if (!activatableTicketStatuses.includes(current.ticket.status)) {
     return current;
@@ -160,7 +160,7 @@ export async function listDispatchableVehicleJobs(
   const db = client(connection);
   const vehicleJobs = await db.vehicleJob.findMany({
     where: {
-      status: "DISPATCH_NOW",
+      status: VEHICLE_JOB_STATUS.IN_PROGRESS,
     },
     orderBy: {
       id: "asc",
@@ -339,6 +339,52 @@ export async function acceptAssignment(
 }
 
 // Function เปลี่ยน assignment เป็นหมดเวลารับงาน
+export async function listAcceptedAssignmentsByVehicleJob(
+  vehicleJobId: number,
+  excludedAssignmentId?: number,
+  connection?: DbConnection
+): Promise<VehicleJobAssignmentDto[]> {
+  const db = client(connection);
+  const assignments = await db.vehicleJobAssignment.findMany({
+    where: {
+      vehicleJobId,
+      status: "ACCEPTED",
+      ...(excludedAssignmentId
+        ? {
+            id: {
+              not: excludedAssignmentId,
+            },
+          }
+        : {}),
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+
+  return assignments
+    .map((assignment) => mapVehicleJobAssignment(assignment))
+    .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
+}
+
+export async function updateAssignmentScanDeadline(
+  assignmentId: number,
+  scanDeadlineAt: Date,
+  connection?: DbConnection
+): Promise<VehicleJobAssignmentDto> {
+  const db = client(connection);
+  const assignment = await db.vehicleJobAssignment.update({
+    where: {
+      id: assignmentId,
+    },
+    data: {
+      scanDeadlineAt,
+    },
+  });
+
+  return requireDto(mapVehicleJobAssignment(assignment), "assignment scan deadline");
+}
+
 export async function timeoutAssignment(
   assignmentId: number,
   connection?: DbConnection
@@ -524,7 +570,7 @@ export async function ensureTicketWorkersFromVehicleAssignments(
 }
 
 // Function เปลี่ยน ticket เป็นรอ vendor ตรวจ โดยกันการส่งยอดซ้ำจากหลาย worker
-export async function markTicketWaitingVendorConfirm(
+export async function markTicketDelivered(
   ticketId: number,
   connection?: DbConnection
 ): Promise<boolean> {
@@ -533,12 +579,12 @@ export async function markTicketWaitingVendorConfirm(
     where: {
       id: ticketId,
       status: {
-        in: ["IN_PROGRESS", "COMPLETION_REJECTED", "REOPEN"],
+        in: ["WAIT", "IN_PROGRESS", "REJECT"],
       },
     },
     data: {
-      status: "WAITING_VENDOR_CONFIRM",
-      confirmationStatus: "WAITING_VENDOR_CONFIRM",
+      status: "DELIVERED",
+      confirmationStatus: "DELIVERED",
     },
   });
 
@@ -556,7 +602,7 @@ export async function createTicketCompletionSubmission(
     data: {
       ticketId,
       submittedByWorkerAccountId: workerAccountId,
-      status: "WAITING_VENDOR_CONFIRM",
+      status: "DELIVERED",
     },
   });
 
@@ -567,6 +613,66 @@ export async function createTicketCompletionSubmission(
 }
 
 // Function ดึง submission ล่าสุดที่รอ vendor confirm/reject
+export async function markVehicleAssignmentsDelivered(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<number> {
+  const db = client(connection);
+  const result = await db.vehicleJobAssignment.updateMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: WORKING_ASSIGNMENT_STATUSES,
+      },
+    },
+    data: {
+      status: "DELIVERED",
+    },
+  });
+
+  return result.count;
+}
+
+export async function markVehicleAssignmentsRejected(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<number> {
+  const db = client(connection);
+  const result = await db.vehicleJobAssignment.updateMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: WORKING_ASSIGNMENT_STATUSES,
+      },
+    },
+    data: {
+      status: "REJECT",
+    },
+  });
+
+  return result.count;
+}
+
+export async function markVehicleAssignmentsWorking(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<number> {
+  const db = client(connection);
+  const result = await db.vehicleJobAssignment.updateMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: WORKING_ASSIGNMENT_STATUSES,
+      },
+    },
+    data: {
+      status: "WORKING",
+    },
+  });
+
+  return result.count;
+}
+
 export async function findWaitingTicketCompletionSubmission(
   ticketId: number,
   connection?: DbConnection
@@ -575,7 +681,7 @@ export async function findWaitingTicketCompletionSubmission(
   const submission = await db.ticketCompletionSubmission.findFirst({
     where: {
       ticketId,
-      status: "WAITING_VENDOR_CONFIRM",
+      status: "DELIVERED",
     },
     orderBy: {
       id: "desc",
@@ -598,11 +704,11 @@ export async function confirmTicketCompletion(
   const updateResult = await db.gateTicket.updateMany({
     where: {
       id: ticketId,
-      status: "WAITING_VENDOR_CONFIRM",
+      status: "DELIVERED",
     },
     data: {
-      status: "CLOSED",
-      confirmationStatus: "CONFIRMED",
+      status: "COMPLETED",
+      confirmationStatus: "COMPLETED",
     },
   });
 
@@ -630,7 +736,7 @@ export async function confirmTicketCompletion(
         id: submissionId,
       },
       data: {
-        status: "CONFIRMED",
+        status: "COMPLETED",
         confirmedAt: new Date(),
       },
     }),
@@ -788,11 +894,11 @@ export async function rejectTicketCompletion(
   const updateResult = await db.gateTicket.updateMany({
     where: {
       id: ticketId,
-      status: "WAITING_VENDOR_CONFIRM",
+      status: "DELIVERED",
     },
     data: {
-      status: "COMPLETION_REJECTED",
-      confirmationStatus: "REJECTED",
+      status: "REJECT",
+      confirmationStatus: "REJECT",
     },
   });
 
@@ -805,7 +911,7 @@ export async function rejectTicketCompletion(
       ticketId,
     },
     data: {
-      status: "COMPLETION_REJECTED",
+      status: "REJECT",
     },
   });
 
@@ -820,7 +926,7 @@ export async function rejectTicketCompletion(
         id: submissionId,
       },
       data: {
-        status: "REJECTED",
+        status: "REJECT",
         rejectedAt: new Date(),
       },
     }),

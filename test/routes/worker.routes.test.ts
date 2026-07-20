@@ -219,7 +219,7 @@ test("POST /api/workers/me/online dispatches an existing ready job when queue wa
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.status, "busy");
+  assert.equal(response.body.status, "assigned");
   assert.equal(state.assignments.length, 1);
   assert.equal(state.assignments[0].vehicle_job_id, job.id);
   assert.equal(state.assignments[0].worker_account_id, worker.id);
@@ -272,10 +272,30 @@ test("POST /api/workers/me/offline returns worker daily summary", async () => {
   ]);
   assert.equal(response.body.full_name, worker.full_name);
   assert.equal(response.body.worker_code, `W${worker.id}`);
-  assert.equal(response.body.status, "offline");
+  assert.equal(response.body.status, "open_app");
   assert.equal(response.body.today_job_count, 0);
   assert.equal(response.body.break_count_used, 0);
   assert.equal(response.body.completed_job_count, 0);
+});
+
+test("POST /api/workers/me/online rejects re-entry after worker ends the shift", async () => {
+  const { token, worker } = await loginWorker(106);
+  state.connectedWorkers.add(worker.id);
+
+  const firstOnline = await server.request("POST", "/api/workers/me/online", {
+    token,
+  });
+  const offline = await server.request("POST", "/api/workers/me/offline", {
+    token,
+  });
+  const secondOnline = await server.request("POST", "/api/workers/me/online", {
+    token,
+  });
+
+  assert.equal(firstOnline.status, 200);
+  assert.equal(offline.status, 200);
+  assert.equal(secondOnline.status, 409);
+  assert.equal(secondOnline.body.code, "WORKER_SHIFT_CLOSED");
 });
 
 test("POST /api/workers/me/break returns worker break summary", async () => {
@@ -301,7 +321,7 @@ test("POST /api/workers/me/break returns worker break summary", async () => {
   assert.equal(response.body.worker_code, `W${worker.id}`);
   assert.equal(response.body.status, "break");
   assert.equal(response.body.break_count_used, 1);
-  assert.equal(response.body.break_count_limit, 5);
+  assert.equal(response.body.break_count_limit, 4);
 
   const breakSocketEvent = [...state.socketEvents]
     .reverse()
@@ -325,7 +345,7 @@ test("POST /api/workers/me/break returns worker break summary", async () => {
   assert.equal(typeof breakSocketQueue?.created_at, "string");
   assert.equal(typeof breakSocketQueue?.updated_at, "string");
   assert.equal(breakSocketQueue?.break_count_used, 1);
-  assert.equal(breakSocketQueue?.break_count_limit, 5);
+  assert.equal(breakSocketQueue?.break_count_limit, 4);
 });
 
 test("POST /api/workers/me/online ends break early and removes pending break return job", async () => {
@@ -384,6 +404,43 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
   assert.equal(response.body.shift.end_time, "23:59");
   assert.equal("break_until" in response.body, false);
   assert.equal("remaining_break_time" in response.body, false);
+});
+
+test("GET /api/workers/me/status returns open_app when worker is not ready yet", async () => {
+  const { token } = await loginWorker(108);
+
+  const response = await server.request("GET", "/api/workers/me/status", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "open_app");
+});
+
+test("GET /api/workers/me/status maps pending assignment to assigned", async () => {
+  const { token, worker } = await loginWorker(109);
+  addPendingAssignment(10901, 1090, worker.id);
+
+  const response = await server.request("GET", "/api/workers/me/status", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "assigned");
+});
+
+test("GET /api/workers/me/status maps scanned assignment to working", async () => {
+  const { token, worker } = await loginWorker(110);
+  const assignment = addPendingAssignment(11001, 1100, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+
+  const response = await server.request("GET", "/api/workers/me/status", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "working");
 });
 
 test("GET /api/workers/me/status returns remaining break time while on break", async () => {
@@ -450,6 +507,19 @@ test("worker queue keeps FIFO order when workers enter in the same millisecond",
   );
 });
 
+test("worker queue can return admin-cancelled workers to the front in priority order", async () => {
+  await workerQueue.enqueueWorker(11);
+  await workerQueue.enqueueWorker(12);
+  await workerQueue.enqueueWorkersAtFront([21, 22]);
+
+  const popped = await workerQueue.popReadyWorkers(4);
+
+  assert.deepEqual(
+    popped.map((worker) => worker.account_id),
+    [21, 22, 11, 12]
+  );
+});
+
 /* -------------------------------------- Worker Dispatch Flow Tests -------------------------------------- */
 
 // Test dispatch function ว่าจ่ายงานให้ worker ที่ ready ตามลำดับ FIFO และเหลือคนถัดไปในคิว
@@ -472,8 +542,8 @@ test("dispatch assigns ready workers in FIFO order", async () => {
     state.assignments.map((assignment) => assignment.worker_account_id),
     [11, 12]
   );
-  assert.equal((await workerQueue.getWorkerQueueStatus(11))?.status, "busy");
-  assert.equal((await workerQueue.getWorkerQueueStatus(12))?.status, "busy");
+  assert.equal((await workerQueue.getWorkerQueueStatus(11))?.status, "assigned");
+  assert.equal((await workerQueue.getWorkerQueueStatus(12))?.status, "assigned");
   assert.equal((await workerQueue.getWorkerQueueStatus(13))?.status, "ready");
   const assignedEvent = state.socketEvents.find(
     (event) => event.event === "WORKER_ASSIGNED" && event.accountId === 11
@@ -512,8 +582,8 @@ test("dispatch skips disconnected worker and assigns the next ready worker", asy
   // Step Act dispatch งานจาก queue
   await workerDispatch.dispatchReadyWorkers();
 
-  // Step Assert คนหลุดถูก offline และคนถัดไปได้ assignment
-  assert.equal((await workerQueue.getWorkerQueueStatus(21))?.status, "offline");
+  // Step Assert คนหลุดถูก open_app และคนถัดไปได้ assignment
+  assert.equal((await workerQueue.getWorkerQueueStatus(21))?.status, "open_app");
   assert.deepEqual(
     state.assignments.map((assignment) => assignment.worker_account_id),
     [22]
@@ -598,6 +668,22 @@ test("POST /api/workers/me/assignments/:vehicleJobRef/accept accepts pending ass
   assert.equal(acceptedPayload.id, undefined);
   assert.equal(acceptedPayload.vehicle_job_id, undefined);
   assert.equal(acceptedPayload.worker_account_id, undefined);
+  const scanTimeoutJob = state.queueJobs
+    .get(process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string)
+    ?.get("assignment-scan-timeout-951");
+  assert.deepEqual(scanTimeoutJob?.data, {
+    assignmentId: 951,
+    workerAccountId: worker.id,
+    kind: "scan",
+  });
+  const scanWarningJob = state.queueJobs
+    .get(process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string)
+    ?.get("assignment-scan-warning-951");
+  assert.deepEqual(scanWarningJob?.data, {
+    assignmentId: 951,
+    workerAccountId: worker.id,
+    kind: "scan_warning",
+  });
 });
 
 // Test endpoint accept assignment ว่า accept ช้าเกิน deadline จะ timeout และ requeue worker ที่ยัง online
@@ -630,6 +716,37 @@ test("POST /api/workers/me/assignments/:vehicleJobRef/accept times out late acce
 });
 
 // Test endpoint check-in QR ว่า worker scan QR ถูกต้องแล้ว assignment ไปสถานะ SCANNED
+test("POST /api/workers/me/assignments/:vehicleJobRef/accept closes worker shift after configured timeout limit", async () => {
+  const { token, worker } = await loginWorker(53);
+  state.connectedWorkers.add(worker.id);
+
+  for (const suffix of [8531, 8532, 8533]) {
+    const job = addDispatchableJob(suffix, 1);
+    job.status = "WAIT";
+    addPendingAssignment(suffix, job.id, worker.id, -1000);
+
+    const response = await server.request("POST", `/api/workers/me/assignments/${job.vehicle_job_ref}/accept`, {
+      token,
+    });
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.code, "ASSIGNMENT_TIMEOUT");
+  }
+
+  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "open_app");
+  assert.equal(state.assignments.every((assignment) => assignment.status === "TIMEOUT"), true);
+  assert.ok(
+    state.notifications.some((notification) => {
+      const payload = (notification as { payload?: { reason?: string; timeout_count?: number } }).payload;
+
+      return (
+        payload?.reason === "assignment_timeout_limit_reached" &&
+        payload.timeout_count === 3
+      );
+    })
+  );
+});
+
 test("POST /api/workers/me/assignments/:vehicleJobRef/check-in-qr scans correct QR", async () => {
   // Step Arrange เตรียม assignment ที่รับงานแล้วและ QR ของงานรถ
   const { token, worker } = await loginWorker(61);
@@ -662,6 +779,76 @@ test("POST /api/workers/me/assignments/:vehicleJobRef/check-in-qr scans correct 
 });
 
 // Test endpoint check-in QR ว่า worker scan QR ผิดต้องถูก reject
+test("POST /api/workers/me/assignments/:vehicleJobRef/check-in-qr shortens remaining team scan window from settings", async () => {
+  const [{ token, worker }, second, third] = await Promise.all([
+    loginWorker(64),
+    loginWorker(65),
+    loginWorker(66),
+  ]);
+  const job = addDispatchableJob(864, 3);
+  const firstAssignment = addPendingAssignment(964, job.id, worker.id);
+  const secondAssignment = addPendingAssignment(965, job.id, second.worker.id);
+  const thirdAssignment = addPendingAssignment(966, job.id, third.worker.id);
+  const teamScanRemainingMinutes = 5;
+  const originalDeadline = new Date(Date.now() + 15 * 60_000).toISOString();
+
+  for (const assignment of [firstAssignment, secondAssignment, thirdAssignment]) {
+    assignment.status = "ACCEPTED";
+    assignment.scan_deadline_at = originalDeadline;
+  }
+
+  const startedAt = Date.now();
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.vehicle_job_ref}/check-in-qr`, {
+    token,
+    body: {
+      qr_token: job.worker_qr_token,
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(firstAssignment.status, "SCANNED");
+  assert.equal(job.status, "IN_PROGRESS");
+
+  for (const assignment of [secondAssignment, thirdAssignment]) {
+    assert.equal(assignment.status, "ACCEPTED");
+    assert.ok(assignment.scan_deadline_at);
+    const shortenedDeadlineMs = new Date(assignment.scan_deadline_at).getTime();
+    assert.ok(shortenedDeadlineMs >= startedAt + teamScanRemainingMinutes * 60_000 - 2_000);
+    assert.ok(shortenedDeadlineMs <= Date.now() + teamScanRemainingMinutes * 60_000 + 2_000);
+    assert.ok(shortenedDeadlineMs < new Date(originalDeadline).getTime());
+    assert.deepEqual(
+      state.queueJobs
+        .get(process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string)
+        ?.get(`assignment-scan-timeout-${assignment.id}`)?.data,
+      {
+        assignmentId: assignment.id,
+        workerAccountId: assignment.worker_account_id,
+        kind: "scan",
+      }
+    );
+    assert.deepEqual(
+      state.queueJobs
+        .get(process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string)
+        ?.get(`assignment-scan-warning-${assignment.id}`)?.data,
+      {
+        assignmentId: assignment.id,
+        workerAccountId: assignment.worker_account_id,
+        kind: "scan_warning",
+      }
+    );
+  }
+
+  const shortenedEvents = state.realtimeEvents.filter(
+    (item) =>
+      (item as { type?: string }).type === "ASSIGNMENT_SCAN_DEADLINE_SHORTENED"
+  );
+  assert.equal(shortenedEvents.length, 1);
+  assert.deepEqual(
+    ((shortenedEvents[0] as { worker_account_ids?: number[] }).worker_account_ids ?? []).sort(),
+    [second.worker.id, third.worker.id].sort()
+  );
+});
+
 test("POST /api/workers/me/assignments/:vehicleJobRef/check-in-qr rejects wrong QR", async () => {
   // Step Arrange เตรียม assignment ที่รับงานแล้ว
   const { token, worker } = await loginWorker(62);
@@ -700,8 +887,22 @@ test("POST /api/workers/me/assignments/:vehicleJobRef/check-in-qr rejects expire
 
   assert.equal(response.status, 409);
   assert.equal(response.body.code, "QR_EXPIRED");
-  assert.equal(assignment.status, "ACCEPTED");
-  assert.equal(job.status, "DISPATCH_NOW");
+  assert.equal(assignment.status, "TIMEOUT");
+  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "open_app");
+  const statusResponse = await server.request("GET", "/api/workers/me/status", {
+    token,
+  });
+  assert.equal(statusResponse.status, 200);
+  assert.equal(statusResponse.body.status, "open_app");
+  assert.equal(job.status, "IN_PROGRESS");
+  const timeoutEvent = state.socketEvents.find(
+    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_TIMEOUT"
+  );
+  assert.ok(timeoutEvent);
+  assert.equal(
+    (timeoutEvent.payload as { reason?: string }).reason,
+    "scan_timeout"
+  );
 });
 
 /* -------------------------------------- Worker Ticket Route Tests -------------------------------------- */
@@ -716,7 +917,7 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete submits quantities for 
   assignment.status = "SCANNED";
   assignment.scanned_at = new Date().toISOString();
   state.connectedWorkers.add(worker.id);
-  await workerQueue.markWorkerBusy(worker.id);
+  await workerQueue.markWorkerAssigned(worker.id);
   const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
   const originalDebugLinePostback = process.env.LINE_DEBUG_POSTBACK_RESPONSE;
   process.env.LINE_DEBUG_POSTBACK_RESPONSE = "true";
@@ -740,6 +941,7 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete submits quantities for 
   // Step Assert ticket รอ vendor confirm และมี LINE/realtime event ถูกส่งออก
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
+    "assignment_status",
     "confirmation_status",
     "debug_line_postback",
     "items",
@@ -754,8 +956,10 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete submits quantities for 
     "ticket_no",
     "vehicle_job_ref",
   ]);
-  assert.equal(response.body.status, "WAITING_VENDOR_CONFIRM");
-  assert.equal(response.body.confirmation_status, "WAITING_VENDOR_CONFIRM");
+  assert.equal(response.body.status, "DELIVERED");
+  assert.equal(response.body.confirmation_status, "DELIVERED");
+  assert.equal(response.body.assignment_status, "DELIVERED");
+  assert.equal(assignment.status, "DELIVERED");
   assert.equal(response.body.vehicle_job_ref, job.vehicle_job_ref);
   assert.equal(response.body.market_job_ref, "MARKET-871");
   assert.equal(response.body.stall_job_ref, ticket.stall_job_ref);
@@ -768,6 +972,14 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete submits quantities for 
     ["10", "4"]
   );
   assert.equal(state.lineMessages.length, 1);
+  const vendorTimeoutJob = state.queueJobs
+    .get(process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string)
+    ?.get(`vendor-confirm-timeout-${ticket.id}-${state.completionSubmissions[0].id}`);
+  assert.deepEqual(vendorTimeoutJob?.data, {
+    ticketId: ticket.id,
+    submissionId: state.completionSubmissions[0].id,
+    kind: "vendor_confirm",
+  });
   assert.ok(
     state.realtimeEvents.some(
       (event) =>
@@ -792,6 +1004,7 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete submits quantities for 
   assert.equal(submittedWorkerPayload?.market_job_ref, "MARKET-871");
   assert.equal(submittedWorkerPayload?.stall_job_ref, ticket.stall_job_ref);
   assert.equal(submittedWorkerPayload?.ticket_no, ticket.ticket_no);
+  assert.equal(submittedWorkerPayload?.assignment_status, "DELIVERED");
   assert.equal(submittedWorkerPayload?.ticket_id, undefined);
   assert.equal(submittedWorkerPayload?.submission_id, undefined);
   assert.equal(submittedWorkerPayload?.vehicle_job_id, undefined);
@@ -841,7 +1054,8 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete submits quantities for 
 
   assert.equal(lineResponse.status, 200);
   assert.equal(lineResponse.body.processed, 1);
-  assert.equal(ticket.status, "CLOSED");
+  assert.equal(vendorTimeoutJob?.removed, true);
+  assert.equal(ticket.status, "COMPLETED");
   assert.equal(assignment.status, "COMPLETED");
   assert.equal(job.status, "COMPLETED");
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");
@@ -876,6 +1090,7 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete submits quantities for 
   assert.equal(resultWorkerPayload?.market_job_ref, "MARKET-871");
   assert.equal(resultWorkerPayload?.stall_job_ref, ticket.stall_job_ref);
   assert.equal(resultWorkerPayload?.ticket_no, ticket.ticket_no);
+  assert.equal(resultWorkerPayload?.assignment_status, "COMPLETED");
   assert.equal(resultWorkerPayload?.ticket_id, undefined);
   assert.equal(resultWorkerPayload?.submission_id, undefined);
   assert.equal(resultWorkerPayload?.vehicle_job_id, undefined);
@@ -893,14 +1108,94 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete submits quantities for 
 });
 
 // Test endpoint complete ticket ว่า reject เมื่อส่งจำนวนสินค้าไม่ครบทุก product ใน ticket
-test("POST /api/workers/me/tickets/:stallJobRef/complete rejects next stall before current stall closes", async () => {
+test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows resubmit", async () => {
+  const { token, worker } = await loginWorker(75);
+  const job = addDispatchableJob(875, 1);
+  const ticket = addTicketForVehicleJob(job.id, 976);
+  const assignment = addPendingAssignment(1076, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+  const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+  const originalDebugLinePostback = process.env.LINE_DEBUG_POSTBACK_RESPONSE;
+  process.env.LINE_DEBUG_POSTBACK_RESPONSE = "true";
+
+  const submitResponse = await server.request("POST", `/api/workers/me/tickets/${ticket.stall_job_ref}/complete`, {
+    token,
+    body: {
+      items: products.map((product) => ({
+        product_ref: product.product_ref,
+        confirmed_quantity: Number(product.quantity),
+      })),
+    },
+  });
+  if (originalDebugLinePostback === undefined) {
+    delete process.env.LINE_DEBUG_POSTBACK_RESPONSE;
+  } else {
+    process.env.LINE_DEBUG_POSTBACK_RESPONSE = originalDebugLinePostback;
+  }
+
+  assert.equal(submitResponse.status, 200);
+  assert.equal(submitResponse.body.assignment_status, "DELIVERED");
+  assert.equal(assignment.status, "DELIVERED");
+
+  const rejectResponse = await server.request("POST", "/api/line/webhook", {
+    body: {
+      events: [
+        {
+          type: "postback",
+          source: {
+            userId: ticket.vendor_line_id,
+          },
+          postback: {
+            data: submitResponse.body.debug_line_postback.reject,
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(rejectResponse.status, 200);
+  assert.equal(rejectResponse.body.processed, 1);
+  assert.equal(ticket.status, "REJECT");
+  assert.equal(ticket.confirmation_status, "REJECT");
+  assert.equal(assignment.status, "REJECT");
+  const rejectEvent = [...state.realtimeEvents].reverse().find(
+    (event) =>
+      Boolean(
+        event &&
+          typeof event === "object" &&
+          (event as { type?: string }).type === "TICKET_COMPLETION_RESULT"
+      )
+  );
+  assert.equal(
+    (rejectEvent as { worker_payload?: Record<string, unknown> }).worker_payload
+      ?.assignment_status,
+    "REJECT"
+  );
+
+  const resubmitResponse = await server.request("POST", `/api/workers/me/tickets/${ticket.stall_job_ref}/complete`, {
+    token,
+    body: {
+      items: products.map((product) => ({
+        product_ref: product.product_ref,
+        confirmed_quantity: Number(product.quantity),
+      })),
+    },
+  });
+
+  assert.equal(resubmitResponse.status, 200);
+  assert.equal(resubmitResponse.body.assignment_status, "DELIVERED");
+  assert.equal(assignment.status, "DELIVERED");
+});
+
+test("POST /api/workers/me/tickets/:stallJobRef/complete allows submitting another stall in the same job", async () => {
   const { token, worker } = await loginWorker(73);
   const job = addDispatchableJob(873, 1);
   const currentTicket = addTicketForVehicleJob(job.id, 973);
   const nextTicket = addTicketForVehicleJob(job.id, 974);
   const assignment = addPendingAssignment(1073, job.id, worker.id);
   assignment.status = "SCANNED";
-  nextTicket.status = "READY";
+  nextTicket.status = "WAIT";
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === nextTicket.id
   );
@@ -915,11 +1210,14 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete rejects next stall befo
     },
   });
 
-  assert.equal(response.status, 409);
-  assert.equal(response.body.code, "CURRENT_STALL_NOT_COMPLETED");
-  assert.equal(response.body.current_stall_job_ref, currentTicket.stall_job_ref);
-  assert.equal(nextTicket.status, "READY");
-  assert.equal(state.lineMessages.length, 0);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "DELIVERED");
+  assert.equal(response.body.assignment_status, "DELIVERED");
+  assert.equal(response.body.stall_job_ref, nextTicket.stall_job_ref);
+  assert.equal(currentTicket.status, "IN_PROGRESS");
+  assert.equal(nextTicket.status, "DELIVERED");
+  assert.equal(assignment.status, "DELIVERED");
+  assert.equal(state.lineMessages.length, 1);
 });
 
 test("POST /api/workers/me/tickets/:stallJobRef/complete rejects before all required workers check in", async () => {
@@ -970,16 +1268,17 @@ test("POST /api/workers/me/tickets/:stallJobRef/complete rejects incomplete prod
     },
   });
 
-  // Step Assert route reject ก่อนเปลี่ยน ticket เป็น waiting vendor confirm
+  // Step Assert route reject ก่อนเปลี่ยน ticket เป็นรอ vendor confirm
   assert.equal(response.status, 400);
   assert.equal(response.body.code, "INCOMPLETE_TICKET_PRODUCTS");
   assert.equal(ticket.status, "IN_PROGRESS");
   assert.equal(state.lineMessages.length, 0);
 });
 
-test("break return marks worker offline when WebSocket is still disconnected", async () => {
+test("break return moves worker to open_app when WebSocket is still disconnected", async () => {
   const { token, worker } = await loginWorker(106);
   const breakQueueName = process.env.BULLMQ_WORKER_BREAK_RETURN_QUEUE as string;
+  const assignmentQueueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
   state.connectedWorkers.add(worker.id);
   await server.request("POST", "/api/workers/me/online", {
     token,
@@ -991,8 +1290,10 @@ test("break return marks worker offline when WebSocket is still disconnected", a
 
   workerDispatch.startAssignmentTimeoutProcessing();
   const breakReturnProcessor = state.workerProcessors.get(breakQueueName);
+  const assignmentTimeoutProcessor = state.workerProcessors.get(assignmentQueueName);
 
   assert.ok(breakReturnProcessor);
+  assert.ok(assignmentTimeoutProcessor);
   await breakReturnProcessor({
     data: {
       accountId: worker.id,
@@ -1000,9 +1301,39 @@ test("break return marks worker offline when WebSocket is still disconnected", a
     },
   });
 
-  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "offline");
+  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "open_app");
   assert.equal(
     (state.notifications.at(-1) as { payload?: { reason?: string } })?.payload?.reason,
     "break_finished_not_available"
+  );
+
+  const job = addDispatchableJob(999, 1);
+  const assignment = addPendingAssignment(1999, job.id, worker.id);
+  assignment.status = "ACCEPTED";
+  assignment.scan_deadline_at = new Date(Date.now() + 90_000).toISOString();
+
+  await assignmentTimeoutProcessor({
+    data: {
+      assignmentId: assignment.id,
+      workerAccountId: worker.id,
+      kind: "scan_warning",
+    },
+  });
+
+  const warningNotification = state.notifications.find(
+    (notification) =>
+      (notification as { type?: string }).type === "ASSIGNMENT_SCAN_DEADLINE_WARNING"
+  ) as { payload?: Record<string, unknown> } | undefined;
+
+  assert.ok(warningNotification);
+  assert.equal(warningNotification.payload?.vehicle_job_ref, job.vehicle_job_ref);
+  assert.equal(warningNotification.payload?.worker_code, `W${worker.id}`);
+  assert.equal(warningNotification.payload?.assignment_status, "ACCEPTED");
+  assert.equal(warningNotification.payload?.worker_status, "assigned");
+  assert.equal(warningNotification.payload?.warning_before_minutes, 2);
+  assert.equal(
+    Number(warningNotification.payload?.remaining_seconds) > 0 &&
+      Number(warningNotification.payload?.remaining_seconds) <= 120,
+    true
   );
 });

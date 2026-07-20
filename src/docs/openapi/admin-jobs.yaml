@@ -58,47 +58,19 @@
     get:
       tags:
         - Admin Jobs
-      summary: List online workers in the current shift for the worker queue board.
+      summary: List online current-shift workers sorted by board status and real queue/status order.
       operationId: listAdminJobWorkerStatuses
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Online current-shift worker status list for admin job operations.
+          description: Online current-shift worker status list for admin job operations. Data is sorted by status column and status_entered_at, with ready workers ordered by Redis queue_position.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminWorkerStatusListResponse"
         "403":
           description: Authenticated account lacks jobs:read permission.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/jobs/workers/status/{id}:
-    get:
-      tags:
-        - Admin Jobs
-      summary: Get a worker queue state and active assignment for admin job tracking.
-      operationId: getAdminJobWorkerStatus
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-          description: Worker code or username, for example MN000115.
-      responses:
-        "200":
-          description: Worker status for admin job operations.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminWorkerStatusResponse"
-        "404":
-          description: Worker account not found.
           content:
             application/json:
               schema:
@@ -143,12 +115,12 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/vehicle-jobs:
+  /api/admin/vehicle-jobs/history:
     get:
       tags:
         - Admin Jobs
-      summary: List vehicle jobs for admin operations.
-      operationId: listAdminVehicleJobs
+      summary: List vehicle job history for admin operations.
+      operationId: listAdminVehicleJobHistory
       security:
         - bearerAuth: []
       parameters:
@@ -158,7 +130,21 @@
             type: string
             format: date
             example: "2026-07-07"
-          description: Optional vehicle job created date in YYYY-MM-DD format. If omitted, all dates are returned.
+          description: Optional legacy single-day filter in YYYY-MM-DD format. Equivalent to sending date_from and date_to as the same date.
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+            example: "2026-07-01"
+          description: Optional created date range start in YYYY-MM-DD format, interpreted in Asia/Bangkok.
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Optional created date range end in YYYY-MM-DD format, inclusive and interpreted in Asia/Bangkok.
         - in: query
           name: page
           schema:
@@ -178,108 +164,57 @@
           name: search
           schema:
             type: string
-          description: Search by vehicle, market, stall, ticket, or license plate reference.
+          description: Search by vehicle job ref, license plate, gate transaction ref, market ref/name, stall job ref, ticket no, or stall no.
         - in: query
           name: status
           schema:
             type: string
-          description: Filter by vehicle job status.
+            enum:
+              - WAIT
+              - IN_PROGRESS
+              - DELIVERED
+              - REJECT
+              - COMPLETED
+              - CANCELLED
+              - PENDING
+              - ACCEPTED
+              - SCANNED
+              - WORKING
+              - TIMEOUT
+          description: Filter by status at vehicle, market, stall, stall confirmation, or worker assignment level.
       responses:
         "200":
-          description: Vehicle job list.
+          description: Vehicle job history list with markets, stall jobs, and products.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminVehicleJobListResponse"
-  /api/admin/vehicle-jobs/{vehicleJobRef}:
-    get:
-      tags:
-        - Admin Jobs
-      summary: Get vehicle job detail for admin tracking.
-      operationId: getAdminVehicleJob
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: vehicleJobRef
-          required: true
-          schema:
-            type: string
-            example: VEH-20260706-0001
-      responses:
-        "200":
-          description: Vehicle job detail.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/VehicleJobDetailResponse"
-        "404":
-          description: Vehicle job not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/vehicle-jobs/{vehicleJobRef}/cancel:
+  /api/admin/jobs/cancel:
     post:
       tags:
         - Admin Jobs
-      summary: Cancel an entire vehicle job without requeueing assigned workers.
-      operationId: cancelAdminVehicleJob
+      summary: Cancel a vehicle, market, or stall job using one endpoint.
+      operationId: cancelAdminJob
       security:
         - bearerAuth: []
-      parameters:
-        - in: path
-          name: vehicleJobRef
-          required: true
-          schema:
-            type: string
-            example: VEH-20260706-0001
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AdminCancelRequest"
+              $ref: "#/components/schemas/AdminJobCancelRequest"
       responses:
         "200":
-          description: Vehicle job cancelled.
+          description: Job cancelled.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AdminCancelVehicleJobResponse"
-  /api/admin/vehicle-jobs/{vehicleJobRef}/cancel-and-requeue:
-    post:
-      tags:
-        - Admin Jobs
-      summary: Cancel an entire vehicle job and requeue assigned workers at the tail.
-      operationId: cancelAdminVehicleJobAndRequeue
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: vehicleJobRef
-          required: true
-          schema:
-            type: string
-            example: VEH-20260706-0001
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AdminCancelRequest"
-      responses:
-        "200":
-          description: Vehicle job cancelled and workers requeued.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminCancelVehicleJobRequeueResponse"
+                $ref: "#/components/schemas/AdminJobCancelResponse"
   /api/admin/vehicle-jobs/{vehicleJobRef}/assign-workers:
     post:
       tags:
         - Admin Jobs
-      summary: Manually assign a vehicle job to selected workers.
+      summary: Manually assign a vehicle job to selected workers who are ready in queue.
       operationId: assignAdminVehicleJobWorkers
       security:
         - bearerAuth: []
@@ -307,7 +242,7 @@
     post:
       tags:
         - Admin Jobs
-      summary: Extend scan deadline for all accepted workers in a vehicle job or selected workers only.
+      summary: Extend scan deadline for accepted workers whose scan deadline has not expired.
       operationId: extendAdminVehicleJobScanDeadline
       security:
         - bearerAuth: []
@@ -365,94 +300,3 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminCancelAssignmentResponse"
-  /api/admin/market-jobs/{marketJobRef}/cancel:
-    post:
-      tags:
-        - Admin Jobs
-      summary: Cancel a market job and all stall jobs under that market.
-      operationId: cancelAdminMarketJob
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: marketJobRef
-          required: true
-          schema:
-            type: string
-            example: MARKETJOB-001
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AdminCancelRequest"
-      responses:
-        "200":
-          description: Market job cancelled.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminCancelMarketJobResponse"
-  /api/admin/stall-jobs/{stallJobRef}/cancel:
-    post:
-      tags:
-        - Admin Jobs
-      summary: Cancel one stall job only.
-      operationId: cancelAdminStallJob
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: stallJobRef
-          required: true
-          schema:
-            type: string
-            example: STALLJOB-001
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AdminCancelRequest"
-      responses:
-        "200":
-          description: Stall job cancelled.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminCancelStallJobResponse"
-  /api/admin/stall-jobs/{stallJobRef}/reopen:
-    post:
-      tags:
-        - Admin Jobs
-      summary: Reopen one closed stall job so workers can submit corrected quantities again.
-      operationId: reopenAdminStallJob
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: stallJobRef
-          required: true
-          schema:
-            type: string
-            example: STALLJOB-001
-          description: stall_job_ref at stall/vendor level.
-      responses:
-        "200":
-          description: Stall job reopened.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AdminReopenStallJobResponse"
-        "404":
-          description: Stall job not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "409":
-          description: Stall job is not closed yet.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"

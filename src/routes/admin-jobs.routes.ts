@@ -47,20 +47,6 @@ router.get(
   }
 );
 
-// Route ดึงสถานะ worker รายคนสำหรับหน้า monitor/dispatch
-router.get(
-  "/jobs/workers/status/:id",
-  permissionMiddleware(["jobs:read"]),
-  async (req, res, next) => {
-    try {
-      const result = await adminWorkersService.getAdminWorkerStatus(req.params.id);
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
 // Route บังคับเปลี่ยนสถานะ worker จากหน้า monitor/dispatch
 router.post(
   "/jobs/workers/:id/status/force",
@@ -78,61 +64,27 @@ router.post(
   }
 );
 
+// Route ยกเลิกงานระดับรถ/ตลาด/แผงผ่าน endpoint เดียว
+router.post(
+  "/jobs/cancel",
+  permissionMiddleware(["jobs:cancel"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.cancelJob(req.body);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // Route ดึงรายการงานรถสำหรับ Admin
 router.get(
-  "/vehicle-jobs",
+  "/vehicle-jobs/history",
   permissionMiddleware(["jobs:read"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.listVehicleJobs(req.query);
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Route ดึงรายละเอียดงานรถพร้อมตลาด ตั๋ว และสินค้า
-router.get(
-  "/vehicle-jobs/:vehicleJobRef",
-  permissionMiddleware(["jobs:read"]),
-  async (req, res, next) => {
-    try {
-      const result = await adminJobsService.getVehicleJob(req.params.vehicleJobRef);
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Route ยกเลิกงานรถทั้งคัน
-router.post(
-  "/vehicle-jobs/:vehicleJobRef/cancel",
-  permissionMiddleware(["jobs:cancel"]),
-  async (req, res, next) => {
-    try {
-      const result = await adminJobsService.cancelVehicleJob(
-        req.params.vehicleJobRef,
-        req.body
-      );
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Route ยกเลิกงานรถและนำ worker กลับเข้าคิว
-router.post(
-  "/vehicle-jobs/:vehicleJobRef/cancel-and-requeue",
-  permissionMiddleware(["jobs:cancel"]),
-  async (req, res, next) => {
-    try {
-      const result = await adminJobsService.cancelVehicleJobAndRequeue(
-        req.params.vehicleJobRef,
-        req.body
-      );
       res.json(result);
     } catch (error) {
       next(error);
@@ -184,57 +136,6 @@ router.post(
         req.params.vehicleJobRef,
         req.params.workerCode,
         req.body
-      );
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Route ยกเลิกงานตลาด
-router.post(
-  "/market-jobs/:marketJobRef/cancel",
-  permissionMiddleware(["jobs:cancel"]),
-  async (req, res, next) => {
-    try {
-      const result = await adminJobsService.cancelMarketJob(
-        req.params.marketJobRef,
-        req.body
-      );
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Route ยกเลิกงานแผงหรือตั๋วรายใบ
-router.post(
-  "/stall-jobs/:stallJobRef/cancel",
-  permissionMiddleware(["jobs:cancel"]),
-  async (req, res, next) => {
-    try {
-      const result = await adminJobsService.cancelStallJob(
-        req.params.stallJobRef,
-        req.body
-      );
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Route เปิดงานแผงกลับมาให้ worker ส่งยอดใหม่
-router.post(
-  "/stall-jobs/:stallJobRef/reopen",
-  permissionMiddleware(["jobs:reopen"]),
-  async (req, res, next) => {
-    try {
-      const result = await adminJobsService.reopenStallJob(
-        req.params.stallJobRef,
-        req.auth
       );
       res.json(result);
     } catch (error) {

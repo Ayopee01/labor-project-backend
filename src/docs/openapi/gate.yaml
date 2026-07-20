@@ -4,7 +4,7 @@
       tags:
         - Gate
       summary: Mock Gate payload and create a vehicle job.
-      description: Set `dispatch_now` to `true` when the vehicle is already ready to unload. The backend creates the job as `DISPATCH_NOW` and immediately dispatches ready workers through WebSocket. Omit it or set `false` to keep the Driver ready flow.
+      description: Set `dispatch_now` to `true` when the vehicle is already ready to unload. The backend creates the job as `IN_PROGRESS` and immediately dispatches ready workers through WebSocket. Omit it or set `false` to keep the Driver ready flow.
       operationId: createVehicleJobFromGate
       requestBody:
         required: true

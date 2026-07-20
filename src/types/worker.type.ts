@@ -1,11 +1,13 @@
 // Type ส่วน Value ของ status งานรถและงานตลาด
+import type { WorkerWorkStatus } from "./worker-status.type";
+
 type JobStatus = string;
 
 // Type ส่วน Value ของ status ตั๋วหรือแผง
 type TicketStatus = string;
 
 // Type ส่วน Value ของ status queue คนงาน
-type WorkerQueueStatus = string;
+type WorkerQueueStatus = WorkerWorkStatus;
 
 // Type ส่วน Value ของ status assignment คนงาน
 type AssignmentStatus = string;
@@ -114,11 +116,11 @@ export interface WorkerQueueEntryDto {
   updated_at: string;
 }
 
-// Type ส่วน response หลัง worker online/offline พร้อมสรุปงานและจำนวนพักในกะ
+// Type ส่วน response หลัง worker online/open_app พร้อมสรุปงานและจำนวนพักในกะ
 export interface WorkerOnlineResponse {
   full_name: string;
   worker_code: string | null;
-  status: WorkerQueueStatus;
+  status: WorkerWorkStatus;
   today_job_count: number;
   break_count_used: number;
   completed_job_count: number;
@@ -128,7 +130,7 @@ export interface WorkerOnlineResponse {
 export interface WorkerBreakResponse {
   full_name: string;
   worker_code: string | null;
-  status: WorkerQueueStatus;
+  status: WorkerWorkStatus;
   break_count_used: number;
   break_count_limit: number;
 }
@@ -153,7 +155,7 @@ export interface WorkerStatusResponse {
   full_name: string;
   worker_code: string | null;
   image_url: string | null;
-  status: WorkerQueueStatus;
+  status: WorkerWorkStatus;
   nationality: string | null;
   work_start_date: string | null;
   phone: string | null;
@@ -275,6 +277,7 @@ export interface TicketCompletionResponse {
   status: TicketStatus;
   confirmation_status: string;
   submission_status: string;
+  assignment_status: AssignmentStatus;
   items: Array<{
     product_ref: string;
     product_type: string | null;
@@ -305,9 +308,9 @@ export type WorkerSocketEventType =
   | "ASSIGNMENT_ACCEPTED"
   | "ASSIGNMENT_CHECKED_IN"
   | "ASSIGNMENT_SCAN_DEADLINE_EXTENDED"
+  | "ASSIGNMENT_SCAN_DEADLINE_SHORTENED"
   | "TICKET_COMPLETION_SUBMITTED"
   | "TICKET_COMPLETION_RESULT"
-  | "STALL_JOB_REOPENED"
   | "STALL_JOB_CANCELLED"
   | "MARKET_JOB_CANCELLED"
   | "VEHICLE_JOB_CANCELLED"

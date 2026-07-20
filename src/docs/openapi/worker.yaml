@@ -15,7 +15,8 @@
         Backend sends realtime events such as `WORKER_ASSIGNED`, `ASSIGNMENT_TIMEOUT`,
         `ASSIGNMENT_CANCELLED`, `ASSIGNMENT_ACCEPTED`, `WORKER_STATUS_CHANGED`,
         `TICKET_COMPLETION_SUBMITTED`, `TICKET_COMPLETION_RESULT`,
-        `STALL_JOB_REOPENED`, `ASSIGNMENT_SCAN_DEADLINE_EXTENDED`,
+        `ASSIGNMENT_SCAN_DEADLINE_EXTENDED`,
+        `ASSIGNMENT_SCAN_DEADLINE_SHORTENED`,
         `STALL_JOB_CANCELLED`, `MARKET_JOB_CANCELLED`, and `VEHICLE_JOB_CANCELLED`.
         `WORKER_ASSIGNED` sends `vehicle_job_ref`, `gate_transaction_ref`,
         `worker_qr_token`, and `assignment.created_at/accept_deadline_at`.
@@ -36,7 +37,11 @@
       tags:
         - Worker Application
       summary: Put the current worker into Redis FIFO queue during the assigned shift time.
-      description: Worker Mobile must have an active `/ws/workers` WebSocket connection before going online.
+      description: |
+        Worker Mobile must have an active `/ws/workers` WebSocket connection before going online.
+        From open_app, a worker can enter the queue only once per configured shift/day.
+        If the worker returns early from break, this endpoint can put the worker back into queue before the break timer ends.
+        After `/api/workers/me/offline` or a shift-end auto-offline, the worker cannot go online again until the next shift.
       operationId: workerOnline
       security:
         - bearerAuth: []
@@ -64,12 +69,13 @@
       tags:
         - Worker Application
       summary: Remove the current worker from Redis FIFO queue.
+      description: Marks the current shift as closed for this worker. The worker cannot re-enter the queue in the same shift after this call.
       operationId: workerOffline
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Worker offline summary.
+          description: Worker leaves dispatch queue summary. Response status is open_app.
           content:
             application/json:
               schema:
@@ -78,7 +84,8 @@
     post:
       tags:
         - Worker Application
-      summary: Put the current worker on a 15-minute break during the assigned shift time.
+      summary: Put the current worker on a configured break during the assigned shift time.
+      description: Break duration and daily/shift break limit come from runtime settings. Default is 4 breaks, 15 minutes each.
       operationId: workerBreak
       security:
         - bearerAuth: []
@@ -96,7 +103,7 @@
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Worker is not ready, already busy, or reached the break limit.
+          description: Worker is not ready, already assigned/working, or reached the break limit.
           content:
             application/json:
               schema:
@@ -150,7 +157,8 @@
     post:
       tags:
         - Worker Application
-      summary: Accept a pending worker assignment within one minute before BullMQ timeout.
+      summary: Accept a pending worker assignment within the configured accept deadline.
+      description: If the worker misses the accept deadline, the assignment becomes TIMEOUT and the worker is moved to the queue tail. After worker_accept_timeout_limit consecutive accept timeouts, the worker is taken offline for the shift.
       operationId: acceptWorkerAssignment
       security:
         - bearerAuth: []
@@ -174,6 +182,11 @@
       tags:
         - Worker Application
       summary: Check in to an accepted assignment with worker QR.
+      description: |
+        Worker can check in only while scan_deadline_at is valid.
+        For multi-worker vehicle jobs, the first successful check-in shortens remaining ACCEPTED workers to the configured worker_scan_team_remaining_minutes window and emits ASSIGNMENT_SCAN_DEADLINE_SHORTENED.
+        Backend emits ASSIGNMENT_SCAN_DEADLINE_WARNING to Admin SSE when an ACCEPTED worker has not checked in and remaining scan time is below worker_scan_warning_before_minutes.
+        If the scan window expires by API call or background timeout, the assignment becomes TIMEOUT and the worker returns to open_app.
       operationId: checkInWorkerAssignmentQr
       security:
         - bearerAuth: []
@@ -215,6 +228,11 @@
       tags:
         - Worker Application
       summary: Submit counted product quantities for a GateTicket and wait for vendor confirmation via LINE.
+      description: |
+        After worker submits quantities, the ticket and assignment status become DELIVERED.
+        Workers can submit any stall/market in the same vehicle job once the assigned team has checked in; the API no longer requires waiting for the previous stall to close first.
+        If vendor confirms through LINE, the ticket closes. If vendor rejects, the assignment status becomes REJECT and the same endpoint can be used to resubmit.
+        If vendor does not respond, the timeout is controlled by vendor_confirm_timeout_hours for the first submission and vendor_reconfirm_timeout_hours after a rejected resubmission.
       operationId: completeWorkerTicket
       security:
         - bearerAuth: []

@@ -16,7 +16,6 @@ export const ADMIN_PERMISSIONS = [
   "jobs:read",
   "jobs:assign",
   "jobs:cancel",
-  "jobs:reopen",
   "jobs:extend_deadline",
 ] as const;
 

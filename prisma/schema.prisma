@@ -32,7 +32,6 @@ model Account {
   permissions     AccountPermission[]
   ticketWorkers   TicketWorker[]
   submittedTicketCompletions TicketCompletionSubmission[] @relation("TicketCompletionSubmitter")
-  changedGateTicketStatusHistories GateTicketStatusHistory[]
 
   @@map("accounts")
 }
@@ -124,7 +123,7 @@ model GateTicket {
   vendorName   String?   @map("vendor_name") @db.VarChar(255)
   vendorLineId String?   @map("vendor_line_id") @db.VarChar(255)
   status       String    @default("WAIT") @db.VarChar(30)
-  confirmationStatus String @default("NOT_SUBMITTED") @map("confirmation_status") @db.VarChar(30)
+  confirmationStatus String @default("WAIT") @map("confirmation_status") @db.VarChar(30)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
@@ -133,29 +132,11 @@ model GateTicket {
   products TicketProduct[]
   workers TicketWorker[]
   completionSubmissions TicketCompletionSubmission[]
-  statusHistories GateTicketStatusHistory[]
 
   @@unique([marketJobId, stallJobRef])
   @@index([ticketNo])
   @@index([marketJobId, status])
   @@map("gate_tickets")
-}
-
-model GateTicketStatusHistory {
-  id                 Int      @id @default(autoincrement())
-  ticketId           Int      @map("ticket_id")
-  fromStatus         String   @map("from_status") @db.VarChar(30)
-  toStatus           String   @map("to_status") @db.VarChar(30)
-  action             String   @db.VarChar(100)
-  changedByAccountId Int?     @map("changed_by_account_id")
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-
-  ticket GateTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  changedBy Account? @relation(fields: [changedByAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([ticketId, createdAt])
-  @@index([changedByAccountId])
-  @@map("gate_ticket_status_histories")
 }
 
 model TicketWorker {
@@ -178,7 +159,7 @@ model TicketCompletionSubmission {
   id                         Int       @id @default(autoincrement())
   ticketId                   Int       @map("ticket_id")
   submittedByWorkerAccountId Int       @map("submitted_by_worker_account_id")
-  status                     String    @default("WAITING_VENDOR_CONFIRM") @db.VarChar(30)
+  status                     String    @default("DELIVERED") @db.VarChar(30)
   confirmedAt                DateTime? @map("confirmed_at") @db.Timestamp(3)
   rejectedAt                 DateTime? @map("rejected_at") @db.Timestamp(3)
   createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamp(3)

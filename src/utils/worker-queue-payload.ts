@@ -1,11 +1,13 @@
-import type { WorkerQueueEntryDto } from "../types/worker.type";
+import type { VehicleJobAssignmentDto, WorkerQueueEntryDto } from "../types/worker.type";
+import { resolveWorkerWorkStatus } from "./worker-status";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function สร้าง payload ของ queue entry สำหรับ WebSocket/SSE โดยใช้ reference แทน id ภายใน
 export function buildWorkerQueueSocketPayload(
   queueEntry: WorkerQueueEntryDto | null | undefined,
-  workerCode: string | null
+  workerCode: string | null,
+  assignment: VehicleJobAssignmentDto | null = null
 ) {
   if (!queueEntry) {
     return null;
@@ -13,7 +15,7 @@ export function buildWorkerQueueSocketPayload(
 
   return {
     worker_code: workerCode,
-    status: queueEntry.status,
+    status: resolveWorkerWorkStatus(queueEntry, assignment),
     ...(queueEntry.ready_at ? { ready_at: queueEntry.ready_at } : {}),
     ...(queueEntry.break_until ? { break_until: queueEntry.break_until } : {}),
     created_at: queueEntry.created_at,

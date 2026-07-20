@@ -1,25 +1,21 @@
-// import
-import { Prisma } from "@prisma/client";
 import { withTransaction } from "../db/prisma";
-import { enqueueLineMessage } from "../queues/notification-queue";
-import { enqueueWorker, markWorkerBusy, markWorkerWaiting, removeAssignmentTimeout, scheduleAssignmentTimeout } from "../queues/worker-queue";
+import { enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning } from "../queues/worker-queue";
+import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as adminJobsRepository from "../repositories/admin-jobs.repository";
-import { accountRepository } from "../repositories/admin-jobs.repository";
 import { publishNotification } from "./notifications.service";
 import { publishRealtimeEvent } from "./realtime.service";
 import { getRuntimeSettings } from "./admin-settings.service";
 // import Types
-import type { AccessTokenPayload } from "../types/auth.type";
-import type { AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminMarketJobActionResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobActionResponse, AdminVehicleJobListItemResponse, AdminVehicleJobResponse } from "../types/admin-jobs.type";
+import type { AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminJobCancelResponse, AdminMarketJobActionResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobListItemResponse } from "../types/admin-jobs.type";
 import type { GateTicketDto, MarketJobDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleJobDto } from "../types/worker.type";
 // import Validation
 import { parseWithSchema } from "../validation/parser";
-import { adminAssignWorkersBodySchema, adminCancelBodySchema, adminExtendScanDeadlineBodySchema, adminVehicleJobListQuerySchema } from "../validation/schemas";
+import { adminAssignWorkersBodySchema, adminCancelBodySchema, adminExtendScanDeadlineBodySchema, adminJobCancelBodySchema, adminVehicleJobListQuerySchema } from "../validation/schemas";
 // import Utils
 import ApiError from "../utils/api-error";
 import { ACTIVE_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES } from "../constants/job-status";
-import { buildBangkokDateRange, buildDeadline } from "../utils/time";
+import { buildBangkokDateSpanRange, buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload } from "../utils/worker-assignment-event";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -44,16 +40,6 @@ function formatPublicVehicleJobListItem(vehicleJob: VehicleJobDto): AdminVehicle
     vehicle_type: vehicleJob.vehicle_type,
     workers_required: vehicleJob.workers_required,
     status: vehicleJob.status,
-  };
-}
-
-function formatPublicVehicleJob(vehicleJob: VehicleJobDto): AdminVehicleJobResponse {
-  return {
-    ...formatPublicVehicleJobListItem(vehicleJob),
-    driver_qr_token: vehicleJob.driver_qr_token,
-    worker_qr_token: vehicleJob.worker_qr_token,
-    created_at: vehicleJob.created_at,
-    updated_at: vehicleJob.updated_at,
   };
 }
 
@@ -140,17 +126,26 @@ function formatStallJobActionResponse(
 }
 
 // Function จัดรูปงานรถพร้อมตลาดและแผงสำหรับ response ฝั่ง Admin
-function formatPublicVehicleJobDetail(detail: VehicleJobDetailResponse) {
+// Function หา vehicle job ด้วย vehicle_job_ref และโยน error ถ้าไม่พบ
+function formatPublicVehicleJobHistoryDetail(
+  detail: VehicleJobDetailResponse
+): AdminVehicleJobHistoryItemResponse {
   return {
-    vehicle_job: formatPublicVehicleJob(detail.vehicle_job),
+    vehicle_job: {
+      ...formatPublicVehicleJobListItem(detail.vehicle_job),
+      created_at: detail.vehicle_job.created_at,
+      updated_at: detail.vehicle_job.updated_at,
+    },
     markets: detail.markets.map((market) => ({
       ...formatPublicMarket(market),
-      tickets: market.tickets.map(formatPublicTicket),
+      tickets: market.tickets.map((ticket) => ({
+        ...formatPublicTicket(ticket),
+        products: ticket.products.map(formatPublicProduct),
+      })),
     })),
   };
 }
 
-// Function หา vehicle job ด้วย vehicle_job_ref และโยน error ถ้าไม่พบ
 async function requireVehicleJobByRef(
   idParam: unknown,
   connection?: Parameters<typeof adminJobsRepository.findVehicleJobByRef>[1]
@@ -208,16 +203,27 @@ async function requireStallJobByRef(
 }
 
 // Function สร้างเวลา deadline จากเวลาปัจจุบัน
-// Function สุ่มลำดับ worker ก่อนนำกลับเข้าคิวท้ายสุดเป็นกลุ่ม
-function shuffleWorkerIds(workerIds: number[]): number[] {
-  const items = [...workerIds];
+// Function เรียง worker ที่ถูก Admin ยกเลิกงานให้กลับเข้าหัวคิวตามเวลารับงาน
+function assignmentQueuePriorityAt(assignment: VehicleJobAssignmentDto): number {
+  const value = assignment.accepted_at ?? assignment.created_at;
+  const timestamp = value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
 
-  for (let index = items.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(Math.random() * (index + 1));
-    [items[index], items[randomIndex]] = [items[randomIndex], items[index]];
-  }
+  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
+}
 
-  return items;
+function sortAssignmentsForAdminCancelRequeue(
+  assignments: VehicleJobAssignmentDto[]
+): VehicleJobAssignmentDto[] {
+  return [...assignments].sort((left, right) => {
+    const leftPriorityAt = assignmentQueuePriorityAt(left);
+    const rightPriorityAt = assignmentQueuePriorityAt(right);
+
+    if (leftPriorityAt !== rightPriorityAt) {
+      return leftPriorityAt - rightPriorityAt;
+    }
+
+    return left.id - right.id;
+  });
 }
 
 // Function คำนวณ scan deadline ใหม่ โดยต่อจาก deadline เดิมถ้ายังไม่หมดเวลา
@@ -227,6 +233,16 @@ function extendDeadline(currentDeadline: string | null, minutes: number): Date {
   const baseTime = Math.max(now, currentTime);
 
   return new Date(baseTime + minutes * 60 * 1000);
+}
+
+function isScanDeadlineActive(scanDeadlineAt: string | null): boolean {
+  if (!scanDeadlineAt) {
+    return false;
+  }
+
+  const deadlineMs = new Date(scanDeadlineAt).getTime();
+
+  return Number.isFinite(deadlineMs) && deadlineMs > Date.now();
 }
 
 async function getWorkerCodeMapByAccountIds(workerIds: number[]): Promise<Map<number, string | null>> {
@@ -281,22 +297,6 @@ async function getWorkerCodesByAccountIds(workerIds: number[]): Promise<Array<st
 
 // Function สร้างช่วงเวลาของวันที่ไทยเพื่อใช้ query งานรถรายวัน
 // Function รวม receiver ของ SSE สำหรับงานแผงที่เกี่ยวข้อง
-async function buildStallJobAudience(
-  ticketId: number,
-  connection?: Parameters<typeof adminJobsRepository.listTicketWorkers>[1]
-): Promise<number[]> {
-  const [ticketWorkers, admins] = await Promise.all([
-    adminJobsRepository.listTicketWorkers(ticketId, connection),
-    accountRepository.listAdmins(connection),
-  ]);
-  const receiverIds = [
-    ...ticketWorkers.map((worker) => worker.worker_account_id),
-    ...admins.map((admin) => admin.id),
-  ];
-
-  return [...new Set(receiverIds)];
-}
-
 // Function หา worker ที่เกี่ยวข้องกับงานรถ เพื่อส่ง WebSocket event ให้ Mobile
 async function listVehicleJobWorkerIds(vehicleJobId: number): Promise<number[]> {
   const assignments = await adminJobsRepository.listActiveAssignmentsByVehicleJob(
@@ -322,18 +322,9 @@ async function listStallJobWorkerIds(ticket: GateTicketDto): Promise<number[]> {
 }
 
 // Function สร้างข้อความ LINE แจ้ง vendor ว่างานแผงถูกเปิดให้ส่งยอดใหม่
-function buildVendorReopenMessage(ticket: GateTicketDto): string {
-  const ticketLabel = ticket.ticket_no ?? ticket.stall_job_ref;
-
-  return [
-    `Ticket ${ticketLabel} has been reopened for quantity resubmission.`,
-    "Please wait for the worker to submit the corrected quantities again.",
-  ].join("\n");
-}
-
 // Function ดึงรายการงานรถสำหรับ Admin
 export async function listVehicleJobs(query: unknown): Promise<{
-  data: AdminVehicleJobListItemResponse[];
+  data: AdminVehicleJobHistoryItemResponse[];
   pagination?: {
     page: number;
     limit: number;
@@ -342,7 +333,9 @@ export async function listVehicleJobs(query: unknown): Promise<{
   };
 }> {
   const filters = parseWithSchema(adminVehicleJobListQuerySchema, query);
-  const dateRange = filters.date ? buildBangkokDateRange(filters.date) : {};
+  const dateFrom = filters.date ?? filters.date_from;
+  const dateTo = filters.date ?? filters.date_to;
+  const dateRange = buildBangkokDateSpanRange(dateFrom, dateTo);
   const result = await adminJobsRepository.listVehicleJobs({
     search: filters.search,
     status: filters.status,
@@ -353,7 +346,7 @@ export async function listVehicleJobs(query: unknown): Promise<{
 
   if (filters.page === undefined) {
     return {
-      data: result.data.map(formatPublicVehicleJobListItem),
+      data: result.data.map(formatPublicVehicleJobHistoryDetail),
     };
   }
 
@@ -361,7 +354,7 @@ export async function listVehicleJobs(query: unknown): Promise<{
   const total = result.total ?? result.data.length;
 
   return {
-    data: result.data.map(formatPublicVehicleJobListItem),
+    data: result.data.map(formatPublicVehicleJobHistoryDetail),
     pagination: {
       page: filters.page,
       limit,
@@ -372,23 +365,8 @@ export async function listVehicleJobs(query: unknown): Promise<{
 }
 
 // Function ดึงรายละเอียดงานรถสำหรับ Admin
-export async function getVehicleJob(idParam: unknown) {
-  const vehicleJobRef = parseReference(
-    idParam,
-    "INVALID_VEHICLE_JOB_REF",
-    "Vehicle job ref is invalid."
-  );
-  const detail = await adminJobsRepository.getVehicleJobDetailByRef(vehicleJobRef);
-
-  if (!detail) {
-    throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
-  }
-
-  return formatPublicVehicleJobDetail(detail);
-}
-
-// Function ยกเลิกงานรถทั้งหมด และพา worker ที่ถือ assignment กลับไปสถานะ waiting
-export async function cancelVehicleJob(
+// Function ยกเลิกงานรถทั้งหมด และพา worker ที่ถือ assignment กลับไปสถานะ open_app
+async function cancelVehicleJob(
   idParam: unknown,
   body: unknown
 ): Promise<AdminVehicleJobActionResponse> {
@@ -404,8 +382,15 @@ export async function cancelVehicleJob(
   });
 
   await Promise.all(
+    activeAssignments.flatMap((assignment) => [
+      removeAssignmentTimeout(assignment.id),
+      removeScanTimeout(assignment.id),
+      removeScanWarning(assignment.id),
+    ])
+  );
+  await Promise.all(
     activeAssignments.map((assignment) =>
-      markWorkerWaiting(assignment.worker_account_id)
+      markWorkerOpenApp(assignment.worker_account_id)
     )
   );
   activeAssignments.forEach((assignment) => {
@@ -439,8 +424,8 @@ export async function cancelVehicleJob(
   );
 }
 
-// Function ยกเลิกงานรถทั้งคัน และนำ worker ที่ถือ assignment กลับเข้าท้ายคิวแบบสุ่มลำดับ
-export async function cancelVehicleJobAndRequeue(
+// Function ยกเลิกงานรถทั้งคัน และนำ worker ที่ถือ assignment กลับเข้าหัวคิวตามเวลารับงาน
+async function cancelVehicleJobAndRequeue(
   idParam: unknown,
   body: unknown
 ): Promise<AdminCancelVehicleJobAndRequeueResponse> {
@@ -456,15 +441,20 @@ export async function cancelVehicleJobAndRequeue(
   });
 
   await Promise.all(
-    activeAssignments.map((assignment) => removeAssignmentTimeout(assignment.id))
+    activeAssignments.flatMap((assignment) => [
+      removeAssignmentTimeout(assignment.id),
+      removeScanTimeout(assignment.id),
+      removeScanWarning(assignment.id),
+    ])
   );
 
-  const requeuedWorkerIds = shuffleWorkerIds(
-    activeAssignments.map((assignment) => assignment.worker_account_id)
+  const sortedAssignments = sortAssignmentsForAdminCancelRequeue(activeAssignments);
+  const requeuedWorkerIds = sortedAssignments.map(
+    (assignment) => assignment.worker_account_id
   );
 
+  await enqueueWorkersAtFront(requeuedWorkerIds);
   for (const workerId of requeuedWorkerIds) {
-    await enqueueWorker(workerId);
     sendWorkerSocketEvent(workerId, "WORKER_STATUS_CHANGED", {
       status: "ready",
       reason: "vehicle_job_cancelled_requeue",
@@ -487,6 +477,7 @@ export async function cancelVehicleJobAndRequeue(
     },
     worker_account_ids: requeuedWorkerIds,
   });
+  await dispatchReadyWorkers();
   publishNotification({
     type: "VEHICLE_JOB_CANCELLED_AND_REQUEUED",
     title: "Vehicle job cancelled and workers requeued",
@@ -507,6 +498,30 @@ export async function cancelVehicleJobAndRequeue(
     status: vehicleJob.status,
     requeued_worker_codes: await getWorkerCodesByAccountIds(requeuedWorkerIds),
   };
+}
+
+// Function ยกเลิกงานระดับรถ/ตลาด/แผงผ่าน endpoint เดียว
+export async function cancelJob(body: unknown): Promise<AdminJobCancelResponse> {
+  const input = parseWithSchema(adminJobCancelBodySchema, body);
+  const cancelBody = {
+    reason: input.reason,
+  };
+
+  if (input.target_type === "vehicle") {
+    const workerAction = input.worker_action ?? "requeue";
+
+    if (workerAction === "requeue") {
+      return cancelVehicleJobAndRequeue(input.target_ref, cancelBody);
+    }
+
+    return cancelVehicleJob(input.target_ref, cancelBody);
+  }
+
+  if (input.target_type === "market") {
+    return cancelMarketJob(input.target_ref, cancelBody);
+  }
+
+  return cancelStallJob(input.target_ref, cancelBody);
 }
 
 // Function ให้ Admin assign งานรถให้ worker แบบระบุรายคนเอง
@@ -554,6 +569,16 @@ export async function assignVehicleJobWorkers(
         );
       }
 
+      const queueEntry = await getWorkerQueueStatus(worker.id);
+
+      if (queueEntry?.status !== "ready") {
+        throw new ApiError(
+          409,
+          "WORKER_NOT_READY",
+          `Worker ${workerCode} must be ready in queue before admin can assign a job.`
+        );
+      }
+
       const assignment = await adminJobsRepository.createAssignment(
         vehicleJobId,
         worker.id,
@@ -571,7 +596,7 @@ export async function assignVehicleJobWorkers(
   });
 
   for (const assignment of assignments) {
-    await markWorkerBusy(assignment.worker_account_id);
+    await markWorkerAssigned(assignment.worker_account_id);
     await scheduleAssignmentTimeout(
       assignment.id,
       assignment.worker_account_id,
@@ -638,7 +663,9 @@ export async function cancelAssignment(
   const cancelledAssignment = await adminJobsRepository.cancelAssignment(assignment.id);
 
   await removeAssignmentTimeout(assignment.id);
-  await markWorkerWaiting(assignment.worker_account_id);
+  await removeScanTimeout(assignment.id);
+  await removeScanWarning(assignment.id);
+  await markWorkerOpenApp(assignment.worker_account_id);
   sendWorkerSocketEvent(assignment.worker_account_id, "ASSIGNMENT_CANCELLED", {
     vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
     reason: "admin_cancel_assignment",
@@ -676,16 +703,18 @@ export async function extendVehicleJobScanDeadline(
   const vehicleJobId = vehicleJob.id;
   const input = parseWithSchema(adminExtendScanDeadlineBodySchema, body);
 
-  const assignments = await adminJobsRepository.listAcceptedAssignmentsByVehicleJob(
-    vehicleJobId,
-    input.worker_codes
-  );
+  const assignments = (
+    await adminJobsRepository.listAcceptedAssignmentsByVehicleJob(
+      vehicleJobId,
+      input.worker_codes
+    )
+  ).filter((assignment) => isScanDeadlineActive(assignment.scan_deadline_at));
 
   if (assignments.length === 0) {
     throw new ApiError(
       404,
       "ACCEPTED_ASSIGNMENTS_NOT_FOUND",
-      "No accepted assignments found for scan deadline extension."
+      "No active accepted assignments found for scan deadline extension."
     );
   }
 
@@ -699,6 +728,22 @@ export async function extendVehicleJobScanDeadline(
       )
     );
   }
+  await Promise.all(
+    updatedAssignments.flatMap((assignment) =>
+      [
+        scheduleScanTimeout(
+          assignment.id,
+          assignment.worker_account_id,
+          getDelayUntil(assignment.scan_deadline_at)
+        ),
+        scheduleScanWarning(
+          assignment.id,
+          assignment.worker_account_id,
+          assignment.scan_deadline_at
+        ),
+      ]
+    )
+  );
   const assignmentResponses = await buildScanDeadlineAssignmentResponses(
     updatedAssignments
   );
@@ -733,7 +778,7 @@ export async function extendVehicleJobScanDeadline(
 }
 
 // Function ยกเลิกงานตลาดพร้อมแจ้ง realtime ไปยัง Admin และ worker ที่เกี่ยวข้อง
-export async function cancelMarketJob(
+async function cancelMarketJob(
   idParam: unknown,
   body: unknown
 ): Promise<AdminMarketJobActionResponse> {
@@ -773,7 +818,7 @@ export async function cancelMarketJob(
 }
 
 // Function ยกเลิกงานแผงเดียว
-export async function cancelStallJob(
+async function cancelStallJob(
   idParam: unknown,
   body: unknown
 ): Promise<AdminStallJobActionResponse> {
@@ -823,98 +868,3 @@ export async function cancelStallJob(
 }
 
 // Function เปิดงานแผงที่ vendor confirm ผิด ให้ worker ส่งยอดใหม่อีกครั้ง
-export async function reopenStallJob(
-  idParam: unknown,
-  auth?: AccessTokenPayload
-): Promise<AdminStallJobActionResponse> {
-  const existingTicket = await requireStallJobByRef(idParam);
-  const ticketId = existingTicket.id;
-  const result = await withTransaction(async (transaction) => {
-    if (existingTicket.status !== "CLOSED") {
-      throw new ApiError(
-        409,
-        "STALL_JOB_NOT_CLOSED",
-        "Only closed stall jobs can be reopened."
-      );
-    }
-
-    const ticket = await adminJobsRepository.reopenGateTicket(ticketId, transaction);
-
-    await adminJobsRepository.createGateTicketStatusHistory(
-      {
-        ticket_id: ticket.id,
-        from_status: existingTicket.status,
-        to_status: ticket.status,
-        action: "ADMIN_REOPEN_STALL_JOB",
-        changed_by_account_id: auth?.account_id ?? null,
-      },
-      transaction
-    );
-
-    const receiverAccountIds = await buildStallJobAudience(ticket.id, transaction);
-
-    return {
-      ticket,
-      receiverAccountIds,
-    };
-  });
-
-  if (result.ticket.vendor_line_id) {
-    const lineLogId = await adminJobsRepository.createMessageDeliveryLog(
-      "LINE",
-      "send_vendor_ticket_reopen",
-      {
-        ticket_id: result.ticket.id,
-        vendor_line_id: result.ticket.vendor_line_id,
-      } as unknown as Prisma.InputJsonValue,
-      result.ticket.vendor_line_id
-    );
-
-    await enqueueLineMessage("send-vendor-ticket-reopen", {
-      log_id: lineLogId,
-      to: result.ticket.vendor_line_id,
-      messages: [
-        {
-          type: "text",
-          text: buildVendorReopenMessage(result.ticket),
-        },
-      ],
-    });
-  }
-
-  const vehicleJob = await adminJobsRepository.findVehicleJobById(
-    result.ticket.vehicle_job_id
-  );
-  const marketJob = await adminJobsRepository.findMarketJobById(
-    result.ticket.market_job_id
-  );
-  publishRealtimeEvent({
-    type: "STALL_JOB_REOPENED",
-    title: "Stall job reopened",
-    message: `Ticket ${result.ticket.ticket_no ?? result.ticket.stall_job_ref} was reopened for resubmission.`,
-    payload: {
-      vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
-      market_job_ref: marketJob?.market_job_ref ?? null,
-      stall_job_ref: result.ticket.stall_job_ref,
-      status: result.ticket.status,
-      confirmation_status: result.ticket.confirmation_status,
-    },
-    worker_payload: {
-      vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
-      market_job_ref: marketJob?.market_job_ref ?? null,
-      stall_job_ref: result.ticket.stall_job_ref,
-      ticket_no: result.ticket.ticket_no,
-      status: result.ticket.status,
-      confirmation_status: result.ticket.confirmation_status,
-    },
-    admin: true,
-    worker_account_ids: result.receiverAccountIds,
-  });
-
-  return formatStallJobActionResponse(
-    "Stall job reopened successfully.",
-    result.ticket,
-    vehicleJob,
-    marketJob
-  );
-}

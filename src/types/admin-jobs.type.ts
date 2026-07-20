@@ -1,4 +1,4 @@
-import type { VehicleJobDto } from "./worker.type";
+import type { VehicleJobDetailResponse, VehicleJobDto } from "./worker.type";
 
 // Type ส่วน filter สำหรับรายการงานรถฝั่ง Admin
 export interface VehicleJobListFilters {
@@ -12,7 +12,7 @@ export interface VehicleJobListFilters {
 
 // Type ส่วนผลลัพธ์รายการงานรถพร้อมจำนวนทั้งหมด
 export interface VehicleJobListResult {
-  data: VehicleJobDto[];
+  data: VehicleJobDetailResponse[];
   total?: number;
 }
 
@@ -33,11 +33,59 @@ export interface AdminVehicleJobResponse extends AdminVehicleJobListItemResponse
   updated_at: string;
 }
 
+export interface AdminVehicleJobHistoryVehicleResponse extends AdminVehicleJobListItemResponse {
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminVehicleJobHistoryProductResponse {
+  product_ref: string;
+  product_type: string | null;
+  name: string;
+  quantity: string;
+  confirmed_quantity: string | null;
+  unit: string;
+}
+
+export interface AdminVehicleJobHistoryTicketResponse {
+  stall_job_ref: string;
+  ticket_no: string | null;
+  stall_no: string | null;
+  vendor_name: string | null;
+  vendor_line_id: string | null;
+  status: string;
+  confirmation_status: string;
+  created_at: string;
+  updated_at: string;
+  products: AdminVehicleJobHistoryProductResponse[];
+}
+
+export interface AdminVehicleJobHistoryMarketResponse {
+  market_job_ref: string;
+  market_name: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  tickets: AdminVehicleJobHistoryTicketResponse[];
+}
+
+export interface AdminVehicleJobHistoryItemResponse {
+  vehicle_job: AdminVehicleJobHistoryVehicleResponse;
+  markets: AdminVehicleJobHistoryMarketResponse[];
+}
+
 export interface AdminVehicleJobActionResponse {
   message: string;
   vehicle_job_ref: string;
   status: string;
 }
+
+// Type response สำหรับ endpoint ยกเลิกงานระดับรถ/ตลาด/แผงผ่าน endpoint เดียว
+export type AdminJobCancelResponse =
+  | AdminVehicleJobActionResponse
+  | AdminCancelVehicleJobAndRequeueResponse
+  | AdminMarketJobActionResponse
+  | AdminStallJobActionResponse;
 
 // Type ส่วน assignment หลังต่อเวลา scan deadline
 export interface AdminScanDeadlineAssignmentResponse {

@@ -257,18 +257,64 @@ export const workerAssignmentHistoryQuerySchema = z.object({
 });
 
 // Schema query สำหรับ Admin ดูรายการงานรถ
-export const adminVehicleJobListQuerySchema = z.object({
-  date: optionalDateString,
-  page: optionalPageNumber,
-  limit: optionalLimitNumber,
-  search: optionalLowercaseString,
-  status: optionalTrimmedString,
-});
+export const adminVehicleJobListQuerySchema = z
+  .object({
+    date: optionalDateString,
+    date_from: optionalDateString,
+    date_to: optionalDateString,
+    page: optionalPageNumber,
+    limit: optionalLimitNumber,
+    search: optionalLowercaseString,
+    status: optionalTrimmedString,
+  })
+  .superRefine((input, context) => {
+    if (
+      input.date_from &&
+      input.date_to &&
+      input.date_from > input.date_to
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["date_to"],
+        message: "date_to must be greater than or equal to date_from.",
+      });
+    }
+  });
 
 // Schema body สำหรับ Admin ยกเลิกงาน
 export const adminCancelBodySchema = z.object({
   reason: optionalTrimmedString,
 });
+
+// Schema body สำหรับ Admin ยกเลิกงานระดับรถ/ตลาด/แผงผ่าน endpoint เดียว
+export const adminJobCancelBodySchema = z
+  .object({
+    target_type: z.enum(["vehicle", "market", "stall"]),
+    target_ref: trimmedString,
+    worker_action: z.enum(["open_app", "requeue", "none"]).optional(),
+    reason: optionalTrimmedString,
+  })
+  .superRefine((input, context) => {
+    if (input.target_type === "vehicle" && input.worker_action === "none") {
+      context.addIssue({
+        code: "custom",
+        path: ["worker_action"],
+        message: "Vehicle job cancellation must use open_app or requeue.",
+      });
+    }
+
+    if (
+      input.target_type !== "vehicle" &&
+      input.worker_action !== undefined &&
+      input.worker_action !== "none"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["worker_action"],
+        message: "worker_action is only supported for vehicle job cancellation.",
+      });
+    }
+  });
 
 // Schema body สำหรับ Admin assign worker เข้างานรถแบบระบุรหัสพนักงาน
 export const adminAssignWorkersBodySchema = z.object({
@@ -284,7 +330,7 @@ export const adminExtendScanDeadlineBodySchema = z.object({
 
 // Schema body สำหรับ Admin force status worker
 export const adminForceWorkerStatusBodySchema = z.object({
-  status: z.enum(["ready", "waiting", "offline", "break"]),
+  status: z.enum(["open_app", "ready", "break"]),
   reason: optionalTrimmedString,
 });
 
@@ -295,11 +341,16 @@ export const updateSystemSettingsBodySchema = z
   .object({
     driver_session_ttl_hours: z.coerce.number().int().positive().max(168).optional(),
     worker_accept_deadline_seconds: z.coerce.number().int().positive().max(600).optional(),
+    worker_accept_timeout_limit: z.coerce.number().int().positive().max(20).optional(),
     worker_scan_deadline_minutes: z.coerce.number().int().positive().max(240).optional(),
+    worker_scan_warning_before_minutes: z.coerce.number().int().positive().max(240).optional(),
+    worker_scan_team_remaining_minutes: z.coerce.number().int().positive().max(240).optional(),
     worker_break_duration_minutes: z.coerce.number().int().positive().max(240).optional(),
     worker_break_limit: z.coerce.number().int().min(0).max(20).optional(),
     worker_break_count_ttl_hours: z.coerce.number().int().positive().max(168).optional(),
     worker_presence_stale_seconds: z.coerce.number().int().positive().max(3600).optional(),
+    vendor_confirm_timeout_hours: z.coerce.number().int().positive().max(168).optional(),
+    vendor_reconfirm_timeout_hours: z.coerce.number().int().positive().max(168).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one setting is required.",
@@ -338,7 +389,19 @@ export const runtimeSettingsSchema = z.object({
     .number()
     .int()
     .positive(),
+  worker_accept_timeout_limit: z.coerce
+    .number()
+    .int()
+    .positive(),
   worker_scan_deadline_minutes: z.coerce
+    .number()
+    .int()
+    .positive(),
+  worker_scan_warning_before_minutes: z.coerce
+    .number()
+    .int()
+    .positive(),
+  worker_scan_team_remaining_minutes: z.coerce
     .number()
     .int()
     .positive(),
@@ -355,6 +418,14 @@ export const runtimeSettingsSchema = z.object({
     .int()
     .positive(),
   worker_presence_stale_seconds: z.coerce
+    .number()
+    .int()
+    .positive(),
+  vendor_confirm_timeout_hours: z.coerce
+    .number()
+    .int()
+    .positive(),
+  vendor_reconfirm_timeout_hours: z.coerce
     .number()
     .int()
     .positive(),

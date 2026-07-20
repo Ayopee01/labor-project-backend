@@ -7,10 +7,10 @@ import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import { mapAccount, mapGateTicket, mapMarketJob, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
-export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail, getVehicleJobDetailByRef } from "./shared/vehicle-job.repository";
+import { mapVehicleJobDetail } from "./shared/vehicle-job.repository";
+export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail } from "./shared/vehicle-job.repository";
 export { countActiveAssignments, createAssignment, findAssignmentById, findCurrentAssignmentByWorker } from "./shared/vehicle-job-assignment.repository";
 export { listTicketWorkers } from "./shared/ticket-worker.repository";
-export { createMessageDeliveryLog } from "./line.repository";
 
 // import Types
 import type { DbConnection } from "../types/common.type";
@@ -28,18 +28,53 @@ export async function listVehicleJobs(
   connection?: DbConnection
 ): Promise<VehicleJobListResult> {
   const db = client(connection);
-  const where: Prisma.VehicleJobWhereInput = {
-    ...(filters.status && {
-      status: filters.status,
-    }),
-    ...(filters.startAt &&
-      filters.endAt && {
-        createdAt: {
-          gte: filters.startAt,
-          lt: filters.endAt,
+  const andFilters: Prisma.VehicleJobWhereInput[] = [];
+
+  if (filters.status) {
+    const statusFilter: Prisma.StringFilter = {
+      equals: filters.status,
+      mode: "insensitive",
+    };
+
+    andFilters.push({
+      OR: [
+        {
+          status: statusFilter,
         },
-      }),
-    ...(filters.search && {
+        {
+          marketJobs: {
+            some: {
+              status: statusFilter,
+            },
+          },
+        },
+        {
+          tickets: {
+            some: {
+              OR: [
+                {
+                  status: statusFilter,
+                },
+                {
+                  confirmationStatus: statusFilter,
+                },
+              ],
+            },
+          },
+        },
+        {
+          assignments: {
+            some: {
+              status: statusFilter,
+            },
+          },
+        },
+      ],
+    });
+  }
+
+  if (filters.search) {
+    andFilters.push({
       OR: [
         {
           vehicleJobRef: {
@@ -106,6 +141,22 @@ export async function listVehicleJobs(
           },
         },
       ],
+    });
+  }
+
+  const where: Prisma.VehicleJobWhereInput = {
+    ...((filters.startAt || filters.endAt) && {
+        createdAt: {
+          ...(filters.startAt && {
+            gte: filters.startAt,
+          }),
+          ...(filters.endAt && {
+            lt: filters.endAt,
+          }),
+        },
+      }),
+    ...(andFilters.length > 0 && {
+      AND: andFilters,
     }),
   };
   const shouldPaginate = filters.page !== undefined;
@@ -115,14 +166,34 @@ export async function listVehicleJobs(
     orderBy: {
       createdAt: "desc",
     },
+    include: {
+      marketJobs: {
+        orderBy: {
+          id: "asc",
+        },
+        include: {
+          tickets: {
+            orderBy: {
+              id: "asc",
+            },
+            include: {
+              products: {
+                orderBy: {
+                  id: "asc",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     ...(shouldPaginate && {
       skip: ((filters.page as number) - 1) * limit,
       take: limit,
     }),
   });
   const data = vehicleJobs
-    .map((vehicleJob) => mapVehicleJob(vehicleJob))
-    .filter((vehicleJob): vehicleJob is VehicleJobDto => vehicleJob !== null);
+    .map((vehicleJob) => mapVehicleJobDetail(vehicleJob));
 
   if (!shouldPaginate) {
     return {
@@ -332,48 +403,7 @@ export async function cancelGateTicket(
 // Function สร้างงานรถพร้อมตลาด ตั๋ว สินค้า และบันทึก Gate request log
 
 // Function เปิดงานแผงกลับมาให้ worker ส่งยอดใหม่ หลัง vendor confirm ผิด
-export async function reopenGateTicket(
-  ticketId: number,
-  connection?: DbConnection
-): Promise<GateTicketDto> {
-  const db = client(connection);
-  const ticket = await db.gateTicket.update({
-    where: {
-      id: ticketId,
-    },
-    data: {
-      status: "REOPEN",
-      confirmationStatus: "REOPEN",
-    },
-  });
-
-  return requireDto(mapGateTicket(ticket), "gate ticket reopen");
-}
-
 // Function บันทึกประวัติการเปลี่ยนสถานะของงานแผง
-export async function createGateTicketStatusHistory(
-  input: {
-    ticket_id: number;
-    from_status: string;
-    to_status: string;
-    action: string;
-    changed_by_account_id?: number | null;
-  },
-  connection?: DbConnection
-): Promise<void> {
-  const db = client(connection);
-
-  await db.gateTicketStatusHistory.create({
-    data: {
-      ticketId: input.ticket_id,
-      fromStatus: input.from_status,
-      toStatus: input.to_status,
-      action: input.action,
-      changedByAccountId: input.changed_by_account_id ?? null,
-    },
-  });
-}
-
 // Function ดึง active assignment ของงานรถ
 export async function listActiveAssignmentsByVehicleJob(
   vehicleJobId: number,

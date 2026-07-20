@@ -8,7 +8,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { accountRepository, profileRepository } from "../repositories/worker-application.repository";
 import { findActiveByIdAndAccountId } from "../repositories/shared/session.repository";
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
-import { getWorkerQueueStatus, markWorkerOffline, recordWorkerHeartbeat } from "../queues/worker-queue";
+import { getWorkerQueueStatus, markWorkerOpenApp, recordWorkerHeartbeat } from "../queues/worker-queue";
 import { publishNotification } from "../services/notifications.service";
 
 // import Types
@@ -25,7 +25,7 @@ import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 // Config path ของ Worker WebSocket endpoint
 const WORKER_SOCKET_PATH = "/ws/workers";
 
-// Config ระยะ grace period หลัง socket หลุดก่อน mark worker offline
+// Config ระยะ grace period หลัง socket หลุดก่อนย้าย worker เป็น open_app
 const WORKER_SOCKET_DISCONNECT_GRACE_MS = Number(
   process.env.WORKER_SOCKET_DISCONNECT_GRACE_MS || 15000
 );
@@ -144,7 +144,7 @@ function registerWorkerSocket(accountId: number, socket: WorkerSocket): void {
   workerSockets.set(accountId, sockets);
 }
 
-// Function ลบ socket ออกจาก registry และตั้ง grace period ก่อน mark offline
+// Function ลบ socket ออกจาก registry และตั้ง grace period ก่อนย้ายเป็น open_app
 function unregisterWorkerSocket(socket: WorkerSocket): void {
   const accountId = socket.accountId;
 
@@ -168,7 +168,7 @@ function unregisterWorkerSocket(socket: WorkerSocket): void {
   disconnectTimers.set(accountId, timer);
 }
 
-// Function จัดการ worker หลุดเกิน grace period ตาม policy ready/no assignment -> offline
+// Function จัดการ worker หลุดเกิน grace period ตาม policy ready/no assignment -> open_app
 async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> {
   disconnectTimers.delete(accountId);
 
@@ -183,7 +183,7 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
 
   if (!assignment && queueEntry?.status === "ready") {
     const [latestQueue, profile] = await Promise.all([
-      markWorkerOffline(accountId),
+      markWorkerOpenApp(accountId),
       profileRepository.findByAccountId(accountId).catch((error) => {
         console.error("Failed to load worker profile for disconnect event.", error);
         return null;
@@ -198,11 +198,14 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
     });
     publishNotification({
       type: "WORKER_STATUS_CHANGED",
-      title: "Worker offline",
-      message: `Worker ${profile?.worker_code ?? accountId} was marked offline because WebSocket disconnected.`,
+      title: "Worker moved to open_app",
+      message: `Worker ${profile?.worker_code ?? accountId} moved to open_app because WebSocket disconnected.`,
       payload: {
         worker_code: profile?.worker_code ?? null,
-        queue: latestQueue,
+        queue: buildWorkerQueueSocketPayload(
+          latestQueue,
+          profile?.worker_code ?? null
+        ),
         reason: "socket_disconnected",
       },
       audience: {

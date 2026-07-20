@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { withTransaction } from "../db/prisma";
 import { enqueueLineMessage } from "../queues/notification-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
-import { enqueueWorker, markWorkerOffline } from "../queues/worker-queue";
+import { enqueueWorker, markWorkerOpenApp, removeVendorConfirmationTimeout } from "../queues/worker-queue";
 import * as lineRepository from "../repositories/line.repository";
 import * as workerApplicationRepository from "../repositories/worker-application.repository";
 import { accountRepository, profileRepository, workScheduleRepository } from "../repositories/worker-application.repository";
@@ -109,7 +109,7 @@ async function getWorkerCodesByAccountIds(
 
 // Function ดึงรหัสพนักงาน worker รายคนจาก profile
 // Function สร้าง payload สถานะคิวสำหรับส่งเข้า Worker WebSocket
-// Function คืน worker ที่จบงานแล้วเข้า queue หรือ mark offline ตามสถานะ WebSocket และกะงาน
+// Function คืน worker ที่จบงานแล้วเข้า queue หรือ open_app ตามสถานะ WebSocket และกะงาน
 async function returnCompletedWorkersToQueue(input: {
   vehicle_job: VehicleJobDto;
   completed_worker_account_ids: number[];
@@ -154,7 +154,7 @@ async function returnCompletedWorkersToQueue(input: {
         payload: {
           worker_code: workerCode,
           vehicle_job_ref: input.vehicle_job.vehicle_job_ref,
-          queue,
+          queue: buildWorkerQueueSocketPayload(queue, workerCode),
           reason: "vehicle_job_completed_requeue",
         },
         audience: {
@@ -164,7 +164,7 @@ async function returnCompletedWorkersToQueue(input: {
       continue;
     }
 
-    const queue = await markWorkerOffline(workerAccountId);
+    const queue = await markWorkerOpenApp(workerAccountId);
     if (isWorkerSocketConnected(workerAccountId)) {
       sendWorkerSocketEvent(workerAccountId, "WORKER_STATUS_CHANGED", {
         queue: buildWorkerQueueSocketPayload(queue, workerCode),
@@ -172,12 +172,12 @@ async function returnCompletedWorkersToQueue(input: {
     }
     publishNotification({
       type: "WORKER_STATUS_CHANGED",
-      title: "Worker offline",
-      message: `Worker ${workerCode ?? workerAccountId} was marked offline after vehicle job completion.`,
+      title: "Worker moved to open_app",
+      message: `Worker ${workerCode ?? workerAccountId} moved to open_app after vehicle job completion.`,
       payload: {
         worker_code: workerCode,
         vehicle_job_ref: input.vehicle_job.vehicle_job_ref,
-        queue,
+        queue: buildWorkerQueueSocketPayload(queue, workerCode),
         reason: "vehicle_job_completed_not_available",
       },
       audience: {
@@ -291,6 +291,18 @@ export async function handleLineWebhook(
             transaction
           )
         : null;
+      if (isConfirmed && !completedVehicleJob) {
+        await workerApplicationRepository.markVehicleAssignmentsWorking(
+          updated.ticket.vehicle_job_id,
+          transaction
+        );
+      }
+      if (!isConfirmed) {
+        await workerApplicationRepository.markVehicleAssignmentsRejected(
+          updated.ticket.vehicle_job_id,
+          transaction
+        );
+      }
       const title = isConfirmed
         ? "Ticket completion confirmed"
         : "Ticket completion rejected";
@@ -315,6 +327,11 @@ export async function handleLineWebhook(
             completedVehicleJob.completed_worker_account_ids
           )
         : [];
+      const assignmentStatus = isConfirmed
+        ? completedVehicleJob
+          ? "COMPLETED"
+          : "WORKING"
+        : "REJECT";
 
       return {
         ...updated,
@@ -328,6 +345,7 @@ export async function handleLineWebhook(
         completedVehicleJob,
         completedWorkerCodes,
         nextTicket,
+        assignmentStatus,
         vendorMessage: isConfirmed
           ? "Ticket completion confirmed. Thank you."
           : "Ticket completion rejected. Worker can resubmit the corrected quantities.",
@@ -338,6 +356,7 @@ export async function handleLineWebhook(
       continue;
     }
 
+    await removeVendorConfirmationTimeout(result.ticket.id, result.submission.id);
     await returnCompletedWorkersToQueue(result.completedVehicleJob);
 
     const lineLogId = await lineRepository.createMessageDeliveryLog(
@@ -377,6 +396,7 @@ export async function handleLineWebhook(
             next_market_job_ref: result.nextTicket?.market_job_ref ?? null,
             next_stall_job_ref: result.nextTicket?.ticket.stall_job_ref ?? null,
             next_ticket_status: result.nextTicket?.ticket.status ?? null,
+            assignment_status: result.assignmentStatus,
           }
         ),
       },
@@ -392,6 +412,7 @@ export async function handleLineWebhook(
             next_market_job_ref: result.nextTicket?.market_job_ref ?? null,
             next_stall_job_ref: result.nextTicket?.ticket.stall_job_ref ?? null,
             next_ticket_status: result.nextTicket?.ticket.status ?? null,
+            assignment_status: result.assignmentStatus,
           }
         ),
       },

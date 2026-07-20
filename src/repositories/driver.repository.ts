@@ -74,28 +74,16 @@ export async function markVehicleJobReady(
       id: vehicleJobId,
     },
     data: {
-      status: "DISPATCH_NOW",
+      status: "IN_PROGRESS",
       marketJobs: {
         updateMany: {
           where: {
             status: {
-              in: ["WAIT", "DISPATCH_NOW"],
+              in: ["WAIT", "IN_PROGRESS"],
             },
           },
           data: {
-            status: "DISPATCH_NOW",
-          },
-        },
-      },
-      tickets: {
-        updateMany: {
-          where: {
-            status: {
-              in: ["WAIT", "READY"],
-            },
-          },
-          data: {
-            status: "READY",
+            status: "IN_PROGRESS",
           },
         },
       },

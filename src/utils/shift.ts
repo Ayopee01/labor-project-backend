@@ -106,6 +106,32 @@ export function buildWorkScheduleShiftInstanceKey(
   return `${shiftStartDate}:${schedule.shift_start_time}-${schedule.shift_end_time}`;
 }
 
+export function getWorkScheduleShiftEndAt(
+  schedule: WorkScheduleDto,
+  value: Date = new Date()
+): Date {
+  const { startMinutes, endMinutes } = parseScheduleTimeRange(schedule);
+  const currentMinutes = getBangkokTimeToMinutes(value);
+  const currentDate = getBangkokDateString(value);
+  const shiftStartDate =
+    endMinutes <= startMinutes && currentMinutes < endMinutes
+      ? addDaysToDateString(currentDate, -1)
+      : currentDate;
+  const shiftEndDate =
+    endMinutes <= startMinutes
+      ? addDaysToDateString(shiftStartDate, 1)
+      : shiftStartDate;
+
+  return new Date(`${shiftEndDate}T${schedule.shift_end_time}:00.000+07:00`);
+}
+
+export function getWorkScheduleShiftEndDelayMs(
+  schedule: WorkScheduleDto,
+  value: Date = new Date()
+): number {
+  return Math.max(0, getWorkScheduleShiftEndAt(schedule, value).getTime() - value.getTime());
+}
+
 // Function แปลงจำนวนนาทีที่เหลือเป็นข้อความภาษาไทย
 function formatRemainingTime(totalMinutes: number): string {
   const hours = Math.floor(totalMinutes / 60);

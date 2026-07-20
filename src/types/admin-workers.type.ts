@@ -1,4 +1,6 @@
 // Config role account ที่ระบบรองรับ
+import type { WorkerWorkStatus } from "./worker-status.type";
+
 export const ACCOUNT_ROLES = ["admin", "worker"] as const;
 
 // Type ส่วน Value ของ role account ที่ระบบรองรับ
@@ -202,12 +204,7 @@ export interface UserDetailResponse {
 }
 
 // Type ส่วน column status สำหรับบอร์ดติดตาม worker ใน Admin Jobs
-export type AdminWorkerBoardStatus =
-  | "open_app"
-  | "ready"
-  | "assigned"
-  | "working"
-  | "break";
+export type AdminWorkerBoardStatus = WorkerWorkStatus;
 
 // Type ส่วน response สถานะ worker สำหรับ Admin Jobs board
 export type AdminWorkerStatusItem = {
@@ -217,5 +214,7 @@ export type AdminWorkerStatusItem = {
   image_url: string | null;
   shift_name: string | null;
   latest_activity_at: string | null;
+  status_entered_at: string | null;
+  queue_position: number | null;
   status: AdminWorkerBoardStatus;
 };

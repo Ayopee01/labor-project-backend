@@ -3,8 +3,8 @@ import type { Prisma } from "@prisma/client";
 // import
 import { withTransaction } from "../db/prisma";
 import { enqueueLineMessage } from "../queues/notification-queue";
-import { enqueueWorker, getWorkerBreakCount, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOffline, removeAssignmentTimeout, removeWorkerBreakReturn, scheduleWorkerBreakReturn } from "../queues/worker-queue";
-import { dispatchReadyWorkers } from "../queues/worker-dispatch";
+import { enqueueWorker, getWorkerBreakCount, getWorkerQueueStatus, hasWorkerShiftOnlineUsed, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, markWorkerShiftClosed, markWorkerShiftOnlineUsed, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, removeWorkerBreakReturn, resetWorkerAcceptTimeoutCount, scheduleScanTimeout, scheduleScanWarning, scheduleVendorConfirmationTimeout, scheduleWorkerBreakReturn, scheduleWorkerShiftEnd, isWorkerShiftClosed } from "../queues/worker-queue";
+import { dispatchReadyWorkers, handleAssignmentAcceptTimeout } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as lineRepository from "../repositories/line.repository";
 import * as workerApplicationRepository from "../repositories/worker-application.repository";
@@ -21,11 +21,12 @@ import { parseWithSchema } from "../validation/parser";
 import { workerAssignmentHistoryQuerySchema, workerScanBodySchema, workerTicketCompleteBodySchema } from "../validation/schemas";
 // import Utils
 import ApiError from "../utils/api-error";
-import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
-import { buildBangkokDateRange, buildDeadline, formatBangkokDate } from "../utils/time";
+import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, getWorkScheduleShiftEndDelayMs, isTimeInWorkSchedule } from "../utils/shift";
+import { buildBangkokDateRange, buildDeadline, formatBangkokDate, getDelayUntil } from "../utils/time";
 import { buildWorkerTicketPayload } from "../utils/ticket-payload";
 import { signVendorTicketActionToken } from "../utils/vendor-action-token";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
+import { resolveWorkerWorkStatus } from "../utils/worker-status";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -75,11 +76,12 @@ function withBreakUsage(
   };
 }
 
-// Function สร้าง response หลัง worker online/offline พร้อมสรุปงานและจำนวนพักของวัน/กะ
+// Function สร้าง response หลัง worker online/open_app พร้อมสรุปงานและจำนวนพักของวัน/กะ
 async function buildWorkerOnlineResponse(
   account: AccountDto,
   queueEntry: WorkerQueueEntryDto,
   schedule: WorkScheduleDto | null,
+  assignment: VehicleJobAssignmentDto | null = null,
   connection?: Parameters<typeof workerApplicationRepository.listWorkerAssignmentHistoryByDate>[3]
 ): Promise<WorkerOnlineResponse> {
   const today = formatBangkokDate();
@@ -104,7 +106,7 @@ async function buildWorkerOnlineResponse(
   return {
     full_name: account.full_name,
     worker_code: account.username,
-    status: queueEntry.status,
+    status: resolveWorkerWorkStatus(queueEntry, assignment),
     today_job_count: todayJobCount,
     break_count_used: breakCountUsed,
     completed_job_count: completedJobCount,
@@ -181,6 +183,34 @@ function isScanDeadlineExpired(scanDeadlineAt: string | null): boolean {
 }
 
 // Function ตรวจ auth ว่าเป็น worker ที่ active ก่อนทำงานใน Worker Mobile flow
+async function scheduleWorkerShiftEndIfNeeded(
+  accountId: number,
+  schedule: WorkScheduleDto
+): Promise<void> {
+  const delayMs = getWorkScheduleShiftEndDelayMs(schedule);
+
+  if (delayMs > 0) {
+    await scheduleWorkerShiftEnd(
+      accountId,
+      schedule.id,
+      delayMs,
+      buildWorkScheduleShiftInstanceKey(schedule)
+    );
+  }
+}
+
+function getVendorConfirmationTimeoutMs(
+  ticket: GateTicketDto,
+  settings: Awaited<ReturnType<typeof getRuntimeSettings>>
+): number {
+  const timeoutHours =
+    ticket.status === "REJECT"
+      ? settings.vendor_reconfirm_timeout_hours
+      : settings.vendor_confirm_timeout_hours;
+
+  return timeoutHours * 60 * 60 * 1000;
+}
+
 async function requireWorker(auth?: AccessTokenPayload) {
   if (!auth) {
     throw new ApiError(401, "UNAUTHORIZED", "Authentication is required.");
@@ -401,6 +431,7 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
       buildShiftWaitInfo(currentSchedule)
     );
   }
+  const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
 
   return withTransaction(async (transaction) => {
     const currentAssignment = await workerApplicationRepository.findCurrentAssignmentByWorker(
@@ -419,21 +450,53 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
       );
 
       if (refreshedAssignment) {
-        throw new ApiError(409, "WORKER_BUSY", "Worker already has an active assignment.");
+        throw new ApiError(
+          409,
+          "WORKER_HAS_ACTIVE_ASSIGNMENT",
+          "Worker already has an active assignment."
+        );
       }
     }
 
     const currentQueueEntry = await getWorkerQueueStatus(account.id);
+    const isReturningFromBreak = currentQueueEntry?.status === "break";
 
-    if (currentQueueEntry?.status === "break") {
+    if (isReturningFromBreak) {
       await removeWorkerBreakReturn(account.id, currentSchedule.id);
+    } else {
+      if (await isWorkerShiftClosed(account.id, shiftInstanceKey)) {
+        throw new ApiError(
+          409,
+          "WORKER_SHIFT_CLOSED",
+          "Worker already ended this shift and cannot go online again."
+        );
+      }
+
+      const onlineUsed = await hasWorkerShiftOnlineUsed(account.id, shiftInstanceKey);
+
+      if (onlineUsed && currentQueueEntry?.status !== "ready") {
+        throw new ApiError(
+          409,
+          "WORKER_SHIFT_ONLINE_ALREADY_USED",
+          "Worker can go online from open_app only once in this shift."
+        );
+      }
+
+      if (!onlineUsed) {
+        await markWorkerShiftOnlineUsed(account.id, shiftInstanceKey);
+      }
     }
+    await scheduleWorkerShiftEndIfNeeded(account.id, currentSchedule);
 
     await enqueueWorker(account.id);
 
     await dispatchReadyWorkers(transaction);
 
     const latestQueueEntry = await getWorkerQueueStatus(account.id);
+    const latestAssignment = await workerApplicationRepository.findCurrentAssignmentByWorker(
+      account.id,
+      transaction
+    );
 
     if (!latestQueueEntry) {
       throw new ApiError(404, "WORKER_QUEUE_NOT_FOUND", "Worker queue entry not found.");
@@ -443,13 +506,15 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
       account,
       latestQueueEntry,
       currentSchedule,
+      latestAssignment,
       transaction
     );
 
     sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
       queue: buildWorkerQueueSocketPayload(
         latestQueueEntry,
-        response.worker_code
+        response.worker_code,
+        latestAssignment
       ),
     });
     publishNotification({
@@ -458,7 +523,11 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
       message: `Worker ${account.full_name} is ready for work.`,
       payload: {
         worker_code: response.worker_code,
-        queue: latestQueueEntry,
+        queue: buildWorkerQueueSocketPayload(
+          latestQueueEntry,
+          response.worker_code,
+          latestAssignment
+        ),
         reason: "worker_online",
       },
       audience: {
@@ -473,36 +542,50 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
 // Function ให้ worker ออกจาก queue
 export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOnlineResponse> {
   const account = await requireWorker(auth);
-  const [currentSchedule, currentQueueEntry] = await Promise.all([
+  const [currentSchedule, currentQueueEntry, currentAssignment] = await Promise.all([
     workScheduleRepository.findCurrentByAccountId(account.id),
     getWorkerQueueStatus(account.id),
+    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
   ]);
 
   if (currentQueueEntry?.status === "break" && currentSchedule) {
     await removeWorkerBreakReturn(account.id, currentSchedule.id);
   }
 
-  const queueEntry = await markWorkerOffline(account.id);
+  if (currentSchedule) {
+    await markWorkerShiftClosed(
+      account.id,
+      buildWorkScheduleShiftInstanceKey(currentSchedule)
+    );
+  }
+
+  const queueEntry = await markWorkerOpenApp(account.id);
   const response = await buildWorkerOnlineResponse(
     account,
     queueEntry,
-    currentSchedule
+    currentSchedule,
+    currentAssignment
   );
 
   sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
     queue: buildWorkerQueueSocketPayload(
       queueEntry,
-      response.worker_code
+      response.worker_code,
+      currentAssignment
     ),
   });
   publishNotification({
     type: "WORKER_STATUS_CHANGED",
-    title: "Worker offline",
-    message: `Worker ${account.full_name} went offline.`,
+    title: "Worker moved to open_app",
+    message: `Worker ${account.full_name} moved to open_app.`,
     payload: {
       worker_code: response.worker_code,
-      queue: queueEntry,
-      reason: "worker_offline",
+      queue: buildWorkerQueueSocketPayload(
+        queueEntry,
+        response.worker_code,
+        currentAssignment
+      ),
+      reason: "worker_open_app",
     },
     audience: {
       roles: ["admin"],
@@ -545,7 +628,11 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
   ]);
 
   if (currentAssignment) {
-    throw new ApiError(409, "WORKER_BUSY", "Worker already has an active assignment.");
+    throw new ApiError(
+      409,
+      "WORKER_HAS_ACTIVE_ASSIGNMENT",
+      "Worker already has an active assignment."
+    );
   }
 
   if (!queueEntry || queueEntry.status !== "ready") {
@@ -577,6 +664,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
     currentSchedule.id,
     breakDurationMs
   );
+  await scheduleWorkerShiftEndIfNeeded(account.id, currentSchedule);
 
   const breakQueueEntry = withBreakUsage(
     breakEntry,
@@ -596,7 +684,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
     message: `Worker ${account.full_name} is on break.`,
     payload: {
       worker_code: workerCode,
-      queue: breakQueueEntry,
+      queue: buildWorkerQueueSocketPayload(breakQueueEntry, workerCode),
       reason: "worker_break",
     },
     audience: {
@@ -607,7 +695,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
   return {
     full_name: account.full_name,
     worker_code: workerCode,
-    status: breakQueueEntry.status,
+    status: resolveWorkerWorkStatus(breakQueueEntry, null),
     break_count_used: breakCountUsed,
     break_count_limit: settings.worker_break_limit,
   };
@@ -617,13 +705,14 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
 export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<WorkerStatusResponse> {
   const account = await requireWorker(auth);
 
-  const [profile, currentSchedule, queueEntry] = await Promise.all([
+  const [profile, currentSchedule, queueEntry, currentAssignment] = await Promise.all([
     workerApplicationRepository.profileRepository.findByAccountId(account.id),
     workScheduleRepository.findCurrentByAccountId(account.id),
     getWorkerQueueStatus(account.id),
+    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
   ]);
   const schedule = formatScheduleWithShift(currentSchedule);
-  const status = queueEntry?.status ?? "offline";
+  const status = resolveWorkerWorkStatus(queueEntry, currentAssignment);
   const response: WorkerStatusResponse = {
     full_name: account.full_name,
     worker_code: account.username,
@@ -699,14 +788,19 @@ export async function acceptWorkerAssignment(
       assignment.vehicle_job_id
     );
     const workerCode = account.username;
+    const timeoutResult = await withTransaction(async (transaction) =>
+      handleAssignmentAcceptTimeout({
+        assignment,
+        workerAccountId: account.id,
+        connection: transaction,
+      })
+    );
 
-    await withTransaction(async (transaction) => {
-      await workerApplicationRepository.timeoutAssignment(assignment.id, transaction);
-      await enqueueWorker(account.id);
-      await dispatchReadyWorkers(transaction);
-    });
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
       vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+      reason: timeoutResult.reason,
+      timeout_count: timeoutResult.timeout_count,
+      timeout_limit: timeoutResult.timeout_limit,
     });
     publishNotification({
       type: "ASSIGNMENT_TIMEOUT",
@@ -716,6 +810,10 @@ export async function acceptWorkerAssignment(
         vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
         worker_code: workerCode,
         status: "TIMEOUT",
+        queue: buildWorkerQueueSocketPayload(timeoutResult.queue, workerCode),
+        reason: timeoutResult.reason,
+        timeout_count: timeoutResult.timeout_count,
+        timeout_limit: timeoutResult.timeout_limit,
       },
       audience: {
         roles: ["admin"],
@@ -726,11 +824,29 @@ export async function acceptWorkerAssignment(
   }
 
   await removeAssignmentTimeout(assignment.id);
+  const currentSchedule = await workScheduleRepository.findCurrentByAccountId(account.id);
+
+  if (currentSchedule) {
+    await resetWorkerAcceptTimeoutCount(
+      account.id,
+      buildWorkScheduleShiftInstanceKey(currentSchedule)
+    );
+  }
   const settings = await getRuntimeSettings();
 
   const acceptedAssignment = await workerApplicationRepository.acceptAssignment(
     assignment.id,
     buildDeadline(settings.worker_scan_deadline_minutes * 60 * 1000)
+  );
+  await scheduleScanTimeout(
+    acceptedAssignment.id,
+    acceptedAssignment.worker_account_id,
+    getDelayUntil(acceptedAssignment.scan_deadline_at)
+  );
+  await scheduleScanWarning(
+    acceptedAssignment.id,
+    acceptedAssignment.worker_account_id,
+    acceptedAssignment.scan_deadline_at
   );
   const [vehicleJobDetail, team] = await Promise.all([
     workerApplicationRepository.getVehicleJobDetail(acceptedAssignment.vehicle_job_id),
@@ -782,8 +898,10 @@ export async function scanWorkerAssignment(
 ): Promise<WorkerAssignmentCheckInResponse> {
   const account = await requireWorker(auth);
   const input = parseWithSchema(workerScanBodySchema, body);
+  const settings = await getRuntimeSettings();
+  const teamScanRemainingMinutes = settings.worker_scan_team_remaining_minutes;
 
-  const { scannedAssignment, vehicleJob } = await withTransaction(async (transaction) => {
+  const result = await withTransaction(async (transaction) => {
     const assignment = await findWorkerAssignmentByReference(
       assignmentIdParam,
       account.id,
@@ -799,7 +917,20 @@ export async function scanWorkerAssignment(
     }
 
     if (isScanDeadlineExpired(assignment.scan_deadline_at)) {
-      throw new ApiError(409, "QR_EXPIRED", "Worker QR scan time expired.");
+      const vehicleJob = await workerApplicationRepository.findVehicleJobById(
+        assignment.vehicle_job_id,
+        transaction
+      );
+      const timedOutAssignment = await workerApplicationRepository.timeoutAssignment(
+        assignment.id,
+        transaction
+      );
+
+      return {
+        kind: "expired" as const,
+        timedOutAssignment,
+        vehicleJob,
+      };
     }
 
     const vehicleJob = await workerApplicationRepository.findVehicleJobById(
@@ -827,12 +958,110 @@ export async function scanWorkerAssignment(
       );
     }
 
+    const shortenedAssignments: VehicleJobAssignmentDto[] = [];
+
+    if (vehicleJob.workers_required > 1 && scannedCount === 1) {
+      const remainingAssignments = await workerApplicationRepository.listAcceptedAssignmentsByVehicleJob(
+        assignment.vehicle_job_id,
+        assignment.id,
+        transaction
+      );
+      const teamScanDeadline = buildDeadline(teamScanRemainingMinutes * 60 * 1000);
+
+      for (const remainingAssignment of remainingAssignments) {
+        shortenedAssignments.push(
+          await workerApplicationRepository.updateAssignmentScanDeadline(
+            remainingAssignment.id,
+            teamScanDeadline,
+            transaction
+          )
+        );
+      }
+    }
+
     return {
+      kind: "scanned" as const,
       scannedAssignment,
       vehicleJob,
+      shortenedAssignments,
     };
   });
+
+  if (result.kind === "expired") {
+    await removeScanTimeout(result.timedOutAssignment.id);
+    await removeScanWarning(result.timedOutAssignment.id);
+    const queue = await markWorkerOpenApp(account.id);
+    const workerCode = account.username;
+
+    sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
+      vehicle_job_ref: result.vehicleJob?.vehicle_job_ref ?? null,
+      reason: "scan_timeout",
+      status: "open_app",
+    });
+    publishNotification({
+      type: "ASSIGNMENT_TIMEOUT",
+      title: "Assignment scan timed out",
+      message: `Worker ${account.full_name} did not scan QR in time.`,
+      payload: {
+        vehicle_job_ref: result.vehicleJob?.vehicle_job_ref ?? null,
+        worker_code: workerCode,
+        status: result.timedOutAssignment.status,
+        reason: "scan_timeout",
+        queue: buildWorkerQueueSocketPayload(queue, workerCode),
+      },
+      audience: {
+        roles: ["admin"],
+      },
+    });
+
+    throw new ApiError(409, "QR_EXPIRED", "Worker QR scan time expired.");
+  }
+
+  const { scannedAssignment, vehicleJob, shortenedAssignments } = result;
+  await removeScanTimeout(scannedAssignment.id);
+  await removeScanWarning(scannedAssignment.id);
+  await Promise.all(
+    shortenedAssignments.flatMap((assignment) =>
+      [
+        scheduleScanTimeout(
+          assignment.id,
+          assignment.worker_account_id,
+          getDelayUntil(assignment.scan_deadline_at)
+        ),
+        scheduleScanWarning(
+          assignment.id,
+          assignment.worker_account_id,
+          assignment.scan_deadline_at
+        ),
+      ]
+    )
+  );
   const workerCode = account.username;
+
+  if (shortenedAssignments.length > 0) {
+    const [firstShortenedAssignment] = shortenedAssignments;
+
+    publishRealtimeEvent({
+      type: "ASSIGNMENT_SCAN_DEADLINE_SHORTENED",
+      title: "Scan deadline shortened",
+      message: `Remaining workers must scan QR within ${teamScanRemainingMinutes} minutes for vehicle job ${vehicleJob.vehicle_job_ref}.`,
+      payload: {
+        vehicle_job_ref: vehicleJob.vehicle_job_ref,
+        remaining_minutes: teamScanRemainingMinutes,
+        scan_deadline_at: firstShortenedAssignment.scan_deadline_at,
+        assignment_count: shortenedAssignments.length,
+      },
+      worker_payload: {
+        vehicle_job_ref: vehicleJob.vehicle_job_ref,
+        remaining_minutes: teamScanRemainingMinutes,
+        scan_deadline_at: firstShortenedAssignment.scan_deadline_at,
+      },
+      admin: true,
+      worker_account_ids: shortenedAssignments.map(
+        (assignment) => assignment.worker_account_id
+      ),
+    });
+  }
 
   publishNotification({
     type: "ASSIGNMENT_CHECKED_IN",
@@ -865,6 +1094,7 @@ export async function completeWorkerTicket(
 ): Promise<TicketCompletionResponse> {
   const account = await requireWorker(auth);
   const input = parseWithSchema(workerTicketCompleteBodySchema, body);
+  const settings = await getRuntimeSettings();
   const result = await withTransaction(async (transaction) => {
     const ticket = await findGateTicketForCompletionByReference(
       ticketIdParam,
@@ -883,7 +1113,7 @@ export async function completeWorkerTicket(
       );
     }
 
-    if (ticket.status === "CLOSED") {
+    if (ticket.status === "COMPLETED") {
       throw new ApiError(409, "TICKET_ALREADY_CLOSED", "Ticket is already closed.");
     }
 
@@ -898,24 +1128,6 @@ export async function completeWorkerTicket(
         "WORKERS_NOT_CHECKED_IN",
         "All assigned workers must check in before this stall job can be completed.",
         readiness
-      );
-    }
-
-    const currentTicket = await workerApplicationRepository.findCurrentOpenTicketByVehicleJob(
-      ticket.vehicle_job_id,
-      transaction
-    );
-
-    if (!currentTicket || currentTicket.ticket.stall_job_ref !== ticket.stall_job_ref) {
-      throw new ApiError(
-        409,
-        "CURRENT_STALL_NOT_COMPLETED",
-        "Current stall job must be completed before moving to the next stall.",
-        {
-          current_market_job_ref: currentTicket?.market_job_ref ?? null,
-          current_stall_job_ref: currentTicket?.ticket.stall_job_ref ?? null,
-          requested_stall_job_ref: ticket.stall_job_ref,
-        }
       );
     }
 
@@ -939,13 +1151,13 @@ export async function completeWorkerTicket(
 
     validateTicketCompletionItems(products, input.items);
 
-    const canSubmit = await workerApplicationRepository.markTicketWaitingVendorConfirm(
+    const canSubmit = await workerApplicationRepository.markTicketDelivered(
       ticket.id,
       transaction
     );
 
     if (!canSubmit) {
-      if (ticket.status === "WAITING_VENDOR_CONFIRM") {
+      if (ticket.status === "DELIVERED") {
         throw new ApiError(
           409,
           "TICKET_ALREADY_SUBMITTED",
@@ -965,6 +1177,10 @@ export async function completeWorkerTicket(
       account.id,
       transaction
     );
+    await workerApplicationRepository.markVehicleAssignmentsDelivered(
+      ticket.vehicle_job_id,
+      transaction
+    );
     const confirmedProducts = await workerApplicationRepository.updateTicketProductConfirmations(
       ticket.id,
       input.items,
@@ -982,14 +1198,50 @@ export async function completeWorkerTicket(
     return {
       ticket: waitingTicket ?? {
         ...ticket,
-        status: "WAITING_VENDOR_CONFIRM",
-        confirmation_status: "WAITING_VENDOR_CONFIRM",
+        status: "DELIVERED",
+        confirmation_status: "DELIVERED",
       },
       submission,
       products: confirmedProducts,
       receiverAccountIds,
+      vendorTimeoutMs: getVendorConfirmationTimeoutMs(ticket, settings),
     };
   });
+  await scheduleVendorConfirmationTimeout(
+    result.ticket.id,
+    result.submission.id,
+    result.vendorTimeoutMs
+  );
+  const currentScheduleAfterSubmit = await workScheduleRepository.findCurrentByAccountId(
+    account.id
+  );
+
+  if (
+    !currentScheduleAfterSubmit ||
+    !isTimeInWorkSchedule(currentScheduleAfterSubmit)
+  ) {
+    const queue = await markWorkerOpenApp(account.id);
+
+    if (isWorkerSocketConnected(account.id)) {
+      sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
+        queue: buildWorkerQueueSocketPayload(queue, account.username),
+        reason: "ticket_delivered_after_shift_end",
+      });
+    }
+    publishNotification({
+      type: "WORKER_STATUS_CHANGED",
+      title: "Worker moved to open_app",
+      message: `Worker ${account.full_name} moved to open_app after submitting ticket completion outside the shift.`,
+      payload: {
+        worker_code: account.username,
+        queue: buildWorkerQueueSocketPayload(queue, account.username),
+        reason: "ticket_delivered_after_shift_end",
+      },
+      audience: {
+        roles: ["admin"],
+      },
+    });
+  }
   const detail = await workerApplicationRepository.getVehicleJobDetail(result.ticket.vehicle_job_id);
   const linePostbackData = buildVendorCompletionPostbackData(
     result.ticket,
@@ -1031,7 +1283,10 @@ export async function completeWorkerTicket(
         result.ticket,
         detail,
         result.products,
-        { submission_status: result.submission.status }
+        {
+          submission_status: result.submission.status,
+          assignment_status: "DELIVERED",
+        }
       ),
     },
     worker_payload: {
@@ -1039,7 +1294,10 @@ export async function completeWorkerTicket(
         result.ticket,
         detail,
         result.products,
-        { submission_status: result.submission.status }
+        {
+          submission_status: result.submission.status,
+          assignment_status: "DELIVERED",
+        }
       ),
     },
     admin: true,
@@ -1050,7 +1308,10 @@ export async function completeWorkerTicket(
     result.ticket,
     detail,
     result.products,
-    { submission_status: result.submission.status }
+    {
+      submission_status: result.submission.status,
+      assignment_status: "DELIVERED",
+    }
   ) as Omit<TicketCompletionResponse, "message">;
 
   return {

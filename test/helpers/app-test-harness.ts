@@ -124,6 +124,32 @@ type GateRequestLogRecord = {
   response_snapshot: unknown | null;
 };
 
+const ACTIVE_ASSIGNMENT_STATUSES = [
+  "PENDING",
+  "ACCEPTED",
+  "SCANNED",
+  "WORKING",
+  "DELIVERED",
+  "REJECT",
+];
+const WORKING_ASSIGNMENT_STATUSES = ["SCANNED", "WORKING", "DELIVERED", "REJECT"];
+const SCANNED_ASSIGNMENT_STATUSES = [
+  "SCANNED",
+  "WORKING",
+  "DELIVERED",
+  "REJECT",
+  "COMPLETED",
+];
+const FINISHED_ASSIGNMENT_STATUSES = [
+  "PENDING",
+  "ACCEPTED",
+  "SCANNED",
+  "WORKING",
+  "DELIVERED",
+  "REJECT",
+  "COMPLETED",
+];
+
 /* -------------------------------------- Shared Test State -------------------------------------- */
 
 const moduleWithLoad = Module as ModuleWithLoad;
@@ -178,7 +204,12 @@ class FakeRedis {
     FakeRedis.zsets.set(key, set);
   }
 
-  async zrange(key: string, start: number, stop: number): Promise<string[]> {
+  async zrange(
+    key: string,
+    start: number,
+    stop: number,
+    withScores?: string
+  ): Promise<string[]> {
     const items = Array.from(FakeRedis.zsets.get(key)?.entries() ?? [])
       .sort(([leftMember, leftScore], [rightMember, rightScore]) => {
         if (leftScore !== rightScore) {
@@ -187,14 +218,33 @@ class FakeRedis {
 
         return leftMember.localeCompare(rightMember);
       })
-      .map(([member]) => member);
+      .slice(start, stop + 1);
 
-    return items.slice(start, stop + 1);
+    if (withScores === "WITHSCORES") {
+      return items.flatMap(([member, score]) => [member, String(score)]);
+    }
+
+    return items.map(([member]) => member);
   }
 
   async zrem(key: string, ...members: string[]): Promise<void> {
     const set = FakeRedis.zsets.get(key);
     members.forEach((member) => set?.delete(member));
+  }
+
+  async zrank(key: string, member: string): Promise<number | null> {
+    const items = Array.from(FakeRedis.zsets.get(key)?.entries() ?? [])
+      .sort(([leftMember, leftScore], [rightMember, rightScore]) => {
+        if (leftScore !== rightScore) {
+          return leftScore - rightScore;
+        }
+
+        return leftMember.localeCompare(rightMember);
+      })
+      .map(([itemMember]) => itemMember);
+    const index = items.indexOf(member);
+
+    return index === -1 ? null : index;
   }
 
   async hset(key: string, values: Record<string, string>): Promise<void> {
@@ -221,12 +271,21 @@ class FakeRedis {
     return value;
   }
 
+  async del(key: string): Promise<void> {
+    FakeRedis.hashes.delete(key);
+    FakeRedis.zsets.delete(key);
+    FakeRedis.strings.delete(key);
+  }
+
   pipeline() {
     const commands: Array<() => Promise<unknown>> = [];
 
     return {
       hgetall: (key: string) => {
         commands.push(() => this.hgetall(key));
+      },
+      zrank: (key: string, member: string) => {
+        commands.push(() => this.zrank(key, member));
       },
       exec: async () => Promise.all(commands.map(async (command) => [null, await command()])),
     };
@@ -410,7 +469,7 @@ export function addDispatchableJob(id: number, workersRequired: number): Vehicle
     license_plate: `TEST-${id}`,
     vehicle_type: "truck",
     workers_required: workersRequired,
-    status: "DISPATCH_NOW",
+    status: "IN_PROGRESS",
     driver_qr_token: `driver-qr-${id}`,
     worker_qr_token: `worker-qr-${id}`,
     created_at: now,
@@ -512,7 +571,7 @@ function findCurrentOpenTicketForVehicleJob(vehicleJobId: number): {
     .filter(
       (candidate) =>
         candidate.vehicle_job_id === vehicleJobId &&
-        !["CLOSED", "CANCELLED"].includes(candidate.status)
+        !["COMPLETED", "CANCELLED"].includes(candidate.status)
     )
     .sort(
       (a, b) =>
@@ -542,7 +601,7 @@ function activateNextTicketForVehicleJob(vehicleJobId: number): {
     return null;
   }
 
-  if (["WAIT", "READY"].includes(current.ticket.status)) {
+  if (current.ticket.status === "WAIT") {
     current.ticket.status = "IN_PROGRESS";
     current.ticket.updated_at = new Date().toISOString();
   }
@@ -569,14 +628,18 @@ const workerApplicationRepositoryMock = {
   workScheduleRepository: {
     findCurrentByAccountId: async (accountId: number) =>
       state.schedules.get(accountId) ?? null,
+    findById: async (scheduleId: number) =>
+      Array.from(state.schedules.values()).find(
+        (schedule) => (schedule as { id?: number }).id === scheduleId
+      ) ?? null,
   },
   listDispatchableVehicleJobs: async () =>
-    state.vehicleJobs.filter((job) => job.status === "DISPATCH_NOW"),
+    state.vehicleJobs.filter((job) => job.status === "IN_PROGRESS"),
   countActiveAssignments: async (vehicleJobId: number) =>
     state.assignments.filter(
       (assignment) =>
         assignment.vehicle_job_id === vehicleJobId &&
-        ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"].includes(assignment.status)
+            ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
     ).length,
   createAssignment: async (
     vehicleJobId: number,
@@ -622,14 +685,14 @@ const workerApplicationRepositoryMock = {
         (assignment) =>
           assignment.vehicle_job_id === job.id &&
           assignment.worker_account_id === workerAccountId &&
-          ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"].includes(assignment.status)
+          ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
       ) ?? null;
   },
   findCurrentAssignmentByWorker: async (workerAccountId: number) =>
     state.assignments.find(
       (assignment) =>
         assignment.worker_account_id === workerAccountId &&
-        ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"].includes(assignment.status)
+        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
     ) ?? null,
   timeoutAssignment: async (assignmentId: number) => {
     const assignment = state.assignments.find((item) => item.id === assignmentId);
@@ -655,6 +718,30 @@ const workerApplicationRepositoryMock = {
     assignment.updated_at = assignment.accepted_at;
     return assignment;
   },
+  listAcceptedAssignmentsByVehicleJob: async (
+    vehicleJobId: number,
+    excludedAssignmentId?: number
+  ) =>
+    state.assignments.filter(
+      (assignment) =>
+        assignment.vehicle_job_id === vehicleJobId &&
+        assignment.status === "ACCEPTED" &&
+        assignment.id !== excludedAssignmentId
+    ),
+  updateAssignmentScanDeadline: async (
+    assignmentId: number,
+    scanDeadlineAt: Date
+  ) => {
+    const assignment = state.assignments.find((item) => item.id === assignmentId);
+
+    if (!assignment) {
+      throw new Error("Assignment not found.");
+    }
+
+    assignment.scan_deadline_at = scanDeadlineAt.toISOString();
+    assignment.updated_at = new Date().toISOString();
+    return assignment;
+  },
   findVehicleJobById: async (vehicleJobId: number) =>
     state.vehicleJobs.find((job) => job.id === vehicleJobId) ?? null,
   scanAssignment: async (assignmentId: number) => {
@@ -673,16 +760,14 @@ const workerApplicationRepositoryMock = {
     state.assignments.filter(
       (assignment) =>
         assignment.vehicle_job_id === vehicleJobId &&
-        ["SCANNED", "COUNTING"].includes(assignment.status)
+        WORKING_ASSIGNMENT_STATUSES.includes(assignment.status)
     ).length,
   listVehicleJobAssignmentTeam: async (vehicleJobId: number) =>
     state.assignments
       .filter(
         (assignment) =>
           assignment.vehicle_job_id === vehicleJobId &&
-          ["PENDING", "ACCEPTED", "SCANNED", "COUNTING", "COMPLETED"].includes(
-            assignment.status
-          )
+          FINISHED_ASSIGNMENT_STATUSES.includes(assignment.status)
       )
       .map((assignment) => {
         const worker =
@@ -694,7 +779,7 @@ const workerApplicationRepositoryMock = {
         const scanStatus =
           assignment.status === "COMPLETED" || assignment.completed_at
             ? "completed"
-            : ["SCANNED", "COUNTING"].includes(assignment.status) || assignment.scanned_at
+            : WORKING_ASSIGNMENT_STATUSES.includes(assignment.status) || assignment.scanned_at
               ? "scanned"
               : assignment.status === "ACCEPTED" || assignment.accepted_at
                 ? "accepted"
@@ -726,7 +811,7 @@ const workerApplicationRepositoryMock = {
     const checkedInCount = state.assignments.filter(
       (assignment) =>
         assignment.vehicle_job_id === vehicleJobId &&
-        ["SCANNED", "COUNTING", "COMPLETED"].includes(assignment.status)
+        SCANNED_ASSIGNMENT_STATUSES.includes(assignment.status)
     ).length;
 
     return {
@@ -791,7 +876,7 @@ const workerApplicationRepositoryMock = {
       .filter(
         (assignment) =>
           assignment.vehicle_job_id === vehicleJobId &&
-          ["ACCEPTED", "SCANNED", "COUNTING"].includes(assignment.status)
+          SCANNED_ASSIGNMENT_STATUSES.includes(assignment.status)
       )
       .map((assignment) => {
         const ticketWorker = {
@@ -809,15 +894,18 @@ const workerApplicationRepositoryMock = {
     state.ticketWorkers.filter((worker) => worker.ticket_id === ticketId),
   listTicketProducts: async (ticketId: number) =>
     state.ticketProducts.filter((product) => product.ticket_id === ticketId),
-  markTicketWaitingVendorConfirm: async (ticketId: number) => {
+  markTicketDelivered: async (ticketId: number) => {
     const ticket = state.gateTickets.find((item) => item.id === ticketId);
 
-    if (!ticket || ticket.status !== "IN_PROGRESS") {
+    if (
+      !ticket ||
+      !["WAIT", "IN_PROGRESS", "REJECT"].includes(ticket.status)
+    ) {
       return false;
     }
 
-    ticket.status = "WAITING_VENDOR_CONFIRM";
-    ticket.confirmation_status = "WAITING_VENDOR_CONFIRM";
+    ticket.status = "DELIVERED";
+    ticket.confirmation_status = "DELIVERED";
     return true;
   },
   createTicketCompletionSubmission: async (
@@ -828,7 +916,7 @@ const workerApplicationRepositoryMock = {
       id: state.nextSubmissionId++,
       ticket_id: ticketId,
       submitted_by_worker_account_id: workerAccountId,
-      status: "WAITING_VENDOR_CONFIRM",
+      status: "DELIVERED",
       confirmed_at: null,
       rejected_at: null,
     };
@@ -836,12 +924,63 @@ const workerApplicationRepositoryMock = {
     state.completionSubmissions.push(submission);
     return submission;
   },
+  markVehicleAssignmentsDelivered: async (vehicleJobId: number) => {
+    let count = 0;
+
+    state.assignments
+      .filter(
+        (assignment) =>
+          assignment.vehicle_job_id === vehicleJobId &&
+          WORKING_ASSIGNMENT_STATUSES.includes(assignment.status)
+      )
+      .forEach((assignment) => {
+        assignment.status = "DELIVERED";
+        assignment.updated_at = new Date().toISOString();
+        count += 1;
+      });
+
+    return count;
+  },
+  markVehicleAssignmentsRejected: async (vehicleJobId: number) => {
+    let count = 0;
+
+    state.assignments
+      .filter(
+        (assignment) =>
+          assignment.vehicle_job_id === vehicleJobId &&
+          WORKING_ASSIGNMENT_STATUSES.includes(assignment.status)
+      )
+      .forEach((assignment) => {
+        assignment.status = "REJECT";
+        assignment.updated_at = new Date().toISOString();
+        count += 1;
+      });
+
+    return count;
+  },
+  markVehicleAssignmentsWorking: async (vehicleJobId: number) => {
+    let count = 0;
+
+    state.assignments
+      .filter(
+        (assignment) =>
+          assignment.vehicle_job_id === vehicleJobId &&
+          WORKING_ASSIGNMENT_STATUSES.includes(assignment.status)
+      )
+      .forEach((assignment) => {
+        assignment.status = "WORKING";
+        assignment.updated_at = new Date().toISOString();
+        count += 1;
+      });
+
+    return count;
+  },
   findWaitingTicketCompletionSubmission: async (ticketId: number) =>
     state.completionSubmissions
       .filter(
         (submission) =>
           submission.ticket_id === ticketId &&
-          submission.status === "WAITING_VENDOR_CONFIRM"
+          submission.status === "DELIVERED"
       )
       .at(-1) ?? null,
   confirmTicketCompletion: async (ticketId: number, submissionId: number) => {
@@ -850,13 +989,13 @@ const workerApplicationRepositoryMock = {
       (item) => item.id === submissionId
     );
 
-    if (!ticket || ticket.status !== "WAITING_VENDOR_CONFIRM" || !submission) {
+    if (!ticket || ticket.status !== "DELIVERED" || !submission) {
       throw new Error("Ticket confirm did not update a waiting ticket.");
     }
 
-    ticket.status = "CLOSED";
-    ticket.confirmation_status = "CONFIRMED";
-    submission.status = "CONFIRMED";
+    ticket.status = "COMPLETED";
+    ticket.confirmation_status = "COMPLETED";
+    submission.status = "COMPLETED";
     submission.confirmed_at = new Date().toISOString();
     state.ticketWorkers
       .filter((worker) => worker.ticket_id === ticketId)
@@ -875,18 +1014,18 @@ const workerApplicationRepositoryMock = {
       (item) => item.id === submissionId
     );
 
-    if (!ticket || ticket.status !== "WAITING_VENDOR_CONFIRM" || !submission) {
+    if (!ticket || ticket.status !== "DELIVERED" || !submission) {
       throw new Error("Ticket reject did not update a waiting ticket.");
     }
 
-    ticket.status = "COMPLETION_REJECTED";
-    ticket.confirmation_status = "REJECTED";
-    submission.status = "REJECTED";
+    ticket.status = "REJECT";
+    ticket.confirmation_status = "REJECT";
+    submission.status = "REJECT";
     submission.rejected_at = new Date().toISOString();
     state.ticketWorkers
       .filter((worker) => worker.ticket_id === ticketId)
       .forEach((worker) => {
-        worker.status = "COMPLETION_REJECTED";
+        worker.status = "REJECT";
       });
 
     return {
@@ -901,7 +1040,7 @@ const workerApplicationRepositoryMock = {
     );
     const allTicketsTerminal =
       tickets.length > 0 &&
-      tickets.every((ticket) => ["CLOSED", "CANCELLED"].includes(ticket.status));
+      tickets.every((ticket) => ["COMPLETED", "CANCELLED"].includes(ticket.status));
 
     if (!job || !allTicketsTerminal) {
       return null;
@@ -914,7 +1053,7 @@ const workerApplicationRepositoryMock = {
     const activeAssignments = state.assignments.filter(
       (assignment) =>
         assignment.vehicle_job_id === vehicleJobId &&
-        ["PENDING", "ACCEPTED", "SCANNED", "COUNTING"].includes(assignment.status)
+        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
     );
     const now = new Date().toISOString();
 
@@ -1057,7 +1196,7 @@ const gateRepositoryMock = {
       license_plate: input.license_plate,
       vehicle_type: input.vehicle_type ?? null,
       workers_required: input.workers_required,
-      status: dispatchNow ? "DISPATCH_NOW" : "WAIT",
+      status: dispatchNow ? "IN_PROGRESS" : "WAIT",
       driver_qr_token: `driver-qr-${vehicleJobId}`,
       worker_qr_token: `worker-qr-${vehicleJobId}`,
       created_at: now,
@@ -1086,8 +1225,8 @@ const gateRepositoryMock = {
           stall_no: ticketInput.stall_no ?? null,
           vendor_name: ticketInput.vendor_name ?? null,
           vendor_line_id: ticketInput.vendor_line_id ?? null,
-          status: dispatchNow ? "READY" : "WAIT",
-          confirmation_status: "NOT_SUBMITTED",
+          status: "WAIT",
+          confirmation_status: "WAIT",
           created_at: now,
           updated_at: now,
         });
@@ -1158,6 +1297,10 @@ const authRepositoryMock = {
   workScheduleRepository: {
     findCurrentByAccountId: async (accountId: number) =>
       state.authSchedules.get(accountId) ?? null,
+    findById: async (scheduleId: number) =>
+      Array.from(state.authSchedules.values()).find(
+        (schedule) => (schedule as { id?: number }).id === scheduleId
+      ) ?? null,
   },
   sessionRepository: {
     findActiveByAccountId: async (accountId: number) =>
@@ -1351,11 +1494,16 @@ function patchModuleLoader(): void {
       return {
         getRuntimeSettings: async () => ({
           worker_accept_deadline_seconds: 60,
+          worker_accept_timeout_limit: 3,
           worker_scan_deadline_minutes: 15,
+          worker_scan_warning_before_minutes: 2,
+          worker_scan_team_remaining_minutes: 5,
           worker_break_duration_minutes: 15,
-          worker_break_limit: 5,
+          worker_break_limit: 4,
           worker_break_count_ttl_hours: 48,
           worker_presence_stale_seconds: 90,
+          vendor_confirm_timeout_hours: 24,
+          vendor_reconfirm_timeout_hours: 4,
           driver_session_ttl_hours: 24,
         }),
         getAccountPermissions: async (account: AccountRecord) => ({
