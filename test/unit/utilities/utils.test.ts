@@ -21,6 +21,7 @@ let refreshTokenHash: typeof import("../../../src/utils/refresh-token-hash");
 let shift: typeof import("../../../src/utils/shift");
 let authConfig: typeof import("../../../src/config/auth.config");
 let schemas: typeof import("../../../src/validation/schemas");
+let apiCase: typeof import("../../../src/middlewares/api-case.middleware");
 
 // Function โหลด utility/config/schema ที่ต้องใช้ใน test หลังตั้งค่า env แล้ว
 before(async () => {
@@ -33,6 +34,7 @@ before(async () => {
   shift = await import("../../../src/utils/shift");
   authConfig = await import("../../../src/config/auth.config");
   schemas = await import("../../../src/validation/schemas");
+  apiCase = await import("../../../src/middlewares/api-case.middleware");
 });
 
 /* -------------------------------------- JWT Tests -------------------------------------- */
@@ -178,27 +180,76 @@ test("login body schema allows device fields to be omitted", () => {
 
 // Test update user schema รองรับ partial profile update
 // Test ตรวจ schema update worker ว่ารับ partial update ของ profile และ schedule ได้
-test("gate vehicle job schema accepts optional dispatch_now flag", () => {
+test("gate vehicle job schema accepts PascalCase Gate body", () => {
   const gateBody = schemas.gateVehicleJobBodySchema.parse({
-    ticketNo: "TKT-DISPATCH-NOW",
-    marketCode: "MARKET-A",
-    marketName: "Market A",
-    boothCode: "BOOTH-A01",
-    boothName: "Vendor A",
-    licensePlate: "ABC-1234",
-    vehicleTypeCode: "PICKUP",
-    vehicleTypeName: "Pickup truck",
-    productCode: "PRODUCT-DISPATCH-NOW",
-    productName: "Cabbage",
-    packageCode: "CRATE",
-    packageName: "crate",
-    quantity: 10,
-    dispatch_now: true,
+    TicketNo: "TKT-DISPATCH-NOW",
+    TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+    BoothCount: 2,
+    MarketCode: "MARKET-A",
+    MarketName: "Market A",
+    BoothCode: "BOOTH-A01",
+    BoothName: "Vendor A",
+    LicensePlate: "ABC-1234",
+    VehicleTypeCode: "PICKUP",
+    VehicleTypeName: "Pickup truck",
+    ProductCode: "PRODUCT-DISPATCH-NOW",
+    ProductName: "Cabbage",
+    PackageCode: "CRATE",
+    PackageName: "crate",
+    Quantity: 10,
+    Dispatch: true,
   });
 
-  assert.equal(gateBody.dispatch_now, true);
-  assert.equal(gateBody.vehicleTypeName, "Pickup truck");
+  assert.equal(gateBody.Dispatch, true);
+  assert.equal(gateBody.VehicleTypeName, "Pickup truck");
+  assert.equal(gateBody.BoothCount, 2);
   assert.equal("workersRequired" in gateBody, false);
+});
+
+test("API case utilities normalize PascalCase request payloads", () => {
+  const payload = apiCase.normalizeApiRequestPayload({
+    DeviceId: "mobile-001",
+    WorkerCodes: ["MN000012"],
+    WorkerAcceptDeadlineSeconds: 60,
+    Items: [
+      {
+        ProductCode: "PRODUCT-001",
+        ConfirmedQuantity: 8,
+      },
+    ],
+  });
+
+  assert.deepEqual(payload, {
+    device_id: "mobile-001",
+    worker_codes: ["MN000012"],
+    worker_accept_deadline_seconds: 60,
+    items: [
+      {
+        productCode: "PRODUCT-001",
+        confirmed_quantity: 8,
+      },
+    ],
+  });
+});
+
+test("API case utilities transform response payloads to PascalCase", () => {
+  const payload = apiCase.toPascalCasePayload({
+    access_token: "access",
+    worker_qr_token: "TKT-001",
+    vehicle_job: {
+      ticketNo: "TKT-001",
+      latest_activity_at: "2026-07-24T10:00:00.000Z",
+    },
+  });
+
+  assert.deepEqual(payload, {
+    AccessToken: "access",
+    WorkerQrToken: "TKT-001",
+    VehicleJob: {
+      TicketNo: "TKT-001",
+      LatestActivityAt: "2026-07-24T10:00:00.000Z",
+    },
+  });
 });
 
 test("shift utility builds a stable break counter key for one shift instance", () => {

@@ -28,6 +28,8 @@ interface GateMarketCreateInput {
 export interface GateVehicleJobCreateInput {
   gate_transaction_ref: string;
   ticketNo: string;
+  ticket_created_at: Date;
+  booth_count: number;
   license_plate: string;
   vehicle_type?: string;
   dispatch_now?: boolean;
@@ -36,62 +38,67 @@ export interface GateVehicleJobCreateInput {
 
 // Type ส่วน body ใหม่จาก Gate: 1 request ต่อ 1 ใบ/1 แผง/1 รายการสินค้า
 export interface GateVehicleJobBody {
-  ticketNo: string;
-  marketCode: string;
-  marketName: string;
-  boothCode: string;
-  boothName: string;
-  licensePlate: string;
-  vehicleTypeCode?: string;
-  vehicleTypeName: string;
-  productCode: string;
-  productName: string;
-  packageCode: string;
-  packageName: string;
-  quantity: number;
-  dispatch_now?: boolean;
+  TicketNo: string;
+  TicketCreatedAt: string;
+  BoothCount: number;
+  MarketCode: string;
+  MarketName: string;
+  BoothCode: string;
+  BoothName: string;
+  LicensePlate: string;
+  VehicleTypeCode: string;
+  VehicleTypeName: string;
+  ProductCode: string;
+  ProductName: string;
+  PackageCode: string;
+  PackageName: string;
+  Quantity: number;
+  Dispatch: boolean;
 }
 
 interface GateVehicleJobResponseTicket {
-  ticketNo: string;
-  licensePlate: string;
-  vehicleTypeCode: string | null;
-  vehicleTypeName: string | null;
-  workers_required: number;
-  status: string;
+  TicketNo: string;
+  TicketCreatedAt: string;
+  BoothCount: number;
+  LicensePlate: string;
+  VehicleTypeCode: string | null;
+  VehicleTypeName: string | null;
+  WorkersRequired: number;
+  Status: GateVehicleJobResponseStatus;
 }
 
 interface GateVehicleJobResponseMarket {
-  marketCode: string;
-  marketName: string;
+  MarketCode: string;
+  MarketName: string;
 }
 
 interface GateVehicleJobResponseBooth {
-  boothCode: string;
-  boothName: string | null;
+  BoothCode: string;
+  BoothName: string | null;
 }
 
 interface GateVehicleJobResponseProduct {
-  productCode: string;
-  productName: string;
-  packageCode: string;
-  packageName: string;
-  quantity: number;
+  ProductCode: string;
+  ProductName: string;
+  PackageCode: string;
+  PackageName: string;
+  Quantity: number;
 }
 
 // Type ส่วนผลลัพธ์ของ Gate create/replay
 export type GateVehicleJobResult = "CREATED" | "REPLAYED";
+export type GateVehicleJobResponseStatus = "unload_now" | "waiting_unload";
 
 // Type ส่วน response แบบย่อหลัง Gate สร้างหรือ replay งานรถ
 export interface GateVehicleJobResponse {
-  result: GateVehicleJobResult;
-  ticket: GateVehicleJobResponseTicket;
-  market: GateVehicleJobResponseMarket;
-  booth: GateVehicleJobResponseBooth;
-  product: GateVehicleJobResponseProduct;
-  qr: {
-    driver_qr_token: string;
-    worker_qr_token: string;
+  Result: GateVehicleJobResult;
+  Ticket: GateVehicleJobResponseTicket;
+  Market: GateVehicleJobResponseMarket;
+  Booth: GateVehicleJobResponseBooth;
+  Product: GateVehicleJobResponseProduct;
+  Qr: {
+    DriverQrToken: string;
+    WorkerQrToken: string;
   };
 }
 

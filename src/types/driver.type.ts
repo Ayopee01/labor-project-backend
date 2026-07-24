@@ -15,6 +15,8 @@ export interface DriverVehicleJobResponse {
   gate_transaction_ref: string;
   license_plate: string;
   vehicle_type: string | null;
+  ticket_created_at: string;
+  booth_count: number;
   workers_required: number;
   status: string;
   worker_qr_token: string;

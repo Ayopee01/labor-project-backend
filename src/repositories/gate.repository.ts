@@ -93,6 +93,8 @@ export async function createVehicleJobFromGate(
         gateTransactionRef: input.gate_transaction_ref,
         licensePlate: input.license_plate,
         vehicleType: input.vehicle_type ?? null,
+        ticketCreatedAt: input.ticket_created_at,
+        boothCount: input.booth_count,
         workersRequired: 1,
         dispatchNow,
         status: vehicleStatus,
@@ -105,6 +107,8 @@ export async function createVehicleJobFromGate(
     (existingVehicleJob.gateTransactionRef !== input.gate_transaction_ref ||
       existingVehicleJob.licensePlate !== input.license_plate ||
       existingVehicleJob.vehicleType !== (input.vehicle_type ?? null) ||
+      existingVehicleJob.ticketCreatedAt.getTime() !== input.ticket_created_at.getTime() ||
+      existingVehicleJob.boothCount !== input.booth_count ||
       existingVehicleJob.workersRequired !== 1 ||
       existingVehicleJob.workerQrToken !== input.ticketNo ||
       (dispatchNow && !existingVehicleJob.dispatchNow) ||
@@ -118,6 +122,8 @@ export async function createVehicleJobFromGate(
           gateTransactionRef: input.gate_transaction_ref,
           licensePlate: input.license_plate,
           vehicleType: input.vehicle_type ?? null,
+          ticketCreatedAt: input.ticket_created_at,
+          boothCount: input.booth_count,
           workersRequired: 1,
           workerQrToken: input.ticketNo,
           dispatchNow: existingVehicleJob.dispatchNow || dispatchNow,

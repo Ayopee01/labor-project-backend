@@ -15,7 +15,7 @@ router.post(
   async (req, res, next) => {
     try {
       const result = await gateService.createVehicleJobFromGate(req.body);
-      res.status(result.result === "REPLAYED" ? 200 : 201).json(result);
+      res.status(result.Result === "REPLAYED" ? 200 : 201).json(result);
     } catch (error) {
       next(error);
     }

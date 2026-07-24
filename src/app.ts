@@ -3,6 +3,10 @@ import cors from "cors";
 import express from "express";
 
 import setupSwagger from "./docs/swagger";
+import {
+  normalizeApiRequestBody,
+  pascalCaseApiResponse,
+} from "./middlewares/api-case.middleware";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware";
 import adminJobRoutes from "./routes/admin-jobs.routes";
 import adminSettingsRoutes from "./routes/admin-settings.routes";
@@ -31,6 +35,8 @@ app.use(
     },
   })
 );
+app.use(normalizeApiRequestBody);
+app.use(pascalCaseApiResponse);
 app.use("/uploads", express.static("uploads"));
 
 // Routes

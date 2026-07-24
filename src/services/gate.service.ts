@@ -2,13 +2,19 @@
 import { createHash } from "crypto";
 import type { Prisma } from "@prisma/client";
 // import
+import { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 import { withTransaction } from "../db/prisma";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import * as gateRepository from "../repositories/gate.repository";
 import * as workerApplicationRepository from "../repositories/worker-application.repository";
 import { publishNotification } from "./notifications.service";
 // import Types
-import type { GateVehicleJobBody, GateVehicleJobResponse, GateVehicleJobResult } from "../types/gate.type";
+import type {
+  GateVehicleJobBody,
+  GateVehicleJobResponse,
+  GateVehicleJobResponseStatus,
+  GateVehicleJobResult,
+} from "../types/gate.type";
 import type { GateVehicleJobCreateInput } from "../types/gate.type";
 import type { VehicleJobDetailResponse } from "../types/worker.type";
 // import Validation
@@ -19,12 +25,23 @@ import ApiError from "../utils/api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
+function buildGateTicketResponseStatus(dispatch: boolean): GateVehicleJobResponseStatus {
+  return dispatch
+    ? VEHICLE_OPERATION_STATUS.UNLOAD_NOW
+    : VEHICLE_OPERATION_STATUS.WAITING_UNLOAD;
+}
+
+function isGateTicketResponseStatus(value: unknown): value is GateVehicleJobResponseStatus {
+  return value === VEHICLE_OPERATION_STATUS.UNLOAD_NOW ||
+    value === VEHICLE_OPERATION_STATUS.WAITING_UNLOAD;
+}
+
 function findGateResponseProduct(
   detail: VehicleJobDetailResponse,
   input: GateVehicleJobBody
 ) {
   const market = detail.markets.find(
-    (candidate) => candidate.marketCode === input.marketCode
+    (candidate) => candidate.marketCode === input.MarketCode
   );
 
   if (!market) {
@@ -32,7 +49,7 @@ function findGateResponseProduct(
   }
 
   const booth = market.tickets.find(
-    (candidate) => candidate.boothCode === input.boothCode
+    (candidate) => candidate.boothCode === input.BoothCode
   );
 
   if (!booth) {
@@ -40,7 +57,7 @@ function findGateResponseProduct(
   }
 
   const product = booth.products.find(
-    (candidate) => candidate.productCode === input.productCode
+    (candidate) => candidate.productCode === input.ProductCode
   );
 
   if (!product) {
@@ -61,18 +78,22 @@ function isGateVehicleJobBody(value: unknown): value is GateVehicleJobBody {
 
   const record = value as Partial<Record<keyof GateVehicleJobBody, unknown>>;
   return (
-    typeof record.ticketNo === "string" &&
-    typeof record.marketCode === "string" &&
-    typeof record.marketName === "string" &&
-    typeof record.boothCode === "string" &&
-    typeof record.boothName === "string" &&
-    typeof record.licensePlate === "string" &&
-    typeof record.vehicleTypeName === "string" &&
-    typeof record.productCode === "string" &&
-    typeof record.productName === "string" &&
-    typeof record.packageCode === "string" &&
-    typeof record.packageName === "string" &&
-    typeof record.quantity === "number"
+    typeof record.TicketNo === "string" &&
+    typeof record.TicketCreatedAt === "string" &&
+    typeof record.BoothCount === "number" &&
+    typeof record.MarketCode === "string" &&
+    typeof record.MarketName === "string" &&
+    typeof record.BoothCode === "string" &&
+    typeof record.BoothName === "string" &&
+    typeof record.LicensePlate === "string" &&
+    typeof record.VehicleTypeCode === "string" &&
+    typeof record.VehicleTypeName === "string" &&
+    typeof record.ProductCode === "string" &&
+    typeof record.ProductName === "string" &&
+    typeof record.PackageCode === "string" &&
+    typeof record.PackageName === "string" &&
+    typeof record.Quantity === "number" &&
+    typeof record.Dispatch === "boolean"
   );
 }
 
@@ -85,33 +106,35 @@ function buildPublicGateVehicleJobResponse(
   const { market, booth, product } = findGateResponseProduct(detail, input);
 
   return {
-    result,
-    ticket: {
-      ticketNo: detail.vehicle_job.ticketNo,
-      licensePlate: detail.vehicle_job.license_plate,
-      vehicleTypeCode: input.vehicleTypeCode ?? null,
-      vehicleTypeName: detail.vehicle_job.vehicle_type,
-      workers_required: 1,
-      status: detail.vehicle_job.status,
+    Result: result,
+    Ticket: {
+      TicketNo: detail.vehicle_job.ticketNo,
+      TicketCreatedAt: detail.vehicle_job.ticket_created_at,
+      BoothCount: detail.vehicle_job.booth_count,
+      LicensePlate: detail.vehicle_job.license_plate,
+      VehicleTypeCode: input.VehicleTypeCode,
+      VehicleTypeName: detail.vehicle_job.vehicle_type,
+      WorkersRequired: 1,
+      Status: buildGateTicketResponseStatus(input.Dispatch),
     },
-    market: {
-      marketCode: market.marketCode,
-      marketName: market.marketName,
+    Market: {
+      MarketCode: market.marketCode,
+      MarketName: market.marketName,
     },
-    booth: {
-      boothCode: booth.boothCode,
-      boothName: booth.boothName,
+    Booth: {
+      BoothCode: booth.boothCode,
+      BoothName: booth.boothName,
     },
-    product: {
-      productCode: product.productCode,
-      productName: product.productName,
-      packageCode: product.packageCode,
-      packageName: product.packageName,
-      quantity: Number(product.quantity),
+    Product: {
+      ProductCode: product.productCode,
+      ProductName: product.productName,
+      PackageCode: product.packageCode,
+      PackageName: product.packageName,
+      Quantity: Number(product.quantity),
     },
-    qr: {
-      driver_qr_token: detail.vehicle_job.driver_qr_token,
-      worker_qr_token: detail.vehicle_job.worker_qr_token,
+    Qr: {
+      DriverQrToken: detail.vehicle_job.driver_qr_token,
+      WorkerQrToken: detail.vehicle_job.worker_qr_token,
     },
   };
 }
@@ -141,10 +164,10 @@ function arePayloadsEqual(left: unknown, right: unknown): boolean {
 
 function buildGateTransactionRef(input: GateVehicleJobBody): string {
   const idempotencyParts = {
-    ticketNo: input.ticketNo,
-    marketCode: input.marketCode,
-    boothCode: input.boothCode,
-    productCode: input.productCode,
+    ticketNo: input.TicketNo,
+    marketCode: input.MarketCode,
+    boothCode: input.BoothCode,
+    productCode: input.ProductCode,
   };
   const hash = createHash("sha256")
     .update(JSON.stringify(normalizeJson(idempotencyParts)))
@@ -157,25 +180,27 @@ function buildGateTransactionRef(input: GateVehicleJobBody): string {
 function buildGateCreateInput(input: GateVehicleJobBody): GateVehicleJobCreateInput {
   return {
     gate_transaction_ref: buildGateTransactionRef(input),
-    ticketNo: input.ticketNo,
-    license_plate: input.licensePlate,
-    vehicle_type: input.vehicleTypeName,
-    dispatch_now: input.dispatch_now,
+    ticketNo: input.TicketNo,
+    ticket_created_at: new Date(input.TicketCreatedAt),
+    booth_count: input.BoothCount,
+    license_plate: input.LicensePlate,
+    vehicle_type: input.VehicleTypeName,
+    dispatch_now: input.Dispatch,
     markets: [
       {
-        marketCode: input.marketCode,
-        marketName: input.marketName,
+        marketCode: input.MarketCode,
+        marketName: input.MarketName,
         tickets: [
           {
-            boothCode: input.boothCode,
-            boothName: input.boothName,
+            boothCode: input.BoothCode,
+            boothName: input.BoothName,
             products: [
               {
-                productCode: input.productCode,
-                productName: input.productName,
-                packageCode: input.packageCode,
-                packageName: input.packageName,
-                quantity: input.quantity,
+                productCode: input.ProductCode,
+                productName: input.ProductName,
+                packageCode: input.PackageCode,
+                packageName: input.PackageName,
+                quantity: input.Quantity,
               },
             ],
           },
@@ -190,13 +215,23 @@ function buildGateReplayResponse(
   response: GateVehicleJobResponse,
   payloadSnapshot: unknown
 ): GateVehicleJobResponse {
-  if ("ticket" in response && "market" in response && "booth" in response && "product" in response) {
+  const responseRecord = response as unknown as Record<string, unknown>;
+
+  if ("Ticket" in responseRecord && "Market" in responseRecord && "Booth" in responseRecord && "Product" in responseRecord) {
+    const pascalResponse = response as GateVehicleJobResponse;
+    const status = isGateVehicleJobBody(payloadSnapshot)
+      ? buildGateTicketResponseStatus(payloadSnapshot.Dispatch)
+      : isGateTicketResponseStatus(pascalResponse.Ticket.Status)
+        ? pascalResponse.Ticket.Status
+        : VEHICLE_OPERATION_STATUS.WAITING_UNLOAD;
+
     return {
-      ...response,
-      result: "REPLAYED",
-      ticket: {
-        ...response.ticket,
-        workers_required: 1,
+      ...pascalResponse,
+      Result: "REPLAYED",
+      Ticket: {
+        ...pascalResponse.Ticket,
+        WorkersRequired: 1,
+        Status: status,
       },
     };
   }
@@ -210,43 +245,75 @@ function buildGateReplayResponse(
   }
 
   const legacyResponse = response as unknown as {
+    ticket?: {
+      ticketNo?: string;
+      ticketCreatedAt?: string;
+      boothCount?: number;
+      licensePlate?: string;
+      vehicleTypeCode?: string | null;
+      vehicleTypeName?: string | null;
+      workers_required?: number;
+      status?: string;
+    };
+    market?: {
+      marketCode?: string;
+      marketName?: string;
+    };
+    booth?: {
+      boothCode?: string;
+      boothName?: string | null;
+    };
+    product?: {
+      productCode?: string;
+      productName?: string;
+      packageCode?: string;
+      packageName?: string;
+      quantity?: number;
+    };
+    qr?: {
+      driver_qr_token?: string;
+      worker_qr_token?: string;
+    };
     vehicle_job?: {
       ticketNo?: string;
       license_plate?: string;
       vehicleTypeName?: string | null;
       status?: string;
     };
-    qr?: GateVehicleJobResponse["qr"];
   };
+  const ticketCreatedAt =
+    legacyResponse.ticket?.ticketCreatedAt ?? payloadSnapshot.TicketCreatedAt;
 
   return {
-    result: "REPLAYED",
-    ticket: {
-      ticketNo: legacyResponse.vehicle_job?.ticketNo ?? payloadSnapshot.ticketNo,
-      licensePlate: legacyResponse.vehicle_job?.license_plate ?? payloadSnapshot.licensePlate,
-      vehicleTypeCode: payloadSnapshot.vehicleTypeCode ?? null,
-      vehicleTypeName: legacyResponse.vehicle_job?.vehicleTypeName ?? payloadSnapshot.vehicleTypeName,
-      workers_required: 1,
-      status: legacyResponse.vehicle_job?.status ?? "WAIT",
+    Result: "REPLAYED",
+    Ticket: {
+      TicketNo: legacyResponse.ticket?.ticketNo ?? legacyResponse.vehicle_job?.ticketNo ?? payloadSnapshot.TicketNo,
+      TicketCreatedAt: ticketCreatedAt,
+      BoothCount: legacyResponse.ticket?.boothCount ?? payloadSnapshot.BoothCount,
+      LicensePlate: legacyResponse.ticket?.licensePlate ?? legacyResponse.vehicle_job?.license_plate ?? payloadSnapshot.LicensePlate,
+      VehicleTypeCode: legacyResponse.ticket?.vehicleTypeCode ?? payloadSnapshot.VehicleTypeCode,
+      VehicleTypeName: legacyResponse.ticket?.vehicleTypeName ?? legacyResponse.vehicle_job?.vehicleTypeName ?? payloadSnapshot.VehicleTypeName,
+      WorkersRequired: 1,
+      Status: buildGateTicketResponseStatus(payloadSnapshot.Dispatch),
     },
-    market: {
-      marketCode: payloadSnapshot.marketCode,
-      marketName: payloadSnapshot.marketName,
+    Market: {
+      MarketCode: legacyResponse.market?.marketCode ?? payloadSnapshot.MarketCode,
+      MarketName: legacyResponse.market?.marketName ?? payloadSnapshot.MarketName,
     },
-    booth: {
-      boothCode: payloadSnapshot.boothCode,
-      boothName: payloadSnapshot.boothName,
+    Booth: {
+      BoothCode: legacyResponse.booth?.boothCode ?? payloadSnapshot.BoothCode,
+      BoothName: legacyResponse.booth?.boothName ?? payloadSnapshot.BoothName,
     },
-    product: {
-      productCode: payloadSnapshot.productCode,
-      productName: payloadSnapshot.productName,
-      packageCode: payloadSnapshot.packageCode,
-      packageName: payloadSnapshot.packageName,
-      quantity: payloadSnapshot.quantity,
+    Product: {
+      ProductCode: legacyResponse.product?.productCode ?? payloadSnapshot.ProductCode,
+      ProductName: legacyResponse.product?.productName ?? payloadSnapshot.ProductName,
+      PackageCode: legacyResponse.product?.packageCode ?? payloadSnapshot.PackageCode,
+      PackageName: legacyResponse.product?.packageName ?? payloadSnapshot.PackageName,
+      Quantity: legacyResponse.product?.quantity ?? payloadSnapshot.Quantity,
     },
-    qr: legacyResponse.qr ?? {
-      driver_qr_token: "",
-      worker_qr_token: payloadSnapshot.ticketNo,
+    Qr: {
+      DriverQrToken: legacyResponse.qr?.driver_qr_token ?? "",
+      WorkerQrToken: legacyResponse.qr?.worker_qr_token ?? payloadSnapshot.TicketNo,
     },
   };
 }
@@ -341,12 +408,12 @@ export async function createVehicleJobFromGate(body: unknown): Promise<GateVehic
   publishNotification({
     type: "VEHICLE_JOB_CREATED",
     title: "Vehicle job created",
-    message: `Vehicle job ${response.ticket.ticketNo} was created from Gate.`,
+    message: `Vehicle job ${response.Ticket.TicketNo} was created from Gate.`,
     payload: {
-      ticketNo: response.ticket.ticketNo,
+      ticketNo: response.Ticket.TicketNo,
       gate_transaction_ref: gateInput.gate_transaction_ref,
-      license_plate: response.ticket.licensePlate,
-      status: response.ticket.status,
+      license_plate: response.Ticket.LicensePlate,
+      status: response.Ticket.Status,
       dispatch_now: gateInput.dispatch_now === true,
     },
     audience: {

@@ -10,10 +10,11 @@ import { findActiveByIdAndAccountId } from "../repositories/shared/session.repos
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
 import { getWorkerQueueStatus, markWorkerOpenApp, recordWorkerHeartbeat } from "../queues/worker-queue";
 import { publishNotification } from "../services/notifications.service";
+import { toPascalCasePayload } from "../middlewares/api-case.middleware";
 
 // import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { WorkerSocketEvent, WorkerSocketEventType } from "../types/worker.type";
+import type { WorkerSocketEventType } from "../types/worker.type";
 
 // import Utils
 import ApiError from "../utils/api-error";
@@ -227,11 +228,11 @@ export function sendWorkerSocketEvent(
     return false;
   }
 
-  const event: WorkerSocketEvent = {
+  const event = toPascalCasePayload({
     type,
     payload,
     occurred_at: new Date().toISOString(),
-  };
+  });
   const message = JSON.stringify(event);
 
   for (const socket of sockets) {

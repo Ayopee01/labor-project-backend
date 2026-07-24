@@ -47,20 +47,22 @@ async function loginWorker(accountId: number): Promise<{ token: string; worker: 
 
 function buildGateVehicleJobBody(suffix: string) {
   return {
-    ticketNo: `TKT-20260723-${suffix}`,
-    marketCode: `MARKET-${suffix}`,
-    marketName: "Market A",
-    boothCode: `STALL-${suffix}`,
-    boothName: "Vendor A",
-    licensePlate: `ABC-${suffix}`,
-    vehicleTypeCode: "PICKUP",
-    vehicleTypeName: "Pickup truck",
-    productCode: `PRODUCT-${suffix}-001`,
-    productName: "Cabbage",
-    packageCode: "CRATE",
-    packageName: "crate",
-    quantity: 10,
-    dispatch_now: true,
+    TicketNo: `TKT-20260723-${suffix}`,
+    TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+    BoothCount: 1,
+    MarketCode: `MARKET-${suffix}`,
+    MarketName: "Market A",
+    BoothCode: `STALL-${suffix}`,
+    BoothName: "Vendor A",
+    LicensePlate: `ABC-${suffix}`,
+    VehicleTypeCode: "PICKUP",
+    VehicleTypeName: "Pickup truck",
+    ProductCode: `PRODUCT-${suffix}-001`,
+    ProductName: "Cabbage",
+    PackageCode: "CRATE",
+    PackageName: "crate",
+    Quantity: 10,
+    Dispatch: true,
   };
 }
 
@@ -129,43 +131,50 @@ test("POST /api/gate/vehicle-jobs creates a new vehicle job", async () => {
 
   assert.equal(response.status, 201);
   assert.deepEqual(Object.keys(response.body).sort(), [
-    "booth",
-    "market",
-    "product",
-    "qr",
-    "result",
-    "ticket",
+    "Booth",
+    "Market",
+    "Product",
+    "Qr",
+    "Result",
+    "Ticket",
   ]);
-  assert.deepEqual(Object.keys(response.body.ticket).sort(), [
-    "licensePlate",
-    "status",
-    "ticketNo",
-    "vehicleTypeCode",
-    "vehicleTypeName",
-    "workers_required",
+  assert.deepEqual(Object.keys(response.body.Ticket).sort(), [
+    "BoothCount",
+    "LicensePlate",
+    "Status",
+    "TicketCreatedAt",
+    "TicketNo",
+    "VehicleTypeCode",
+    "VehicleTypeName",
+    "WorkersRequired",
   ]);
-  assert.equal(response.body.result, "CREATED");
-  assert.equal(response.body.ticket.ticketNo, "TKT-20260723-001");
-  assert.equal(response.body.ticket.licensePlate, "ABC-001");
-  assert.equal(response.body.ticket.vehicleTypeCode, "PICKUP");
-  assert.equal(response.body.ticket.vehicleTypeName, "Pickup truck");
-  assert.equal(response.body.ticket.workers_required, 1);
-  assert.equal(response.body.market.marketCode, "MARKET-001");
-  assert.equal(response.body.market.marketName, "Market A");
-  assert.equal(response.body.booth.boothCode, "STALL-001");
-  assert.equal(response.body.booth.boothName, "Vendor A");
-  assert.equal(response.body.product.productCode, "PRODUCT-001-001");
-  assert.equal(response.body.product.productName, "Cabbage");
-  assert.equal(response.body.product.packageCode, "CRATE");
-  assert.equal(response.body.product.packageName, "crate");
-  assert.equal(response.body.product.quantity, 10);
-  assert.equal(response.body.qr.worker_qr_token, "TKT-20260723-001");
+  assert.equal(response.body.Result, "CREATED");
+  assert.equal(response.body.Ticket.TicketNo, "TKT-20260723-001");
+  assert.equal(response.body.Ticket.TicketCreatedAt, "2026-07-23T07:30:00.000Z");
+  assert.equal(response.body.Ticket.BoothCount, 1);
+  assert.equal(response.body.Ticket.LicensePlate, "ABC-001");
+  assert.equal(response.body.Ticket.VehicleTypeCode, "PICKUP");
+  assert.equal(response.body.Ticket.VehicleTypeName, "Pickup truck");
+  assert.equal(response.body.Ticket.WorkersRequired, 1);
+  assert.equal(response.body.Ticket.Status, "unload_now");
+  assert.equal(response.body.Market.MarketCode, "MARKET-001");
+  assert.equal(response.body.Market.MarketName, "Market A");
+  assert.equal(response.body.Booth.BoothCode, "STALL-001");
+  assert.equal(response.body.Booth.BoothName, "Vendor A");
+  assert.equal(response.body.Product.ProductCode, "PRODUCT-001-001");
+  assert.equal(response.body.Product.ProductName, "Cabbage");
+  assert.equal(response.body.Product.PackageCode, "CRATE");
+  assert.equal(response.body.Product.PackageName, "crate");
+  assert.equal(response.body.Product.Quantity, 10);
+  assert.equal(response.body.Qr.WorkerQrToken, "TKT-20260723-001");
   assert.equal(response.body.message, undefined);
   assert.equal(response.body.vehicle_job, undefined);
   assert.equal(response.body.gate_transaction_ref, undefined);
   assert.equal(response.body.markets, undefined);
   assert.equal(state.vehicleJobs.length, 1);
   assert.equal(state.vehicleJobs[0].vehicle_type, "Pickup truck");
+  assert.equal(state.vehicleJobs[0].ticket_created_at, "2026-07-23T07:30:00.000Z");
+  assert.equal(state.vehicleJobs[0].booth_count, 1);
   assert.equal(state.vehicleJobs[0].worker_qr_token, "TKT-20260723-001");
   assert.equal(state.gateTickets[0].marketCode, "MARKET-001");
   assert.equal(state.gateTickets[0].boothCode, "STALL-001");
@@ -173,6 +182,19 @@ test("POST /api/gate/vehicle-jobs creates a new vehicle job", async () => {
   assert.equal(state.ticketProducts[0].productCode, "PRODUCT-001-001");
   assert.equal(state.ticketProducts[0].packageCode, "CRATE");
   assert.equal(state.ticketProducts[0].packageName, "crate");
+});
+
+test("POST /api/gate/vehicle-jobs returns waiting_unload status when Dispatch is false", async () => {
+  const response = await server.request("POST", "/api/gate/vehicle-jobs", {
+    body: {
+      ...buildGateVehicleJobBody("006"),
+      Dispatch: false,
+    },
+    headers: await gateAuthHeaders(),
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(response.body.Ticket.Status, "waiting_unload");
 });
 
 test("POST /api/gate/vehicle-jobs replays the same Gate request", async () => {
@@ -184,18 +206,19 @@ test("POST /api/gate/vehicle-jobs replays the same Gate request", async () => {
   assert.equal(created.status, 201);
   assert.equal(replayed.status, 200);
   assert.deepEqual(Object.keys(replayed.body).sort(), [
-    "booth",
-    "market",
-    "product",
-    "qr",
-    "result",
-    "ticket",
+    "Booth",
+    "Market",
+    "Product",
+    "Qr",
+    "Result",
+    "Ticket",
   ]);
-  assert.equal(replayed.body.result, "REPLAYED");
-  assert.equal(replayed.body.ticket.ticketNo, "TKT-20260723-002");
-  assert.equal(replayed.body.market.marketCode, "MARKET-002");
-  assert.equal(replayed.body.booth.boothCode, "STALL-002");
-  assert.equal(replayed.body.product.productCode, "PRODUCT-002-001");
+  assert.equal(replayed.body.Result, "REPLAYED");
+  assert.equal(replayed.body.Ticket.TicketNo, "TKT-20260723-002");
+  assert.equal(replayed.body.Ticket.Status, "unload_now");
+  assert.equal(replayed.body.Market.MarketCode, "MARKET-002");
+  assert.equal(replayed.body.Booth.BoothCode, "STALL-002");
+  assert.equal(replayed.body.Product.ProductCode, "PRODUCT-002-001");
   assert.equal(replayed.body.message, undefined);
   assert.equal(replayed.body.vehicle_job, undefined);
   assert.equal(replayed.body.idempotency_key, undefined);
@@ -212,7 +235,7 @@ test("POST /api/gate/vehicle-jobs rejects reused Gate ref with a different paylo
   const mismatch = await server.request("POST", "/api/gate/vehicle-jobs", {
     body: {
       ...body,
-      licensePlate: "DIFFERENT-003",
+      LicensePlate: "DIFFERENT-003",
     },
     headers,
   });
@@ -229,12 +252,13 @@ test("POST /api/gate/vehicle-jobs appends a new booth to the same Gate ticket", 
 
   const nextBoothBody = {
     ...buildGateVehicleJobBody("005"),
-    ticketNo: createdBody.ticketNo,
-    marketCode: createdBody.marketCode,
-    marketName: createdBody.marketName,
-    boothCode: "STALL-004-B",
-    boothName: "Vendor B",
-    productCode: "PRODUCT-004-002",
+    TicketNo: createdBody.TicketNo,
+    BoothCount: 2,
+    MarketCode: createdBody.MarketCode,
+    MarketName: createdBody.MarketName,
+    BoothCode: "STALL-004-B",
+    BoothName: "Vendor B",
+    ProductCode: "PRODUCT-004-002",
   };
   const appended = await server.request("POST", "/api/gate/vehicle-jobs", {
     body: nextBoothBody,
@@ -242,11 +266,13 @@ test("POST /api/gate/vehicle-jobs appends a new booth to the same Gate ticket", 
   });
 
   assert.equal(appended.status, 201);
-  assert.equal(appended.body.ticket.ticketNo, createdBody.ticketNo);
-  assert.equal(appended.body.ticket.workers_required, 1);
-  assert.equal(appended.body.market.marketCode, createdBody.marketCode);
-  assert.equal(appended.body.booth.boothCode, "STALL-004-B");
-  assert.equal(appended.body.product.productCode, "PRODUCT-004-002");
+  assert.equal(appended.body.Ticket.TicketNo, createdBody.TicketNo);
+  assert.equal(appended.body.Ticket.BoothCount, 2);
+  assert.equal(appended.body.Ticket.WorkersRequired, 1);
+  assert.equal(appended.body.Ticket.Status, "unload_now");
+  assert.equal(appended.body.Market.MarketCode, createdBody.MarketCode);
+  assert.equal(appended.body.Booth.BoothCode, "STALL-004-B");
+  assert.equal(appended.body.Product.ProductCode, "PRODUCT-004-002");
   assert.equal(state.vehicleJobs.length, 1);
   assert.equal(state.gateTickets.length, 2);
   assert.equal(state.gateTickets[1].boothCode, "STALL-004-B");

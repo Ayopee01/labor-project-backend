@@ -100,6 +100,8 @@ model VehicleJob {
   gateTransactionRef String  @map("gate_transaction_ref") @db.VarChar(100)
   licensePlate      String   @map("license_plate") @db.VarChar(50)
   vehicleType       String?  @map("vehicle_type") @db.VarChar(100)
+  ticketCreatedAt   DateTime @map("ticket_created_at") @db.Timestamp(3)
+  boothCount        Int      @default(1) @map("booth_count")
   workersRequired   Int      @map("workers_required")
   dispatchNow       Boolean  @default(false) @map("dispatch_now")
   status            String   @default("WAIT") @db.VarChar(30)

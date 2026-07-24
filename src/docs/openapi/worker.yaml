@@ -8,9 +8,9 @@
         WebSocket endpoint for Worker Mobile only.
 
         Connect with one of these token formats:
-        - `ws://localhost:8080/ws/workers?token=<access_token>`
-        - `Authorization: Bearer <access_token>` during the upgrade request
-        - `Sec-WebSocket-Protocol: token.<access_token>`
+        - `ws://localhost:8080/ws/workers?token=<AccessToken>`
+        - `Authorization: Bearer <AccessToken>` during the upgrade request
+        - `Sec-WebSocket-Protocol: token.<AccessToken>`
 
         Backend sends realtime events such as `WORKER_ASSIGNED`, `ASSIGNMENT_TIMEOUT`,
         `ASSIGNMENT_CANCELLED`, `ASSIGNMENT_ACCEPTED`, `WORKER_STATUS_CHANGED`,
@@ -18,10 +18,10 @@
         `ASSIGNMENT_SCAN_DEADLINE_EXTENDED`,
         `ASSIGNMENT_SCAN_DEADLINE_SHORTENED`,
         `STALL_JOB_CANCELLED`, `MARKET_JOB_CANCELLED`, and `VEHICLE_JOB_CANCELLED`.
-        `WORKER_ASSIGNED` sends `ticketNo`, `gate_transaction_ref`,
-        `worker_qr_token`, and `assignment.created_at/accept_deadline_at`.
-        For Gate-created jobs, `worker_qr_token` is the same value as `ticketNo`.
-        It does not send `driver_qr_token`.
+        `WORKER_ASSIGNED` sends `TicketNo`, `GateTransactionRef`,
+        `WorkerQrToken`, and `Assignment.CreatedAt/AcceptDeadlineAt`.
+        For Gate-created jobs, `WorkerQrToken` is the same value as `TicketNo`.
+        It does not send `DriverQrToken`.
         Worker actions such as accept/check-in/complete still use the REST endpoints.
       operationId: connectWorkerWebSocket
       security:

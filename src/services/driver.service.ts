@@ -34,6 +34,8 @@ function formatDriverVehicleJob(vehicleJob: VehicleJobDto): DriverVehicleJobResp
     gate_transaction_ref: vehicleJob.gate_transaction_ref,
     license_plate: vehicleJob.license_plate,
     vehicle_type: vehicleJob.vehicle_type,
+    ticket_created_at: vehicleJob.ticket_created_at,
+    booth_count: vehicleJob.booth_count,
     workers_required: vehicleJob.workers_required,
     status: vehicleJob.status,
     worker_qr_token: vehicleJob.worker_qr_token,

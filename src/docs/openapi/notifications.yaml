@@ -38,7 +38,7 @@
                 type: string
                 example: |
                   event: TICKET_COMPLETION_RESULT
-                  data: {"type":"TICKET_COMPLETION_RESULT","title":"Ticket completion confirmed","message":"Vendor confirmed ticket B-018.","payload":{"ticketNo":"TKT-20260723-000125","boothCode":"B-018","status":"COMPLETED"},"occurred_at":"2026-07-08T09:00:00.000Z"}
+                  data: {"Type":"TICKET_COMPLETION_RESULT","Title":"Ticket completion confirmed","Message":"Vendor confirmed ticket B-018.","Payload":{"TicketNo":"TKT-20260723-000125","BoothCode":"B-018","Status":"COMPLETED"},"OccurredAt":"2026-07-08T09:00:00.000Z"}
         "401":
           description: Missing or invalid access token/session.
           content:

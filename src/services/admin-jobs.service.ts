@@ -40,6 +40,8 @@ function formatPublicVehicleJobListItem(vehicleJob: VehicleJobDto): AdminVehicle
     gate_transaction_ref: vehicleJob.gate_transaction_ref,
     license_plate: vehicleJob.license_plate,
     vehicle_type: vehicleJob.vehicle_type,
+    ticket_created_at: vehicleJob.ticket_created_at,
+    booth_count: vehicleJob.booth_count,
     workers_required: vehicleJob.workers_required,
     dispatch_now: vehicleJob.dispatch_now,
     status: vehicleJob.status,
@@ -319,7 +321,10 @@ function buildOperationTiming(record: VehicleJobOperationRecord): {
   const firstScannedAt = scannedTimes.length > 0 ? Math.min(...scannedTimes) : null;
 
   return {
-    gate_elapsed_seconds: Math.max(0, Math.floor((endTime - record.createdAt.getTime()) / 1000)),
+    gate_elapsed_seconds: Math.max(
+      0,
+      Math.floor((endTime - record.ticketCreatedAt.getTime()) / 1000)
+    ),
     working_elapsed_seconds:
       firstScannedAt === null
         ? null
@@ -384,6 +389,8 @@ function formatVehicleOperationItem(
       gate_transaction_ref: record.gateTransactionRef,
       license_plate: record.licensePlate,
       vehicle_type: record.vehicleType,
+      ticket_created_at: record.ticketCreatedAt.toISOString(),
+      booth_count: record.boothCount,
       workers_required: record.workersRequired,
       dispatch_now: record.dispatchNow,
       status: record.status,

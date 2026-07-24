@@ -1,5 +1,6 @@
 // import Library
 import type { Response } from "express";
+import { toPascalCasePayload } from "../middlewares/api-case.middleware";
 // import Types
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { NotificationAudience, NotificationClient, RealtimeNotificationEvent } from "../types/notifications.type";
@@ -38,7 +39,7 @@ function writeSseEvent(
   data: unknown
 ): void {
   response.write(`event: ${eventName}\n`);
-  response.write(`data: ${JSON.stringify(data)}\n\n`);
+  response.write(`data: ${JSON.stringify(toPascalCasePayload(data))}\n\n`);
 }
 
 // Function เปิด SSE stream สำหรับ notification ล่าสุดของระบบ

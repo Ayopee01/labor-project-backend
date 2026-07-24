@@ -4,7 +4,23 @@
       tags:
         - Gate
       summary: Create a vehicle job from Gate using Gate Client Credentials.
-      description: Use HTTP Basic Auth where username is `client_id` and password is `client_secret`. Gate sends one flat payload per ticket/booth/product using ticketNo, marketCode/marketName, boothCode/boothName, vehicleTypeName, and productCode/productName/packageCode/packageName. Backend derives the idempotency key from ticketNo + marketCode + boothCode + productCode, returns the saved ticket/market/booth/product objects, returns qr.worker_qr_token as the same value as ticketNo for worker check-in, and returns workers_required as 1 for the current Gate flow; worker-count calculation will be added later. Success/replay responses do not include message or gate_transaction_ref. Sending the same ticketNo with a new market/booth/product transaction appends or updates that item under the same vehicle job. Set `dispatch_now` to `true` when the vehicle is already ready to unload.
+      description: >
+        Use HTTP Basic Auth where username is `client_id` and password is
+        `client_secret`. Gate sends one flat PascalCase payload per
+        ticket/booth/product using TicketNo, TicketCreatedAt, BoothCount,
+        MarketCode/MarketName, BoothCode/BoothName, VehicleTypeName, and
+        ProductCode/ProductName/PackageCode/PackageName. Backend derives the
+        idempotency key from TicketNo + MarketCode + BoothCode + ProductCode,
+        returns the saved Ticket/Market/Booth/Product objects, returns
+        Qr.WorkerQrToken as the same value as TicketNo for worker check-in, and
+        returns Ticket.WorkersRequired as 1 for the current Gate flow;
+        worker-count calculation will be added later. Ticket.Status is derived
+        from Dispatch only: true returns unload_now and false returns
+        waiting_unload. Success/replay responses do not include Message or
+        GateTransactionRef. Sending the same TicketNo with a new
+        market/booth/product transaction appends or updates that item under the
+        same vehicle job. Set `Dispatch` to `true` when the vehicle is already
+        ready to unload.
       operationId: createVehicleJobFromGate
       security:
         - gateBasicAuth: []

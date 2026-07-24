@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
+import { normalizeApiRequestPayload } from "./api-case.middleware";
 import ApiError from "../utils/api-error";
 
 // Config path สำหรับเก็บรูป worker ที่ upload เข้ามา
@@ -68,6 +69,18 @@ function parseJsonField(value: unknown) {
   }
 }
 
+function getWorkerImageFile(req: Request): Express.Multer.File | undefined {
+  if (req.file) {
+    return req.file;
+  }
+
+  if (Array.isArray(req.files)) {
+    return req.files[0];
+  }
+
+  return req.files?.image?.[0] ?? req.files?.Image?.[0];
+}
+
 // Function แปลง multipart/form-data ให้เป็น body รูปแบบเดียวกับ JSON API เดิม
 export function normalizeCreateUserMultipartBody(
   req: Request,
@@ -79,8 +92,8 @@ export function normalizeCreateUserMultipartBody(
     return;
   }
 
-  const body = { ...req.body };
-  const file = req.file;
+  const body = normalizeApiRequestPayload({ ...req.body }) as Record<string, unknown>;
+  const file = getWorkerImageFile(req);
 
   if (file) {
     body.image_url = `/uploads/workers/${file.filename}`;

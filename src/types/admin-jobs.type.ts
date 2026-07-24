@@ -35,6 +35,8 @@ export interface AdminVehicleJobListItemResponse {
   gate_transaction_ref: string;
   license_plate: string;
   vehicle_type: string | null;
+  ticket_created_at: string;
+  booth_count: number;
   workers_required: number;
   dispatch_now: boolean;
   status: string;

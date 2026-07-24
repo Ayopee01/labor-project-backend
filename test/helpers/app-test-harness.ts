@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import Module = require("node:module");
+import { normalizeApiRequestPayload } from "../../src/middlewares/api-case.middleware";
 import { applyIsolatedTestEnv } from "../setup/test-env";
 
 /* -------------------------------------- Test Env -------------------------------------- */
@@ -73,6 +74,8 @@ type VehicleJobRecord = {
   gate_transaction_ref: string;
   license_plate: string;
   vehicle_type: string | null;
+  ticket_created_at: string;
+  booth_count: number;
   workers_required: number;
   dispatch_now: boolean;
   status: string;
@@ -514,6 +517,8 @@ export function addDispatchableJob(id: number, workersRequired: number): Vehicle
     gate_transaction_ref: `GATE-${id}`,
     license_plate: `TEST-${id}`,
     vehicle_type: "truck",
+    ticket_created_at: now,
+    booth_count: 1,
     workers_required: workersRequired,
     dispatch_now: true,
     status: "WORKING",
@@ -903,6 +908,8 @@ const workerApplicationRepositoryMock = {
           gate_transaction_ref: `GATE-${assignment.vehicle_job_id}`,
           license_plate: "TEST",
           vehicle_type: null,
+          ticket_created_at: assignment.created_at ?? new Date().toISOString(),
+          booth_count: 1,
           workers_required: 1,
           status: "WORKING",
           driver_qr_token: `driver-qr-${assignment.vehicle_job_id}`,
@@ -1164,6 +1171,8 @@ const workerApplicationRepositoryMock = {
         gate_transaction_ref: job.gate_transaction_ref,
         license_plate: job.license_plate,
         vehicle_type: job.vehicle_type,
+        ticket_created_at: job.ticket_created_at,
+        booth_count: job.booth_count,
         workers_required: job.workers_required,
         dispatch_now: job.dispatch_now,
         status: job.status,
@@ -1222,6 +1231,8 @@ const gateRepositoryMock = {
   createVehicleJobFromGate: async (input: {
     gate_transaction_ref: string;
     ticketNo: string;
+    ticket_created_at: Date;
+    booth_count: number;
     license_plate: string;
     vehicle_type?: string | null;
     dispatch_now?: boolean;
@@ -1258,6 +1269,8 @@ const gateRepositoryMock = {
         gate_transaction_ref: input.gate_transaction_ref,
         license_plate: input.license_plate,
         vehicle_type: input.vehicle_type ?? null,
+        ticket_created_at: input.ticket_created_at.toISOString(),
+        booth_count: input.booth_count,
         workers_required: 1,
         dispatch_now: dispatchNow,
         status: dispatchNow ? "WORKING" : "WAIT",
@@ -1272,6 +1285,8 @@ const gateRepositoryMock = {
       vehicleJob.gate_transaction_ref = input.gate_transaction_ref;
       vehicleJob.license_plate = input.license_plate;
       vehicleJob.vehicle_type = input.vehicle_type ?? null;
+      vehicleJob.ticket_created_at = input.ticket_created_at.toISOString();
+      vehicleJob.booth_count = input.booth_count;
       vehicleJob.workers_required = 1;
       vehicleJob.worker_qr_token = input.ticketNo;
       vehicleJob.dispatch_now = vehicleJob.dispatch_now || dispatchNow;
@@ -1820,10 +1835,24 @@ export type TestServer = {
   request: (
     method: string,
     path: string,
-    options?: { body?: unknown; token?: string; headers?: Record<string, string> }
+    options?: {
+      body?: unknown;
+      token?: string;
+      headers?: Record<string, string>;
+      external?: boolean;
+    }
   ) => Promise<{ status: number; body: any }>;
   close: () => Promise<void>;
 };
+
+function shouldReturnExternalBody(body: unknown, forceExternal?: boolean): boolean {
+  return Boolean(
+    forceExternal ||
+      (body &&
+        typeof body === "object" &&
+        ("Result" in body || "Ticket" in body))
+  );
+}
 
 // Function start Express app เธเธฃเธดเธเธเธ random port เนเธฅเนเธงเธเธทเธ helper เธชเธณเธซเธฃเธฑเธเธขเธดเธ request เนเธ route test
 export async function startRouteTestServer(): Promise<TestServer> {
@@ -1852,10 +1881,13 @@ export async function startRouteTestServer(): Promise<TestServer> {
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
       });
       const text = await response.text();
+      const parsedBody = text ? JSON.parse(text) : null;
 
       return {
         status: response.status,
-        body: text ? JSON.parse(text) : null,
+        body: shouldReturnExternalBody(parsedBody, options.external)
+          ? parsedBody
+          : normalizeApiRequestPayload(parsedBody),
       };
     },
     close: async () => {

@@ -20,7 +20,10 @@ router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 router.post(
   "/",
   permissionMiddleware(["workers:create"]),
-  uploadWorkerImage.single("image"),
+  uploadWorkerImage.fields([
+    { name: "Image", maxCount: 1 },
+    { name: "image", maxCount: 1 },
+  ]),
   normalizeCreateUserMultipartBody,
   async (req, res, next) => {
     try {

@@ -19,6 +19,8 @@ export interface VehicleJobDto {
   gate_transaction_ref: string;
   license_plate: string;
   vehicle_type: string | null;
+  ticket_created_at: string;
+  booth_count: number;
   workers_required: number;
   dispatch_now: boolean;
   status: JobStatus;
@@ -321,7 +323,7 @@ export type WorkerSocketEventType =
 
 // Type ส่วน Event ที่ WebSocket ส่งให้ Worker Mobile
 export interface WorkerSocketEvent<TPayload = Record<string, unknown>> {
-  type: WorkerSocketEventType;
-  payload: TPayload;
-  occurred_at: string;
+  Type: WorkerSocketEventType;
+  Payload: TPayload;
+  OccurredAt: string;
 }

@@ -32,7 +32,7 @@
           properties:
             name:
               type: string
-              example: เธเธฐเน€เธเนเธฒ
+              example: Morning shift
             start_time:
               type: string
               example: "06:00"
@@ -43,7 +43,7 @@
           type: string
           nullable: true
           description: Human-readable remaining time until the next shift start. Present on OUTSIDE_WORK_SHIFT errors.
-          example: 28 เธเธฒเธ—เธต
+          example: 28 minutes
     Account:
       type: object
       properties:
@@ -884,7 +884,7 @@
           example: "17:00"
         shift_name:
           type: string
-          example: เธเธฐเน€เธเนเธฒ
+          example: Morning shift
     UserListResponse:
       type: object
       properties:
@@ -924,7 +924,7 @@
           example: MN000115
         full_name:
           type: string
-          example: เธเธฒเธขMANY MANY
+          example: MANY MANY
         status:
           type: string
           enum:
@@ -978,7 +978,7 @@
             shift_name:
               type: string
               nullable: true
-              example: เน€เธยเน€เธเธเน€เธโฌเน€เธยเน€เธยเน€เธเธ’
+              example: Morning shift
             work_schedules:
               type: array
               items:
@@ -1394,142 +1394,83 @@
               type: string
               example: Admin permissions updated successfully. Active sessions were revoked.
 
-    GateProductInput:
-      type: object
-      required:
-        - productCode
-        - productName
-        - packageCode
-        - packageName
-        - quantity
-      properties:
-        productCode:
-          type: string
-          example: PRODUCT-001
-          description: Product code from Gate. Worker uses this value when submitting counted quantities.
-        productName:
-          type: string
-          example: Cabbage
-        packageCode:
-          type: string
-          example: "22"
-        packageName:
-          type: string
-          example: crate
-        quantity:
-          type: number
-          example: 10
-    GateTicketInput:
-      type: object
-      required:
-        - boothCode
-        - products
-      properties:
-        boothCode:
-          type: string
-          example: B-018
-          description: Booth-level case code used by admins and workers to track or manage this booth job.
-        boothName:
-          type: string
-          example: Vendor A
-        vendor_line_id:
-          type: string
-          example: line-vendor-a
-        reject_reason:
-          type: string
-          nullable: true
-          description: Optional initial rejection/note reason. Normally set later by LINE reject postback.
-          example: เธเธณเธเธงเธเธ–เธธเธเนเธกเนเธ•เธฃเธเธเธฑเธเนเธเธชเธฑเนเธ
-        products:
-          type: array
-          items:
-            $ref: "#/components/schemas/GateProductInput"
-    GateMarketInput:
-      type: object
-      required:
-        - marketCode
-        - marketName
-        - tickets
-      properties:
-        marketCode:
-          type: string
-          example: "1123"
-        marketName:
-          type: string
-          example: Market A
-        dropoff_point:
-          type: string
-          nullable: true
-          example: เธเธธเธ”เธฅเธเธชเธดเธเธเนเธฒเธ—เธฑเนเธงเนเธ A1
-        tickets:
-          type: array
-          items:
-            $ref: "#/components/schemas/GateTicketInput"
     GateVehicleJobRequest:
       type: object
       required:
-        - ticketNo
-        - marketCode
-        - marketName
-        - boothCode
-        - boothName
-        - licensePlate
-        - vehicleTypeName
-        - productCode
-        - productName
-        - packageCode
-        - packageName
-        - quantity
+        - TicketNo
+        - TicketCreatedAt
+        - BoothCount
+        - MarketCode
+        - MarketName
+        - BoothCode
+        - BoothName
+        - LicensePlate
+        - VehicleTypeCode
+        - VehicleTypeName
+        - ProductCode
+        - ProductName
+        - PackageCode
+        - PackageName
+        - Quantity
+        - Dispatch
       properties:
-        ticketNo:
+        TicketNo:
           type: string
           example: TKT-20260723-000125
           description: Gate ticket number used as the vehicle-level job reference.
-        marketCode:
+        TicketCreatedAt:
+          type: string
+          format: date-time
+          example: "2026-07-23T14:30:00+07:00"
+          description: Date-time when Gate created the ticket.
+        BoothCount:
+          type: integer
+          minimum: 1
+          example: 2
+          description: Total booth count under this TicketNo.
+        MarketCode:
           type: string
           example: "1123"
           description: Market code from Gate.
-        marketName:
+        MarketName:
           type: string
-          example: เธ•เธฅเธฒเธ”เธชเนเธก
-        boothCode:
+          example: Orange Market
+        BoothCode:
           type: string
           example: B-018
           description: Booth code from Gate.
-        boothName:
+        BoothName:
           type: string
-          example: เนเธเธเธชเนเธกเน€เธเธฃเธดเธเธเธฅ
-        licensePlate:
+          example: Orange Booth
+        LicensePlate:
           type: string
-          example: เธเธ 1234 เธเธฃเธธเธเน€เธ—เธเธกเธซเธฒเธเธเธฃ
-        vehicleTypeCode:
+          example: ABC-1234
+        VehicleTypeCode:
           type: string
-          nullable: true
           example: PICKUP
-          description: Optional vehicle type code from Gate.
-        vehicleTypeName:
+          description: Vehicle type code from Gate.
+        VehicleTypeName:
           type: string
           example: Pickup truck
           description: Vehicle type name from Gate. Stored as the vehicle type display value.
-        productCode:
+        ProductCode:
           type: string
           example: FRUIT-ORG001
           description: Product code from Gate. Worker uses this value when submitting counted quantities.
-        productName:
+        ProductName:
           type: string
-          example: เธชเนเธกเน€เธเธตเธขเธงเธซเธงเธฒเธ
-        packageCode:
+          example: Orange
+        PackageCode:
           type: string
           example: "22"
-        packageName:
+        PackageName:
           type: string
-          example: เนเธเนเธเน€เธเธเธชเนเธก
-        quantity:
+          example: Orange package
+        Quantity:
           type: number
           example: 180
-        dispatch_now:
+        Dispatch:
           type: boolean
-          default: false
           example: true
           description: Set true when the vehicle is ready to unload and workers should be dispatched immediately without waiting for Driver ready.
     VehicleJob:
@@ -1548,6 +1489,13 @@
           type: string
           nullable: true
           example: Six-wheel truck
+        ticket_created_at:
+          type: string
+          format: date-time
+          example: "2026-07-23T14:30:00+07:00"
+        booth_count:
+          type: integer
+          example: 2
         workers_required:
           type: integer
           example: 1
@@ -1586,6 +1534,13 @@
           type: string
           nullable: true
           example: Six-wheel truck
+        ticket_created_at:
+          type: string
+          format: date-time
+          example: "2026-07-23T14:30:00+07:00"
+        booth_count:
+          type: integer
+          example: 2
         workers_required:
           type: integer
           example: 1
@@ -1608,7 +1563,7 @@
         dropoff_point:
           type: string
           nullable: true
-          example: เธเธธเธ”เธฅเธเธชเธดเธเธเนเธฒเธ—เธฑเนเธงเนเธ A1
+          example: General dropoff point A1
         status:
           type: string
           example: WAIT
@@ -1621,7 +1576,7 @@
         boothName:
           type: string
           nullable: true
-          example: เนเธเธเธชเนเธกเน€เธเธฃเธดเธเธเธฅ
+          example: Orange Booth
         vendor_line_id:
           type: string
           nullable: true
@@ -1629,7 +1584,7 @@
         reject_reason:
           type: string
           nullable: true
-          example: เธเธณเธเธงเธเธ–เธธเธเนเธกเนเธ•เธฃเธเธเธฑเธเนเธเธชเธฑเนเธ
+          example: Quantity does not match order.
         status:
           type: string
           example: WAIT
@@ -1682,7 +1637,7 @@
         boothName:
           type: string
           nullable: true
-          example: เนเธเธเธชเนเธกเน€เธเธฃเธดเธเธเธฅ
+          example: Orange Booth
         status:
           type: string
           example: DELIVERED
@@ -1732,7 +1687,7 @@
                 properties:
                   data:
                     type: string
-                    example: action=vendor_reject_completion&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...&reject_reason=เธเธณเธเธงเธเธ–เธธเธเนเธกเนเธ•เธฃเธเธเธฑเธเนเธเธชเธฑเนเธ
+                    example: action=vendor_reject_completion&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...&reject_reason=Quantity%20does%20not%20match%20order
     LineWebhookResponse:
       type: object
       properties:
@@ -1756,7 +1711,7 @@
           example: "22"
         packageName:
           type: string
-          example: เนเธเนเธเน€เธเธเธชเนเธก
+          example: Orange package
         quantity:
           type: string
           example: "10"
@@ -1790,110 +1745,123 @@
     GateVehicleJobResponse:
       type: object
       required:
-        - result
-        - ticket
-        - market
-        - booth
-        - product
-        - qr
+        - Result
+        - Ticket
+        - Market
+        - Booth
+        - Product
+        - Qr
       properties:
-        result:
+        Result:
           type: string
           enum:
             - CREATED
             - REPLAYED
           example: CREATED
-        ticket:
+        Ticket:
           type: object
           required:
-            - ticketNo
-            - licensePlate
-            - vehicleTypeCode
-            - vehicleTypeName
-            - workers_required
-            - status
+            - TicketNo
+            - TicketCreatedAt
+            - BoothCount
+            - LicensePlate
+            - VehicleTypeCode
+            - VehicleTypeName
+            - WorkersRequired
+            - Status
           properties:
-            ticketNo:
+            TicketNo:
               type: string
               example: TKT-20260723-000125
-            licensePlate:
+            TicketCreatedAt:
+              type: string
+              format: date-time
+              example: "2026-07-23T07:30:00.000Z"
+            BoothCount:
+              type: integer
+              example: 2
+            LicensePlate:
               type: string
               example: กข 1234 กรุงเทพมหานคร
-            vehicleTypeCode:
+            VehicleTypeCode:
               type: string
               nullable: true
               example: PICKUP
-            vehicleTypeName:
+            VehicleTypeName:
               type: string
               nullable: true
               example: รถกระบะ
-            workers_required:
+            WorkersRequired:
               type: integer
               example: 1
               description: Fixed at 1 for the current Gate flow. Worker-count calculation will be added later.
-            status:
+            Status:
               type: string
-              example: WORKING
-        market:
+              enum:
+                - unload_now
+                - waiting_unload
+              example: unload_now
+              description: Gate response status derived from Dispatch. Dispatch true returns unload_now; Dispatch false returns waiting_unload.
+        Market:
           type: object
           required:
-            - marketCode
-            - marketName
+            - MarketCode
+            - MarketName
           properties:
-            marketCode:
+            MarketCode:
               type: string
               example: "1123"
-            marketName:
+            MarketName:
               type: string
               example: ตลาดส้ม
-        booth:
+        Booth:
           type: object
           required:
-            - boothCode
-            - boothName
+            - BoothCode
+            - BoothName
           properties:
-            boothCode:
+            BoothCode:
               type: string
               example: B-018
-            boothName:
+            BoothName:
               type: string
               nullable: true
               example: แผงส้มเจริญผล
-        product:
+        Product:
           type: object
           required:
-            - productCode
-            - productName
-            - packageCode
-            - packageName
-            - quantity
+            - ProductCode
+            - ProductName
+            - PackageCode
+            - PackageName
+            - Quantity
           properties:
-            productCode:
+            ProductCode:
               type: string
               example: FRUIT-ORG001
-            productName:
+            ProductName:
               type: string
               example: ส้มเขียวหวาน
-            packageCode:
+            PackageCode:
               type: string
               example: "22"
-            packageName:
+            PackageName:
               type: string
               example: แพ็กเกจส้ม
-            quantity:
+            Quantity:
               type: number
               example: 180
-        qr:
+        Qr:
           type: object
           required:
-            - driver_qr_token
-            - worker_qr_token
+            - DriverQrToken
+            - WorkerQrToken
           properties:
-            driver_qr_token:
+            DriverQrToken:
               type: string
-            worker_qr_token:
+            WorkerQrToken:
               type: string
-              description: Worker QR value. For Gate-created jobs this is the same value as ticketNo.
+              description: Worker QR value. For Gate-created jobs this is the same value as TicketNo.
               example: TKT-20260723-000125
     DriverSessionResponse:
       type: object
@@ -2061,7 +2029,7 @@
           example: MN000115
         full_name:
           type: string
-          example: เธเธฒเธขMANY MANY
+          example: MANY MANY
         shirt_number:
           type: string
           nullable: true
@@ -2073,7 +2041,7 @@
         shift_name:
           type: string
           nullable: true
-          example: เธเธฐเน€เธเนเธฒ
+          example: Morning shift
         assignment_status:
           type: string
           example: SCANNED
@@ -2759,13 +2727,13 @@
               example: 0
             text:
               type: string
-              example: 7 เธเธฒเธ—เธต
+              example: 7 minutes
     AdminWorkerStatusResponse:
       type: object
       properties:
         full_name:
           type: string
-          example: เธเธฒเธขMANY MANY
+          example: MANY MANY
         worker_code:
           type: string
           nullable: true
@@ -2781,7 +2749,7 @@
         shift_name:
           type: string
           nullable: true
-          example: เธเธฐเน€เธเนเธฒ
+          example: Morning shift
         latest_activity_at:
           type: string
           nullable: true

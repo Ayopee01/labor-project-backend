@@ -28,6 +28,10 @@ const timeString = trimmedString.pipe(
   z.iso.time({ precision: -1, error: "Must use HH:mm format." })
 );
 
+const dateTimeString = trimmedString.pipe(
+  z.iso.datetime({ offset: true, error: "Must use ISO 8601 date-time format." })
+);
+
 // Function แปลง empty string จาก query/body ให้เป็น undefined เพื่อให้ optional/default schema ทำงานถูกต้อง
 const emptyStringToUndefined = (value: unknown): unknown =>
   value === "" ? undefined : value;
@@ -221,20 +225,22 @@ export const resetPasswordBodySchema = z.object({
 
 // Schema body สำหรับ Gate ส่งข้อมูล 1 ใบ/1 แผง/1 รายการสินค้าเข้าระบบ
 export const gateVehicleJobBodySchema = z.object({
-  ticketNo: trimmedString,
-  marketCode: trimmedString,
-  marketName: trimmedString,
-  boothCode: trimmedString,
-  boothName: trimmedString,
-  licensePlate: trimmedString,
-  vehicleTypeCode: optionalTrimmedString,
-  vehicleTypeName: trimmedString,
-  productCode: trimmedString,
-  productName: trimmedString,
-  packageCode: trimmedString,
-  packageName: trimmedString,
-  quantity: z.coerce.number().positive(),
-  dispatch_now: z.boolean().optional(),
+  TicketNo: trimmedString,
+  TicketCreatedAt: dateTimeString,
+  BoothCount: z.coerce.number().int().positive(),
+  MarketCode: trimmedString,
+  MarketName: trimmedString,
+  BoothCode: trimmedString,
+  BoothName: trimmedString,
+  LicensePlate: trimmedString,
+  VehicleTypeCode: trimmedString,
+  VehicleTypeName: trimmedString,
+  ProductCode: trimmedString,
+  ProductName: trimmedString,
+  PackageCode: trimmedString,
+  PackageName: trimmedString,
+  Quantity: z.coerce.number().positive(),
+  Dispatch: z.boolean(),
 });
 
 // Schema body สำหรับเปิด driver session จาก QR
