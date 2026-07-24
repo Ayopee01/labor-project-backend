@@ -60,7 +60,7 @@ function sortSwaggerOperations(
     "get /api/admin/roles": 41,
     "get /api/admin/users/{id}/permissions": 42,
     "patch /api/admin/users/{id}/permissions": 43,
-    "post /api/gate/vehicle-jobs": 50,
+    "post /api/gate/tickets": 50,
     // Driver
     "post /api/driver/qr-sessions": 60,
     "get /api/driver/jobs/current": 61,

@@ -1394,7 +1394,7 @@
               type: string
               example: Admin permissions updated successfully. Active sessions were revoked.
 
-    GateVehicleJobRequest:
+    GateTicketRequest:
       type: object
       required:
         - TicketNo
@@ -1742,7 +1742,7 @@
                               type: array
                               items:
                                 $ref: "#/components/schemas/TicketProduct"
-    GateVehicleJobResponse:
+    GateTicketResponse:
       type: object
       required:
         - Result

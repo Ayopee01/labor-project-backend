@@ -100,8 +100,8 @@ after(async () => {
 
 /* -------------------------------------- Gate Route Tests -------------------------------------- */
 
-test("POST /api/gate/vehicle-jobs requires Gate client credentials", async () => {
-  const response = await server.request("POST", "/api/gate/vehicle-jobs", {
+test("POST /api/gate/tickets requires Gate client credentials", async () => {
+  const response = await server.request("POST", "/api/gate/tickets", {
     body: buildGateVehicleJobBody("000"),
   });
 
@@ -109,10 +109,10 @@ test("POST /api/gate/vehicle-jobs requires Gate client credentials", async () =>
   assert.equal(response.body.code, "GATE_AUTH_REQUIRED");
 });
 
-test("POST /api/gate/vehicle-jobs rejects invalid Gate client credentials", async () => {
+test("POST /api/gate/tickets rejects invalid Gate client credentials", async () => {
   addGateClient("gate-test", await password.hashPassword("GateSecret@123456"));
 
-  const response = await server.request("POST", "/api/gate/vehicle-jobs", {
+  const response = await server.request("POST", "/api/gate/tickets", {
     body: buildGateVehicleJobBody("000B"),
     headers: {
       Authorization: `Basic ${Buffer.from("gate-test:wrong-secret").toString("base64")}`,
@@ -123,8 +123,8 @@ test("POST /api/gate/vehicle-jobs rejects invalid Gate client credentials", asyn
   assert.equal(response.body.code, "INVALID_GATE_CREDENTIALS");
 });
 
-test("POST /api/gate/vehicle-jobs creates a new vehicle job", async () => {
-  const response = await server.request("POST", "/api/gate/vehicle-jobs", {
+test("POST /api/gate/tickets creates a new Gate ticket", async () => {
+  const response = await server.request("POST", "/api/gate/tickets", {
     body: buildGateVehicleJobBody("001"),
     headers: await gateAuthHeaders(),
   });
@@ -184,8 +184,8 @@ test("POST /api/gate/vehicle-jobs creates a new vehicle job", async () => {
   assert.equal(state.ticketProducts[0].packageName, "crate");
 });
 
-test("POST /api/gate/vehicle-jobs returns waiting_unload status when Dispatch is false", async () => {
-  const response = await server.request("POST", "/api/gate/vehicle-jobs", {
+test("POST /api/gate/tickets returns waiting_unload status when Dispatch is false", async () => {
+  const response = await server.request("POST", "/api/gate/tickets", {
     body: {
       ...buildGateVehicleJobBody("006"),
       Dispatch: false,
@@ -197,11 +197,11 @@ test("POST /api/gate/vehicle-jobs returns waiting_unload status when Dispatch is
   assert.equal(response.body.Ticket.Status, "waiting_unload");
 });
 
-test("POST /api/gate/vehicle-jobs replays the same Gate request", async () => {
+test("POST /api/gate/tickets replays the same Gate request", async () => {
   const body = buildGateVehicleJobBody("002");
   const headers = await gateAuthHeaders();
-  const created = await server.request("POST", "/api/gate/vehicle-jobs", { body, headers });
-  const replayed = await server.request("POST", "/api/gate/vehicle-jobs", { body, headers });
+  const created = await server.request("POST", "/api/gate/tickets", { body, headers });
+  const replayed = await server.request("POST", "/api/gate/tickets", { body, headers });
 
   assert.equal(created.status, 201);
   assert.equal(replayed.status, 200);
@@ -227,12 +227,12 @@ test("POST /api/gate/vehicle-jobs replays the same Gate request", async () => {
   assert.equal(state.vehicleJobs.length, 1);
 });
 
-test("POST /api/gate/vehicle-jobs rejects reused Gate ref with a different payload", async () => {
+test("POST /api/gate/tickets rejects reused Gate ref with a different payload", async () => {
   const body = buildGateVehicleJobBody("003");
   const headers = await gateAuthHeaders();
-  await server.request("POST", "/api/gate/vehicle-jobs", { body, headers });
+  await server.request("POST", "/api/gate/tickets", { body, headers });
 
-  const mismatch = await server.request("POST", "/api/gate/vehicle-jobs", {
+  const mismatch = await server.request("POST", "/api/gate/tickets", {
     body: {
       ...body,
       LicensePlate: "DIFFERENT-003",
@@ -245,10 +245,10 @@ test("POST /api/gate/vehicle-jobs rejects reused Gate ref with a different paylo
   assert.equal(mismatch.body.duplicate_field, "gate_transaction_ref");
 });
 
-test("POST /api/gate/vehicle-jobs appends a new booth to the same Gate ticket", async () => {
+test("POST /api/gate/tickets appends a new booth to the same Gate ticket", async () => {
   const createdBody = buildGateVehicleJobBody("004");
   const headers = await gateAuthHeaders();
-  await server.request("POST", "/api/gate/vehicle-jobs", { body: createdBody, headers });
+  await server.request("POST", "/api/gate/tickets", { body: createdBody, headers });
 
   const nextBoothBody = {
     ...buildGateVehicleJobBody("005"),
@@ -260,7 +260,7 @@ test("POST /api/gate/vehicle-jobs appends a new booth to the same Gate ticket", 
     BoothName: "Vendor B",
     ProductCode: "PRODUCT-004-002",
   };
-  const appended = await server.request("POST", "/api/gate/vehicle-jobs", {
+  const appended = await server.request("POST", "/api/gate/tickets", {
     body: nextBoothBody,
     headers,
   });

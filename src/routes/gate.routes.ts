@@ -10,7 +10,7 @@ const router = express.Router();
 
 // Route รับงานรถจาก Gate mock payload
 router.post(
-  "/vehicle-jobs",
+  "/tickets",
   gateClientAuthMiddleware,
   async (req, res, next) => {
     try {

@@ -179,10 +179,10 @@ export function normalizeApiRequestBody(
   _res: Response,
   next: NextFunction
 ): void {
-  const isGateVehicleJobRequest =
-    req.method === "POST" && req.path === "/api/gate/vehicle-jobs";
+  const isGateTicketRequest =
+    req.method === "POST" && req.path === "/api/gate/tickets";
 
-  if (!isGateVehicleJobRequest && !shouldSkipCaseMiddleware(req) && req.body !== undefined) {
+  if (!isGateTicketRequest && !shouldSkipCaseMiddleware(req) && req.body !== undefined) {
     req.body = normalizeApiRequestPayload(req.body);
   }
 

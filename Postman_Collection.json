@@ -71,7 +71,7 @@
       "key": "gateClientId",
       "value": "gate-main",
       "type": "string",
-      "description": "Gate ClientId used by POST /api/gate/vehicle-jobs Basic Auth."
+      "description": "Gate ClientId used by POST /api/gate/tickets Basic Auth."
     },
     {
       "key": "gateClientSecret",
@@ -95,7 +95,7 @@
       "key": "ticketNo",
       "value": "TKT-20260723-000125",
       "type": "string",
-      "description": "ticketNo returned by POST /api/gate/vehicle-jobs. With the Gate payload this equals TicketNo."
+      "description": "ticketNo returned by POST /api/gate/tickets. With the Gate payload this equals TicketNo."
     },
     {
       "key": "marketCode",
@@ -131,13 +131,13 @@
       "key": "driverQrToken",
       "value": "",
       "type": "string",
-      "description": "Driver QR token returned by POST /api/gate/vehicle-jobs."
+      "description": "Driver QR token returned by POST /api/gate/tickets."
     },
     {
       "key": "workerQrToken",
       "value": "",
       "type": "string",
-      "description": "Worker QR value returned by POST /api/gate/vehicle-jobs or WORKER_ASSIGNED. For Gate-created jobs this equals ticketNo and is sent as QrToken when worker checks in."
+      "description": "Worker QR value returned by POST /api/gate/tickets or WORKER_ASSIGNED. For Gate-created jobs this equals ticketNo and is sent as QrToken when worker checks in."
     },
     {
       "key": "driverSessionToken",
@@ -1633,7 +1633,7 @@
       "name": "Gate Flow",
       "item": [
         {
-          "name": "POST /api/gate/vehicle-jobs",
+          "name": "POST /api/gate/tickets",
           "event": [
             {
               "listen": "test",
@@ -1671,14 +1671,14 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/gate/vehicle-jobs",
+              "raw": "{{baseUrl}}/api/gate/tickets",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "gate",
-                "vehicle-jobs"
+                "tickets"
               ]
             },
             "auth": {
@@ -1696,7 +1696,7 @@
                 }
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/vehicle-jobs\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create it with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: Gate payload, 1 request per ticket/booth/product. Required fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, MarketName, BoothCode, BoothName, LicensePlate, VehicleTypeCode, VehicleTypeName, ProductCode, ProductName, PackageCode, PackageName, Quantity, Dispatch. Backend derives the internal idempotency key from TicketNo + MarketCode + BoothCode + ProductCode and returns WorkersRequired = 1 for now; worker-count calculation will be added later.\nResponse: Result, Ticket, Market, Booth, Product, and Qr. Ticket includes TicketNo, TicketCreatedAt, BoothCount, vehicle info, WorkersRequired, and Status. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload. Success/replay responses do not include Message or GateTransactionRef. Qr.WorkerQrToken equals TicketNo, so Worker scans/sends TicketNo for check-in. GateTransactionRef is returned only in 409 mismatch errors for debugging.\nResult: 201 + Result CREATED for a new Gate transaction, 200 + Result REPLAYED when the same TicketNo + MarketCode + BoothCode + ProductCode is retried with the same payload, 409 when the same key is reused with a different payload.\nNotes: Saves gateResult, ticketNo, marketCode, boothCode, productCode, driverQrToken, and workerQrToken collection variables. Sending the same TicketNo with a new MarketCode/BoothCode/ProductCode appends or updates that market/booth/product under the same vehicle job. With Dispatch true, backend creates or marks the job as WORKING and immediately dispatches ready workers through WebSocket."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create it with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: Gate payload, 1 request per ticket/booth/product. Required fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, MarketName, BoothCode, BoothName, LicensePlate, VehicleTypeCode, VehicleTypeName, ProductCode, ProductName, PackageCode, PackageName, Quantity, Dispatch. Backend derives the internal idempotency key from TicketNo + MarketCode + BoothCode + ProductCode and returns WorkersRequired = 1 for now; worker-count calculation will be added later.\nResponse: Result, Ticket, Market, Booth, Product, and Qr. Ticket includes TicketNo, TicketCreatedAt, BoothCount, vehicle info, WorkersRequired, and Status. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload. Success/replay responses do not include Message or GateTransactionRef. Qr.WorkerQrToken equals TicketNo, so Worker scans/sends TicketNo for check-in. GateTransactionRef is returned only in 409 mismatch errors for debugging.\nResult: 201 + Result CREATED for a new Gate transaction, 200 + Result REPLAYED when the same TicketNo + MarketCode + BoothCode + ProductCode is retried with the same payload, 409 when the same key is reused with a different payload.\nNotes: Saves gateResult, ticketNo, marketCode, boothCode, productCode, driverQrToken, and workerQrToken collection variables. Sending the same TicketNo with a new MarketCode/BoothCode/ProductCode appends or updates that market/booth/product under the same vehicle job. With Dispatch true, backend creates or marks the job as WORKING and immediately dispatches ready workers through WebSocket."
           },
           "response": []
         }

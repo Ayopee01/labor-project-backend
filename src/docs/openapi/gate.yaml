@@ -1,12 +1,12 @@
 ﻿paths:
-  /api/gate/vehicle-jobs:
+  /api/gate/tickets:
     post:
       tags:
         - Gate
-      summary: Create a vehicle job from Gate using Gate Client Credentials.
+      summary: Create a Gate ticket using Gate Client Credentials.
       description: >
-        Use HTTP Basic Auth where username is `client_id` and password is
-        `client_secret`. Gate sends one flat PascalCase payload per
+        Use HTTP Basic Auth where username is `ClientId` and password is
+        `ClientSecret`. Gate sends one flat PascalCase payload per
         ticket/booth/product using TicketNo, TicketCreatedAt, BoothCount,
         MarketCode/MarketName, BoothCode/BoothName, VehicleTypeName, and
         ProductCode/ProductName/PackageCode/PackageName. Backend derives the
@@ -21,7 +21,7 @@
         market/booth/product transaction appends or updates that item under the
         same vehicle job. Set `Dispatch` to `true` when the vehicle is already
         ready to unload.
-      operationId: createVehicleJobFromGate
+      operationId: createGateTicket
       security:
         - gateBasicAuth: []
       requestBody:
@@ -29,20 +29,20 @@
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/GateVehicleJobRequest"
+              $ref: "#/components/schemas/GateTicketRequest"
       responses:
         "200":
           description: Existing Gate request replayed by idempotency key.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GateVehicleJobResponse"
+                $ref: "#/components/schemas/GateTicketResponse"
         "201":
-          description: Vehicle job created.
+          description: Gate ticket accepted.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GateVehicleJobResponse"
+                $ref: "#/components/schemas/GateTicketResponse"
         "400":
           description: Invalid Gate payload.
           content:
@@ -56,7 +56,7 @@
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Duplicate vehicle job ref or idempotency key payload mismatch.
+          description: Duplicate Gate ticket idempotency key payload mismatch.
           content:
             application/json:
               schema:
