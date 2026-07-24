@@ -18,8 +18,9 @@
         `ASSIGNMENT_SCAN_DEADLINE_EXTENDED`,
         `ASSIGNMENT_SCAN_DEADLINE_SHORTENED`,
         `STALL_JOB_CANCELLED`, `MARKET_JOB_CANCELLED`, and `VEHICLE_JOB_CANCELLED`.
-        `WORKER_ASSIGNED` sends `vehicle_job_ref`, `gate_transaction_ref`,
+        `WORKER_ASSIGNED` sends `ticketNo`, `gate_transaction_ref`,
         `worker_qr_token`, and `assignment.created_at/accept_deadline_at`.
+        For Gate-created jobs, `worker_qr_token` is the same value as `ticketNo`.
         It does not send `driver_qr_token`.
         Worker actions such as accept/check-in/complete still use the REST endpoints.
       operationId: connectWorkerWebSocket
@@ -153,7 +154,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/workers/me/assignments/{vehicleJobRef}/accept:
+  /api/workers/me/assignments/{ticketNo}/accept:
     post:
       tags:
         - Worker Application
@@ -164,12 +165,12 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: vehicleJobRef
-          description: vehicle_job_ref from WORKER_ASSIGNED.
+          name: ticketNo
+          description: ticketNo from WORKER_ASSIGNED.
           required: true
           schema:
             type: string
-            example: VEH-20260706-0003
+            example: TKT-20260723-000125
       responses:
         "200":
           description: Accepted assignment and job detail for the worker job screen.
@@ -177,7 +178,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkerAssignmentAcceptResponse"
-  /api/workers/me/assignments/{vehicleJobRef}/check-in-qr:
+  /api/workers/me/assignments/{ticketNo}/check-in-qr:
     post:
       tags:
         - Worker Application
@@ -192,12 +193,12 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: vehicleJobRef
-          description: vehicle_job_ref from WORKER_ASSIGNED.
+          name: ticketNo
+          description: ticketNo from WORKER_ASSIGNED.
           required: true
           schema:
             type: string
-            example: VEH-20260706-0003
+            example: TKT-20260723-000125
       requestBody:
         required: true
         content:
@@ -209,7 +210,8 @@
               properties:
                 qr_token:
                   type: string
-                  description: worker_qr_token from Gate/Driver ready response or a QR rendered by another checked-in worker.
+                  description: ticketNo scanned from the worker QR. For Gate-created jobs, worker_qr_token is the same value as ticketNo.
+                  example: TKT-20260723-000125
       responses:
         "200":
           description: Checked-in assignment status.
@@ -223,7 +225,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/workers/me/tickets/{stallJobRef}/complete:
+  /api/workers/me/tickets/{boothCode}/complete:
     post:
       tags:
         - Worker Application
@@ -238,12 +240,12 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: stallJobRef
+          name: boothCode
           required: true
           schema:
             type: string
-            example: STALLJOB-001
-          description: stall_job_ref from the accepted job payload.
+            example: B-018
+          description: boothCode from the accepted job payload.
       requestBody:
         required: true
         content:

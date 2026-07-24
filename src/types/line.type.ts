@@ -7,6 +7,9 @@ export type LineWebhookEvent = {
   postback?: {
     data?: string;
   };
+  message?: {
+    text?: string;
+  };
 };
 
 // Type ส่วน job data สำหรับ queue ส่ง LINE message
@@ -28,7 +31,7 @@ export interface VendorTicketActionTokenPayload {
   action: VendorTicketAction;
   ticket_id: number;
   submission_id: number;
-  stall_job_ref: string;
+  boothCode: string;
   iat: number;
   exp: number;
 }

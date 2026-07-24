@@ -71,16 +71,21 @@ async function buildTicketResultAudience(
 function parseLinePostback(data: string | undefined): {
   action: VendorTicketAction | null;
   token: string | null;
+  rejectReason: string | null;
 } {
   if (!data) {
     return {
       action: null,
       token: null,
+      rejectReason: null,
     };
   }
 
   const params = new URLSearchParams(data);
   const action = params.get("action");
+  const rawRejectReason =
+    params.get("reject_reason") ?? params.get("reason") ?? null;
+  const rejectReason = rawRejectReason?.trim() || null;
 
   return {
     action:
@@ -89,6 +94,7 @@ function parseLinePostback(data: string | undefined): {
         ? action
         : null,
     token: params.get("token"),
+    rejectReason,
   };
 }
 
@@ -153,7 +159,7 @@ async function returnCompletedWorkersToQueue(input: {
         message: `Worker ${workerCode ?? workerAccountId} returned to queue after vehicle job completion.`,
         payload: {
           worker_code: workerCode,
-          vehicle_job_ref: input.vehicle_job.vehicle_job_ref,
+          ticketNo: input.vehicle_job.ticketNo,
           queue: buildWorkerQueueSocketPayload(queue, workerCode),
           reason: "vehicle_job_completed_requeue",
         },
@@ -174,10 +180,10 @@ async function returnCompletedWorkersToQueue(input: {
       type: "WORKER_STATUS_CHANGED",
       title: "Worker moved to open_app",
       message: `Worker ${workerCode ?? workerAccountId} moved to open_app after vehicle job completion.`,
-      payload: {
-        worker_code: workerCode,
-        vehicle_job_ref: input.vehicle_job.vehicle_job_ref,
-        queue: buildWorkerQueueSocketPayload(queue, workerCode),
+        payload: {
+          worker_code: workerCode,
+          ticketNo: input.vehicle_job.ticketNo,
+          queue: buildWorkerQueueSocketPayload(queue, workerCode),
         reason: "vehicle_job_completed_not_available",
       },
       audience: {
@@ -226,7 +232,7 @@ export async function handleLineWebhook(
   let processed = 0;
 
   for (const event of events) {
-    const { action, token } = parseLinePostback(event.postback?.data);
+    const { action, token, rejectReason } = parseLinePostback(event.postback?.data);
 
     if (
       event.type !== "postback" ||
@@ -252,7 +258,7 @@ export async function handleLineWebhook(
       if (
         !ticket ||
         ticket.vendor_line_id !== event.source?.userId ||
-        ticket.stall_job_ref !== tokenPayload.stall_job_ref
+        ticket.boothCode !== tokenPayload.boothCode
       ) {
         return null;
       }
@@ -276,6 +282,7 @@ export async function handleLineWebhook(
           : await workerApplicationRepository.rejectTicketCompletion(
               ticket.id,
               submission.id,
+              rejectReason,
               transaction
             );
       const isConfirmed = action === "vendor_confirm_completion";
@@ -307,8 +314,8 @@ export async function handleLineWebhook(
         ? "Ticket completion confirmed"
         : "Ticket completion rejected";
       const notificationMessage = isConfirmed
-        ? `Vendor confirmed ticket ${updated.ticket.ticket_no ?? updated.ticket.stall_job_ref}.`
-        : `Vendor rejected ticket ${updated.ticket.ticket_no ?? updated.ticket.stall_job_ref}.`;
+        ? `Vendor confirmed ticket ${updated.ticket.boothCode}.`
+        : `Vendor rejected ticket ${updated.ticket.boothCode}.`;
       const receiverAccountIds = await buildTicketResultAudience(
         updated.ticket,
         transaction
@@ -365,8 +372,9 @@ export async function handleLineWebhook(
       {
         ticket_id: result.ticket.id,
         submission_id: result.submission.id,
-        status: result.submission.status,
-      },
+            status: result.submission.status,
+            reject_reason: result.ticket.reject_reason,
+          },
       event.source.userId
     );
     await enqueueLineMessage("send-vendor-ticket-completion-result", {
@@ -393,8 +401,8 @@ export async function handleLineWebhook(
             submission_status: result.submission.status,
             vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
             completed_worker_codes: result.completedWorkerCodes,
-            next_market_job_ref: result.nextTicket?.market_job_ref ?? null,
-            next_stall_job_ref: result.nextTicket?.ticket.stall_job_ref ?? null,
+            nextMarketCode: result.nextTicket?.marketCode ?? null,
+            nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
             next_ticket_status: result.nextTicket?.ticket.status ?? null,
             assignment_status: result.assignmentStatus,
           }
@@ -409,8 +417,8 @@ export async function handleLineWebhook(
             submission_status: result.submission.status,
             vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
             completed_worker_codes: result.completedWorkerCodes,
-            next_market_job_ref: result.nextTicket?.market_job_ref ?? null,
-            next_stall_job_ref: result.nextTicket?.ticket.stall_job_ref ?? null,
+            nextMarketCode: result.nextTicket?.marketCode ?? null,
+            nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
             next_ticket_status: result.nextTicket?.ticket.status ?? null,
             assignment_status: result.assignmentStatus,
           }

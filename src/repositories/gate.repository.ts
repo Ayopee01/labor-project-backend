@@ -2,6 +2,7 @@
 import { Prisma } from "@prisma/client";
 
 // import
+import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
 import { mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
 
@@ -56,13 +57,13 @@ export async function findGateRequestReplayByRef(
 
 // Function หา VehicleJob จากเลขอ้างอิงงานรถ
 export async function findVehicleJobByRef(
-  vehicleJobRef: string,
+  ticketNo: string,
   connection?: DbConnection
 ): Promise<VehicleJobDto | null> {
   const db = client(connection);
   const vehicleJob = await db.vehicleJob.findUnique({
     where: {
-      vehicleJobRef,
+      ticketNo,
     },
   });
 
@@ -77,66 +78,144 @@ export async function createVehicleJobFromGate(
 ): Promise<VehicleJobDto> {
   const db = client(connection);
   const dispatchNow = input.dispatch_now === true;
-  const vehicleStatus = dispatchNow ? "IN_PROGRESS" : "WAIT";
-  const ticketStatus = "WAIT";
-  const vehicleJob = await db.vehicleJob.create({
-    data: {
-      vehicleJobRef: input.vehicle_job_ref,
-      gateTransactionRef: input.gate_transaction_ref,
-      licensePlate: input.license_plate,
-      vehicleType: input.vehicle_type ?? null,
-      workersRequired: input.workers_required,
-      status: vehicleStatus,
-      driverQrToken: createRandomToken("driver_qr"),
-      workerQrToken: createRandomToken("worker_qr"),
+  const vehicleStatus = dispatchNow ? VEHICLE_JOB_STATUS.WORKING : VEHICLE_JOB_STATUS.WAIT;
+  const ticketStatus = TICKET_STATUS.WAIT;
+  const existingVehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      ticketNo: input.ticketNo,
     },
   });
+  const vehicleJob =
+    existingVehicleJob ??
+    (await db.vehicleJob.create({
+      data: {
+        ticketNo: input.ticketNo,
+        gateTransactionRef: input.gate_transaction_ref,
+        licensePlate: input.license_plate,
+        vehicleType: input.vehicle_type ?? null,
+        workersRequired: 1,
+        dispatchNow,
+        status: vehicleStatus,
+        driverQrToken: createRandomToken("driver_qr"),
+        workerQrToken: input.ticketNo,
+      },
+    }));
+  const shouldUpdateVehicle =
+    existingVehicleJob &&
+    (existingVehicleJob.gateTransactionRef !== input.gate_transaction_ref ||
+      existingVehicleJob.licensePlate !== input.license_plate ||
+      existingVehicleJob.vehicleType !== (input.vehicle_type ?? null) ||
+      existingVehicleJob.workersRequired !== 1 ||
+      existingVehicleJob.workerQrToken !== input.ticketNo ||
+      (dispatchNow && !existingVehicleJob.dispatchNow) ||
+      (dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT));
+  const savedVehicleJob = shouldUpdateVehicle
+    ? await db.vehicleJob.update({
+        where: {
+          id: vehicleJob.id,
+        },
+        data: {
+          gateTransactionRef: input.gate_transaction_ref,
+          licensePlate: input.license_plate,
+          vehicleType: input.vehicle_type ?? null,
+          workersRequired: 1,
+          workerQrToken: input.ticketNo,
+          dispatchNow: existingVehicleJob.dispatchNow || dispatchNow,
+          status: dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT
+            ? vehicleStatus
+            : existingVehicleJob.status,
+        },
+      })
+    : vehicleJob;
+  const marketStatus =
+    savedVehicleJob.status === VEHICLE_JOB_STATUS.WORKING || dispatchNow
+      ? VEHICLE_JOB_STATUS.WORKING
+      : VEHICLE_JOB_STATUS.WAIT;
 
   for (const market of input.markets) {
-    const createdMarket = await db.marketJob.create({
-      data: {
-        vehicleJobId: vehicleJob.id,
-        marketJobRef: market.market_job_ref,
-        marketName: market.market_name,
-        status: vehicleStatus,
+    const createdMarket = await db.marketJob.upsert({
+      where: {
+        vehicleJobId_marketCode: {
+          vehicleJobId: savedVehicleJob.id,
+          marketCode: market.marketCode,
+        },
+      },
+      update: {
+        marketName: market.marketName,
+        dropoffPoint: market.dropoff_point ?? null,
+        status: marketStatus,
+      },
+      create: {
+        vehicleJobId: savedVehicleJob.id,
+        marketCode: market.marketCode,
+        marketName: market.marketName,
+        dropoffPoint: market.dropoff_point ?? null,
+        status: marketStatus,
       },
     });
 
     for (const ticket of market.tickets) {
-      await db.gateTicket.create({
-        data: {
-          vehicleJobId: vehicleJob.id,
-          marketJobId: createdMarket.id,
-          stallJobRef: ticket.stall_job_ref,
-          ticketNo: ticket.ticket_no ?? null,
-          stallNo: ticket.stall_no ?? null,
-          vendorName: ticket.vendor_name ?? null,
-          vendorLineId: ticket.vendor_line_id ?? null,
-          status: ticketStatus,
-          confirmationStatus: ticketStatus,
-          products: {
-            create: ticket.products.map((product) => ({
-              productRef: product.product_ref,
-              productType: product.product_type ?? null,
-              name: product.name,
-              quantity: product.quantity,
-              unit: product.unit,
-            })),
+      const createdTicket = await db.gateTicket.upsert({
+        where: {
+          marketJobId_boothCode: {
+            marketJobId: createdMarket.id,
+            boothCode: ticket.boothCode,
           },
         },
+        update: {
+          vehicleJobId: savedVehicleJob.id,
+          boothName: ticket.boothName ?? null,
+          vendorLineId: ticket.vendor_line_id ?? null,
+          rejectReason: ticket.reject_reason ?? null,
+        },
+        create: {
+          vehicleJobId: savedVehicleJob.id,
+          marketJobId: createdMarket.id,
+          boothCode: ticket.boothCode,
+          boothName: ticket.boothName ?? null,
+          vendorLineId: ticket.vendor_line_id ?? null,
+          rejectReason: ticket.reject_reason ?? null,
+          status: ticketStatus,
+          confirmationStatus: ticketStatus,
+        },
       });
+
+      for (const product of ticket.products) {
+        await db.ticketProduct.upsert({
+          where: {
+            ticketId_productCode: {
+              ticketId: createdTicket.id,
+              productCode: product.productCode,
+            },
+          },
+          update: {
+            productName: product.productName,
+            packageCode: product.packageCode,
+            packageName: product.packageName,
+            quantity: product.quantity,
+          },
+          create: {
+            ticketId: createdTicket.id,
+            productCode: product.productCode,
+            productName: product.productName,
+            packageCode: product.packageCode,
+            packageName: product.packageName,
+            quantity: product.quantity,
+          },
+        });
+      }
     }
   }
 
   await db.gateRequestLog.create({
     data: {
       gateTransactionRef: input.gate_transaction_ref,
-      vehicleJobId: vehicleJob.id,
+      vehicleJobId: savedVehicleJob.id,
       payloadSnapshot,
     },
   });
 
-  return requireDto(mapVehicleJob(vehicleJob), "vehicle job create");
+  return requireDto(mapVehicleJob(savedVehicleJob), "vehicle job create");
 }
 
 // Function บันทึก response snapshot ให้ Gate request log

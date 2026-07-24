@@ -1,5 +1,6 @@
-// import
+﻿// import
 import { withTransaction } from "../db/prisma";
+import { VEHICLE_JOB_STATUS } from "../constants/job-status";
 import * as driverRepository from "../repositories/driver.repository";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { getRuntimeSettings } from "./admin-settings.service";
@@ -15,7 +16,7 @@ import ApiError from "../utils/api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function อ่าน vehicle_job_ref จาก path param และโยน error ถ้าค่าว่าง
+// Function เธญเนเธฒเธ ticketNo เธเธฒเธ path param เนเธฅเธฐเนเธขเธ error เธ–เนเธฒเธเนเธฒเธงเนเธฒเธ
 function parseReference(value: unknown): string {
   const reference = String(value ?? "").trim();
 
@@ -26,10 +27,10 @@ function parseReference(value: unknown): string {
   return reference;
 }
 
-// Function จัดรูปงานรถสำหรับ Driver Flow โดยไม่ส่ง id ภายใน
+// Function เธเธฑเธ”เธฃเธนเธเธเธฒเธเธฃเธ–เธชเธณเธซเธฃเธฑเธ Driver Flow เนเธ”เธขเนเธกเนเธชเนเธ id เธ เธฒเธขเนเธ
 function formatDriverVehicleJob(vehicleJob: VehicleJobDto): DriverVehicleJobResponse {
   return {
-    vehicle_job_ref: vehicleJob.vehicle_job_ref,
+    ticketNo: vehicleJob.ticketNo,
     gate_transaction_ref: vehicleJob.gate_transaction_ref,
     license_plate: vehicleJob.license_plate,
     vehicle_type: vehicleJob.vehicle_type,
@@ -41,36 +42,34 @@ function formatDriverVehicleJob(vehicleJob: VehicleJobDto): DriverVehicleJobResp
   };
 }
 
-// Function จัดรูปงานรถพร้อมตลาด แผง และสินค้า สำหรับ Driver Flow
+// Function เธเธฑเธ”เธฃเธนเธเธเธฒเธเธฃเธ–เธเธฃเนเธญเธกเธ•เธฅเธฒเธ” เนเธเธ เนเธฅเธฐเธชเธดเธเธเนเธฒ เธชเธณเธซเธฃเธฑเธ Driver Flow
 function formatDriverVehicleJobDetail(
   detail: VehicleJobDetailResponse
 ): DriverVehicleJobDetailResponse {
   return {
     vehicle_job: formatDriverVehicleJob(detail.vehicle_job),
     markets: detail.markets.map((market) => ({
-      market_job_ref: market.market_job_ref,
-      market_name: market.market_name,
+      marketCode: market.marketCode,
+      marketName: market.marketName,
       status: market.status,
       tickets: market.tickets.map((ticket) => ({
-        stall_job_ref: ticket.stall_job_ref,
-        ticket_no: ticket.ticket_no,
-        stall_no: ticket.stall_no,
-        vendor_name: ticket.vendor_name,
+        boothCode: ticket.boothCode,
+        boothName: ticket.boothName,
         status: ticket.status,
         confirmation_status: ticket.confirmation_status,
         products: ticket.products.map((product) => ({
-          product_ref: product.product_ref,
-          product_type: product.product_type,
-          name: product.name,
+          productCode: product.productCode,
+          productName: product.productName,
+          packageCode: product.packageCode,
+          packageName: product.packageName,
           quantity: product.quantity,
-          unit: product.unit,
         })),
       })),
     })),
   };
 }
 
-// Function เปิด driver session จาก QR token
+// Function เน€เธเธดเธ” driver session เธเธฒเธ QR token
 export async function createDriverSessionFromQr(
   body: unknown
 ): Promise<DriverSessionResponse> {
@@ -98,7 +97,7 @@ export async function createDriverSessionFromQr(
   };
 }
 
-// Function ดึงงานปัจจุบันของ driver session
+// Function เธ”เธถเธเธเธฒเธเธเธฑเธเธเธธเธเธฑเธเธเธญเธ driver session
 export async function getDriverCurrentJob(
   session?: DriverSessionDto
 ): Promise<DriverVehicleJobDetailResponse> {
@@ -115,7 +114,7 @@ export async function getDriverCurrentJob(
   return formatDriverVehicleJobDetail(detail);
 }
 
-// Function ให้ driver กดพร้อมลงเพื่อเปลี่ยนสถานะและเรียก worker จาก queue
+// Function เนเธซเน driver เธเธ”เธเธฃเนเธญเธกเธฅเธเน€เธเธทเนเธญเน€เธเธฅเธตเนเธขเธเธชเธ–เธฒเธเธฐเนเธฅเธฐเน€เธฃเธตเธขเธ worker เธเธฒเธ queue
 export async function markDriverJobReady(
   idParam: unknown,
   session?: DriverSessionDto
@@ -124,8 +123,8 @@ export async function markDriverJobReady(
     throw new ApiError(401, "MISSING_DRIVER_SESSION", "Missing driver session.");
   }
 
-  const vehicleJobRef = parseReference(idParam);
-  const requestedVehicleJob = await driverRepository.findVehicleJobByRef(vehicleJobRef);
+  const ticketNo = parseReference(idParam);
+  const requestedVehicleJob = await driverRepository.findVehicleJobByRef(ticketNo);
 
   if (!requestedVehicleJob) {
     throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
@@ -136,13 +135,17 @@ export async function markDriverJobReady(
   }
 
   const detail = await withTransaction(async (transaction) => {
-    const vehicleJob = await driverRepository.findVehicleJobByRef(vehicleJobRef, transaction);
+    const vehicleJob = await driverRepository.findVehicleJobByRef(ticketNo, transaction);
 
     if (!vehicleJob) {
       throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
     }
 
-    if (vehicleJob.status === "IN_PROGRESS" || vehicleJob.status === "COMPLETED" || vehicleJob.status === "CANCELLED") {
+    if (
+      vehicleJob.status === VEHICLE_JOB_STATUS.WORKING ||
+      vehicleJob.status === VEHICLE_JOB_STATUS.COMPLETED ||
+      vehicleJob.status === VEHICLE_JOB_STATUS.CANCELLED
+    ) {
       throw new ApiError(409, "VEHICLE_JOB_NOT_READY", "Vehicle job cannot be marked ready.");
     }
 
@@ -161,9 +164,9 @@ export async function markDriverJobReady(
   publishNotification({
     type: "DRIVER_JOB_READY",
     title: "Driver job ready",
-    message: `Driver marked vehicle job ${detail.vehicle_job.vehicle_job_ref} ready.`,
+    message: `Driver marked vehicle job ${detail.vehicle_job.ticketNo} ready.`,
     payload: {
-      vehicle_job_ref: detail.vehicle_job.vehicle_job_ref,
+      ticketNo: detail.vehicle_job.ticketNo,
       license_plate: detail.vehicle_job.license_plate,
       status: detail.vehicle_job.status,
     },
@@ -173,9 +176,10 @@ export async function markDriverJobReady(
   });
 
   return {
-    vehicle_job_ref: detail.vehicle_job.vehicle_job_ref,
+    ticketNo: detail.vehicle_job.ticketNo,
     license_plate: detail.vehicle_job.license_plate,
     status: detail.vehicle_job.status,
     worker_qr_token: detail.vehicle_job.worker_qr_token,
   };
 }
+

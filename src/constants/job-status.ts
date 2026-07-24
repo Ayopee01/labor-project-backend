@@ -12,14 +12,21 @@ export const ASSIGNMENT_STATUS = {
 
 export const VEHICLE_JOB_STATUS = {
   WAIT: "WAIT",
-  IN_PROGRESS: "IN_PROGRESS",
+  WORKING: "WORKING",
   COMPLETED: "COMPLETED",
   CANCELLED: "CANCELLED",
 } as const;
 
+export const VEHICLE_OPERATION_STATUS = {
+  UNLOAD_NOW: "unload_now",
+  WAITING_UNLOAD: "waiting_unload",
+  WAITING_QUEUE: "waiting_queue",
+  DRIVER_WAITING_QUEUE: "driver_waiting_queue",
+} as const;
+
 export const TICKET_STATUS = {
   WAIT: "WAIT",
-  IN_PROGRESS: "IN_PROGRESS",
+  WORKING: "WORKING",
   DELIVERED: "DELIVERED",
   REJECT: "REJECT",
   COMPLETED: "COMPLETED",

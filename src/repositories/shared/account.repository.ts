@@ -3,6 +3,7 @@ import { prisma } from "../../db/prisma";
 
 // import Mapper
 import { mapAccount, sanitizeAccount } from "./mappers";
+import { requireMapped } from "./repository-utils";
 
 // import Types
 import type { DbConnection } from "../../types/common.type";
@@ -80,6 +81,42 @@ export async function listAdmins(connection?: DbConnection): Promise<AccountDto[
 }
 
 // Function ดึง worker ทั้งหมด ใช้กับ Admin/Worker status summary
+export async function updatePassword(
+  id: number | string,
+  passwordHash: string,
+  connection?: DbConnection
+): Promise<AccountDto> {
+  const db = client(connection);
+  const updatedAccount = await db.account.update({
+    where: {
+      id: toAccountId(id),
+    },
+    data: {
+      passwordHash,
+    },
+  });
+
+  return requireMapped(mapAccount(updatedAccount), "Account", "password update");
+}
+
+export async function updateStatus(
+  id: number | string,
+  status: string,
+  connection?: DbConnection
+): Promise<AccountDto> {
+  const db = client(connection);
+  const updatedAccount = await db.account.update({
+    where: {
+      id: toAccountId(id),
+    },
+    data: {
+      status,
+    },
+  });
+
+  return requireMapped(mapAccount(updatedAccount), "Account", "status update");
+}
+
 export async function listAllUsers(connection?: DbConnection): Promise<AccountDto[]> {
   const db = client(connection);
   const accounts = await db.account.findMany({

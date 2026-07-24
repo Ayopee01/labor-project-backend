@@ -85,7 +85,9 @@ export interface ProfileCardShift {
 
 // Type ส่วน response ของ GET /api/auth/me สำหรับ Admin
 interface AdminMeResponse {
+  role: "admin";
   full_name: string;
+  employee_code: string;
   position: string | null;
   admin_code: string;
   status: AccountStatus;
@@ -98,7 +100,9 @@ interface AdminMeResponse {
 
 // Type ส่วน response ของ GET /api/auth/me สำหรับ Worker
 interface WorkerMeResponse {
+  role: "worker";
   full_name: string;
+  employee_code: string | null;
   worker_code: string | null;
   nationality: string | null;
   work_start_date: string | null;

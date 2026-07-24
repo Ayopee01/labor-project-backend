@@ -77,4 +77,19 @@ router.get(
   }
 );
 
+// Route เปลี่ยน password ของ account ที่ login อยู่ ใช้ได้ทั้ง admin และ worker
+router.patch(
+  "/me/password",
+  authMiddleware,
+  sessionMiddleware,
+  async (req, res, next) => {
+    try {
+      const result = await authService.changeOwnPassword(req.auth, req.body);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;

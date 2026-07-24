@@ -101,9 +101,9 @@ export async function dispatchReadyWorkers(
         publishNotification({
           type: "WORKER_ASSIGNED",
           title: "Worker assigned",
-          message: `Worker ${workerCode ?? worker.account_id} was assigned to vehicle job ${vehicleJob.vehicle_job_ref}.`,
+          message: `Worker ${workerCode ?? worker.account_id} was assigned to vehicle job ${vehicleJob.ticketNo}.`,
           payload: {
-            vehicle_job_ref: vehicleJob.vehicle_job_ref,
+            ticketNo: vehicleJob.ticketNo,
             worker_code: workerCode,
             status: assignment.status,
             accept_deadline_at: assignment.accept_deadline_at,
@@ -227,7 +227,7 @@ async function handleAssignmentScanTimeout(input: {
   const queue = await markWorkerOpenApp(input.workerAccountId);
 
   sendWorkerSocketEvent(input.workerAccountId, "ASSIGNMENT_TIMEOUT", {
-    vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+    ticketNo: vehicleJob?.ticketNo ?? null,
     reason: "scan_timeout",
     status: "open_app",
   });
@@ -247,9 +247,9 @@ async function handleAssignmentScanTimeout(input: {
   publishNotification({
     type: "ASSIGNMENT_TIMEOUT",
     title: "Assignment scan timed out",
-    message: `Worker ${workerCode ?? input.workerAccountId} did not scan QR for vehicle job ${vehicleJob?.vehicle_job_ref ?? "-"}.`,
+    message: `Worker ${workerCode ?? input.workerAccountId} did not scan QR for vehicle job ${vehicleJob?.ticketNo ?? "-"}.`,
     payload: {
-      vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+      ticketNo: vehicleJob?.ticketNo ?? null,
       worker_code: workerCode,
       status: "TIMEOUT",
       reason: "scan_timeout",
@@ -300,7 +300,7 @@ async function handleAssignmentScanWarning(input: {
     title: "Worker has not checked in",
     message: `Worker ${workerCode ?? input.workerAccountId} has not checked in and the scan deadline is near.`,
     payload: {
-      vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+      ticketNo: vehicleJob?.ticketNo ?? null,
       worker_code: workerCode,
       assignment_status: input.assignment.status,
       worker_status: "assigned",
@@ -356,7 +356,7 @@ async function returnCompletedWorkersToQueue(
         message: `Worker ${workerCode ?? workerAccountId} returned to queue after vehicle job completion.`,
         payload: {
           worker_code: workerCode,
-          vehicle_job_ref: input.vehicle_job.vehicle_job_ref,
+          ticketNo: input.vehicle_job.ticketNo,
           queue: buildWorkerQueueSocketPayload(queue, workerCode),
           reason: "vehicle_job_completed_requeue",
         },
@@ -379,7 +379,7 @@ async function returnCompletedWorkersToQueue(
       message: `Worker ${workerCode ?? workerAccountId} moved to open_app after vehicle job completion.`,
         payload: {
           worker_code: workerCode,
-          vehicle_job_ref: input.vehicle_job.vehicle_job_ref,
+          ticketNo: input.vehicle_job.ticketNo,
           queue: buildWorkerQueueSocketPayload(queue, workerCode),
           reason: "vehicle_job_completed_not_available",
         },
@@ -490,7 +490,7 @@ async function handleVendorConfirmationTimeout(input: {
   publishRealtimeEvent({
     type: "TICKET_COMPLETION_RESULT",
     title: "Ticket completion auto-confirmed",
-    message: `Ticket ${result.ticket.ticket_no ?? result.ticket.stall_job_ref} was auto-confirmed after vendor timeout.`,
+    message: `Ticket ${result.ticket.boothCode} was auto-confirmed after vendor timeout.`,
     payload: {
       ...buildWorkerTicketPayload(
         result.ticket,
@@ -500,8 +500,8 @@ async function handleVendorConfirmationTimeout(input: {
           submission_status: result.submission.status,
           vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
           completed_worker_codes: completedWorkerCodes,
-          next_market_job_ref: result.nextTicket?.market_job_ref ?? null,
-          next_stall_job_ref: result.nextTicket?.ticket.stall_job_ref ?? null,
+          nextMarketCode: result.nextTicket?.marketCode ?? null,
+          nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
           next_ticket_status: result.nextTicket?.ticket.status ?? null,
           assignment_status: result.completedVehicleJob ? "COMPLETED" : "WORKING",
           reason: "vendor_confirm_timeout",
@@ -517,8 +517,8 @@ async function handleVendorConfirmationTimeout(input: {
           submission_status: result.submission.status,
           vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
           completed_worker_codes: completedWorkerCodes,
-          next_market_job_ref: result.nextTicket?.market_job_ref ?? null,
-          next_stall_job_ref: result.nextTicket?.ticket.stall_job_ref ?? null,
+          nextMarketCode: result.nextTicket?.marketCode ?? null,
+          nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
           next_ticket_status: result.nextTicket?.ticket.status ?? null,
           assignment_status: result.completedVehicleJob ? "COMPLETED" : "WORKING",
           reason: "vendor_confirm_timeout",
@@ -531,10 +531,10 @@ async function handleVendorConfirmationTimeout(input: {
   publishNotification({
     type: "TICKET_COMPLETION_RESULT",
     title: "Ticket completion auto-confirmed",
-    message: `Ticket ${result.ticket.ticket_no ?? result.ticket.stall_job_ref} was auto-confirmed after vendor timeout.`,
+    message: `Ticket ${result.ticket.boothCode} was auto-confirmed after vendor timeout.`,
     payload: {
       ticket_id: result.ticket.id,
-      stall_job_ref: result.ticket.stall_job_ref,
+      boothCode: result.ticket.boothCode,
       submission_id: result.submission.id,
       reason: "vendor_confirm_timeout",
     },
@@ -705,7 +705,7 @@ export function startAssignmentTimeoutProcessing(): void {
       });
 
       sendWorkerSocketEvent(workerAccountId, "ASSIGNMENT_TIMEOUT", {
-        vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+        ticketNo: vehicleJob?.ticketNo ?? null,
         reason: timeoutResult.reason,
         timeout_count: timeoutResult.timeout_count,
         timeout_limit: timeoutResult.timeout_limit,
@@ -736,9 +736,9 @@ export function startAssignmentTimeoutProcessing(): void {
       publishNotification({
         type: "ASSIGNMENT_TIMEOUT",
         title: "Assignment timed out",
-        message: `Worker ${workerCode ?? workerAccountId} did not accept vehicle job ${vehicleJob?.vehicle_job_ref ?? "-"}.`,
+        message: `Worker ${workerCode ?? workerAccountId} did not accept vehicle job ${vehicleJob?.ticketNo ?? "-"}.`,
         payload: {
-          vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+          ticketNo: vehicleJob?.ticketNo ?? null,
           worker_code: workerCode,
           status: "TIMEOUT",
           reason: timeoutResult.reason,

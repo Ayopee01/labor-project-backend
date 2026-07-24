@@ -5,12 +5,12 @@ import type { GateTicketDto, TicketProductDto, VehicleJobDetailResponse } from "
 // Function แปลงรายการสินค้าใน ticket เป็น payload สำหรับ Worker/Admin realtime
 export function formatWorkerTicketItems(products: TicketProductDto[]) {
   return products.map((product) => ({
-    product_ref: product.product_ref,
-    product_type: product.product_type,
-    name: product.name,
+    productCode: product.productCode,
+    productName: product.productName,
+    packageCode: product.packageCode,
+    packageName: product.packageName,
     quantity: product.quantity,
     confirmed_quantity: product.confirmed_quantity,
-    unit: product.unit,
   }));
 }
 
@@ -20,7 +20,7 @@ export function findTicketMarket(
   ticket: GateTicketDto
 ): VehicleJobDetailResponse["markets"][number] | null {
   return detail?.markets.find((market) =>
-    market.tickets.some((marketTicket) => marketTicket.stall_job_ref === ticket.stall_job_ref)
+    market.tickets.some((marketTicket) => marketTicket.boothCode === ticket.boothCode)
   ) ?? null;
 }
 
@@ -34,17 +34,14 @@ export function buildWorkerTicketPayload(
   const market = findTicketMarket(detail, ticket);
 
   return {
-    vehicle_job_ref: detail?.vehicle_job.vehicle_job_ref ?? null,
-    market_job_ref: market?.market_job_ref ?? null,
-    market_name: market?.market_name ?? null,
-    stall_job_ref: ticket.stall_job_ref,
-    ticket_no: ticket.ticket_no,
-    stall_no: ticket.stall_no,
-    stall_name: ticket.vendor_name,
+    ticketNo: detail?.vehicle_job.ticketNo ?? null,
+    marketCode: market?.marketCode ?? null,
+    marketName: market?.marketName ?? null,
+    boothCode: ticket.boothCode,
+    boothName: ticket.boothName,
     status: ticket.status,
     confirmation_status: ticket.confirmation_status,
     ...extra,
     items: formatWorkerTicketItems(products),
   };
 }
-

@@ -82,11 +82,11 @@ router.get(
 
 // Route ให้ worker รับ assignment
 router.post(
-  "/me/assignments/:vehicleJobRef/accept",
+  "/me/assignments/:ticketNo/accept",
   async (req, res, next) => {
     try {
       const result = await workerService.acceptWorkerAssignment(
-        req.params.vehicleJobRef,
+        req.params.ticketNo,
         req.auth
       );
       res.json(result);
@@ -98,11 +98,11 @@ router.post(
 
 // Route ให้ worker scan QR เพื่อ check-in เข้างาน
 router.post(
-  "/me/assignments/:vehicleJobRef/check-in-qr",
+  "/me/assignments/:ticketNo/check-in-qr",
   async (req, res, next) => {
     try {
       const result = await workerService.scanWorkerAssignment(
-        req.params.vehicleJobRef,
+        req.params.ticketNo,
         req.body,
         req.auth
       );
@@ -115,11 +115,11 @@ router.post(
 
 // Route ให้ worker ส่งยอดปิดงานระดับ ticket
 router.post(
-  "/me/tickets/:stallJobRef/complete",
+  "/me/tickets/:boothCode/complete",
   async (req, res, next) => {
     try {
       const result = await workerService.completeWorkerTicket(
-        req.params.stallJobRef,
+        req.params.boothCode,
         req.body,
         req.auth
       );

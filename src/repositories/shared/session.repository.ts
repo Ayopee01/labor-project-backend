@@ -69,3 +69,21 @@ export async function revokeActiveByAccountId(
     data: buildRevokeData(),
   });
 }
+
+// Function revoke session active อื่นของ account โดยคง session ปัจจุบันไว้
+export async function revokeActiveByAccountIdExcept(
+  accountId: number | string,
+  exceptSessionId: number | string,
+  connection?: DbConnection
+): Promise<void> {
+  await client(connection).userSession.updateMany({
+    where: {
+      accountId: toId(accountId),
+      id: {
+        not: toId(exceptSessionId),
+      },
+      isActive: true,
+    },
+    data: buildRevokeData(),
+  });
+}

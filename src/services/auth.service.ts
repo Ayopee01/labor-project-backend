@@ -6,10 +6,10 @@ import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, P
 import type { DbConnection } from "../types/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import { parseWithSchema } from "../validation/parser";
-import { confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema } from "../validation/schemas";
+import { changeOwnPasswordBodySchema, confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { signAccessToken, signLoginChallengeToken, signRefreshToken, verifyLoginChallengeToken, verifyRefreshToken } from "../utils/jwt";
-import { verifyPassword } from "../utils/password";
+import { hashPassword, verifyPassword } from "../utils/password";
 import { hashRefreshToken, refreshTokenHashesMatch } from "../utils/refresh-token-hash";
 import { formatScheduleWithShift } from "../utils/shift";
 
@@ -78,11 +78,14 @@ async function buildMeResponse(
 
   if (account.role !== WORKER_ROLE) {
     const accountPermissions = await getAccountPermissions(account);
+    const employeeCode = buildAdminEmployeeCode(account.id);
 
     return {
+      role: "admin",
       full_name: account.full_name,
+      employee_code: employeeCode,
       position: account.position,
-      admin_code: buildAdminEmployeeCode(account.id),
+      admin_code: employeeCode,
       status: account.status,
       email: account.email,
       phone: account.phone,
@@ -99,7 +102,9 @@ async function buildMeResponse(
   const schedule = formatScheduleWithShift(currentWorkSchedule);
 
   return {
+    role: "worker",
     full_name: account.full_name,
+    employee_code: account.username,
     worker_code: account.username,
     nationality: profile?.nationality ?? null,
     work_start_date: profile?.work_start_date ?? null,
@@ -424,4 +429,47 @@ export async function me(
   }
 
   return buildMeResponse(account, currentSession);
+}
+
+// Function เปลี่ยน password ของ account ที่ login อยู่ ใช้ร่วมกันได้ทั้ง admin และ worker
+export async function changeOwnPassword(
+  auth: AccessTokenPayload | undefined,
+  body: unknown
+): Promise<{ message: string }> {
+  if (!auth || !auth.account_id || !auth.session_id) {
+    throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
+  }
+
+  const { current_password: currentPassword, new_password: newPassword } =
+    parseWithSchema(changeOwnPasswordBodySchema, body);
+  const account = await accountRepository.findById(auth.account_id);
+
+  if (!account || account.status !== "active") {
+    throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
+  }
+
+  if (!(await verifyPassword(currentPassword, account.password_hash))) {
+    throw new ApiError(
+      400,
+      "INVALID_CURRENT_PASSWORD",
+      "Current password is incorrect."
+    );
+  }
+
+  return withTransaction(async (transaction) => {
+    await accountRepository.updatePassword(
+      account.id,
+      await hashPassword(newPassword),
+      transaction
+    );
+    await sessionRepository.revokeActiveByAccountIdExcept(
+      account.id,
+      auth.session_id,
+      transaction
+    );
+
+    return {
+      message: "Password changed successfully.",
+    };
+  });
 }

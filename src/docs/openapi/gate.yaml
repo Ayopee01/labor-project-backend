@@ -3,9 +3,11 @@
     post:
       tags:
         - Gate
-      summary: Mock Gate payload and create a vehicle job.
-      description: Set `dispatch_now` to `true` when the vehicle is already ready to unload. The backend creates the job as `IN_PROGRESS` and immediately dispatches ready workers through WebSocket. Omit it or set `false` to keep the Driver ready flow.
+      summary: Create a vehicle job from Gate using Gate Client Credentials.
+      description: Use HTTP Basic Auth where username is `client_id` and password is `client_secret`. Gate sends one flat payload per ticket/booth/product using ticketNo, marketCode/marketName, boothCode/boothName, vehicleTypeName, and productCode/productName/packageCode/packageName. Backend derives the idempotency key from ticketNo + marketCode + boothCode + productCode, returns the saved ticket/market/booth/product objects, returns qr.worker_qr_token as the same value as ticketNo for worker check-in, and returns workers_required as 1 for the current Gate flow; worker-count calculation will be added later. Success/replay responses do not include message or gate_transaction_ref. Sending the same ticketNo with a new market/booth/product transaction appends or updates that item under the same vehicle job. Set `dispatch_now` to `true` when the vehicle is already ready to unload.
       operationId: createVehicleJobFromGate
+      security:
+        - gateBasicAuth: []
       requestBody:
         required: true
         content:
@@ -27,6 +29,12 @@
                 $ref: "#/components/schemas/GateVehicleJobResponse"
         "400":
           description: Invalid Gate payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Gate client credentials.
           content:
             application/json:
               schema:

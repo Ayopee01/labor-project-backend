@@ -4,27 +4,27 @@ import { applyIsolatedTestEnv } from "../setup/test-env";
 
 /* -------------------------------------- Test Env -------------------------------------- */
 
-// Config แยก env ของ route test ออกจาก infra จริง เช่น Redis key, BullMQ queue และ JWT secret
+// Config เนเธขเธ env เธเธญเธ route test เธญเธญเธเธเธฒเธ infra เธเธฃเธดเธ เน€เธเนเธ Redis key, BullMQ queue เนเธฅเธฐ JWT secret
 applyIsolatedTestEnv("route-test");
 process.env.WORKER_PRESENCE_STALE_SECONDS = "90";
 
 /* -------------------------------------- Module Loader Types -------------------------------------- */
 
-// Type function _load ของ Node module loader ที่ใช้ patch dependency เฉพาะตอน test
+// Type function _load เธเธญเธ Node module loader เธ—เธตเนเนเธเน patch dependency เน€เธเธเธฒเธฐเธ•เธญเธ test
 type ModuleLoad = (
   request: string,
   parent: NodeModule | null | undefined,
   isMain: boolean
 ) => unknown;
 
-// Type Module ที่เพิ่ม _load เพื่อให้ TypeScript รู้จัก field private ที่ต้อง patch ใน test
+// Type Module เธ—เธตเนเน€เธเธดเนเธก _load เน€เธเธทเนเธญเนเธซเน TypeScript เธฃเธนเนเธเธฑเธ field private เธ—เธตเนเธ•เนเธญเธ patch เนเธ test
 type ModuleWithLoad = typeof Module & {
   _load: ModuleLoad;
 };
 
 /* -------------------------------------- Test Record Types -------------------------------------- */
 
-// Type record account จำลองที่ repository mock ส่งให้ service เหมือนข้อมูลจาก database
+// Type record account เธเธณเธฅเธญเธเธ—เธตเน repository mock เธชเนเธเนเธซเน service เน€เธซเธกเธทเธญเธเธเนเธญเธกเธนเธฅเธเธฒเธ database
 export type AccountRecord = {
   id: number;
   username: string;
@@ -38,7 +38,20 @@ export type AccountRecord = {
   permission_level?: string | null;
 };
 
-// Type record assignment จำลองสำหรับ worker dispatch, accept, timeout และ scan QR flow
+export type GateClientRecord = {
+  id: number;
+  client_id: string;
+  name: string;
+  secret_hash: string;
+  status: "active" | "inactive";
+  last_used_at: string | null;
+  created_by: number | null;
+  updated_by: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// Type record assignment เธเธณเธฅเธญเธเธชเธณเธซเธฃเธฑเธ worker dispatch, accept, timeout เนเธฅเธฐ scan QR flow
 export type AssignmentRecord = {
   id: number;
   vehicle_job_id: number;
@@ -53,14 +66,15 @@ export type AssignmentRecord = {
   updated_at?: string;
 };
 
-// Type record vehicle job จำลองสำหรับงานที่พร้อม dispatch ให้ worker
+// Type record vehicle job เธเธณเธฅเธญเธเธชเธณเธซเธฃเธฑเธเธเธฒเธเธ—เธตเนเธเธฃเนเธญเธก dispatch เนเธซเน worker
 type VehicleJobRecord = {
   id: number;
-  vehicle_job_ref: string;
+  ticketNo: string;
   gate_transaction_ref: string;
   license_plate: string;
   vehicle_type: string | null;
   workers_required: number;
+  dispatch_now: boolean;
   status: string;
   driver_qr_token: string;
   worker_qr_token: string;
@@ -68,39 +82,39 @@ type VehicleJobRecord = {
   updated_at: string;
 };
 
-// Type record gate ticket จำลองสำหรับ flow complete งานและรอ vendor confirm
+// Type record gate ticket เธเธณเธฅเธญเธเธชเธณเธซเธฃเธฑเธ flow complete เธเธฒเธเนเธฅเธฐเธฃเธญ vendor confirm
 type GateTicketRecord = {
   id: number;
   vehicle_job_id: number;
   market_job_id: number;
-  market_job_ref?: string;
-  market_name?: string;
-  stall_job_ref: string;
-  ticket_no: string | null;
-  stall_no: string | null;
-  vendor_name: string | null;
+  marketCode?: string;
+  marketName?: string;
+  dropoff_point?: string | null;
+  boothCode: string;
+  boothName: string | null;
   vendor_line_id: string | null;
+  reject_reason: string | null;
   status: string;
   confirmation_status: string | null;
   created_at?: string;
   updated_at?: string;
 };
 
-// Type record product ใน ticket เพื่อทดสอบการกรอกจำนวนสินค้าให้ครบ
+// Type record product เนเธ ticket เน€เธเธทเนเธญเธ—เธ”เธชเธญเธเธเธฒเธฃเธเธฃเธญเธเธเธณเธเธงเธเธชเธดเธเธเนเธฒเนเธซเนเธเธฃเธ
 type TicketProductRecord = {
   id: number;
   ticket_id: number;
-  product_ref: string;
-  product_type: string | null;
-  name: string;
+  productCode: string;
+  productName: string;
+  packageCode: string;
+  packageName: string;
   quantity: string;
   confirmed_quantity: string | null;
-  unit: string;
   created_at?: string;
   updated_at?: string;
 };
 
-// Type record ความสัมพันธ์ ticket กับ worker ที่รับงานใน flow complete ticket
+// Type record เธเธงเธฒเธกเธชเธฑเธกเธเธฑเธเธเน ticket เธเธฑเธ worker เธ—เธตเนเธฃเธฑเธเธเธฒเธเนเธ flow complete ticket
 type TicketWorkerRecord = {
   id: number;
   ticket_id: number;
@@ -160,7 +174,7 @@ let workerQueueModule: typeof import("../../src/queues/worker-queue") | null = n
 let workerDispatchModule: typeof import("../../src/queues/worker-dispatch") | null = null;
 let passwordModule: typeof import("../../src/utils/password") | null = null;
 
-// State กลางของ route test ใช้แทน DB/Redis/BullMQ/WebSocket เพื่อให้ test ตรวจ flow จริงโดยไม่แตะ infra จริง
+// State เธเธฅเธฒเธเธเธญเธ route test เนเธเนเนเธ—เธ DB/Redis/BullMQ/WebSocket เน€เธเธทเนเธญเนเธซเน test เธ•เธฃเธงเธ flow เธเธฃเธดเธเนเธ”เธขเนเธกเนเนเธ•เธฐ infra เธเธฃเธดเธ
 export const state = {
   connectedWorkers: new Set<number>(),
   socketEvents: [] as Array<{ accountId: number; event: string; payload: unknown }>,
@@ -176,6 +190,7 @@ export const state = {
   ticketWorkers: [] as TicketWorkerRecord[],
   completionSubmissions: [] as TicketCompletionSubmissionRecord[],
   gateRequestLogs: [] as GateRequestLogRecord[],
+  gateClients: new Map<string, GateClientRecord>(),
   authAccountsByUsername: new Map<string, AccountRecord>(),
   authAccountsById: new Map<number, AccountRecord>(),
   adminPermissions: new Map<number, string[]>(),
@@ -188,11 +203,12 @@ export const state = {
   nextSessionId: 1,
   nextTicketWorkerId: 1,
   nextSubmissionId: 1,
+  nextGateClientId: 1,
 };
 
 /* -------------------------------------- Fake Infra -------------------------------------- */
 
-// Class จำลอง Redis เฉพาะ command ที่ worker queue และ dispatch ใช้ใน test
+// Class เธเธณเธฅเธญเธ Redis เน€เธเธเธฒเธฐ command เธ—เธตเน worker queue เนเธฅเธฐ dispatch เนเธเนเนเธ test
 class FakeRedis {
   static hashes = new Map<string, Record<string, string>>();
   static zsets = new Map<string, Map<string, number>>();
@@ -292,7 +308,7 @@ class FakeRedis {
   }
 }
 
-// Class จำลอง BullMQ Queue เพื่อเก็บ delayed job เช่น assignment timeout ไว้ใน memory
+// Class เธเธณเธฅเธญเธ BullMQ Queue เน€เธเธทเนเธญเน€เธเนเธ delayed job เน€เธเนเธ assignment timeout เนเธงเนเนเธ memory
 class FakeQueue {
   name: string;
 
@@ -324,7 +340,7 @@ class FakeQueue {
   }
 }
 
-// Class จำลอง BullMQ Worker เพื่อเก็บ processor ไว้ให้ test เรียกตรวจ behavior ได้
+// Class เธเธณเธฅเธญเธ BullMQ Worker เน€เธเธทเนเธญเน€เธเนเธ processor เนเธงเนเนเธซเน test เน€เธฃเธตเธขเธเธ•เธฃเธงเธ behavior เนเธ”เน
 class FakeWorker {
   constructor(
     name: string,
@@ -338,7 +354,7 @@ class FakeWorker {
 
 /* -------------------------------------- Test Data Builders -------------------------------------- */
 
-// Function สร้าง work schedule วันนี้ให้ worker มีสิทธิ์ online และรับงานใน route test
+// Function เธชเธฃเนเธฒเธ work schedule เธงเธฑเธเธเธตเนเนเธซเน worker เธกเธตเธชเธดเธ—เธเธดเน online เนเธฅเธฐเธฃเธฑเธเธเธฒเธเนเธ route test
 function todaySchedule(accountId: number) {
   const now = new Date();
   const year = now.getFullYear();
@@ -360,7 +376,7 @@ function todaySchedule(accountId: number) {
   };
 }
 
-// Function reset state ทุกส่วนก่อนแต่ละ test เพื่อไม่ให้ session/queue/job จาก test ก่อนหน้าปนกัน
+// Function reset state เธ—เธธเธเธชเนเธงเธเธเนเธญเธเนเธ•เนเธฅเธฐ test เน€เธเธทเนเธญเนเธกเนเนเธซเน session/queue/job เธเธฒเธ test เธเนเธญเธเธซเธเนเธฒเธเธเธเธฑเธ
 export function resetRouteTestState(): void {
   FakeRedis.hashes.clear();
   FakeRedis.zsets.clear();
@@ -379,6 +395,7 @@ export function resetRouteTestState(): void {
   state.ticketWorkers.length = 0;
   state.completionSubmissions.length = 0;
   state.gateRequestLogs.length = 0;
+  state.gateClients.clear();
   state.authAccountsByUsername.clear();
   state.authAccountsById.clear();
   state.adminPermissions.clear();
@@ -393,9 +410,10 @@ export function resetRouteTestState(): void {
   state.nextSessionId = 1;
   state.nextTicketWorkerId = 1;
   state.nextSubmissionId = 1;
+  state.nextGateClientId = 1;
 }
 
-// Function เพิ่ม worker account พร้อม profile/schedule ลง mock repository state
+// Function เน€เธเธดเนเธก worker account เธเธฃเนเธญเธก profile/schedule เธฅเธ mock repository state
 export function addWorker(accountId: number, passwordHash = "hash"): AccountRecord {
   const workerCode = `W${accountId}`;
   const worker: AccountRecord = {
@@ -431,7 +449,7 @@ export function addWorker(accountId: number, passwordHash = "hash"): AccountReco
   return worker;
 }
 
-// Function เพิ่ม admin account ลง mock repository state สำหรับทดสอบ auth/admin route
+// Function เน€เธเธดเนเธก admin account เธฅเธ mock repository state เธชเธณเธซเธฃเธฑเธเธ—เธ”เธชเธญเธ auth/admin route
 export function addAdmin(accountId: number, passwordHash = "hash"): AccountRecord {
   const admin: AccountRecord = {
     id: accountId,
@@ -450,6 +468,10 @@ export function addAdmin(accountId: number, passwordHash = "hash"): AccountRecor
   state.authAccountsById.set(admin.id, admin);
   state.adminPermissions.set(admin.id, [
     "admins:create",
+    "gate_clients:read",
+    "gate_clients:create",
+    "gate_clients:update",
+    "gate_clients:rotate_secret",
     "permissions:read",
     "permissions:update",
     "roles:read",
@@ -459,19 +481,44 @@ export function addAdmin(accountId: number, passwordHash = "hash"): AccountRecor
   return admin;
 }
 
-// Function เพิ่ม vehicle job ที่พร้อม dispatch ให้ worker ตามจำนวนแรงงานที่ต้องการ
+// Function เน€เธเธดเนเธก vehicle job เธ—เธตเนเธเธฃเนเธญเธก dispatch เนเธซเน worker เธ•เธฒเธกเธเธณเธเธงเธเนเธฃเธเธเธฒเธเธ—เธตเนเธ•เนเธญเธเธเธฒเธฃ
+export function addGateClient(
+  clientId: string,
+  secretHash = "hash",
+  status: "active" | "inactive" = "active"
+): GateClientRecord {
+  const now = new Date().toISOString();
+  const gateClient: GateClientRecord = {
+    id: state.nextGateClientId++,
+    client_id: clientId,
+    name: `Gate ${clientId}`,
+    secret_hash: secretHash,
+    status,
+    last_used_at: null,
+    created_by: null,
+    updated_by: null,
+    created_at: now,
+    updated_at: now,
+  };
+
+  state.gateClients.set(gateClient.client_id, gateClient);
+
+  return gateClient;
+}
+
 export function addDispatchableJob(id: number, workersRequired: number): VehicleJobRecord {
   const now = new Date().toISOString();
   const job = {
     id,
-    vehicle_job_ref: `JOB-${id}`,
+    ticketNo: `JOB-${id}`,
     gate_transaction_ref: `GATE-${id}`,
     license_plate: `TEST-${id}`,
     vehicle_type: "truck",
     workers_required: workersRequired,
-    status: "IN_PROGRESS",
+    dispatch_now: true,
+    status: "WORKING",
     driver_qr_token: `driver-qr-${id}`,
-    worker_qr_token: `worker-qr-${id}`,
+    worker_qr_token: `JOB-${id}`,
     created_at: now,
     updated_at: now,
   };
@@ -481,7 +528,7 @@ export function addDispatchableJob(id: number, workersRequired: number): Vehicle
   return job;
 }
 
-// Function เพิ่ม assignment ค้างรับงาน เพื่อทดสอบ accept, timeout และ requeue flow
+// Function เน€เธเธดเนเธก assignment เธเนเธฒเธเธฃเธฑเธเธเธฒเธ เน€เธเธทเนเธญเธ—เธ”เธชเธญเธ accept, timeout เนเธฅเธฐ requeue flow
 export function addPendingAssignment(
   id: number,
   vehicleJobId: number,
@@ -508,7 +555,7 @@ export function addPendingAssignment(
   return assignment;
 }
 
-// Function เพิ่ม ticket และสินค้าใน ticket เพื่อทดสอบ worker complete งาน
+// Function เน€เธเธดเนเธก ticket เนเธฅเธฐเธชเธดเธเธเนเธฒเนเธ ticket เน€เธเธทเนเธญเธ—เธ”เธชเธญเธ worker complete เธเธฒเธ
 export function addTicketForVehicleJob(
   vehicleJobId: number,
   ticketId = vehicleJobId + 1000
@@ -518,14 +565,14 @@ export function addTicketForVehicleJob(
     id: ticketId,
     vehicle_job_id: vehicleJobId,
     market_job_id: vehicleJobId + 2000,
-    market_job_ref: `MARKET-${vehicleJobId}`,
-    market_name: "Market A",
-    stall_job_ref: `STALL-${ticketId}`,
-    ticket_no: `TICKET-${ticketId}`,
-    stall_no: "A1",
-    vendor_name: "Vendor A",
+    marketCode: `MARKET-${vehicleJobId}`,
+    marketName: "Market A",
+    dropoff_point: "Dock A1",
+    boothCode: `STALL-${ticketId}`,
+    boothName: "Vendor A",
     vendor_line_id: "line-vendor-a",
-    status: "IN_PROGRESS",
+    reject_reason: null,
+    status: "WORKING",
     confirmation_status: null,
     created_at: now,
     updated_at: now,
@@ -536,24 +583,24 @@ export function addTicketForVehicleJob(
     {
       id: ticketId * 10 + 1,
       ticket_id: ticketId,
-      product_ref: `PRODUCT-${ticketId}-1`,
-      product_type: "fruit",
-      name: "Apple",
+      productCode: `PRODUCT-${ticketId}-1`,
+      productName: "Apple",
+      packageCode: "fruit",
+      packageName: "kg",
       quantity: "10",
       confirmed_quantity: null,
-      unit: "kg",
       created_at: now,
       updated_at: now,
     },
     {
       id: ticketId * 10 + 2,
       ticket_id: ticketId,
-      product_ref: `PRODUCT-${ticketId}-2`,
-      product_type: "vegetable",
-      name: "Cabbage",
+      productCode: `PRODUCT-${ticketId}-2`,
+      productName: "Cabbage",
+      packageCode: "vegetable",
+      packageName: "box",
       quantity: "5",
       confirmed_quantity: null,
-      unit: "box",
       created_at: now,
       updated_at: now,
     }
@@ -564,8 +611,9 @@ export function addTicketForVehicleJob(
 
 function findCurrentOpenTicketForVehicleJob(vehicleJobId: number): {
   ticket: GateTicketRecord;
-  market_job_ref: string;
-  market_name: string;
+  marketCode: string;
+  marketName: string;
+  dropoff_point: string | null;
 } | null {
   const ticket = state.gateTickets
     .filter(
@@ -585,15 +633,17 @@ function findCurrentOpenTicketForVehicleJob(vehicleJobId: number): {
 
   return {
     ticket,
-    market_job_ref: ticket.market_job_ref ?? `MARKET-${ticket.market_job_id}`,
-    market_name: ticket.market_name ?? `Market ${ticket.market_job_id}`,
+    marketCode: ticket.marketCode ?? `MARKET-${ticket.market_job_id}`,
+    marketName: ticket.marketName ?? `Market ${ticket.market_job_id}`,
+    dropoff_point: ticket.dropoff_point ?? null,
   };
 }
 
 function activateNextTicketForVehicleJob(vehicleJobId: number): {
   ticket: GateTicketRecord;
-  market_job_ref: string;
-  market_name: string;
+  marketCode: string;
+  marketName: string;
+  dropoff_point: string | null;
 } | null {
   const current = findCurrentOpenTicketForVehicleJob(vehicleJobId);
 
@@ -602,7 +652,7 @@ function activateNextTicketForVehicleJob(vehicleJobId: number): {
   }
 
   if (current.ticket.status === "WAIT") {
-    current.ticket.status = "IN_PROGRESS";
+    current.ticket.status = "WORKING";
     current.ticket.updated_at = new Date().toISOString();
   }
 
@@ -611,7 +661,7 @@ function activateNextTicketForVehicleJob(vehicleJobId: number): {
 
 /* -------------------------------------- Repository Mocks -------------------------------------- */
 
-// Mock repository ฝั่ง worker service โดยเก็บข้อมูลใน memory แต่ยังให้ service จริงเป็นคนตัดสิน business rule
+// Mock repository เธเธฑเนเธ worker service เนเธ”เธขเน€เธเนเธเธเนเธญเธกเธนเธฅเนเธ memory เนเธ•เนเธขเธฑเธเนเธซเน service เธเธฃเธดเธเน€เธเนเธเธเธเธ•เธฑเธ”เธชเธดเธ business rule
 const workerApplicationRepositoryMock = {
   accountRepository: {
     findUserById: async (accountId: number) => state.workers.get(accountId) ?? null,
@@ -634,7 +684,7 @@ const workerApplicationRepositoryMock = {
       ) ?? null,
   },
   listDispatchableVehicleJobs: async () =>
-    state.vehicleJobs.filter((job) => job.status === "IN_PROGRESS"),
+    state.vehicleJobs.filter((job) => job.status === "WORKING"),
   countActiveAssignments: async (vehicleJobId: number) =>
     state.assignments.filter(
       (assignment) =>
@@ -668,11 +718,11 @@ const workerApplicationRepositoryMock = {
         assignment.worker_account_id === workerAccountId
     ) ?? null,
   findCurrentAssignmentByVehicleJobRefAndWorker: async (
-    vehicleJobRef: string,
+    ticketNo: string,
     workerAccountId: number
   ) => {
     const job = state.vehicleJobs.find(
-      (vehicleJob) => vehicleJob.vehicle_job_ref === vehicleJobRef
+      (vehicleJob) => vehicleJob.ticketNo === ticketNo
     );
 
     if (!job) {
@@ -799,7 +849,7 @@ const workerApplicationRepositoryMock = {
       throw new Error("Vehicle job not found.");
     }
 
-    job.status = "IN_PROGRESS";
+    job.status = "WORKING";
     activateNextTicketForVehicleJob(vehicleJobId);
     return job;
   },
@@ -838,20 +888,25 @@ const workerApplicationRepositoryMock = {
           createdAt < endAt
         );
       })
+      .sort(
+        (left, right) =>
+          new Date(right.created_at ?? 0).getTime() -
+          new Date(left.created_at ?? 0).getTime()
+      )
       .map((assignment) => ({
         assignment,
         vehicle_job: state.vehicleJobs.find(
           (job) => job.id === assignment.vehicle_job_id
         ) ?? {
           id: assignment.vehicle_job_id,
-          vehicle_job_ref: `JOB-${assignment.vehicle_job_id}`,
+          ticketNo: `JOB-${assignment.vehicle_job_id}`,
           gate_transaction_ref: `GATE-${assignment.vehicle_job_id}`,
           license_plate: "TEST",
           vehicle_type: null,
           workers_required: 1,
-          status: "IN_PROGRESS",
+          status: "WORKING",
           driver_qr_token: `driver-qr-${assignment.vehicle_job_id}`,
-          worker_qr_token: `worker-qr-${assignment.vehicle_job_id}`,
+          worker_qr_token: `JOB-${assignment.vehicle_job_id}`,
           created_at: assignment.created_at ?? new Date().toISOString(),
           updated_at: assignment.created_at ?? new Date().toISOString(),
         },
@@ -860,7 +915,7 @@ const workerApplicationRepositoryMock = {
     state.gateTickets.find((ticket) => ticket.id === ticketId) ?? null,
   findGateTicketForCompletionByReference: async (reference: string) =>
     state.gateTickets.find(
-      (ticket) => ticket.stall_job_ref === reference || ticket.ticket_no === reference
+      (ticket) => ticket.boothCode === reference
     ) ?? null,
   ensureTicketWorkersFromVehicleAssignments: async (
     ticketId: number,
@@ -883,7 +938,7 @@ const workerApplicationRepositoryMock = {
           id: state.nextTicketWorkerId++,
           ticket_id: ticketId,
           worker_account_id: assignment.worker_account_id,
-          status: "ACTIVE",
+          status: "WORKING",
         };
 
         state.ticketWorkers.push(ticketWorker);
@@ -899,13 +954,14 @@ const workerApplicationRepositoryMock = {
 
     if (
       !ticket ||
-      !["WAIT", "IN_PROGRESS", "REJECT"].includes(ticket.status)
+      !["WAIT", "WORKING", "REJECT"].includes(ticket.status)
     ) {
       return false;
     }
 
     ticket.status = "DELIVERED";
     ticket.confirmation_status = "DELIVERED";
+    ticket.reject_reason = null;
     return true;
   },
   createTicketCompletionSubmission: async (
@@ -1008,7 +1064,7 @@ const workerApplicationRepositoryMock = {
       submission,
     };
   },
-  rejectTicketCompletion: async (ticketId: number, submissionId: number) => {
+  rejectTicketCompletion: async (ticketId: number, submissionId: number, rejectReason?: string | null) => {
     const ticket = state.gateTickets.find((item) => item.id === ticketId);
     const submission = state.completionSubmissions.find(
       (item) => item.id === submissionId
@@ -1020,6 +1076,7 @@ const workerApplicationRepositoryMock = {
 
     ticket.status = "REJECT";
     ticket.confirmation_status = "REJECT";
+    ticket.reject_reason = rejectReason ?? null;
     submission.status = "REJECT";
     submission.rejected_at = new Date().toISOString();
     state.ticketWorkers
@@ -1072,13 +1129,13 @@ const workerApplicationRepositoryMock = {
   },
   updateTicketProductConfirmations: async (
     ticketId: number,
-    items: Array<{ product_ref: string; confirmed_quantity: number }>
+    items: Array<{ productCode: string; confirmed_quantity: number }>
   ) => {
     for (const item of items) {
       const product = state.ticketProducts.find(
         (candidate) =>
           candidate.ticket_id === ticketId &&
-          candidate.product_ref === item.product_ref
+          candidate.productCode === item.productCode
       );
 
       if (!product) {
@@ -1103,11 +1160,12 @@ const workerApplicationRepositoryMock = {
     return {
       vehicle_job: {
         id: job.id,
-        vehicle_job_ref: job.vehicle_job_ref,
+        ticketNo: job.ticketNo,
         gate_transaction_ref: job.gate_transaction_ref,
         license_plate: job.license_plate,
         vehicle_type: job.vehicle_type,
         workers_required: job.workers_required,
+        dispatch_now: job.dispatch_now,
         status: job.status,
         driver_qr_token: job.driver_qr_token,
         worker_qr_token: job.worker_qr_token,
@@ -1121,8 +1179,9 @@ const workerApplicationRepositoryMock = {
         return {
           id: marketJobId,
           vehicle_job_id: vehicleJobId,
-          market_job_ref: firstTicket?.market_job_ref ?? `MARKET-${marketJobId}`,
-          market_name: firstTicket?.market_name ?? "Market A",
+          marketCode: firstTicket?.marketCode ?? `MARKET-${marketJobId}`,
+          marketName: firstTicket?.marketName ?? "Market A",
+          dropoff_point: firstTicket?.dropoff_point ?? null,
           status: job.status,
           tickets: marketTickets.map((ticket) => ({
             ...ticket,
@@ -1134,7 +1193,7 @@ const workerApplicationRepositoryMock = {
   },
 };
 
-// Mock repository ฝั่ง auth service สำหรับ login, session, refresh และ current user route
+// Mock repository เธเธฑเนเธ auth service เธชเธณเธซเธฃเธฑเธ login, session, refresh เนเธฅเธฐ current user route
 const gateRepositoryMock = {
   findGateRequestResponseByRef: async (gateTransactionRef: string) => {
     const requestLog = state.gateRequestLogs.find(
@@ -1158,92 +1217,144 @@ const gateRepositoryMock = {
       response_snapshot: requestLog.response_snapshot,
     };
   },
-  findVehicleJobByRef: async (vehicleJobRef: string) =>
-    state.vehicleJobs.find((job) => job.vehicle_job_ref === vehicleJobRef) ?? null,
+  findVehicleJobByRef: async (ticketNo: string) =>
+    state.vehicleJobs.find((job) => job.ticketNo === ticketNo) ?? null,
   createVehicleJobFromGate: async (input: {
     gate_transaction_ref: string;
-    vehicle_job_ref: string;
+    ticketNo: string;
     license_plate: string;
     vehicle_type?: string | null;
-    workers_required: number;
     dispatch_now?: boolean;
     markets: Array<{
-      market_job_ref: string;
-      market_name: string;
+      marketCode: string;
+      marketName: string;
+      dropoff_point?: string | null;
       tickets: Array<{
-        stall_job_ref: string;
-        ticket_no?: string | null;
-        stall_no?: string | null;
-        vendor_name?: string | null;
+        boothCode: string;
+        boothName?: string | null;
         vendor_line_id?: string | null;
+        reject_reason?: string | null;
         products: Array<{
-          product_ref: string;
-          product_type?: string | null;
-          name: string;
+          productCode: string;
+          productName: string;
+          packageCode: string;
+          packageName: string;
           quantity: number;
-          unit: string;
         }>;
       }>;
     }>;
   }, payloadSnapshot: unknown) => {
     const now = new Date().toISOString();
     const dispatchNow = input.dispatch_now === true;
-    const vehicleJobId = Math.max(0, ...state.vehicleJobs.map((job) => job.id)) + 1;
-    const vehicleJob = {
-      id: vehicleJobId,
-      vehicle_job_ref: input.vehicle_job_ref,
-      gate_transaction_ref: input.gate_transaction_ref,
-      license_plate: input.license_plate,
-      vehicle_type: input.vehicle_type ?? null,
-      workers_required: input.workers_required,
-      status: dispatchNow ? "IN_PROGRESS" : "WAIT",
-      driver_qr_token: `driver-qr-${vehicleJobId}`,
-      worker_qr_token: `worker-qr-${vehicleJobId}`,
-      created_at: now,
-      updated_at: now,
-    };
+    let vehicleJob = state.vehicleJobs.find(
+      (job) => job.ticketNo === input.ticketNo
+    );
 
-    state.vehicleJobs.push(vehicleJob);
+    if (!vehicleJob) {
+      const vehicleJobId = Math.max(0, ...state.vehicleJobs.map((job) => job.id)) + 1;
+      vehicleJob = {
+        id: vehicleJobId,
+        ticketNo: input.ticketNo,
+        gate_transaction_ref: input.gate_transaction_ref,
+        license_plate: input.license_plate,
+        vehicle_type: input.vehicle_type ?? null,
+        workers_required: 1,
+        dispatch_now: dispatchNow,
+        status: dispatchNow ? "WORKING" : "WAIT",
+        driver_qr_token: `driver-qr-${vehicleJobId}`,
+        worker_qr_token: input.ticketNo,
+        created_at: now,
+        updated_at: now,
+      };
+
+      state.vehicleJobs.push(vehicleJob);
+    } else {
+      vehicleJob.gate_transaction_ref = input.gate_transaction_ref;
+      vehicleJob.license_plate = input.license_plate;
+      vehicleJob.vehicle_type = input.vehicle_type ?? null;
+      vehicleJob.workers_required = 1;
+      vehicleJob.worker_qr_token = input.ticketNo;
+      vehicleJob.dispatch_now = vehicleJob.dispatch_now || dispatchNow;
+      if (dispatchNow && vehicleJob.status === "WAIT") {
+        vehicleJob.status = "WORKING";
+      }
+      vehicleJob.updated_at = now;
+    }
 
     let marketJobId = Math.max(0, ...state.gateTickets.map((ticket) => ticket.market_job_id)) + 1;
     let ticketId = Math.max(0, ...state.gateTickets.map((ticket) => ticket.id)) + 1;
     let productId = Math.max(0, ...state.ticketProducts.map((product) => product.id)) + 1;
 
     for (const market of input.markets) {
-      const currentMarketJobId = marketJobId++;
+      const existingMarketTicket = state.gateTickets.find(
+        (ticket) =>
+          ticket.vehicle_job_id === vehicleJob.id &&
+          ticket.marketCode === market.marketCode
+      );
+      const currentMarketJobId = existingMarketTicket?.market_job_id ?? marketJobId++;
 
       for (const ticketInput of market.tickets) {
-        const currentTicketId = ticketId++;
-        state.gateTickets.push({
-          id: currentTicketId,
-          vehicle_job_id: vehicleJob.id,
-          market_job_id: currentMarketJobId,
-          market_job_ref: market.market_job_ref,
-          market_name: market.market_name,
-          stall_job_ref: ticketInput.stall_job_ref,
-          ticket_no: ticketInput.ticket_no ?? null,
-          stall_no: ticketInput.stall_no ?? null,
-          vendor_name: ticketInput.vendor_name ?? null,
-          vendor_line_id: ticketInput.vendor_line_id ?? null,
-          status: "WAIT",
-          confirmation_status: "WAIT",
-          created_at: now,
-          updated_at: now,
-        });
+        let ticket = state.gateTickets.find(
+          (item) =>
+            item.market_job_id === currentMarketJobId &&
+            item.boothCode === ticketInput.boothCode
+        );
 
-        ticketInput.products.forEach((product) => {
-          state.ticketProducts.push({
-            id: productId++,
-            ticket_id: currentTicketId,
-            product_ref: product.product_ref,
-            product_type: product.product_type ?? null,
-            name: product.name,
-            quantity: String(product.quantity),
-            confirmed_quantity: null,
-            unit: product.unit,
+        if (!ticket) {
+          ticket = {
+            id: ticketId++,
+            vehicle_job_id: vehicleJob.id,
+            market_job_id: currentMarketJobId,
+            marketCode: market.marketCode,
+            marketName: market.marketName,
+            dropoff_point: market.dropoff_point ?? null,
+            boothCode: ticketInput.boothCode,
+            boothName: ticketInput.boothName ?? null,
+            vendor_line_id: ticketInput.vendor_line_id ?? null,
+            reject_reason: ticketInput.reject_reason ?? null,
+            status: "WAIT",
+            confirmation_status: "WAIT",
             created_at: now,
             updated_at: now,
-          });
+          };
+          state.gateTickets.push(ticket);
+        } else {
+          ticket.marketName = market.marketName;
+          ticket.dropoff_point = market.dropoff_point ?? null;
+          ticket.boothName = ticketInput.boothName ?? null;
+          ticket.vendor_line_id = ticketInput.vendor_line_id ?? null;
+          ticket.reject_reason = ticketInput.reject_reason ?? null;
+          ticket.updated_at = now;
+        }
+
+        ticketInput.products.forEach((product) => {
+          let ticketProduct = state.ticketProducts.find(
+            (item) =>
+              item.ticket_id === ticket.id &&
+              item.productCode === product.productCode
+          );
+
+          if (!ticketProduct) {
+            ticketProduct = {
+              id: productId++,
+              ticket_id: ticket.id,
+              productCode: product.productCode,
+              productName: product.productName,
+              packageCode: product.packageCode,
+              packageName: product.packageName,
+              quantity: String(product.quantity),
+              confirmed_quantity: null,
+              created_at: now,
+              updated_at: now,
+            };
+            state.ticketProducts.push(ticketProduct);
+          } else {
+            ticketProduct.productName = product.productName;
+            ticketProduct.packageCode = product.packageCode;
+            ticketProduct.packageName = product.packageName;
+            ticketProduct.quantity = String(product.quantity);
+            ticketProduct.updated_at = now;
+          }
         });
       }
     }
@@ -1278,6 +1389,16 @@ const authRepositoryMock = {
     findByUsername: async (username: string) =>
       state.authAccountsByUsername.get(username) ?? null,
     findById: async (accountId: number) => state.authAccountsById.get(accountId) ?? null,
+    updatePassword: async (accountId: number, passwordHash: string) => {
+      const account = state.authAccountsById.get(accountId);
+
+      if (!account) {
+        throw new Error("Account not found.");
+      }
+
+      account.password_hash = passwordHash;
+      return account;
+    },
     sanitizeAccount: (account: AccountRecord | null) => {
       if (!account) {
         return null;
@@ -1353,10 +1474,17 @@ const authRepositoryMock = {
 
       return session ?? null;
     },
+    revokeActiveByAccountIdExcept: async (accountId: number, exceptSessionId: number) => {
+      for (const session of state.sessions.values()) {
+        if (session.account_id === accountId && session.id !== exceptSessionId) {
+          session.is_active = false;
+        }
+      }
+    },
   },
 };
 
-// Mock repository ฝั่ง admin settings สำหรับสร้าง admin และจัดการ permission ผ่าน service จริง
+// Mock repository เธเธฑเนเธ admin settings เธชเธณเธซเธฃเธฑเธเธชเธฃเนเธฒเธ admin เนเธฅเธฐเธเธฑเธ”เธเธฒเธฃ permission เธเนเธฒเธ service เธเธฃเธดเธ
 const adminSettingsRepositoryMock = {
   accountRepository: {
     findAdminById: async (accountId: number) => {
@@ -1364,6 +1492,10 @@ const adminSettingsRepositoryMock = {
 
       return account?.role === "admin" ? account : null;
     },
+    listAdmins: async () =>
+      Array.from(state.authAccountsById.values())
+        .filter((account) => account.role === "admin")
+        .sort((left, right) => left.id - right.id),
     usernameExists: async (username: string) =>
       state.authAccountsByUsername.has(username),
     createAdmin: async (account: {
@@ -1407,6 +1539,16 @@ const adminSettingsRepositoryMock = {
       account.permission_level = permissionLevel;
       return account;
     },
+    updateStatus: async (accountId: number, status: string) => {
+      const account = state.authAccountsById.get(accountId);
+
+      if (!account) {
+        throw new Error("Admin account not found.");
+      }
+
+      account.status = status;
+      return account;
+    },
     sanitizeAccount: (account: AccountRecord | null) => {
       if (!account) {
         return null;
@@ -1436,9 +1578,92 @@ const adminSettingsRepositoryMock = {
   upsertSettings: async () => {},
 };
 
+const gateClientRepositoryMock = {
+  listGateClients: async () =>
+    Array.from(state.gateClients.values()).sort((left, right) => left.id - right.id),
+  findByClientId: async (clientId: string) =>
+    state.gateClients.get(clientId) ?? null,
+  clientIdExists: async (clientId: string) =>
+    state.gateClients.has(clientId),
+  createGateClient: async (input: {
+    client_id: string;
+    name: string;
+    secret_hash: string;
+    status?: "active" | "inactive";
+    created_by?: number | null;
+    updated_by?: number | null;
+  }) => {
+    const now = new Date().toISOString();
+    const created: GateClientRecord = {
+      id: state.nextGateClientId++,
+      client_id: input.client_id,
+      name: input.name,
+      secret_hash: input.secret_hash,
+      status: input.status ?? "active",
+      last_used_at: null,
+      created_by: input.created_by ?? null,
+      updated_by: input.updated_by ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.gateClients.set(created.client_id, created);
+
+    return created;
+  },
+  updateGateClient: async (
+    clientId: string,
+    input: {
+      name?: string;
+      status?: "active" | "inactive";
+      updated_by?: number | null;
+    }
+  ) => {
+    const existing = state.gateClients.get(clientId);
+
+    if (!existing) {
+      throw new Error("Gate client not found.");
+    }
+
+    existing.name = input.name ?? existing.name;
+    existing.status = input.status ?? existing.status;
+    existing.updated_by = input.updated_by ?? null;
+    existing.updated_at = new Date().toISOString();
+
+    return existing;
+  },
+  updateGateClientSecret: async (
+    clientId: string,
+    secretHash: string,
+    updatedBy?: number | null
+  ) => {
+    const existing = state.gateClients.get(clientId);
+
+    if (!existing) {
+      throw new Error("Gate client not found.");
+    }
+
+    existing.secret_hash = secretHash;
+    existing.updated_by = updatedBy ?? null;
+    existing.updated_at = new Date().toISOString();
+
+    return existing;
+  },
+  updateLastUsedAt: async (clientId: string) => {
+    const existing = state.gateClients.get(clientId);
+
+    if (!existing) {
+      throw new Error("Gate client not found.");
+    }
+
+    existing.last_used_at = new Date().toISOString();
+    existing.updated_at = existing.last_used_at;
+  },
+};
+
 /* -------------------------------------- Module Loader Patch -------------------------------------- */
 
-// Function patch import ของ dependency ภายนอกให้ route test ใช้ fake infra และ mock repository
+// Function patch import เธเธญเธ dependency เธ เธฒเธขเธเธญเธเนเธซเน route test เนเธเน fake infra เนเธฅเธฐ mock repository
 function patchModuleLoader(): void {
   if (patched) {
     return;
@@ -1482,6 +1707,10 @@ function patchModuleLoader(): void {
 
     if (request === "../repositories/admin-settings.repository") {
       return adminSettingsRepositoryMock;
+    }
+
+    if (request === "../repositories/gate-client.repository") {
+      return gateClientRepositoryMock;
     }
 
     if (request === "../services/admin-settings.service" || request === "./admin-settings.service") {
@@ -1563,21 +1792,21 @@ function patchModuleLoader(): void {
 
 /* -------------------------------------- Module Getters -------------------------------------- */
 
-// Function โหลด password utility หลัง patch loader แล้ว เพื่อให้ env/config test พร้อมก่อน import
+// Function เนเธซเธฅเธ” password utility เธซเธฅเธฑเธ patch loader เนเธฅเนเธง เน€เธเธทเนเธญเนเธซเน env/config test เธเธฃเนเธญเธกเธเนเธญเธ import
 export async function getPassword() {
   patchModuleLoader();
   passwordModule ??= await import("../../src/utils/password");
   return passwordModule;
 }
 
-// Function โหลด worker queue จริงของ project แต่ผูกกับ FakeRedis ใน test
+// Function เนเธซเธฅเธ” worker queue เธเธฃเธดเธเธเธญเธ project เนเธ•เนเธเธนเธเธเธฑเธ FakeRedis เนเธ test
 export async function getWorkerQueue() {
   patchModuleLoader();
   workerQueueModule ??= await import("../../src/queues/worker-queue");
   return workerQueueModule;
 }
 
-// Function โหลด worker dispatch จริงของ project แต่ผูกกับ mock repository และ FakeRedis ใน test
+// Function เนเธซเธฅเธ” worker dispatch เธเธฃเธดเธเธเธญเธ project เนเธ•เนเธเธนเธเธเธฑเธ mock repository เนเธฅเธฐ FakeRedis เนเธ test
 export async function getWorkerDispatch() {
   patchModuleLoader();
   workerDispatchModule ??= await import("../../src/queues/worker-dispatch");
@@ -1586,17 +1815,17 @@ export async function getWorkerDispatch() {
 
 /* -------------------------------------- Test Server -------------------------------------- */
 
-// Type server helper สำหรับเรียก endpoint จริงผ่าน HTTP โดยไม่ต้องติดตั้ง supertest เพิ่ม
+// Type server helper เธชเธณเธซเธฃเธฑเธเน€เธฃเธตเธขเธ endpoint เธเธฃเธดเธเธเนเธฒเธ HTTP เนเธ”เธขเนเธกเนเธ•เนเธญเธเธ•เธดเธ”เธ•เธฑเนเธ supertest เน€เธเธดเนเธก
 export type TestServer = {
   request: (
     method: string,
     path: string,
-    options?: { body?: unknown; token?: string }
+    options?: { body?: unknown; token?: string; headers?: Record<string, string> }
   ) => Promise<{ status: number; body: any }>;
   close: () => Promise<void>;
 };
 
-// Function start Express app จริงบน random port แล้วคืน helper สำหรับยิง request ใน route test
+// Function start Express app เธเธฃเธดเธเธเธ random port เนเธฅเนเธงเธเธทเธ helper เธชเธณเธซเธฃเธฑเธเธขเธดเธ request เนเธ route test
 export async function startRouteTestServer(): Promise<TestServer> {
   patchModuleLoader();
   appModule ??= await import("../../src/app");
@@ -1618,6 +1847,7 @@ export async function startRouteTestServer(): Promise<TestServer> {
         headers: {
           ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
           ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+          ...(options.headers ?? {}),
         },
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
       });
@@ -1643,7 +1873,7 @@ export async function startRouteTestServer(): Promise<TestServer> {
   };
 }
 
-// Function restore Node module loader หลังจบ route test เพื่อไม่ให้ patch กระทบ test ชุดอื่น
+// Function restore Node module loader เธซเธฅเธฑเธเธเธ route test เน€เธเธทเนเธญเนเธกเนเนเธซเน patch เธเธฃเธฐเธ—เธ test เธเธธเธ”เธญเธทเนเธ
 export function restoreRouteTestLoader(): void {
   if (!patched) {
     return;
@@ -1652,3 +1882,4 @@ export function restoreRouteTestLoader(): void {
   moduleWithLoad._load = originalLoad;
   patched = false;
 }
+

@@ -56,13 +56,13 @@ export async function findVehicleJobById(
 
 // Function หา VehicleJob จากเลขอ้างอิงงานรถสำหรับ public/admin API
 export async function findVehicleJobByRef(
-  vehicleJobRef: string,
+  ticketNo: string,
   connection?: DbConnection
 ): Promise<VehicleJobDto | null> {
   const db = client(connection);
   const vehicleJob = await db.vehicleJob.findUnique({
     where: {
-      vehicleJobRef,
+      ticketNo,
     },
   });
 
@@ -107,13 +107,13 @@ export async function getVehicleJobDetail(
 
 // Function ดึงรายละเอียดงานรถจากเลขอ้างอิงงานรถสำหรับ public/admin API
 export async function getVehicleJobDetailByRef(
-  vehicleJobRef: string,
+  ticketNo: string,
   connection?: DbConnection
 ): Promise<VehicleJobDetailResponse | null> {
   const db = client(connection);
   const vehicleJob = await db.vehicleJob.findUnique({
     where: {
-      vehicleJobRef,
+      ticketNo,
     },
     include: {
       marketJobs: {

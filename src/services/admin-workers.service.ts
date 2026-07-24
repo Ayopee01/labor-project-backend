@@ -35,7 +35,7 @@ async function buildWorkerAssignmentSocketPayload(
   );
 
   return {
-    vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+    ticketNo: vehicleJob?.ticketNo ?? null,
     status: assignment.status,
     accept_deadline_at: assignment.accept_deadline_at,
     scan_deadline_at: assignment.scan_deadline_at,

@@ -50,7 +50,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/driver/jobs/{vehicleJobRef}/ready:
+  /api/driver/jobs/{ticketNo}/ready:
     post:
       tags:
         - Driver
@@ -60,11 +60,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: vehicleJobRef
+          name: ticketNo
           required: true
           schema:
             type: string
-            example: VEH-20260706-0001
+            example: TKT-20260723-000125
       responses:
         "200":
           description: Vehicle job ready acknowledgement.

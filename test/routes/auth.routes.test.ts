@@ -77,15 +77,19 @@ test("GET /api/auth/me returns only the admin profile fields", async () => {
   assert.deepEqual(Object.keys(response.body).sort(), [
     "admin_code",
     "email",
+    "employee_code",
     "full_name",
     "latest_active_at",
     "permission_level",
     "permissions",
     "phone",
     "position",
+    "role",
     "status",
   ]);
   assert.equal(response.body.full_name, admin.full_name);
+  assert.equal(response.body.role, "admin");
+  assert.equal(response.body.employee_code, "ADM0001");
   assert.equal(response.body.position, admin.position);
   assert.equal(response.body.admin_code, "ADM0001");
   assert.equal(response.body.status, "active");
@@ -146,20 +150,65 @@ test("GET /api/auth/me returns current worker account from access token", async 
   // Step Assert middleware auth/session และ auth service คืนข้อมูล worker ถูกต้อง
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
+    "employee_code",
     "full_name",
     "nationality",
     "phone",
+    "role",
     "shift",
     "work_start_date",
     "worker_code",
   ]);
   assert.equal(response.body.full_name, worker.full_name);
+  assert.equal(response.body.role, "worker");
+  assert.equal(response.body.employee_code, `W${worker.id}`);
   assert.equal(response.body.worker_code, `W${worker.id}`);
   assert.equal(response.body.nationality, "Thai");
   assert.equal(response.body.work_start_date, "2026-01-01");
   assert.equal(response.body.phone, worker.phone);
   assert.equal(response.body.shift.start_time, "00:00");
   assert.equal(response.body.shift.end_time, "23:59");
+});
+
+test("PATCH /api/auth/me/password changes own password and keeps current session active", async () => {
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(9002, passwordHash);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: admin.username,
+      password: "Admin@123456",
+    },
+  });
+
+  const response = await server.request("PATCH", "/api/auth/me/password", {
+    token: login.body.access_token,
+    body: {
+      current_password: "Admin@123456",
+      new_password: "Admin@654321",
+    },
+  });
+  const meAfterChange = await server.request("GET", "/api/auth/me", {
+    token: login.body.access_token,
+  });
+  const oldPasswordLogin = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: admin.username,
+      password: "Admin@123456",
+    },
+  });
+  const newPasswordLogin = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: admin.username,
+      password: "Admin@654321",
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.message, "Password changed successfully.");
+  assert.equal(meAfterChange.status, 200);
+  assert.equal(oldPasswordLogin.status, 401);
+  assert.equal(oldPasswordLogin.body.code, "INVALID_CREDENTIALS");
+  assert.equal(newPasswordLogin.status, 200);
 });
 
 // Test endpoint refresh ว่า refresh token เดิมสร้าง token ชุดใหม่ให้ active session ได้

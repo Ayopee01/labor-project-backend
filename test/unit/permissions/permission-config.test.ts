@@ -14,6 +14,7 @@ import {
 test("permission config recognizes supported admin permissions and rejects unknown values", () => {
   // Step Assert permission ที่ระบบรองรับต้องผ่าน และค่าที่ไม่มีใน config ต้องไม่ผ่าน
   assert.equal(isAdminPermission("workers:read"), true);
+  assert.equal(isAdminPermission("gate_clients:rotate_secret"), true);
   assert.equal(isAdminPermission("permissions:update"), true);
   assert.equal(isAdminPermission("unknown:permission"), false);
 });

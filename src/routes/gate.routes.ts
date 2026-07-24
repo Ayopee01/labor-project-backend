@@ -1,5 +1,7 @@
 // import Library
 import express from "express";
+// import Middleware
+import gateClientAuthMiddleware from "../middlewares/gate-client-auth.middleware";
 // import Service
 import * as gateService from "../services/gate.service";
 
@@ -9,6 +11,7 @@ const router = express.Router();
 // Route รับงานรถจาก Gate mock payload
 router.post(
   "/vehicle-jobs",
+  gateClientAuthMiddleware,
   async (req, res, next) => {
     try {
       const result = await gateService.createVehicleJobFromGate(req.body);

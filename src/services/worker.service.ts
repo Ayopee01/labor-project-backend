@@ -1,4 +1,4 @@
-// import Library
+﻿// import Library
 import type { Prisma } from "@prisma/client";
 // import
 import { withTransaction } from "../db/prisma";
@@ -30,7 +30,7 @@ import { resolveWorkerWorkStatus } from "../utils/worker-status";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้างข้อมูลเวลาพักที่เหลือสำหรับ response เมื่อ worker อยู่สถานะ break
+// Function เธชเธฃเนเธฒเธเธเนเธญเธกเธนเธฅเน€เธงเธฅเธฒเธเธฑเธเธ—เธตเนเน€เธซเธฅเธทเธญเธชเธณเธซเธฃเธฑเธ response เน€เธกเธทเนเธญ worker เธญเธขเธนเนเธชเธ–เธฒเธเธฐ break
 function buildRemainingBreakTime(
   breakUntil: string | null | undefined
 ): WorkerStatusResponse["remaining_break_time"] | null {
@@ -51,8 +51,8 @@ function buildRemainingBreakTime(
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   const textParts = [
-    minutes > 0 ? `${minutes} นาที` : null,
-    seconds > 0 || minutes === 0 ? `${seconds} วินาที` : null,
+    minutes > 0 ? `${minutes} เธเธฒเธ—เธต` : null,
+    seconds > 0 || minutes === 0 ? `${seconds} เธงเธดเธเธฒเธ—เธต` : null,
   ].filter((part): part is string => Boolean(part));
 
   return {
@@ -63,7 +63,7 @@ function buildRemainingBreakTime(
   };
 }
 
-// Function เติมจำนวนครั้งพักใน response สถานะคิว
+// Function เน€เธ•เธดเธกเธเธณเธเธงเธเธเธฃเธฑเนเธเธเธฑเธเนเธ response เธชเธ–เธฒเธเธฐเธเธดเธง
 function withBreakUsage(
   queueEntry: WorkerQueueEntryDto,
   breakCountUsed: number,
@@ -76,7 +76,7 @@ function withBreakUsage(
   };
 }
 
-// Function สร้าง response หลัง worker online/open_app พร้อมสรุปงานและจำนวนพักของวัน/กะ
+// Function เธชเธฃเนเธฒเธ response เธซเธฅเธฑเธ worker online/open_app เธเธฃเนเธญเธกเธชเธฃเธธเธเธเธฒเธเนเธฅเธฐเธเธณเธเธงเธเธเธฑเธเธเธญเธเธงเธฑเธ/เธเธฐ
 async function buildWorkerOnlineResponse(
   account: AccountDto,
   queueEntry: WorkerQueueEntryDto,
@@ -113,7 +113,7 @@ async function buildWorkerOnlineResponse(
   };
 }
 
-// Function สร้างรายละเอียดงานหลัง worker กดรับ assignment
+// Function เธชเธฃเนเธฒเธเธฃเธฒเธขเธฅเธฐเน€เธญเธตเธขเธ”เธเธฒเธเธซเธฅเธฑเธ worker เธเธ”เธฃเธฑเธ assignment
 function buildWorkerAssignmentAcceptResponse(
   detail: VehicleJobDetailResponse,
   team: WorkerAssignmentTeamMemberDto[]
@@ -122,40 +122,50 @@ function buildWorkerAssignmentAcceptResponse(
     license_plate: detail.vehicle_job.license_plate,
     team,
     markets: detail.markets.map((market) => ({
-      market_name: market.market_name,
+      marketName: market.marketName,
       stall_count: market.tickets.length,
       stalls: market.tickets.map((ticket) => ({
-        stall_job_ref: ticket.stall_job_ref,
-        stall_code: ticket.stall_no,
-        stall_name: ticket.vendor_name,
+        boothCode: ticket.boothCode,
+        boothName: ticket.boothName,
         product_count: ticket.products.length,
         products: ticket.products.map((product) => ({
-          product_ref: product.product_ref,
-          name: product.name,
+          productCode: product.productCode,
+          productName: product.productName,
           quantity: product.quantity,
-          unit: product.unit,
+          packageName: product.packageName,
         })),
       })),
     })),
   };
 }
 
-// Function สร้าง item ประวัติงาน worker โดยซ่อน id ภายในและใช้ reference ที่ UI/API ใช้งาน
+// Function เธชเธฃเนเธฒเธ item เธเธฃเธฐเธงเธฑเธ•เธดเธเธฒเธ worker เนเธ”เธขเธเนเธญเธ id เธ เธฒเธขเนเธเนเธฅเธฐเนเธเน reference เธ—เธตเน UI/API เนเธเนเธเธฒเธ
 function buildWorkerAssignmentHistoryItemResponse(
   item: WorkerAssignmentHistoryItemDto
 ): WorkerAssignmentHistoryItemResponse {
+  const timeoutReason = item.assignment.status !== "TIMEOUT"
+    ? null
+    : item.assignment.accepted_at
+      ? "scan_timeout"
+      : "accept_timeout";
+
   return {
-    vehicle_job_ref: item.vehicle_job.vehicle_job_ref,
+    ticketNo: item.vehicle_job.ticketNo,
     gate_transaction_ref: item.vehicle_job.gate_transaction_ref,
     license_plate: item.vehicle_job.license_plate,
     status: item.assignment.status,
+    accept_deadline_at: item.assignment.accept_deadline_at,
+    scan_deadline_at: item.assignment.scan_deadline_at,
     accepted_at: item.assignment.accepted_at,
+    scanned_at: item.assignment.scanned_at,
     completed_at: item.assignment.completed_at,
+    timeout_reason: timeoutReason,
     created_at: item.assignment.created_at,
+    updated_at: item.assignment.updated_at,
   };
 }
 
-// Function สร้าง payload แจ้ง worker ว่ารับงานสำเร็จแล้ว
+// Function เธชเธฃเนเธฒเธ payload เนเธเนเธ worker เธงเนเธฒเธฃเธฑเธเธเธฒเธเธชเธณเน€เธฃเนเธเนเธฅเนเธง
 function buildAssignmentAcceptedSocketPayload(
   assignment: VehicleJobAssignmentDto,
   detail: VehicleJobDetailResponse,
@@ -164,14 +174,14 @@ function buildAssignmentAcceptedSocketPayload(
   return {
     worker_code: workerCode,
     status: assignment.status,
-    vehicle_job_ref: detail.vehicle_job.vehicle_job_ref,
+    ticketNo: detail.vehicle_job.ticketNo,
     gate_transaction_ref: detail.vehicle_job.gate_transaction_ref,
     accepted_at: assignment.accepted_at,
     scan_deadline_at: assignment.scan_deadline_at,
   };
 }
 
-// Function ตรวจว่า scan deadline หมดอายุแล้วหรือยัง
+// Function เธ•เธฃเธงเธเธงเนเธฒ scan deadline เธซเธกเธ”เธญเธฒเธขเธธเนเธฅเนเธงเธซเธฃเธทเธญเธขเธฑเธ
 function isScanDeadlineExpired(scanDeadlineAt: string | null): boolean {
   if (!scanDeadlineAt) {
     return true;
@@ -182,7 +192,7 @@ function isScanDeadlineExpired(scanDeadlineAt: string | null): boolean {
   return !Number.isFinite(deadlineMs) || deadlineMs <= Date.now();
 }
 
-// Function ตรวจ auth ว่าเป็น worker ที่ active ก่อนทำงานใน Worker Mobile flow
+// Function เธ•เธฃเธงเธ auth เธงเนเธฒเน€เธเนเธ worker เธ—เธตเน active เธเนเธญเธเธ—เธณเธเธฒเธเนเธ Worker Mobile flow
 async function scheduleWorkerShiftEndIfNeeded(
   accountId: number,
   schedule: WorkScheduleDto
@@ -229,7 +239,7 @@ async function requireWorker(auth?: AccessTokenPayload) {
   return account;
 }
 
-// Function อ่าน reference ของ assignment จาก path param
+// Function เธญเนเธฒเธ reference เธเธญเธ assignment เธเธฒเธ path param
 function parseAssignmentReference(value: unknown): string {
   const reference = String(value ?? "").trim();
 
@@ -244,7 +254,7 @@ function parseAssignmentReference(value: unknown): string {
   return reference;
 }
 
-// Function หา assignment ปัจจุบันของ worker ด้วย vehicle_job_ref ที่ส่งมาจาก API
+// Function เธซเธฒ assignment เธเธฑเธเธเธธเธเธฑเธเธเธญเธ worker เธ”เนเธงเธข ticketNo เธ—เธตเนเธชเนเธเธกเธฒเธเธฒเธ API
 async function findWorkerAssignmentByReference(
   value: unknown,
   workerAccountId: number,
@@ -259,7 +269,7 @@ async function findWorkerAssignmentByReference(
   );
 }
 
-// Function หา ticket ที่ worker จะส่งยอดปิดงานด้วย stall_job_ref หรือ ticket reference
+// Function เธซเธฒ ticket เธ—เธตเน worker เธเธฐเธชเนเธเธขเธญเธ”เธเธดเธ”เธเธฒเธเธ”เนเธงเธข boothCode เธซเธฃเธทเธญ ticket reference
 async function findGateTicketForCompletionByReference(
   value: unknown,
   connection?: Parameters<typeof workerApplicationRepository.findGateTicketForCompletion>[1]
@@ -276,12 +286,12 @@ async function findGateTicketForCompletionByReference(
   );
 }
 
-// Function ตรวจ flag สำหรับส่ง LINE postback token กลับใน response ตอน debug
+// Function เธ•เธฃเธงเธ flag เธชเธณเธซเธฃเธฑเธเธชเนเธ LINE postback token เธเธฅเธฑเธเนเธ response เธ•เธญเธ debug
 function shouldIncludeDebugLinePostback(): boolean {
   return process.env.LINE_DEBUG_POSTBACK_RESPONSE === "true";
 }
 
-// Function สร้าง postback data ที่มี signed token สำหรับ vendor confirm/reject ผ่าน LINE
+// Function เธชเธฃเนเธฒเธ postback data เธ—เธตเนเธกเธต signed token เธชเธณเธซเธฃเธฑเธ vendor confirm/reject เธเนเธฒเธ LINE
 function buildVendorCompletionPostbackData(
   ticket: GateTicketDto,
   submission: TicketCompletionSubmissionDto
@@ -290,13 +300,13 @@ function buildVendorCompletionPostbackData(
     action: "vendor_confirm_completion",
     ticket_id: ticket.id,
     submission_id: submission.id,
-    stall_job_ref: ticket.stall_job_ref,
+    boothCode: ticket.boothCode,
   });
   const rejectToken = signVendorTicketActionToken({
     action: "vendor_reject_completion",
     ticket_id: ticket.id,
     submission_id: submission.id,
-    stall_job_ref: ticket.stall_job_ref,
+    boothCode: ticket.boothCode,
   });
 
   return {
@@ -305,7 +315,7 @@ function buildVendorCompletionPostbackData(
   };
 }
 
-// Function สร้างข้อความ LINE ส่งให้ vendor ตรวจยอดปิดงานของ ticket
+// Function เธชเธฃเนเธฒเธเธเนเธญเธเธงเธฒเธก LINE เธชเนเธเนเธซเน vendor เธ•เธฃเธงเธเธขเธญเธ”เธเธดเธ”เธเธฒเธเธเธญเธ ticket
 function buildVendorCompletionMessage(
   ticket: GateTicketDto,
   postbackData: { confirm: string; reject: string },
@@ -319,13 +329,13 @@ function buildVendorCompletionMessage(
     const expectedQuantity = Number(product.quantity);
     const confirmedQuantity = Number(product.confirmed_quantity ?? 0);
     const diff = confirmedQuantity - expectedQuantity;
-    const diffText = diff === 0 ? "ตรง" : diff > 0 ? `เกิน ${diff}` : `ขาด ${Math.abs(diff)}`;
+    const diffText = diff === 0 ? "เธ•เธฃเธ" : diff > 0 ? `เน€เธเธดเธ ${diff}` : `เธเธฒเธ” ${Math.abs(diff)}`;
 
     return [
-      `- ${product.product_type ?? "-"} / ${product.name}`,
-      `  Gate: ${product.quantity} ${product.unit}`,
-      `  Worker: ${product.confirmed_quantity ?? "-"} ${product.unit}`,
-      `  Diff: ${diffText} ${product.unit}`,
+      `- ${product.packageCode} / ${product.productName}`,
+      `  Gate: ${product.quantity} ${product.packageName}`,
+      `  Worker: ${product.confirmed_quantity ?? "-"} ${product.packageName}`,
+      `  Diff: ${diffText} ${product.packageName}`,
     ].join("\n");
   });
 
@@ -333,10 +343,10 @@ function buildVendorCompletionMessage(
     "Worker submitted ticket completion.",
     `License plate: ${detail?.vehicle_job.license_plate ?? "-"}`,
     `Vehicle type: ${detail?.vehicle_job.vehicle_type ?? "-"}`,
-    `Market: ${market?.market_name ?? "-"}`,
-    `Ticket: ${ticket.ticket_no ?? ticket.stall_job_ref}`,
-    `Stall job: ${ticket.stall_job_ref}`,
-    `Stall: ${ticket.stall_no ?? "-"}`,
+    `Ticket: ${detail?.vehicle_job.ticketNo ?? "-"}`,
+    `Market: ${market?.marketName ?? "-"}`,
+    `Booth code: ${ticket.boothCode}`,
+    `Booth: ${ticket.boothName ?? "-"}`,
     "Products:",
     ...productLines,
     `Confirm: ${postbackData.confirm}`,
@@ -345,16 +355,16 @@ function buildVendorCompletionMessage(
     .join("\n");
 }
 
-// Function ตรวจรายการสินค้าที่ worker ส่งว่าครบ ตรง ticket และไม่ซ้ำ
+// Function เธ•เธฃเธงเธเธฃเธฒเธขเธเธฒเธฃเธชเธดเธเธเนเธฒเธ—เธตเน worker เธชเนเธเธงเนเธฒเธเธฃเธ เธ•เธฃเธ ticket เนเธฅเธฐเนเธกเนเธเนเธณ
 function validateTicketCompletionItems(
   products: TicketProductDto[],
-  items: Array<{ product_ref: string; confirmed_quantity: number }>
+  items: Array<{ productCode: string; confirmed_quantity: number }>
 ): void {
-  const productRefs = new Set(products.map((product) => product.product_ref));
-  const itemRefs = new Set<string>();
+  const productCodes = new Set(products.map((product) => product.productCode));
+  const itemCodes = new Set<string>();
 
   for (const item of items) {
-    if (!productRefs.has(item.product_ref)) {
+    if (!productCodes.has(item.productCode)) {
       throw new ApiError(
         400,
         "INVALID_TICKET_PRODUCT",
@@ -362,7 +372,7 @@ function validateTicketCompletionItems(
       );
     }
 
-    if (itemRefs.has(item.product_ref)) {
+    if (itemCodes.has(item.productCode)) {
       throw new ApiError(
         400,
         "DUPLICATE_TICKET_PRODUCT",
@@ -370,10 +380,10 @@ function validateTicketCompletionItems(
       );
     }
 
-    itemRefs.add(item.product_ref);
+    itemCodes.add(item.productCode);
   }
 
-  if (itemRefs.size !== products.length) {
+  if (itemCodes.size !== products.length) {
     throw new ApiError(
       400,
       "INCOMPLETE_TICKET_PRODUCTS",
@@ -382,7 +392,7 @@ function validateTicketCompletionItems(
   }
 }
 
-// Function หา receiver ของ event ปิดงาน เพื่อส่ง SSE ให้ worker ใน ticket และ admin ทุกคน
+// Function เธซเธฒ receiver เธเธญเธ event เธเธดเธ”เธเธฒเธ เน€เธเธทเนเธญเธชเนเธ SSE เนเธซเน worker เนเธ ticket เนเธฅเธฐ admin เธ—เธธเธเธเธ
 async function buildTicketResultAudience(
   ticket: GateTicketDto,
   connection?: Parameters<typeof workerApplicationRepository.listTicketWorkers>[1]
@@ -399,7 +409,7 @@ async function buildTicketResultAudience(
   return Array.from(receiverIds);
 }
 
-// Function ให้ worker เข้า queue และ dispatch ถ้ามีงานรออยู่
+// Function เนเธซเน worker เน€เธเนเธฒ queue เนเธฅเธฐ dispatch เธ–เนเธฒเธกเธตเธเธฒเธเธฃเธญเธญเธขเธนเน
 export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnlineResponse> {
   const account = await requireWorker(auth);
 
@@ -539,7 +549,7 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
   });
 }
 
-// Function ให้ worker ออกจาก queue
+// Function เนเธซเน worker เธญเธญเธเธเธฒเธ queue
 export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOnlineResponse> {
   const account = await requireWorker(auth);
   const [currentSchedule, currentQueueEntry, currentAssignment] = await Promise.all([
@@ -595,7 +605,7 @@ export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOn
   return response;
 }
 
-// Function ให้ worker พักชั่วคราว 15 นาที และกลับท้ายคิวอัตโนมัติ
+// Function เนเธซเน worker เธเธฑเธเธเธฑเนเธงเธเธฃเธฒเธง 15 เธเธฒเธ—เธต เนเธฅเธฐเธเธฅเธฑเธเธ—เนเธฒเธขเธเธดเธงเธญเธฑเธ•เนเธเธกเธฑเธ•เธด
 export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBreakResponse> {
   const account = await requireWorker(auth);
   const settings = await getRuntimeSettings();
@@ -701,7 +711,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
   };
 }
 
-// Function ดึงสถานะ queue และ assignment ปัจจุบันของ worker
+// Function เธ”เธถเธเธชเธ–เธฒเธเธฐ queue เนเธฅเธฐ assignment เธเธฑเธเธเธธเธเธฑเธเธเธญเธ worker
 export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<WorkerStatusResponse> {
   const account = await requireWorker(auth);
 
@@ -741,7 +751,7 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
   return response;
 }
 
-// Function ดึงประวัติงานของ worker ตามวันที่ที่ระบุ
+// Function เธ”เธถเธเธเธฃเธฐเธงเธฑเธ•เธดเธเธฒเธเธเธญเธ worker เธ•เธฒเธกเธงเธฑเธเธ—เธตเนเธ—เธตเนเธฃเธฐเธเธธ
 export async function listWorkerAssignmentHistory(
   query: unknown,
   auth?: AccessTokenPayload
@@ -764,7 +774,7 @@ export async function listWorkerAssignmentHistory(
   };
 }
 
-// Function ให้ worker รับงาน
+// Function เนเธซเน worker เธฃเธฑเธเธเธฒเธ
 export async function acceptWorkerAssignment(
   assignmentIdParam: unknown,
   auth?: AccessTokenPayload
@@ -797,7 +807,7 @@ export async function acceptWorkerAssignment(
     );
 
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
-      vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+      ticketNo: vehicleJob?.ticketNo ?? null,
       reason: timeoutResult.reason,
       timeout_count: timeoutResult.timeout_count,
       timeout_limit: timeoutResult.timeout_limit,
@@ -807,7 +817,7 @@ export async function acceptWorkerAssignment(
       title: "Assignment timed out",
       message: `Worker ${account.full_name} did not accept assignment ${assignment.id} in time.`,
       payload: {
-        vehicle_job_ref: vehicleJob?.vehicle_job_ref ?? null,
+        ticketNo: vehicleJob?.ticketNo ?? null,
         worker_code: workerCode,
         status: "TIMEOUT",
         queue: buildWorkerQueueSocketPayload(timeoutResult.queue, workerCode),
@@ -877,7 +887,7 @@ export async function acceptWorkerAssignment(
     title: "Assignment accepted",
     message: `Worker ${account.full_name} accepted assignment ${acceptedAssignment.id}.`,
     payload: {
-      vehicle_job_ref: vehicleJobDetail.vehicle_job.vehicle_job_ref,
+      ticketNo: vehicleJobDetail.vehicle_job.ticketNo,
       worker_code: workerCode,
       status: acceptedAssignment.status,
       scan_deadline_at: acceptedAssignment.scan_deadline_at,
@@ -890,7 +900,7 @@ export async function acceptWorkerAssignment(
   return response;
 }
 
-// Function ให้ worker scan QR เพื่อ check-in เข้างาน
+// Function เนเธซเน worker scan QR เน€เธเธทเนเธญ check-in เน€เธเนเธฒเธเธฒเธ
 export async function scanWorkerAssignment(
   assignmentIdParam: unknown,
   body: unknown,
@@ -994,7 +1004,7 @@ export async function scanWorkerAssignment(
     const workerCode = account.username;
 
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
-      vehicle_job_ref: result.vehicleJob?.vehicle_job_ref ?? null,
+      ticketNo: result.vehicleJob?.ticketNo ?? null,
       reason: "scan_timeout",
       status: "open_app",
     });
@@ -1003,7 +1013,7 @@ export async function scanWorkerAssignment(
       title: "Assignment scan timed out",
       message: `Worker ${account.full_name} did not scan QR in time.`,
       payload: {
-        vehicle_job_ref: result.vehicleJob?.vehicle_job_ref ?? null,
+        ticketNo: result.vehicleJob?.ticketNo ?? null,
         worker_code: workerCode,
         status: result.timedOutAssignment.status,
         reason: "scan_timeout",
@@ -1044,15 +1054,15 @@ export async function scanWorkerAssignment(
     publishRealtimeEvent({
       type: "ASSIGNMENT_SCAN_DEADLINE_SHORTENED",
       title: "Scan deadline shortened",
-      message: `Remaining workers must scan QR within ${teamScanRemainingMinutes} minutes for vehicle job ${vehicleJob.vehicle_job_ref}.`,
+      message: `Remaining workers must scan QR within ${teamScanRemainingMinutes} minutes for vehicle job ${vehicleJob.ticketNo}.`,
       payload: {
-        vehicle_job_ref: vehicleJob.vehicle_job_ref,
+        ticketNo: vehicleJob.ticketNo,
         remaining_minutes: teamScanRemainingMinutes,
         scan_deadline_at: firstShortenedAssignment.scan_deadline_at,
         assignment_count: shortenedAssignments.length,
       },
       worker_payload: {
-        vehicle_job_ref: vehicleJob.vehicle_job_ref,
+        ticketNo: vehicleJob.ticketNo,
         remaining_minutes: teamScanRemainingMinutes,
         scan_deadline_at: firstShortenedAssignment.scan_deadline_at,
       },
@@ -1068,7 +1078,7 @@ export async function scanWorkerAssignment(
     title: "Assignment checked in",
     message: `Worker ${account.full_name} checked in assignment ${scannedAssignment.id}.`,
     payload: {
-      vehicle_job_ref: vehicleJob.vehicle_job_ref,
+      ticketNo: vehicleJob.ticketNo,
       worker_code: workerCode,
       status: scannedAssignment.status,
       scanned_at: scannedAssignment.scanned_at,
@@ -1081,12 +1091,12 @@ export async function scanWorkerAssignment(
   return {
     status: scannedAssignment.status,
     worker_code: workerCode,
-    vehicle_job_ref: vehicleJob.vehicle_job_ref,
+    ticketNo: vehicleJob.ticketNo,
     worker_qr_token: vehicleJob.worker_qr_token,
   };
 }
 
-// Function ให้ worker ส่งยอดปิดงานระดับ ticket เพื่อรอ vendor ตรวจผ่าน LINE
+// Function เนเธซเน worker เธชเนเธเธขเธญเธ”เธเธดเธ”เธเธฒเธเธฃเธฐเธ”เธฑเธ ticket เน€เธเธทเนเธญเธฃเธญ vendor เธ•เธฃเธงเธเธเนเธฒเธ LINE
 export async function completeWorkerTicket(
   ticketIdParam: unknown,
   body: unknown,
@@ -1277,7 +1287,7 @@ export async function completeWorkerTicket(
   publishRealtimeEvent({
     type: "TICKET_COMPLETION_SUBMITTED",
     title: "Ticket completion submitted",
-    message: `Ticket ${result.ticket.ticket_no ?? result.ticket.stall_job_ref} is waiting for vendor confirmation.`,
+    message: `Ticket ${result.ticket.boothCode} is waiting for vendor confirmation.`,
     payload: {
       ...buildWorkerTicketPayload(
         result.ticket,
@@ -1322,3 +1332,4 @@ export async function completeWorkerTicket(
       : {}),
   };
 }
+

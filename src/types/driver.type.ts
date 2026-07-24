@@ -11,7 +11,7 @@ export interface DriverSessionDto {
 
 // Type ส่วนงานรถที่ส่งให้ Driver Flow
 export interface DriverVehicleJobResponse {
-  vehicle_job_ref: string;
+  ticketNo: string;
   gate_transaction_ref: string;
   license_plate: string;
   vehicle_type: string | null;
@@ -24,19 +24,17 @@ export interface DriverVehicleJobResponse {
 
 // Type ส่วนสินค้าใน ticket ที่ส่งให้ Driver Flow
 interface DriverTicketProductResponse {
-  product_ref: string;
-  product_type: string | null;
-  name: string;
+  productCode: string;
+  productName: string;
+  packageCode: string;
+  packageName: string;
   quantity: string;
-  unit: string;
 }
 
 // Type ส่วน ticket/แผงที่ส่งให้ Driver Flow
 interface DriverTicketResponse {
-  stall_job_ref: string;
-  ticket_no: string | null;
-  stall_no: string | null;
-  vendor_name: string | null;
+  boothCode: string;
+  boothName: string | null;
   status: string;
   confirmation_status: string;
   products: DriverTicketProductResponse[];
@@ -44,8 +42,8 @@ interface DriverTicketResponse {
 
 // Type ส่วนตลาดที่ส่งให้ Driver Flow
 interface DriverMarketJobResponse {
-  market_job_ref: string;
-  market_name: string;
+  marketCode: string;
+  marketName: string;
   status: string;
   tickets: DriverTicketResponse[];
 }
@@ -57,7 +55,7 @@ export interface DriverVehicleJobDetailResponse {
 }
 
 export interface DriverJobReadyResponse {
-  vehicle_job_ref: string;
+  ticketNo: string;
   license_plate: string;
   status: string;
   worker_qr_token: string;

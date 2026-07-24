@@ -32,8 +32,29 @@ model Account {
   permissions     AccountPermission[]
   ticketWorkers   TicketWorker[]
   submittedTicketCompletions TicketCompletionSubmission[] @relation("TicketCompletionSubmitter")
+  createdGateClients GateClient[] @relation("GateClientCreatedBy")
+  updatedGateClients GateClient[] @relation("GateClientUpdatedBy")
 
   @@map("accounts")
+}
+
+model GateClient {
+  id         Int       @id @default(autoincrement())
+  clientId   String    @unique @map("client_id") @db.VarChar(100)
+  name       String    @db.VarChar(255)
+  secretHash String    @map("secret_hash") @db.VarChar(512)
+  status     String    @default("active") @db.VarChar(20)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamp(3)
+  createdBy  Int?      @map("created_by")
+  updatedBy  Int?      @map("updated_by")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  creator Account? @relation("GateClientCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  updater Account? @relation("GateClientUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status])
+  @@map("gate_clients")
 }
 
 model SystemSetting {
@@ -75,11 +96,12 @@ model GateRequestLog {
 
 model VehicleJob {
   id                Int      @id @default(autoincrement())
-  vehicleJobRef     String   @unique @map("vehicle_job_ref") @db.VarChar(100)
+  ticketNo          String   @unique @map("ticket_no") @db.VarChar(100)
   gateTransactionRef String  @map("gate_transaction_ref") @db.VarChar(100)
   licensePlate      String   @map("license_plate") @db.VarChar(50)
   vehicleType       String?  @map("vehicle_type") @db.VarChar(100)
   workersRequired   Int      @map("workers_required")
+  dispatchNow       Boolean  @default(false) @map("dispatch_now")
   status            String   @default("WAIT") @db.VarChar(30)
   driverQrToken     String   @unique @map("driver_qr_token") @db.VarChar(255)
   workerQrToken     String   @unique @map("worker_qr_token") @db.VarChar(255)
@@ -99,8 +121,9 @@ model VehicleJob {
 model MarketJob {
   id           Int      @id @default(autoincrement())
   vehicleJobId Int      @map("vehicle_job_id")
-  marketJobRef String   @map("market_job_ref") @db.VarChar(100)
+  marketCode   String   @map("market_code") @db.VarChar(100)
   marketName   String   @map("market_name") @db.VarChar(255)
+  dropoffPoint String?  @map("dropoff_point") @db.VarChar(255)
   status       String   @default("WAIT") @db.VarChar(30)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
@@ -108,7 +131,7 @@ model MarketJob {
   vehicleJob VehicleJob @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tickets GateTicket[]
 
-  @@unique([vehicleJobId, marketJobRef])
+  @@unique([vehicleJobId, marketCode])
   @@index([vehicleJobId, status])
   @@map("market_jobs")
 }
@@ -117,11 +140,10 @@ model GateTicket {
   id           Int       @id @default(autoincrement())
   vehicleJobId Int       @map("vehicle_job_id")
   marketJobId  Int       @map("market_job_id")
-  stallJobRef  String    @map("stall_job_ref") @db.VarChar(100)
-  ticketNo     String?   @map("ticket_no") @db.VarChar(100)
-  stallNo      String?   @map("stall_no") @db.VarChar(100)
-  vendorName   String?   @map("vendor_name") @db.VarChar(255)
+  boothCode    String    @map("booth_code") @db.VarChar(100)
+  boothName    String?   @map("booth_name") @db.VarChar(255)
   vendorLineId String?   @map("vendor_line_id") @db.VarChar(255)
+  rejectReason String?   @map("reject_reason") @db.Text
   status       String    @default("WAIT") @db.VarChar(30)
   confirmationStatus String @default("WAIT") @map("confirmation_status") @db.VarChar(30)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
@@ -133,8 +155,7 @@ model GateTicket {
   workers TicketWorker[]
   completionSubmissions TicketCompletionSubmission[]
 
-  @@unique([marketJobId, stallJobRef])
-  @@index([ticketNo])
+  @@unique([marketJobId, boothCode])
   @@index([marketJobId, status])
   @@map("gate_tickets")
 }
@@ -143,7 +164,7 @@ model TicketWorker {
   id              Int      @id @default(autoincrement())
   ticketId        Int      @map("ticket_id")
   workerAccountId Int      @map("worker_account_id")
-  status          String   @default("IN_PROGRESS") @db.VarChar(30)
+  status          String   @default("WORKING") @db.VarChar(30)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
 
@@ -191,18 +212,18 @@ model MessageDeliveryLog {
 model TicketProduct {
   id                Int      @id @default(autoincrement())
   ticketId          Int      @map("ticket_id")
-  productRef        String   @map("product_ref") @db.VarChar(100)
-  productType       String?  @map("product_type") @db.VarChar(100)
-  name              String   @db.VarChar(255)
+  productCode       String   @map("product_code") @db.VarChar(100)
+  productName       String   @map("product_name") @db.VarChar(255)
+  packageCode       String   @map("package_code") @db.VarChar(100)
+  packageName       String   @map("package_name") @db.VarChar(255)
   quantity          Decimal  @db.Decimal(12, 2)
   confirmedQuantity Decimal? @map("confirmed_quantity") @db.Decimal(12, 2)
-  unit              String   @db.VarChar(50)
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
 
   ticket GateTicket @relation(fields: [ticketId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@unique([ticketId, productRef])
+  @@unique([ticketId, productCode])
   @@index([ticketId])
   @@map("ticket_products")
 }

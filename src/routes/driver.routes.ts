@@ -37,12 +37,12 @@ router.get(
 
 // Route ให้ driver แจ้งว่างานรถพร้อมเรียก worker
 router.post(
-  "/jobs/:vehicleJobRef/ready",
+  "/jobs/:ticketNo/ready",
   driverSessionMiddleware,
   async (req, res, next) => {
     try {
       const result = await driverService.markDriverJobReady(
-        req.params.vehicleJobRef,
+        req.params.ticketNo,
         req.driverSession
       );
       res.json(result);

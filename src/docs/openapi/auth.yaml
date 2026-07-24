@@ -146,3 +146,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/me/password:
+    patch:
+      tags:
+        - Auth
+      summary: Change the current account password.
+      operationId: changeOwnPassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeOwnPasswordRequest"
+      responses:
+        "200":
+          description: Password changed. The current session stays active and other active sessions are revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangeOwnPasswordResponse"
+        "400":
+          description: Invalid request body or current password is incorrect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

@@ -44,7 +44,7 @@ function parseVendorActionPayload(
     (expectedAction && record.action !== expectedAction) ||
     !Number.isInteger(record.ticket_id) ||
     !Number.isInteger(record.submission_id) ||
-    typeof record.stall_job_ref !== "string" ||
+    typeof record.boothCode !== "string" ||
     !Number.isInteger(record.iat) ||
     !Number.isInteger(record.exp)
   ) {
@@ -58,7 +58,7 @@ export function signVendorTicketActionToken(input: {
   action: VendorTicketAction;
   ticket_id: number;
   submission_id: number;
-  stall_job_ref: string;
+  boothCode: string;
 }): string {
   return jwt.sign(
     {
@@ -66,7 +66,7 @@ export function signVendorTicketActionToken(input: {
       action: input.action,
       ticket_id: input.ticket_id,
       submission_id: input.submission_id,
-      stall_job_ref: input.stall_job_ref,
+      boothCode: input.boothCode,
     },
     getVendorActionTokenSecret(),
     {

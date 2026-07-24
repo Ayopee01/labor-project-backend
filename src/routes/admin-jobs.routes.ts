@@ -80,6 +80,19 @@ router.post(
 
 // Route ดึงรายการงานรถสำหรับ Admin
 router.get(
+  "/vehicle-jobs/operations",
+  permissionMiddleware(["jobs:read"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.listVehicleJobOperations(req.query);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.get(
   "/vehicle-jobs/history",
   permissionMiddleware(["jobs:read"]),
   async (req, res, next) => {
@@ -94,12 +107,12 @@ router.get(
 
 // Route assign worker เข้างานรถแบบระบุรายคน
 router.post(
-  "/vehicle-jobs/:vehicleJobRef/assign-workers",
+  "/vehicle-jobs/:ticketNo/assign-workers",
   permissionMiddleware(["jobs:assign"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.assignVehicleJobWorkers(
-        req.params.vehicleJobRef,
+        req.params.ticketNo,
         req.body
       );
       res.status(201).json(result);
@@ -111,12 +124,12 @@ router.post(
 
 // Route ต่อเวลา scan QR ของงานรถ
 router.post(
-  "/vehicle-jobs/:vehicleJobRef/scan-deadline/extend",
+  "/vehicle-jobs/:ticketNo/scan-deadline/extend",
   permissionMiddleware(["jobs:extend_deadline"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.extendVehicleJobScanDeadline(
-        req.params.vehicleJobRef,
+        req.params.ticketNo,
         req.body
       );
       res.json(result);
@@ -128,12 +141,12 @@ router.post(
 
 // Route ยกเลิก assignment รายคน
 router.post(
-  "/vehicle-jobs/:vehicleJobRef/workers/:workerCode/assignment/cancel",
+  "/vehicle-jobs/:ticketNo/workers/:workerCode/assignment/cancel",
   permissionMiddleware(["jobs:cancel"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.cancelAssignment(
-        req.params.vehicleJobRef,
+        req.params.ticketNo,
         req.params.workerCode,
         req.body
       );

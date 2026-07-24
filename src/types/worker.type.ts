@@ -15,11 +15,12 @@ type AssignmentStatus = string;
 // Type ส่วน DTO ของ table vehicle_jobs
 export interface VehicleJobDto {
   id: number;
-  vehicle_job_ref: string;
+  ticketNo: string;
   gate_transaction_ref: string;
   license_plate: string;
   vehicle_type: string | null;
   workers_required: number;
+  dispatch_now: boolean;
   status: JobStatus;
   driver_qr_token: string;
   worker_qr_token: string;
@@ -31,8 +32,9 @@ export interface VehicleJobDto {
 export interface MarketJobDto {
   id: number;
   vehicle_job_id: number;
-  market_job_ref: string;
-  market_name: string;
+  marketCode: string;
+  marketName: string;
+  dropoff_point: string | null;
   status: JobStatus;
   created_at: string;
   updated_at: string;
@@ -43,11 +45,10 @@ export interface GateTicketDto {
   id: number;
   vehicle_job_id: number;
   market_job_id: number;
-  stall_job_ref: string;
-  ticket_no: string | null;
-  stall_no: string | null;
-  vendor_name: string | null;
+  boothCode: string;
+  boothName: string | null;
   vendor_line_id: string | null;
+  reject_reason: string | null;
   status: TicketStatus;
   confirmation_status: string;
   created_at: string;
@@ -57,8 +58,8 @@ export interface GateTicketDto {
 // Type ส่วน DTO ของ table ticket_products
 export interface CurrentTicketProgressDto {
   ticket: GateTicketDto;
-  market_job_ref: string;
-  market_name: string;
+  marketCode: string;
+  marketName: string;
 }
 
 export interface VehicleWorkReadinessDto {
@@ -71,12 +72,12 @@ export interface VehicleWorkReadinessDto {
 export interface TicketProductDto {
   id: number;
   ticket_id: number;
-  product_ref: string;
-  product_type: string | null;
-  name: string;
+  productCode: string;
+  productName: string;
+  packageCode: string;
+  packageName: string;
   quantity: string;
   confirmed_quantity: string | null;
-  unit: string;
   created_at: string;
   updated_at: string;
 }
@@ -194,13 +195,18 @@ export interface WorkerAssignmentHistoryItemDto {
 
 // Type ส่วน item response ประวัติงาน worker
 export interface WorkerAssignmentHistoryItemResponse {
-  vehicle_job_ref: string;
+  ticketNo: string;
   gate_transaction_ref: string;
   license_plate: string;
   status: AssignmentStatus;
+  accept_deadline_at: string | null;
+  scan_deadline_at: string | null;
   accepted_at: string | null;
+  scanned_at: string | null;
   completed_at: string | null;
+  timeout_reason: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 // Type ส่วน response รายละเอียดงานรถพร้อมตลาด ตั๋ว และสินค้า
@@ -213,24 +219,23 @@ export interface WorkerAssignmentTeamMemberDto {
 
 // Type ส่วนสินค้าใน response หลัง worker รับงาน
 interface WorkerAssignmentProductDto {
-  product_ref: string;
-  name: string;
+  productCode: string;
+  productName: string;
   quantity: string;
-  unit: string;
+  packageName: string;
 }
 
 // Type ส่วนแผงใน response หลัง worker รับงาน
 interface WorkerAssignmentStallDto {
-  stall_job_ref: string;
-  stall_code: string | null;
-  stall_name: string | null;
+  boothCode: string;
+  boothName: string | null;
   product_count: number;
   products: WorkerAssignmentProductDto[];
 }
 
 // Type ส่วนตลาดใน response หลัง worker รับงาน
 interface WorkerAssignmentMarketDto {
-  market_name: string;
+  marketName: string;
   stall_count: number;
   stalls: WorkerAssignmentStallDto[];
 }
@@ -246,7 +251,7 @@ export interface WorkerAssignmentAcceptResponse {
 export interface WorkerAssignmentCheckInResponse {
   status: AssignmentStatus;
   worker_code: string | null;
-  vehicle_job_ref: string;
+  ticketNo: string;
   worker_qr_token: string;
 }
 
@@ -267,24 +272,22 @@ export interface VehicleJobDetailResponse {
 // Type ส่วน response หลัง worker ส่งยอดปิดงานระดับตั๋ว/แผง
 export interface TicketCompletionResponse {
   message: string;
-  vehicle_job_ref: string | null;
-  market_job_ref: string | null;
-  market_name: string | null;
-  stall_job_ref: string;
-  ticket_no: string | null;
-  stall_no: string | null;
-  stall_name: string | null;
+  ticketNo: string | null;
+  marketCode: string | null;
+  marketName: string | null;
+  boothCode: string;
+  boothName: string | null;
   status: TicketStatus;
   confirmation_status: string;
   submission_status: string;
   assignment_status: AssignmentStatus;
   items: Array<{
-    product_ref: string;
-    product_type: string | null;
-    name: string;
+    productCode: string;
+    productName: string;
+    packageCode: string;
+    packageName: string;
     quantity: string;
     confirmed_quantity: string | null;
-    unit: string;
   }>;
   debug_line_postback?: {
     confirm: string;
@@ -294,7 +297,7 @@ export interface TicketCompletionResponse {
 
 // Type ส่วน input รายการสินค้าที่ worker ยืนยันยอดตอนปิดงาน
 export interface TicketProductConfirmationInput {
-  product_ref: string;
+  productCode: string;
   confirmed_quantity: number;
 }
 

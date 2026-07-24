@@ -10,7 +10,6 @@ const runDbTests = process.env.RUN_DB_TESTS === "1";
 
 /* -------------------------------------- Tests -------------------------------------- */
 
-// Test integration ของ service หลัก โดยใช้ DB จริงเพื่อเช็ก create worker, login, refresh และ schedule
 // Test integration ของ service หลักโดยใช้ DB จริง เฉพาะตอนเปิด RUN_DB_TESTS=1 และ DATABASE_URL เป็น test DB
 test(
   "services create user, login, refresh, and read current schedule",

@@ -1,4 +1,4 @@
-// import Library
+﻿// import Library
 import { Prisma } from "@prisma/client";
 
 // import
@@ -16,13 +16,44 @@ export { listTicketWorkers } from "./shared/ticket-worker.repository";
 import type { DbConnection } from "../types/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import type { GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
-import type { VehicleJobListFilters, VehicleJobListResult } from "../types/admin-jobs.type";
+import type { VehicleJobListFilters, VehicleJobListResult, VehicleJobOperationFilters } from "../types/admin-jobs.type";
 
 export { accountRepository, profileRepository };
 
+export type VehicleJobOperationRecord = Prisma.VehicleJobGetPayload<{
+  include: {
+    marketJobs: {
+      include: {
+        tickets: {
+          include: {
+            products: true;
+          };
+        };
+      };
+    };
+    assignments: {
+      include: {
+        worker: {
+          include: {
+            profile: true;
+            workSchedules: {
+              where: {
+                isCurrent: true,
+              },
+              orderBy: {
+                shiftNo: "asc",
+              },
+            },
+          };
+        };
+      };
+    };
+  };
+}>;
+
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึงรายการงานรถสำหรับ Admin พร้อม filter เบื้องต้น
+// Function เธ”เธถเธเธฃเธฒเธขเธเธฒเธฃเธเธฒเธเธฃเธ–เธชเธณเธซเธฃเธฑเธ Admin เธเธฃเนเธญเธก filter เน€เธเธทเนเธญเธเธ•เนเธ
 export async function listVehicleJobs(
   filters: VehicleJobListFilters = {},
   connection?: DbConnection
@@ -77,7 +108,7 @@ export async function listVehicleJobs(
     andFilters.push({
       OR: [
         {
-          vehicleJobRef: {
+          ticketNo: {
             contains: filters.search,
             mode: "insensitive",
           },
@@ -99,7 +130,7 @@ export async function listVehicleJobs(
             some: {
               OR: [
                 {
-                  marketJobRef: {
+                  marketCode: {
                     contains: filters.search,
                     mode: "insensitive",
                   },
@@ -119,21 +150,47 @@ export async function listVehicleJobs(
             some: {
               OR: [
                 {
-                  stallJobRef: {
+                  boothCode: {
                     contains: filters.search,
                     mode: "insensitive",
                   },
                 },
                 {
-                  ticketNo: {
+                  boothName: {
                     contains: filters.search,
                     mode: "insensitive",
                   },
                 },
                 {
-                  stallNo: {
-                    contains: filters.search,
-                    mode: "insensitive",
+                  products: {
+                    some: {
+                      OR: [
+                        {
+                          productCode: {
+                            contains: filters.search,
+                            mode: "insensitive",
+                          },
+                        },
+                        {
+                          productName: {
+                            contains: filters.search,
+                            mode: "insensitive",
+                          },
+                        },
+                        {
+                          packageCode: {
+                            contains: filters.search,
+                            mode: "insensitive",
+                          },
+                        },
+                        {
+                          packageName: {
+                            contains: filters.search,
+                            mode: "insensitive",
+                          },
+                        },
+                      ],
+                    },
                   },
                 },
               ],
@@ -211,7 +268,181 @@ export async function listVehicleJobs(
   };
 }
 
-// Function หา market job จาก id
+export async function listVehicleJobOperations(
+  filters: VehicleJobOperationFilters = {},
+  connection?: DbConnection
+): Promise<VehicleJobOperationRecord[]> {
+  const db = client(connection);
+  const andFilters: Prisma.VehicleJobWhereInput[] = [];
+
+  if (filters.search) {
+    andFilters.push({
+      OR: [
+        {
+          ticketNo: {
+            contains: filters.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          licensePlate: {
+            contains: filters.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          gateTransactionRef: {
+            contains: filters.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          marketJobs: {
+            some: {
+              OR: [
+                {
+                  marketCode: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  marketName: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            },
+          },
+        },
+        {
+          tickets: {
+            some: {
+              OR: [
+                {
+                  boothCode: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  boothName: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  products: {
+                    some: {
+                      OR: [
+                        {
+                          productCode: {
+                            contains: filters.search,
+                            mode: "insensitive",
+                          },
+                        },
+                        {
+                          productName: {
+                            contains: filters.search,
+                            mode: "insensitive",
+                          },
+                        },
+                        {
+                          packageCode: {
+                            contains: filters.search,
+                            mode: "insensitive",
+                          },
+                        },
+                        {
+                          packageName: {
+                            contains: filters.search,
+                            mode: "insensitive",
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+  }
+
+  const where: Prisma.VehicleJobWhereInput = {
+    ...((filters.startAt || filters.endAt) && {
+        createdAt: {
+          ...(filters.startAt && {
+            gte: filters.startAt,
+          }),
+          ...(filters.endAt && {
+            lt: filters.endAt,
+          }),
+        },
+      }),
+    ...(andFilters.length > 0 && {
+      AND: andFilters,
+    }),
+  };
+
+  return db.vehicleJob.findMany({
+    where,
+    orderBy: {
+      createdAt: "desc",
+    },
+    include: {
+      marketJobs: {
+        orderBy: {
+          id: "asc",
+        },
+        include: {
+          tickets: {
+            orderBy: {
+              id: "asc",
+            },
+            include: {
+              products: {
+                orderBy: {
+                  id: "asc",
+                },
+              },
+            },
+          },
+        },
+      },
+      assignments: {
+        orderBy: [
+          {
+            createdAt: "asc",
+          },
+          {
+            id: "asc",
+          },
+        ],
+        include: {
+          worker: {
+            include: {
+              profile: true,
+              workSchedules: {
+                where: {
+                  isCurrent: true,
+                },
+                orderBy: {
+                  shiftNo: "asc",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// Function เธซเธฒ market job เธเธฒเธ id
 export async function findMarketJobById(
   id: number,
   connection?: DbConnection
@@ -226,15 +457,15 @@ export async function findMarketJobById(
   return mapMarketJob(marketJob);
 }
 
-// Function หา market job จากเลขอ้างอิงตลาด
+// Function เธซเธฒ market job เธเธฒเธเน€เธฅเธเธญเนเธฒเธเธญเธดเธเธ•เธฅเธฒเธ”
 export async function findMarketJobByRef(
-  marketJobRef: string,
+  marketCode: string,
   connection?: DbConnection
 ): Promise<MarketJobDto | null> {
   const db = client(connection);
   const marketJob = await db.marketJob.findFirst({
     where: {
-      marketJobRef,
+      marketCode,
     },
     orderBy: {
       id: "desc",
@@ -244,16 +475,16 @@ export async function findMarketJobByRef(
   return mapMarketJob(marketJob);
 }
 
-// Function หา gate ticket หรือ stall job จาก id
-// Function หา gate ticket/stall job จากเลขอ้างอิงแผง
+// Function เธซเธฒ gate ticket เธซเธฃเธทเธญ stall job เธเธฒเธ id
+// Function เธซเธฒ gate ticket/stall job เธเธฒเธเน€เธฅเธเธญเนเธฒเธเธญเธดเธเนเธเธ
 export async function findGateTicketByRef(
-  stallJobRef: string,
+  boothCode: string,
   connection?: DbConnection
 ): Promise<GateTicketDto | null> {
   const db = client(connection);
   const ticket = await db.gateTicket.findFirst({
     where: {
-      stallJobRef,
+      boothCode,
     },
     orderBy: {
       id: "desc",
@@ -263,7 +494,7 @@ export async function findGateTicketByRef(
   return mapGateTicket(ticket);
 }
 
-// Function หา worker จากรหัสพนักงานสำหรับ Admin Jobs flow
+// Function เธซเธฒ worker เธเธฒเธเธฃเธซเธฑเธชเธเธเธฑเธเธเธฒเธเธชเธณเธซเธฃเธฑเธ Admin Jobs flow
 export async function findWorkerByCode(
   workerCode: string,
   connection?: DbConnection
@@ -279,9 +510,9 @@ export async function findWorkerByCode(
   return mapAccount(account);
 }
 
-// Function หา assignment ปัจจุบันของ worker ในงานรถจาก vehicle_job_ref + worker_code
+// Function เธซเธฒ assignment เธเธฑเธเธเธธเธเธฑเธเธเธญเธ worker เนเธเธเธฒเธเธฃเธ–เธเธฒเธ ticketNo + worker_code
 export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
-  vehicleJobRef: string,
+  ticketNo: string,
   workerCode: string,
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto | null> {
@@ -289,7 +520,7 @@ export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
   const assignment = await db.vehicleJobAssignment.findFirst({
     where: {
       vehicleJob: {
-        vehicleJobRef,
+        ticketNo,
       },
       worker: {
         username: workerCode,
@@ -306,7 +537,7 @@ export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
   return mapVehicleJobAssignment(assignment);
 }
 
-// Function ยกเลิกงานรถ พร้อมงานตลาด แผง และ active assignment ใต้รถ
+// Function เธขเธเน€เธฅเธดเธเธเธฒเธเธฃเธ– เธเธฃเนเธญเธกเธเธฒเธเธ•เธฅเธฒเธ” เนเธเธ เนเธฅเธฐ active assignment เนเธ•เนเธฃเธ–
 export async function cancelVehicleJob(
   vehicleJobId: number,
   connection?: DbConnection
@@ -354,7 +585,7 @@ export async function cancelVehicleJob(
   return requireDto(mapVehicleJob(vehicleJob), "vehicle job cancel");
 }
 
-// Function ยกเลิกงานตลาด พร้อมแผงใต้ตลาด
+// Function เธขเธเน€เธฅเธดเธเธเธฒเธเธ•เธฅเธฒเธ” เธเธฃเนเธญเธกเนเธเธเนเธ•เนเธ•เธฅเธฒเธ”
 export async function cancelMarketJob(
   marketJobId: number,
   connection?: DbConnection
@@ -381,7 +612,7 @@ export async function cancelMarketJob(
   return requireDto(mapMarketJob(marketJob), "market job cancel");
 }
 
-// Function ยกเลิกงานแผงเดียว
+// Function เธขเธเน€เธฅเธดเธเธเธฒเธเนเธเธเน€เธ”เธตเธขเธง
 export async function cancelGateTicket(
   ticketId: number,
   connection?: DbConnection
@@ -400,11 +631,11 @@ export async function cancelGateTicket(
   return requireDto(mapGateTicket(ticket), "gate ticket cancel");
 }
 
-// Function สร้างงานรถพร้อมตลาด ตั๋ว สินค้า และบันทึก Gate request log
+// Function เธชเธฃเนเธฒเธเธเธฒเธเธฃเธ–เธเธฃเนเธญเธกเธ•เธฅเธฒเธ” เธ•เธฑเนเธง เธชเธดเธเธเนเธฒ เนเธฅเธฐเธเธฑเธเธ—เธถเธ Gate request log
 
-// Function เปิดงานแผงกลับมาให้ worker ส่งยอดใหม่ หลัง vendor confirm ผิด
-// Function บันทึกประวัติการเปลี่ยนสถานะของงานแผง
-// Function ดึง active assignment ของงานรถ
+// Function เน€เธเธดเธ”เธเธฒเธเนเธเธเธเธฅเธฑเธเธกเธฒเนเธซเน worker เธชเนเธเธขเธญเธ”เนเธซเธกเน เธซเธฅเธฑเธ vendor confirm เธเธดเธ”
+// Function เธเธฑเธเธ—เธถเธเธเธฃเธฐเธงเธฑเธ•เธดเธเธฒเธฃเน€เธเธฅเธตเนเธขเธเธชเธ–เธฒเธเธฐเธเธญเธเธเธฒเธเนเธเธ
+// Function เธ”เธถเธ active assignment เธเธญเธเธเธฒเธเธฃเธ–
 export async function listActiveAssignmentsByVehicleJob(
   vehicleJobId: number,
   connection?: DbConnection
@@ -427,7 +658,7 @@ export async function listActiveAssignmentsByVehicleJob(
     .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
 }
 
-// Function เปลี่ยน assignment เป็นรับงานแล้ว
+// Function เน€เธเธฅเธตเนเธขเธ assignment เน€เธเนเธเธฃเธฑเธเธเธฒเธเนเธฅเนเธง
 export async function listAcceptedAssignmentsByVehicleJob(
   vehicleJobId: number,
   workerCodes?: string[],
@@ -475,7 +706,7 @@ export async function listAcceptedAssignmentsByVehicleJob(
     .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
 }
 
-// Function เปลี่ยน assignment เป็นหมดเวลารับงาน
+// Function เน€เธเธฅเธตเนเธขเธ assignment เน€เธเนเธเธซเธกเธ”เน€เธงเธฅเธฒเธฃเธฑเธเธเธฒเธ
 export async function cancelAssignment(
   assignmentId: number,
   connection?: DbConnection
@@ -493,7 +724,7 @@ export async function cancelAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment cancel");
 }
 
-// Function ต่อเวลา scan deadline ของ assignment
+// Function เธ•เนเธญเน€เธงเธฅเธฒ scan deadline เธเธญเธ assignment
 export async function extendAssignmentScanDeadline(
   assignmentId: number,
   scanDeadlineAt: Date,
@@ -511,3 +742,4 @@ export async function extendAssignmentScanDeadline(
 
   return requireDto(mapVehicleJobAssignment(assignment), "assignment extend scan");
 }
+

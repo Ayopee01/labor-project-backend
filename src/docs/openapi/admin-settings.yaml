@@ -56,19 +56,158 @@ paths:
     get:
       tags:
         - Admin Settings
-      summary: List admin permission levels ordered from highest to lowest.
+      summary: List admin permission levels with admin accounts grouped by role.
       operationId: listAdminRoles
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Admin permission levels.
+          description: Admin permission levels and admin accounts in each level.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminRoleListResponse"
         "403":
           description: Missing roles:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/gate-clients:
+    get:
+      tags:
+        - Admin Settings
+      summary: List Gate client credentials without secrets.
+      operationId: listAdminGateClients
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Gate client metadata. Secrets are never returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateClientListResponse"
+        "403":
+          description: Missing gate_clients:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Admin Settings
+      summary: Create a Gate client and return its secret once.
+      operationId: createAdminGateClient
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGateClientRequest"
+      responses:
+        "201":
+          description: Gate client created. client_secret is shown only in this response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateClientSecretResponse"
+        "400":
+          description: Invalid Gate client payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Missing gate_clients:create permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: client_id already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/gate-clients/{clientId}:
+    patch:
+      tags:
+        - Admin Settings
+      summary: Update a Gate client name or status.
+      operationId: updateAdminGateClient
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: clientId
+          required: true
+          schema:
+            type: string
+            example: gate-north
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGateClientRequest"
+      responses:
+        "200":
+          description: Gate client updated. Secrets are not returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateClientMutationResponse"
+        "400":
+          description: Invalid Gate client payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Missing gate_clients:update permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Gate client not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/gate-clients/{clientId}/secret/rotate:
+    post:
+      tags:
+        - Admin Settings
+      summary: Rotate a Gate client secret and revoke the old secret.
+      operationId: rotateAdminGateClientSecret
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: clientId
+          required: true
+          schema:
+            type: string
+            example: gate-north
+      responses:
+        "200":
+          description: Secret rotated. client_secret is shown only in this response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateClientSecretResponse"
+        "403":
+          description: Missing gate_clients:rotate_secret permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Gate client not found.
           content:
             application/json:
               schema:
@@ -116,7 +255,7 @@ paths:
     get:
       tags:
         - Admin Settings
-      summary: Get permissions for one admin account.
+      summary: Get permissions for one lower-level admin account.
       operationId: getAdminUserPermissions
       security:
         - bearerAuth: []
@@ -129,13 +268,13 @@ paths:
           description: Admin account id.
       responses:
         "200":
-          description: Admin account permissions.
+          description: Admin account permissions. The target admin must have a lower permission level than the actor.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminUserPermissionsResponse"
         "403":
-          description: Missing permissions:read permission.
+          description: Missing permissions:read permission, self lookup, or target permission level is equal or higher than the actor.
           content:
             application/json:
               schema:
@@ -149,7 +288,7 @@ paths:
     patch:
       tags:
         - Admin Settings
-      summary: Update permissions for one admin account and revoke active sessions.
+      summary: Update permissions, status, and permission level for one lower-level admin account.
       operationId: updateAdminUserPermissions
       security:
         - bearerAuth: []
@@ -168,7 +307,7 @@ paths:
               $ref: "#/components/schemas/UpdateAdminUserPermissionsRequest"
       responses:
         "200":
-          description: Admin permissions updated.
+          description: Admin permissions/status updated. Active sessions for the target admin are revoked.
           content:
             application/json:
               schema:

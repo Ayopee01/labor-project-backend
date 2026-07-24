@@ -9,7 +9,7 @@ import { accountRepository, listSettings, permissionRepository, sessionRepositor
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
-import type { AccountPermissionsResponse, RuntimeSettingsResponse } from "../types/admin-settings.type";
+import type { AccountPermissionsResponse, AdminRoleListResponse, RuntimeSettingsResponse } from "../types/admin-settings.type";
 // import Validation
 import { parseId, parseWithSchema } from "../validation/parser";
 import { createAdminAccountBodySchema, runtimeSettingsSchema, updateAccountPermissionsBodySchema, updateSystemSettingsBodySchema } from "../validation/schemas";
@@ -118,6 +118,40 @@ async function assertAdminUsernameAvailable(username: string): Promise<void> {
   }
 }
 
+// Function ตรวจว่า admin ผู้อ่านมีลำดับยศสูงกว่า target ที่ต้องการดู permission
+async function assertCanReadAdminPermissions(
+  targetAccount: AccountDto,
+  auth?: AccessTokenPayload
+): Promise<void> {
+  const actorId = getActorId(auth);
+
+  if (!actorId) {
+    throw new ApiError(401, "UNAUTHORIZED", "Authentication is required.");
+  }
+
+  const actorAccount = await accountRepository.findAdminById(actorId);
+
+  if (!actorAccount) {
+    throw new ApiError(403, "ADMIN_ACTOR_NOT_FOUND", "Admin actor not found.");
+  }
+
+  if (actorAccount.id === targetAccount.id) {
+    throw new ApiError(
+      403,
+      "CANNOT_READ_OWN_PERMISSIONS",
+      "Admin cannot read their own permissions through this endpoint. Use /api/auth/me."
+    );
+  }
+
+  if (!canManagePermissionLevel(actorAccount.permission_level, targetAccount.permission_level)) {
+    throw new ApiError(
+      403,
+      "TARGET_PERMISSION_LEVEL_NOT_READABLE",
+      "Admin cannot read permissions for an equal or higher permission level."
+    );
+  }
+}
+
 // Function แปลง settings จาก DB แล้ว validate เป็น number โดยไม่ใช้ค่า fallback
 function mergeRuntimeSettings(
   storedSettings: { key: string; value: string }[]
@@ -191,7 +225,9 @@ export async function updateSystemSettings(
 }
 
 // Function ดึงรายการ role template สำหรับ Admin Web
-export async function listRoles() {
+export async function listRoles(): Promise<AdminRoleListResponse> {
+  const admins = await accountRepository.listAdmins();
+
   return {
     data: ADMIN_PERMISSION_LEVELS.map((level, index) => ({
       key: level,
@@ -200,6 +236,19 @@ export async function listRoles() {
         .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
         .join(" "),
       order: index,
+      admins: admins
+        .filter((account) => account.permission_level === level)
+        .map((account) => ({
+          id: account.id,
+          username: account.username,
+          full_name: account.full_name,
+          position: account.position,
+          status: account.status,
+          email: account.email,
+          phone: account.phone,
+          created_at: account.created_at,
+          updated_at: account.updated_at,
+        })),
     })),
   };
 }
@@ -254,6 +303,7 @@ export async function getAccountPermissions(
   return {
     account_id: account.id,
     role: account.role,
+    status: account.status,
     permission_level: account.permission_level,
     permissions: await permissionRepository.listByAccountId(account.id, connection),
   };
@@ -261,7 +311,8 @@ export async function getAccountPermissions(
 
 // Function ดึง permissions ของ admin account รายคน
 export async function getAdminUserPermissions(
-  accountIdParam: unknown
+  accountIdParam: unknown,
+  auth?: AccessTokenPayload
 ): Promise<AccountPermissionsResponse> {
   const accountId = parseId(accountIdParam);
   const account = await accountRepository.findAdminById(accountId);
@@ -269,6 +320,8 @@ export async function getAdminUserPermissions(
   if (!account) {
     throw new ApiError(404, "ADMIN_NOT_FOUND", "Admin account not found.");
   }
+
+  await assertCanReadAdminPermissions(account, auth);
 
   return getAccountPermissions(account);
 }
@@ -290,11 +343,19 @@ export async function updateAdminUserPermissions(
   await assertCanManageAdminPermissions(account, input.permission_level, auth);
 
   return withTransaction(async (transaction) => {
-    const updatedAccount = await accountRepository.updatePermissionLevel(
+    let updatedAccount = await accountRepository.updatePermissionLevel(
       account.id,
       input.permission_level,
       transaction
     );
+
+    if (input.status !== undefined) {
+      updatedAccount = await accountRepository.updateStatus(
+        account.id,
+        input.status,
+        transaction
+      );
+    }
 
     await permissionRepository.replaceAccountPermissions(
       account.id,

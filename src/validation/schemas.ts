@@ -1,13 +1,19 @@
 // Import library
 import { z } from "zod";
 import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS } from "../config/permission.config";
+import { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 import { ACCOUNT_ROLES } from "../types/admin-workers.type";
+import { GATE_CLIENT_STATUSES } from "../types/gate-client.type";
 import { WORKER_NATIONALITIES, WORKER_SHIRT_TYPES } from "../utils/worker-code";
 
 /* -------------------------------------- Formats -------------------------------------- */
 
 // Format ข้อความที่ถูก trim และต้องไม่เป็นค่าว่าง ใช้กับ field string ทั่วไป
 const trimmedString = z.string().trim().min(1, "Required.");
+const gateClientIdString = trimmedString.regex(
+  /^[A-Za-z0-9_-]{3,100}$/,
+  "Use 3-100 characters: letters, numbers, underscore, or dash."
+);
 
 // Format ค่า Status บัญชีที่ระบบยอมรับ
 const activeStatusSchema = z.enum(["active", "inactive"]);
@@ -37,6 +43,10 @@ const optionalTrimmedString = z.preprocess(
   emptyStringToUndefined,
   z.string().trim().optional()
 );
+const optionalGateClientIdString = z.preprocess(
+  emptyStringToUndefined,
+  gateClientIdString.optional()
+);
 
 // Format status ค่า default เป็น active เมื่อไม่ได้ส่งมา
 const defaultActiveStatusSchema = z.preprocess(
@@ -48,6 +58,16 @@ const defaultActiveStatusSchema = z.preprocess(
 const optionalActiveStatusSchema = z.preprocess(
   emptyStringToUndefined,
   activeStatusSchema.optional()
+);
+
+const gateClientStatusSchema = z.enum(GATE_CLIENT_STATUSES);
+const defaultGateClientStatusSchema = z.preprocess(
+  emptyStringToUndefined,
+  gateClientStatusSchema.default("active")
+);
+const optionalGateClientStatusSchema = z.preprocess(
+  emptyStringToUndefined,
+  gateClientStatusSchema.optional()
 );
 
 const workerNationalitySchema = z.enum(WORKER_NATIONALITIES);
@@ -110,6 +130,12 @@ export const confirmForceLoginBodySchema = z.object({
 // Schema body สำหรับขอ access token ใหม่ด้วย refresh token
 export const refreshBodySchema = z.object({
   refresh_token: trimmedString,
+});
+
+// Schema body สำหรับผู้ใช้ที่ login อยู่เปลี่ยน password ของตัวเอง
+export const changeOwnPasswordBodySchema = z.object({
+  current_password: trimmedString,
+  new_password: trimmedString,
 });
 
 /* -------------------------------------- User Schemas -------------------------------------- */
@@ -193,41 +219,22 @@ export const resetPasswordBodySchema = z.object({
 
 /* -------------------------------------- Job Flow Schemas -------------------------------------- */
 
-// Schema สินค้าในตั๋วที่ Gate ส่งมา
-const gateProductInputSchema = z.object({
-  product_ref: trimmedString,
-  product_type: optionalTrimmedString,
-  name: trimmedString,
-  quantity: z.coerce.number().positive(),
-  unit: trimmedString,
-});
-
-// Schema ตั๋วหรือแผงที่ Gate ส่งมา
-const gateTicketInputSchema = z.object({
-  stall_job_ref: trimmedString,
-  ticket_no: optionalTrimmedString,
-  stall_no: optionalTrimmedString,
-  vendor_name: optionalTrimmedString,
-  vendor_line_id: optionalTrimmedString,
-  products: z.array(gateProductInputSchema).min(1),
-});
-
-// Schema งานตลาดที่ Gate ส่งมา
-const gateMarketInputSchema = z.object({
-  market_job_ref: trimmedString,
-  market_name: trimmedString,
-  tickets: z.array(gateTicketInputSchema).min(1),
-});
-
-// Schema body สำหรับจำลอง Gate ส่งข้อมูลงานรถเข้าระบบ
+// Schema body สำหรับ Gate ส่งข้อมูล 1 ใบ/1 แผง/1 รายการสินค้าเข้าระบบ
 export const gateVehicleJobBodySchema = z.object({
-  gate_transaction_ref: trimmedString,
-  vehicle_job_ref: trimmedString,
-  license_plate: trimmedString,
-  vehicle_type: optionalTrimmedString,
-  workers_required: z.coerce.number().int().positive(),
+  ticketNo: trimmedString,
+  marketCode: trimmedString,
+  marketName: trimmedString,
+  boothCode: trimmedString,
+  boothName: trimmedString,
+  licensePlate: trimmedString,
+  vehicleTypeCode: optionalTrimmedString,
+  vehicleTypeName: trimmedString,
+  productCode: trimmedString,
+  productName: trimmedString,
+  packageCode: trimmedString,
+  packageName: trimmedString,
+  quantity: z.coerce.number().positive(),
   dispatch_now: z.boolean().optional(),
-  markets: z.array(gateMarketInputSchema).min(1),
 });
 
 // Schema body สำหรับเปิด driver session จาก QR
@@ -242,7 +249,7 @@ export const workerScanBodySchema = z.object({
 
 // Schema item สินค้าที่ worker ส่งยอดยืนยันตอนปิดงาน
 const workerTicketCompleteItemSchema = z.object({
-  product_ref: trimmedString,
+  productCode: trimmedString,
   confirmed_quantity: z.coerce.number().min(0),
 });
 
@@ -266,6 +273,40 @@ export const adminVehicleJobListQuerySchema = z
     limit: optionalLimitNumber,
     search: optionalLowercaseString,
     status: optionalTrimmedString,
+  })
+  .superRefine((input, context) => {
+    if (
+      input.date_from &&
+      input.date_to &&
+      input.date_from > input.date_to
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["date_to"],
+        message: "date_to must be greater than or equal to date_from.",
+      });
+    }
+  });
+
+const vehicleOperationStatusValues = [
+  VEHICLE_OPERATION_STATUS.UNLOAD_NOW,
+  VEHICLE_OPERATION_STATUS.WAITING_UNLOAD,
+  VEHICLE_OPERATION_STATUS.WAITING_QUEUE,
+  VEHICLE_OPERATION_STATUS.DRIVER_WAITING_QUEUE,
+] as const;
+
+export const adminVehicleJobOperationsQuerySchema = z
+  .object({
+    date: optionalDateString,
+    date_from: optionalDateString,
+    date_to: optionalDateString,
+    page: optionalPageNumber,
+    limit: optionalLimitNumber,
+    search: optionalLowercaseString,
+    operation_status: z.preprocess(
+      emptyStringToUndefined,
+      z.enum(vehicleOperationStatusValues).optional()
+    ),
   })
   .superRefine((input, context) => {
     if (
@@ -336,6 +377,23 @@ export const adminForceWorkerStatusBodySchema = z.object({
 
 /* -------------------------------------- Settings Schemas -------------------------------------- */
 
+// Schema body สำหรับ Admin สร้าง Gate client credential
+export const createGateClientBodySchema = z.object({
+  client_id: optionalGateClientIdString,
+  name: trimmedString,
+  status: defaultGateClientStatusSchema,
+});
+
+// Schema body สำหรับ Admin แก้ชื่อหรือสถานะ Gate client
+export const updateGateClientBodySchema = z
+  .object({
+    name: optionalTrimmedString,
+    status: optionalGateClientStatusSchema,
+  })
+  .refine((value) => value.name !== undefined || value.status !== undefined, {
+    message: "At least one field is required.",
+  });
+
 // Schema body สำหรับ Admin แก้ runtime settings ของระบบ
 export const updateSystemSettingsBodySchema = z
   .object({
@@ -359,6 +417,7 @@ export const updateSystemSettingsBodySchema = z
 // Schema body สำหรับ Admin แก้ permissions ของ admin account
 export const updateAccountPermissionsBodySchema = z.object({
   permission_level: z.enum(ADMIN_PERMISSION_LEVELS),
+  status: optionalActiveStatusSchema,
   permissions: z
     .array(z.enum(ADMIN_PERMISSIONS))
     .default([]),

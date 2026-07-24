@@ -8,7 +8,7 @@ export function buildWorkerAssignedPayload(
   vehicleJob: VehicleJobDto
 ) {
   return {
-    vehicle_job_ref: vehicleJob.vehicle_job_ref,
+    ticketNo: vehicleJob.ticketNo,
     gate_transaction_ref: vehicleJob.gate_transaction_ref,
     worker_qr_token: vehicleJob.worker_qr_token,
     assignment: {

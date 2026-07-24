@@ -115,6 +115,73 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/operations:
+    get:
+      tags:
+        - Admin Jobs
+      summary: List vehicle jobs for the Admin vehicle operation board.
+      operationId: listAdminVehicleJobOperations
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Optional legacy single-day filter in YYYY-MM-DD format. Equivalent to sending date_from and date_to as the same date.
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+            example: "2026-07-01"
+          description: Optional created date range start in YYYY-MM-DD format, interpreted in Asia/Bangkok.
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Optional created date range end in YYYY-MM-DD format, inclusive and interpreted in Asia/Bangkok.
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+          description: Optional. If sent, the API returns only that page and includes pagination metadata after operation_status filtering.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            example: 20
+          description: Optional page size. Used only when page is sent. Defaults to 20.
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search by ticketNo, license plate, gate transaction ref, marketCode/marketName, boothCode/boothName, productCode/productName/packageCode/packageName.
+        - in: query
+          name: operation_status
+          schema:
+            type: string
+            enum:
+              - unload_now
+              - waiting_unload
+              - waiting_queue
+              - driver_waiting_queue
+          description: Filter by vehicle dispatch/worker-call status only. Work progress is represented by vehicle_job.status, workers[].assignment_status, and ticket status fields.
+      responses:
+        "200":
+          description: Vehicle operation board list with summary, workers, markets, stall jobs, and products.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVehicleJobOperationListResponse"
   /api/admin/vehicle-jobs/history:
     get:
       tags:
@@ -164,14 +231,14 @@
           name: search
           schema:
             type: string
-          description: Search by vehicle job ref, license plate, gate transaction ref, market ref/name, stall job ref, ticket no, or stall no.
+          description: Search by ticketNo, license plate, gate transaction ref, marketCode/marketName, boothCode/boothName, productCode/productName/packageCode/packageName.
         - in: query
           name: status
           schema:
             type: string
             enum:
               - WAIT
-              - IN_PROGRESS
+              - WORKING
               - DELIVERED
               - REJECT
               - COMPLETED
@@ -179,7 +246,6 @@
               - PENDING
               - ACCEPTED
               - SCANNED
-              - WORKING
               - TIMEOUT
           description: Filter by status at vehicle, market, stall, stall confirmation, or worker assignment level.
       responses:
@@ -210,7 +276,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminJobCancelResponse"
-  /api/admin/vehicle-jobs/{vehicleJobRef}/assign-workers:
+  /api/admin/vehicle-jobs/{ticketNo}/assign-workers:
     post:
       tags:
         - Admin Jobs
@@ -220,11 +286,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: vehicleJobRef
+          name: ticketNo
           required: true
           schema:
             type: string
-            example: VEH-20260706-0001
+            example: TKT-20260723-000125
       requestBody:
         required: true
         content:
@@ -238,7 +304,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminAssignWorkersResponse"
-  /api/admin/vehicle-jobs/{vehicleJobRef}/scan-deadline/extend:
+  /api/admin/vehicle-jobs/{ticketNo}/scan-deadline/extend:
     post:
       tags:
         - Admin Jobs
@@ -248,11 +314,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: vehicleJobRef
+          name: ticketNo
           required: true
           schema:
             type: string
-            example: VEH-20260706-0001
+            example: TKT-20260723-000125
       requestBody:
         required: true
         content:
@@ -266,7 +332,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminExtendScanDeadlineResponse"
-  /api/admin/vehicle-jobs/{vehicleJobRef}/workers/{workerCode}/assignment/cancel:
+  /api/admin/vehicle-jobs/{ticketNo}/workers/{workerCode}/assignment/cancel:
     post:
       tags:
         - Admin Jobs
@@ -276,11 +342,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: vehicleJobRef
+          name: ticketNo
           required: true
           schema:
             type: string
-            example: VEH-20260706-0001
+            example: TKT-20260723-000125
         - in: path
           name: workerCode
           required: true

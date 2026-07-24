@@ -1,5 +1,6 @@
 import type { AccessTokenPayload, SessionDto } from "./auth.type";
 import type { DriverSessionDto } from "./driver.type";
+import type { PublicGateClient } from "./gate-client.type";
 
 declare global {
   namespace Express {
@@ -8,6 +9,7 @@ declare global {
       auth?: AccessTokenPayload;
       session?: SessionDto;
       driverSession?: DriverSessionDto;
+      gateClient?: PublicGateClient;
       rawBody?: string;
     }
   }

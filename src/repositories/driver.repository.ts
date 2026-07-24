@@ -1,4 +1,5 @@
 // import
+import { VEHICLE_JOB_STATUS } from "../constants/job-status";
 import { mapDriverSession, mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
 export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail } from "./shared/vehicle-job.repository";
@@ -74,16 +75,16 @@ export async function markVehicleJobReady(
       id: vehicleJobId,
     },
     data: {
-      status: "IN_PROGRESS",
+      status: VEHICLE_JOB_STATUS.WORKING,
       marketJobs: {
         updateMany: {
           where: {
             status: {
-              in: ["WAIT", "IN_PROGRESS"],
+              in: [VEHICLE_JOB_STATUS.WAIT, VEHICLE_JOB_STATUS.WORKING],
             },
           },
           data: {
-            status: "IN_PROGRESS",
+            status: VEHICLE_JOB_STATUS.WORKING,
           },
         },
       },
