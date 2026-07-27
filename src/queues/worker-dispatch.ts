@@ -33,11 +33,18 @@ async function getWorkerCodeMap(accountIds: number[]): Promise<Map<number, strin
 }
 
 export async function dispatchReadyWorkers(
-  connection?: Parameters<typeof workerApplicationRepository.listDispatchableVehicleJobs>[0]
+  connection?: Parameters<typeof workerApplicationRepository.listDispatchableVehicleJobs>[0],
+  options: {
+    vehicle_job_ids?: number[];
+  } = {}
 ): Promise<void> {
   const settings = await getRuntimeSettings();
   const acceptDeadlineMs = settings.worker_accept_deadline_seconds * 1000;
-  const dispatchableJobs = await workerApplicationRepository.listDispatchableVehicleJobs(connection);
+  const allowedVehicleJobIds = options.vehicle_job_ids
+    ? new Set(options.vehicle_job_ids)
+    : null;
+  const dispatchableJobs = (await workerApplicationRepository.listDispatchableVehicleJobs(connection))
+    .filter((vehicleJob) => !allowedVehicleJobIds || allowedVehicleJobIds.has(vehicleJob.id));
 
   for (const vehicleJob of dispatchableJobs) {
     const activeAssignments = await workerApplicationRepository.countActiveAssignments(

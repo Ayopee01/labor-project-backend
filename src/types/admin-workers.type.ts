@@ -163,7 +163,6 @@ export interface PaginationMeta {
 // Type ส่วนตารางงานแบบย่อสำหรับ API list users
 export interface UserListSchedule {
   shift_no: number;
-  work_date: string;
   shift_start_time: string;
   shift_end_time: string;
   shift_name: string;
@@ -174,8 +173,8 @@ export interface UserListItem {
   worker_code: string | null;
   shirt_number: string | null;
   full_name: string;
+  work_start_date: string | null;
   work_schedule: UserListSchedule | null;
-  work_schedules?: UserListSchedule[];
   status: AccountStatus;
   updated_at: string;
 }
@@ -187,11 +186,11 @@ interface UserDetailInfo {
   nationality: string | null;
   shirt_number: string | null;
   shirt_type: string | null;
-  work_date: string | null;
+  work_start_date: string | null;
+  shift_no: number | null;
   shift_start_time: string | null;
   shift_end_time: string | null;
   shift_name: string | null;
-  work_schedules?: UserListSchedule[];
 }
 
 // Type ส่วน Response ของ API user detail

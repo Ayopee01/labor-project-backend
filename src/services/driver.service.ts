@@ -152,7 +152,9 @@ export async function markDriverJobReady(
     }
 
     await driverRepository.markVehicleJobReady(vehicleJob.id, transaction);
-    await dispatchReadyWorkers(transaction);
+    await dispatchReadyWorkers(transaction, {
+      vehicle_job_ids: [vehicleJob.id],
+    });
 
     const detail = await driverRepository.getVehicleJobDetail(vehicleJob.id, transaction);
 

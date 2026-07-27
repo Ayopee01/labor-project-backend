@@ -1115,11 +1115,16 @@ export async function completeWorkerTicket(
       throw new ApiError(404, "TICKET_NOT_FOUND", "Ticket not found.");
     }
 
-    if (!ticket.vendor_line_id) {
+    const vendorLineTargets = await workerApplicationRepository.listActiveVendorLineTargetsForTicket(
+      ticket.id,
+      transaction
+    );
+
+    if (vendorLineTargets.length === 0) {
       throw new ApiError(
         409,
         "TICKET_VENDOR_LINE_NOT_CONFIGURED",
-        "Ticket vendor LINE id is not configured."
+        "Ticket vendor LINE targets are not configured."
       );
     }
 
@@ -1214,6 +1219,7 @@ export async function completeWorkerTicket(
       submission,
       products: confirmedProducts,
       receiverAccountIds,
+      vendorLineTargets,
       vendorTimeoutMs: getVendorConfirmationTimeoutMs(ticket, settings),
     };
   });
@@ -1257,33 +1263,38 @@ export async function completeWorkerTicket(
     result.ticket,
     result.submission
   );
-  const lineLogId = await lineRepository.createMessageDeliveryLog(
-    "LINE",
-    "send_vendor_ticket_completion",
-    {
-      ticket_id: result.ticket.id,
-      submission_id: result.submission.id,
-      vendor_line_id: result.ticket.vendor_line_id,
-      items: result.products,
-    } as unknown as Prisma.InputJsonValue,
-    result.ticket.vendor_line_id
+  const lineMessage = buildVendorCompletionMessage(
+    result.ticket,
+    linePostbackData,
+    detail,
+    result.products
   );
 
-  await enqueueLineMessage("send-vendor-ticket-completion", {
-    log_id: lineLogId,
-    to: result.ticket.vendor_line_id as string,
-    messages: [
+  for (const target of result.vendorLineTargets) {
+    const lineLogId = await lineRepository.createMessageDeliveryLog(
+      "LINE",
+      "send_vendor_ticket_completion",
       {
-        type: "text",
-        text: buildVendorCompletionMessage(
-          result.ticket,
-          linePostbackData,
-          detail,
-          result.products
-        ),
-      },
-    ],
-  });
+        ticket_id: result.ticket.id,
+        submission_id: result.submission.id,
+        vendor_line_id: target.line_user_id,
+        vendor_line_target_type: target.target_type,
+        items: result.products,
+      } as unknown as Prisma.InputJsonValue,
+      target.line_user_id
+    );
+
+    await enqueueLineMessage("send-vendor-ticket-completion", {
+      log_id: lineLogId,
+      to: target.line_user_id,
+      messages: [
+        {
+          type: "text",
+          text: lineMessage,
+        },
+      ],
+    });
+  }
   publishRealtimeEvent({
     type: "TICKET_COMPLETION_SUBMITTED",
     title: "Ticket completion submitted",

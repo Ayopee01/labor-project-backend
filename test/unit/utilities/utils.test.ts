@@ -22,6 +22,7 @@ let shift: typeof import("../../../src/utils/shift");
 let authConfig: typeof import("../../../src/config/auth.config");
 let schemas: typeof import("../../../src/validation/schemas");
 let apiCase: typeof import("../../../src/middlewares/api-case.middleware");
+let uploadMiddleware: typeof import("../../../src/middlewares/upload.middleware");
 
 // Function โหลด utility/config/schema ที่ต้องใช้ใน test หลังตั้งค่า env แล้ว
 before(async () => {
@@ -35,6 +36,7 @@ before(async () => {
   authConfig = await import("../../../src/config/auth.config");
   schemas = await import("../../../src/validation/schemas");
   apiCase = await import("../../../src/middlewares/api-case.middleware");
+  uploadMiddleware = await import("../../../src/middlewares/upload.middleware");
 });
 
 /* -------------------------------------- JWT Tests -------------------------------------- */
@@ -252,6 +254,96 @@ test("API case utilities transform response payloads to PascalCase", () => {
   });
 });
 
+test("multipart worker body normalizes PascalCase shift number", () => {
+  let nextCalled = false;
+  const req: any = {
+    is: (contentType: string) => contentType === "multipart/form-data",
+    body: {
+      FullName: "Worker One",
+      Phone: "0812345678",
+      Nationality: "Myanmar",
+      ShirtType: "Navy",
+      ShirtNumber: "12",
+      WorkStartDate: "2026-07-03",
+      ShiftNo: "1",
+      Status: "active",
+    },
+  };
+
+  uploadMiddleware.normalizeCreateUserMultipartBody(
+    req as never,
+    {} as never,
+    () => {
+      nextCalled = true;
+    }
+  );
+
+  assert.equal(nextCalled, true);
+  const parsed = schemas.createUserBodySchema.parse(req.body);
+  assert.equal(parsed.shift_no, 1);
+});
+
+test("worker schemas accept shift number on create and time-only shifts on update", () => {
+  const createBody = schemas.createUserBodySchema.parse({
+    full_name: "Worker One",
+    phone: "0812345678",
+    nationality: "Myanmar",
+    shirt_type: "Navy",
+    shirt_number: "12",
+    shift_no: 1,
+  });
+  const updateBody = schemas.updateUserBodySchema.parse({
+    shift_start_time: "08:00",
+    shift_end_time: "17:00",
+  });
+
+  assert.equal(createBody.shift_no, 1);
+  assert.equal(createBody.work_start_date, undefined);
+  assert.equal(updateBody.shift_start_time, "08:00");
+  assert.equal(updateBody.shift_end_time, "17:00");
+});
+
+test("worker update schema rejects shift number changes", () => {
+  assert.throws(() =>
+    schemas.updateUserBodySchema.parse({
+      shift_no: 2,
+    })
+  );
+});
+
+test("worker schemas reject date-time values for shifts", () => {
+  assert.throws(() =>
+    schemas.updateUserBodySchema.parse({
+      shift_start_time: "2026-07-03T08:00:00+07:00",
+      shift_end_time: "2026-07-03T17:00:00+07:00",
+    })
+  );
+});
+
+test("worker create schema rejects missing or invalid shift number", () => {
+  assert.throws(() =>
+    schemas.createUserBodySchema.parse({
+      full_name: "Worker One",
+      phone: "0812345678",
+      nationality: "Myanmar",
+      shirt_type: "Navy",
+      shirt_number: "12",
+      work_start_date: "2026-07-03",
+    })
+  );
+
+  assert.throws(() =>
+    schemas.createUserBodySchema.parse({
+      full_name: "Worker One",
+      phone: "0812345678",
+      nationality: "Myanmar",
+      shirt_type: "Navy",
+      shirt_number: "12",
+      shift_no: 3,
+    })
+  );
+});
+
 test("shift utility builds a stable break counter key for one shift instance", () => {
   const schedule = {
     id: 1,
@@ -313,11 +405,11 @@ test("update user schema allows partial profile updates", () => {
 test("shift utility calculates shifts from start time", () => {
   // Step Arrange คำนวณชื่อกะเช้าและกะกลางคืนจาก boundary หลัก
   const morningShift = shift.calculateShiftName("06:00");
-  const nightShift = shift.calculateShiftName("17:00");
+  const nightShift = shift.calculateShiftName("18:00");
 
   // Step Assert เวลาในช่วงเช้าคืนชื่อกะเดียวกัน และ 18:00 เป็นกะกลางคืน
   assert.equal(shift.calculateShiftName("08:00"), morningShift);
-  assert.equal(shift.calculateShiftName("16:59"), morningShift);
+  assert.equal(shift.calculateShiftName("17:59"), morningShift);
   assert.equal(shift.calculateShiftName("18:00"), nightShift);
   assert.notEqual(morningShift, nightShift);
 });

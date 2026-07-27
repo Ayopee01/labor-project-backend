@@ -63,6 +63,7 @@ const requestKeyMap: Record<string, string> = {
   ShirtType: "shirt_type",
   ShiftEndTime: "shift_end_time",
   ShiftName: "shift_name",
+  ShiftNo: "shift_no",
   ShiftStartTime: "shift_start_time",
   StartTime: "start_time",
   StatusCode: "statusCode",

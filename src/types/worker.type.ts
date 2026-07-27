@@ -58,6 +58,11 @@ export interface GateTicketDto {
 }
 
 // Type ส่วน DTO ของ table ticket_products
+export interface VendorLineTargetDto {
+  line_user_id: string;
+  target_type: "owner" | "member";
+}
+
 export interface CurrentTicketProgressDto {
   ticket: GateTicketDto;
   marketCode: string;

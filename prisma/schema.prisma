@@ -162,6 +162,59 @@ model GateTicket {
   @@map("gate_tickets")
 }
 
+model MasterOwnerStall {
+  id                Int      @id @default(autoincrement())
+  marketCode        String   @map("market_code") @db.VarChar(50)
+  boothCode         String   @map("booth_code") @db.VarChar(100)
+  boothName         String?  @map("booth_name") @db.VarChar(255)
+  cardId            String   @map("card_id") @db.VarChar(50)
+  customerTelephone String?  @map("customer_telephone") @db.VarChar(50)
+  firstName         String?  @map("first_name") @db.VarChar(255)
+  lastName          String?  @map("last_name") @db.VarChar(255)
+  ownerStatus       String?  @map("owner_status") @db.VarChar(50)
+  lineUserId        String?  @map("line_user_id") @db.VarChar(255)
+  status            String   @default("active") @db.VarChar(20)
+  syncedAt          DateTime? @map("synced_at") @db.Timestamp(3)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  @@unique([marketCode, boothCode])
+  @@index([marketCode, cardId, lineUserId])
+  @@index([lineUserId])
+  @@index([status])
+  @@index([ownerStatus])
+  @@map("master_owner_stalls")
+}
+
+model MasterMemberStall {
+  id                         Int      @id @default(autoincrement())
+  ownerLineUserId            String   @map("owner_line_user_id") @db.VarChar(255)
+  ownerIdCard                String   @map("owner_id_card") @db.VarChar(50)
+  ownerTelephone             String?  @map("owner_telephone") @db.VarChar(50)
+  ownerCode                  String?  @map("owner_code") @db.VarChar(50)
+  ownerName                  String?  @map("owner_name") @db.VarChar(255)
+  marketCode                 String   @map("market_code") @db.VarChar(50)
+  marketName                 String?  @map("market_name") @db.VarChar(255)
+  memberStallLineUserId      String   @map("member_stall_line_user_id") @db.VarChar(255)
+  memberStallIdCard          String?  @map("member_stall_id_card") @db.VarChar(50)
+  memberStallTelephone       String?  @map("member_stall_telephone") @db.VarChar(50)
+  memberStallUserGroup       String?  @map("member_stall_user_group") @db.VarChar(50)
+  memberStallFirstName       String?  @map("member_stall_first_name") @db.VarChar(255)
+  memberStallLastName        String?  @map("member_stall_last_name") @db.VarChar(255)
+  memberStallStatusOnStall   String?  @map("member_stall_status_on_stall") @db.VarChar(20)
+  status                     String   @default("active") @db.VarChar(20)
+  syncedAt                   DateTime? @map("synced_at") @db.Timestamp(3)
+  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  @@unique([marketCode, ownerIdCard, ownerLineUserId, memberStallLineUserId])
+  @@index([marketCode, ownerIdCard, ownerLineUserId])
+  @@index([memberStallLineUserId])
+  @@index([status])
+  @@index([memberStallStatusOnStall])
+  @@map("master_member_stalls")
+}
+
 model TicketWorker {
   id              Int      @id @default(autoincrement())
   ticketId        Int      @map("ticket_id")

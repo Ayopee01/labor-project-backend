@@ -46,7 +46,6 @@ function sortSwaggerOperations(
     "post /api/admin/users": 22,
     "patch /api/admin/users/{id}": 23,
     "patch /api/admin/users/{id}/password": 24,
-    "get /api/admin/jobs/workers/{id}/work-schedules": 25,
     "get /api/admin/jobs/workers/status": 26,
     "post /api/admin/jobs/workers/{id}/status/force": 28,
     "post /api/admin/jobs/cancel": 29,

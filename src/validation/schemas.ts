@@ -24,13 +24,20 @@ const dateString = trimmedString.pipe(
 );
 
 // Format เวลาแบบ HH:mm เท่านั้น ไม่รับวินาทีหรือ millisecond
+const dateTimeString = trimmedString.pipe(
+  z.iso.datetime({ offset: true, error: "Must use ISO 8601 date-time format." })
+);
+
 const timeString = trimmedString.pipe(
   z.iso.time({ precision: -1, error: "Must use HH:mm format." })
 );
 
-const dateTimeString = trimmedString.pipe(
-  z.iso.datetime({ offset: true, error: "Must use ISO 8601 date-time format." })
-);
+const shiftNoSchema = z.coerce
+  .number()
+  .int()
+  .refine((value) => value === 1 || value === 2, {
+    message: "ShiftNo must be 1 or 2.",
+  });
 
 // Function แปลง empty string จาก query/body ให้เป็น undefined เพื่อให้ optional/default schema ทำงานถูกต้อง
 const emptyStringToUndefined = (value: unknown): unknown =>
@@ -164,15 +171,11 @@ const updateProfileInputSchema = z.object({
 
 // Schema ข้อมูลวันทำงานและช่วงเวลางานของ worker
 export const workScheduleInputSchema = z.object({
+  shift_no: shiftNoSchema.optional(),
   work_date: optionalDateString,
   shift_start_time: timeString,
   shift_end_time: timeString,
 });
-
-const workSchedulesInputSchema = z
-  .array(workScheduleInputSchema)
-  .min(1)
-  .max(2, "A worker can have at most 2 current shifts.");
 
 // Schema body สำหรับสร้าง worker พร้อม profile และ schedule เริ่มต้น
 export const createUserBodySchema = z
@@ -185,14 +188,9 @@ export const createUserBodySchema = z
     nationality: workerNationalitySchema,
     shirt_type: workerShirtTypeSchema,
     shirt_number: trimmedString,
-    work_start_date: dateString,
+    work_start_date: optionalDateString,
+    shift_no: shiftNoSchema,
     status: defaultActiveStatusSchema,
-    work_schedule: workScheduleInputSchema.optional(),
-    work_schedules: workSchedulesInputSchema.optional(),
-  })
-  .refine((value) => value.work_schedule !== undefined || value.work_schedules !== undefined, {
-    path: ["work_schedule"],
-    message: "work_schedule or work_schedules is required.",
   });
 
 // Schema body สำหรับแก้ไขข้อมูล worker ผ่านเส้นหลัก
@@ -207,13 +205,11 @@ export const updateUserBodySchema = z.object({
   shirt_type: optionalWorkerShirtTypeSchema,
   shirt_number: optionalTrimmedString,
   work_start_date: optionalDateString,
-  work_date: optionalDateString,
+  shift_no: z.never("ShiftNo cannot be updated. Send ShiftStartTime and ShiftEndTime instead.").optional(),
   shift_start_time: z.preprocess(emptyStringToUndefined, timeString.optional()),
   shift_end_time: z.preprocess(emptyStringToUndefined, timeString.optional()),
   profile: updateProfileInputSchema.optional(),
   status: optionalActiveStatusSchema,
-  work_schedule: z.unknown().optional(),
-  work_schedules: z.unknown().optional(),
 });
 
 // Schema body สำหรับ reset password ของ worker

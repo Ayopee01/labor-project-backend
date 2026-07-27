@@ -11,6 +11,21 @@ import type { DbConnection } from "../types/common.type";
 import type { GateRequestReplayRecord, GateVehicleJobCreateInput, GateVehicleJobResponse } from "../types/gate.type";
 import type { VehicleJobDto } from "../types/worker.type";
 
+export interface VendorLineTargetDto {
+  line_user_id: string;
+  target_type: "owner" | "member";
+}
+
+export interface GateTicketAppendStateDto {
+  vehicle_job_id: number;
+  booth_count: number;
+  existing_booth_count: number;
+  duplicate_booth: {
+    boothCode: string;
+    marketCode: string;
+  } | null;
+}
+
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function หา log request จาก Gate ด้วย idempotency key
@@ -71,6 +86,113 @@ export async function findVehicleJobByRef(
 }
 
 // Function สร้างงานรถจาก Gate พร้อมตลาด ตั๋ว สินค้า QR token และ request log
+export async function getGateTicketAppendState(
+  ticketNo: string,
+  boothCode: string,
+  connection?: DbConnection
+): Promise<GateTicketAppendStateDto | null> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      ticketNo,
+    },
+    select: {
+      id: true,
+      boothCount: true,
+      tickets: {
+        select: {
+          boothCode: true,
+          marketJob: {
+            select: {
+              marketCode: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!vehicleJob) {
+    return null;
+  }
+
+  const boothCodes = new Set(vehicleJob.tickets.map((ticket) => ticket.boothCode));
+  const duplicateBooth = vehicleJob.tickets.find(
+    (ticket) => ticket.boothCode === boothCode
+  );
+
+  return {
+    vehicle_job_id: vehicleJob.id,
+    booth_count: vehicleJob.boothCount,
+    existing_booth_count: boothCodes.size,
+    duplicate_booth: duplicateBooth
+      ? {
+          boothCode: duplicateBooth.boothCode,
+          marketCode: duplicateBooth.marketJob.marketCode,
+        }
+      : null,
+  };
+}
+
+export async function findActiveVendorLineTargetsByStall(
+  marketCode: string,
+  boothCode: string,
+  connection?: DbConnection
+): Promise<VendorLineTargetDto[]> {
+  const db = client(connection);
+  const ownerStall = await db.masterOwnerStall.findUnique({
+    where: {
+      marketCode_boothCode: {
+        marketCode,
+        boothCode,
+      },
+    },
+  });
+
+  if (
+    !ownerStall ||
+    ownerStall.status !== "active" ||
+    ownerStall.ownerStatus !== "Normal" ||
+    !ownerStall.lineUserId
+  ) {
+    return [];
+  }
+
+  const members = await db.masterMemberStall.findMany({
+    where: {
+      marketCode: ownerStall.marketCode,
+      ownerIdCard: ownerStall.cardId,
+      ownerLineUserId: ownerStall.lineUserId,
+      status: "active",
+      memberStallStatusOnStall: "1",
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+  const seen = new Set<string>();
+  const targets: VendorLineTargetDto[] = [];
+  const addTarget = (lineUserId: string, targetType: VendorLineTargetDto["target_type"]) => {
+    if (seen.has(lineUserId)) {
+      return;
+    }
+
+    seen.add(lineUserId);
+    targets.push({
+      line_user_id: lineUserId,
+      target_type: targetType,
+    });
+  };
+
+  addTarget(ownerStall.lineUserId, "owner");
+
+  for (const member of members) {
+    addTarget(member.memberStallLineUserId, "member");
+  }
+
+  return targets;
+}
+
 export async function createVehicleJobFromGate(
   input: GateVehicleJobCreateInput,
   payloadSnapshot: Prisma.InputJsonValue,

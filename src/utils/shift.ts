@@ -8,7 +8,22 @@ import ApiError from "./api-error";
 const MORNING_SHIFT = "กะเช้า";
 
 // Config ชื่อกะสำหรับช่วงกลางคืน
-const NIGHT_SHIFT = "กะกลางคืน";
+const NIGHT_SHIFT = "กะเย็น";
+
+const SHIFT_PRESETS = {
+  1: {
+    shift_no: 1,
+    shift_start_time: "08:00",
+    shift_end_time: "18:00",
+    shift_name: MORNING_SHIFT,
+  },
+  2: {
+    shift_no: 2,
+    shift_start_time: "18:00",
+    shift_end_time: "08:00",
+    shift_name: NIGHT_SHIFT,
+  },
+} as const;
 
 // Config timezone กลางที่ใช้คำนวณกะงานและเวลา server
 const BANGKOK_TIME_ZONE = "Asia/Bangkok";
@@ -199,11 +214,50 @@ export function calculateShiftName(
 
   }
 
-  if (startMinutes >= 17 * 60) {
+  if (startMinutes >= 18 * 60) {
     return NIGHT_SHIFT;
   }
 
   return MORNING_SHIFT;
+}
+
+export function resolveShiftNoFromStartTime(shiftStartTime: string): 1 | 2 {
+  const startMinutes = parseTimeToMinutes(shiftStartTime);
+
+  if (startMinutes === null) {
+    throw new ApiError(
+      400,
+      "INVALID_SHIFT_TIME",
+      "Shift start time must use HH:mm format."
+    );
+  }
+
+  return startMinutes >= 18 * 60 ? 2 : 1;
+}
+
+export function resolveShiftPreset(shiftNo: number): {
+  shift_no: 1 | 2;
+  shift_start_time: string;
+  shift_end_time: string;
+  shift_name: string;
+} {
+  if (shiftNo !== 1 && shiftNo !== 2) {
+    throw new ApiError(
+      400,
+      "INVALID_SHIFT_NO",
+      "ShiftNo must be 1 or 2."
+    );
+  }
+
+  return SHIFT_PRESETS[shiftNo];
+}
+
+export function calculateShiftNameByNo(
+  shiftNo: number,
+  shiftStartTime: string,
+  shiftEndTime?: string
+): string {
+  return calculateShiftName(shiftStartTime, shiftEndTime);
 }
 
 // Function จัดรูป work schedule พร้อมชื่อกะจากเวลาเริ่มและจบงาน
@@ -216,7 +270,8 @@ export function formatScheduleWithShift(
 
   return {
     ...schedule,
-    shift_name: calculateShiftName(
+    shift_name: calculateShiftNameByNo(
+      schedule.shift_no,
       schedule.shift_start_time,
       schedule.shift_end_time
     ),

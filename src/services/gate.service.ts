@@ -16,6 +16,7 @@ import type {
   GateVehicleJobResult,
 } from "../types/gate.type";
 import type { GateVehicleJobCreateInput } from "../types/gate.type";
+import type { DbConnection } from "../types/common.type";
 import type { VehicleJobDetailResponse } from "../types/worker.type";
 // import Validation
 import { parseWithSchema } from "../validation/parser";
@@ -167,6 +168,20 @@ function buildGateTransactionRef(input: GateVehicleJobBody): string {
     ticketNo: input.TicketNo,
     marketCode: input.MarketCode,
     boothCode: input.BoothCode,
+  };
+  const hash = createHash("sha256")
+    .update(JSON.stringify(normalizeJson(idempotencyParts)))
+    .digest("hex")
+    .slice(0, 24);
+
+  return `GATE-${hash}`;
+}
+
+function buildLegacyGateTransactionRef(input: GateVehicleJobBody): string {
+  const idempotencyParts = {
+    ticketNo: input.TicketNo,
+    marketCode: input.MarketCode,
+    boothCode: input.BoothCode,
     productCode: input.ProductCode,
   };
   const hash = createHash("sha256")
@@ -211,6 +226,111 @@ function buildGateCreateInput(input: GateVehicleJobBody): GateVehicleJobCreateIn
 }
 
 // Function สร้าง replay response แบบย่อจาก snapshot เดิมที่อาจเคยเก็บ response เต็มไว้
+async function validateGateTicketAppendRules(
+  input: GateVehicleJobCreateInput,
+  connection?: DbConnection
+): Promise<void> {
+  const market = input.markets[0];
+  const ticket = market?.tickets[0];
+
+  if (!market || !ticket) {
+    return;
+  }
+
+  const appendState = await gateRepository.getGateTicketAppendState(
+    input.ticketNo,
+    ticket.boothCode,
+    connection
+  );
+
+  if (!appendState) {
+    return;
+  }
+
+  if (appendState.booth_count !== input.booth_count) {
+    throw new ApiError(
+      409,
+      "GATE_TICKET_BOOTH_COUNT_MISMATCH",
+      "TicketNo already exists with a different BoothCount.",
+      {
+        ticketNo: input.ticketNo,
+        existing_booth_count_limit: appendState.booth_count,
+        requested_booth_count: input.booth_count,
+      }
+    );
+  }
+
+  if (appendState.duplicate_booth) {
+    throw new ApiError(
+      409,
+      "GATE_TICKET_BOOTH_ALREADY_EXISTS",
+      "BoothCode already exists under this TicketNo.",
+      {
+        ticketNo: input.ticketNo,
+        boothCode: ticket.boothCode,
+        existing_marketCode: appendState.duplicate_booth.marketCode,
+        requested_marketCode: market.marketCode,
+      }
+    );
+  }
+
+  if (appendState.existing_booth_count >= appendState.booth_count) {
+    throw new ApiError(
+      409,
+      "GATE_TICKET_BOOTH_LIMIT_REACHED",
+      "TicketNo already has the maximum number of booths allowed by BoothCount.",
+      {
+        ticketNo: input.ticketNo,
+        booth_count_limit: appendState.booth_count,
+        existing_booth_count: appendState.existing_booth_count,
+        requested_boothCode: ticket.boothCode,
+      }
+    );
+  }
+}
+
+async function buildGateCreateInputWithVendorLineIds(
+  input: GateVehicleJobCreateInput,
+  connection?: DbConnection
+): Promise<GateVehicleJobCreateInput> {
+  const markets = await Promise.all(
+    input.markets.map(async (market) => ({
+      ...market,
+      tickets: await Promise.all(
+        market.tickets.map(async (ticket) => {
+          const vendorLineTargets = await gateRepository.findActiveVendorLineTargetsByStall(
+            market.marketCode,
+            ticket.boothCode,
+            connection
+          );
+
+          if (vendorLineTargets.length === 0) {
+            throw new ApiError(
+              409,
+              "BOOTH_VENDOR_LINE_NOT_CONFIGURED",
+              "Booth vendor LINE id is not configured in vendor master mapping.",
+              {
+                marketCode: market.marketCode,
+                boothCode: ticket.boothCode,
+              }
+            );
+          }
+
+          return {
+            ...ticket,
+            vendor_line_id: vendorLineTargets[0].line_user_id,
+          };
+        })
+      ),
+    }))
+  );
+
+  return {
+    ...input,
+    markets,
+  };
+}
+
 function buildGateReplayResponse(
   response: GateVehicleJobResponse,
   payloadSnapshot: unknown
@@ -338,14 +458,14 @@ async function buildGateVehicleJobResponse(
 export async function createVehicleJobFromGate(body: unknown): Promise<GateVehicleJobResponse> {
   const input = parseWithSchema<GateVehicleJobBody>(gateVehicleJobBodySchema, body);
   const gateInput = buildGateCreateInput(input);
-  const existingGateRequest = await gateRepository.findGateRequestReplayByRef(
-    gateInput.gate_transaction_ref
-  );
+  const existingGateRequest =
+    await gateRepository.findGateRequestReplayByRef(gateInput.gate_transaction_ref) ??
+    await gateRepository.findGateRequestReplayByRef(buildLegacyGateTransactionRef(input));
 
   if (existingGateRequest) {
     if (!arePayloadsEqual(existingGateRequest.payload_snapshot, input)) {
       console.warn("Gate request payload mismatch", {
-        gate_transaction_ref: gateInput.gate_transaction_ref,
+        gate_transaction_ref: existingGateRequest.gate_transaction_ref,
         ticketNo: gateInput.ticketNo,
       });
 
@@ -355,7 +475,7 @@ export async function createVehicleJobFromGate(body: unknown): Promise<GateVehic
         "gate_transaction_ref already exists with a different payload.",
         {
           duplicate_field: "gate_transaction_ref",
-          gate_transaction_ref: gateInput.gate_transaction_ref,
+          gate_transaction_ref: existingGateRequest.gate_transaction_ref,
         }
       );
     }
@@ -367,13 +487,13 @@ export async function createVehicleJobFromGate(body: unknown): Promise<GateVehic
         "Gate request already exists but its response snapshot is not ready.",
         {
           duplicate_field: "gate_transaction_ref",
-          gate_transaction_ref: gateInput.gate_transaction_ref,
+          gate_transaction_ref: existingGateRequest.gate_transaction_ref,
         }
       );
     }
 
     console.info("Gate request replayed", {
-      gate_transaction_ref: gateInput.gate_transaction_ref,
+      gate_transaction_ref: existingGateRequest.gate_transaction_ref,
       ticketNo: gateInput.ticketNo,
     });
 
@@ -381,13 +501,20 @@ export async function createVehicleJobFromGate(body: unknown): Promise<GateVehic
   }
 
   const response = await withTransaction(async (transaction) => {
-    const vehicleJob = await gateRepository.createVehicleJobFromGate(
+    await validateGateTicketAppendRules(gateInput, transaction);
+    const gateInputWithVendorLineIds = await buildGateCreateInputWithVendorLineIds(
       gateInput,
+      transaction
+    );
+    const vehicleJob = await gateRepository.createVehicleJobFromGate(
+      gateInputWithVendorLineIds,
       input as unknown as Prisma.InputJsonValue,
       transaction
     );
-    if (gateInput.dispatch_now === true) {
-      await dispatchReadyWorkers(transaction);
+    if (gateInputWithVendorLineIds.dispatch_now === true) {
+      await dispatchReadyWorkers(transaction, {
+        vehicle_job_ids: [vehicleJob.id],
+      });
     }
     const response = await buildGateVehicleJobResponse(
       vehicleJob.id,

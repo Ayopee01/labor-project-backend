@@ -82,7 +82,7 @@ export function parseWorkScheduleInput(
 export function parseWorkScheduleInputs(
   input: unknown
 ): Array<z.infer<typeof workScheduleInputSchema>> {
-  const result = z.array(workScheduleInputSchema).min(1).max(2).safeParse(input);
+  const result = z.array(workScheduleInputSchema).min(1).max(1).safeParse(input);
 
   if (!result.success) {
     const hasShiftTimeError = result.error.issues.some((issue) =>

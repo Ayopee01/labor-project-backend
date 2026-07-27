@@ -7,19 +7,23 @@
       description: >
         Use HTTP Basic Auth where username is `ClientId` and password is
         `ClientSecret`. Gate sends one flat PascalCase payload per
-        ticket/booth/product using TicketNo, TicketCreatedAt, BoothCount,
+        ticket/booth using TicketNo, TicketCreatedAt, BoothCount,
         MarketCode/MarketName, BoothCode/BoothName, VehicleTypeName, and
         ProductCode/ProductName/PackageCode/PackageName. Backend derives the
-        idempotency key from TicketNo + MarketCode + BoothCode + ProductCode,
+        idempotency key from TicketNo + MarketCode + BoothCode,
+        maps MarketCode + BoothCode to owner/member LINE targets from the
+        internal master_owner_stalls and master_member_stalls tables,
         returns the saved Ticket/Market/Booth/Product objects, returns
         Qr.WorkerQrToken as the same value as TicketNo for worker check-in, and
         returns Ticket.WorkersRequired as 1 for the current Gate flow;
         worker-count calculation will be added later. Ticket.Status is derived
         from Dispatch only: true returns unload_now and false returns
         waiting_unload. Success/replay responses do not include Message or
-        GateTransactionRef. Sending the same TicketNo with a new
-        market/booth/product transaction appends or updates that item under the
-        same vehicle job. Set `Dispatch` to `true` when the vehicle is already
+        GateTransactionRef. BoothCount is the maximum number of distinct
+        BoothCode values allowed under the same TicketNo. Sending the same
+        TicketNo with a new BoothCode appends that booth until BoothCount is
+        reached. MarketCode may repeat, but BoothCode cannot repeat under the
+        same TicketNo. Set `Dispatch` to `true` when the vehicle is already
         ready to unload.
       operationId: createGateTicket
       security:
@@ -56,7 +60,7 @@
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Duplicate Gate ticket idempotency key payload mismatch.
+          description: Duplicate Gate ticket idempotency key payload mismatch, BoothCount limit/duplicate booth violation, or missing active MarketCode + BoothCode LINE target mapping.
           content:
             application/json:
               schema:

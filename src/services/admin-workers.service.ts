@@ -3,18 +3,18 @@ import { enqueueWorker, getWorkerBreakCount, getWorkerPresence, getWorkerPresenc
 import { accountRepository, profileRepository, sessionRepository, workScheduleRepository } from "../repositories/admin-workers.repository";
 import * as workerApplicationRepository from "../repositories/worker-application.repository";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
-import { sendWorkerSocketEvent } from "../websockets/worker.socket";
+import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import { getRuntimeSettings } from "./admin-settings.service";
 import { publishNotification } from "./notifications.service";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
 import type { AccountDto, AdminWorkerBoardStatus, AdminWorkerStatusItem, PaginationFilters, PaginationMeta, ProfileDto, ProfileUpdateInput, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import type { VehicleJobAssignmentDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
-import { parseWithSchema, parseWorkScheduleInput, parseWorkScheduleInputs } from "../validation/parser";
+import { parseWithSchema } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
-import { buildWorkScheduleShiftInstanceKey, findActiveWorkSchedule, formatScheduleWithShift, formatSchedulesWithShift, isTimeInWorkSchedule } from "../utils/shift";
+import { buildWorkScheduleShiftInstanceKey, findActiveWorkSchedule, formatScheduleWithShift, isTimeInWorkSchedule, resolveShiftNoFromStartTime, resolveShiftPreset } from "../utils/shift";
 import { buildDeadline, formatBangkokDate } from "../utils/time";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 import { buildWorkerCode } from "../utils/worker-code";
@@ -91,23 +91,10 @@ function formatUserListSchedule(
 
   return {
     shift_no: schedule.shift_no,
-    work_date: schedule.work_date,
     shift_start_time: schedule.shift_start_time,
     shift_end_time: schedule.shift_end_time,
     shift_name: schedule.shift_name,
   };
-}
-
-function formatUserListSchedules(
-  schedules: WorkScheduleDto[]
-): UserListSchedule[] {
-  return formatSchedulesWithShift(schedules).map((schedule) => ({
-    shift_no: schedule.shift_no,
-    work_date: schedule.work_date,
-    shift_start_time: schedule.shift_start_time,
-    shift_end_time: schedule.shift_end_time,
-    shift_name: schedule.shift_name,
-  }));
 }
 
 // Function จัดรูปแบบข้อมูล user สำหรับหน้า list
@@ -126,8 +113,8 @@ async function formatUserListItem(
     worker_code: account.username,
     shirt_number: profile?.shirt_number ?? null,
     full_name: account.full_name,
+    work_start_date: profile?.work_start_date ?? null,
     work_schedule: formatUserListSchedule(formatScheduleWithShift(currentWorkSchedule)),
-    work_schedules: formatUserListSchedules(currentWorkSchedules),
     status: account.status,
     updated_at: account.updated_at,
   };
@@ -157,11 +144,11 @@ async function formatUserDetail(
       nationality: profile?.nationality ?? null,
       shirt_number: profile?.shirt_number ?? null,
       shirt_type: profile?.shirt_type ?? null,
-      work_date: schedule?.work_date ?? null,
+      work_start_date: profile?.work_start_date ?? null,
+      shift_no: schedule?.shift_no ?? null,
       shift_start_time: schedule?.shift_start_time ?? null,
       shift_end_time: schedule?.shift_end_time ?? null,
       shift_name: schedule?.shift_name ?? null,
-      work_schedules: formatUserListSchedules(currentWorkSchedules),
     },
   };
 }
@@ -253,9 +240,8 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
     shirt_type: shirtType,
     shirt_number: shirtNumber,
     work_start_date: workStartDate,
+    shift_no: shiftNo,
     status,
-    work_schedule: workScheduleInput,
-    work_schedules: workSchedulesInput,
   } = parseWithSchema(createUserBodySchema, body);
   const workerCode = buildWorkerCode({
     nationality,
@@ -263,12 +249,14 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
     shirt_number: shirtNumber,
   });
   const username = requestedUsername ?? workerCode;
-  const initialWorkStartDate = workStartDate;
-  const initialScheduleInputs = (workSchedulesInput ?? (workScheduleInput ? [workScheduleInput] : []))
-    .map((scheduleInput) => ({
-      ...scheduleInput,
-      work_date: scheduleInput.work_date ?? initialWorkStartDate,
-    }));
+  const initialWorkStartDate = workStartDate ?? formatBangkokDate();
+  const shiftPreset = resolveShiftPreset(shiftNo);
+  const initialScheduleInput = {
+    shift_no: shiftPreset.shift_no,
+    work_date: initialWorkStartDate,
+    shift_start_time: shiftPreset.shift_start_time,
+    shift_end_time: shiftPreset.shift_end_time,
+  };
   const profileInput = {
     image_url: imageUrl ?? img ?? null,
     nationality,
@@ -305,19 +293,16 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
       transaction
     );
 
-    for (const [index, initialScheduleInput] of initialScheduleInputs.entries()) {
-      await workScheduleRepository.create(
-        {
-          account_id: account.id,
-          shift_no: index + 1,
-          ...initialScheduleInput,
-          is_current: true,
-          created_by: actorId,
-          updated_by: actorId,
-        },
-        transaction
-      );
-    }
+    await workScheduleRepository.create(
+      {
+        account_id: account.id,
+        ...initialScheduleInput,
+        is_current: true,
+        created_by: actorId,
+        updated_by: actorId,
+      },
+      transaction
+    );
 
     return {
       message: "Worker created successfully.",
@@ -376,32 +361,13 @@ export async function updateUser(
     shirt_type: shirtType,
     shirt_number: shirtNumber,
     work_start_date: workStartDate,
-    work_date: workDate,
     shift_start_time: shiftStartTime,
     shift_end_time: shiftEndTime,
     profile: profileInput,
     status,
-    work_schedule: workScheduleBody,
-    work_schedules: workSchedulesBody,
   } = parseWithSchema(updateUserBodySchema, body);
-  const hasFlatScheduleInput =
-    workDate !== undefined ||
-    shiftStartTime !== undefined ||
-    shiftEndTime !== undefined;
-  const scheduleInputs =
-    workSchedulesBody !== undefined
-      ? parseWorkScheduleInputs(workSchedulesBody)
-      : workScheduleBody !== undefined
-        ? [parseWorkScheduleInput(workScheduleBody)]
-        : hasFlatScheduleInput
-          ? [
-              parseWorkScheduleInput({
-                work_date: workDate,
-                shift_start_time: shiftStartTime,
-                shift_end_time: shiftEndTime,
-              }),
-            ]
-          : undefined;
+  const hasScheduleTimeInput =
+    shiftStartTime !== undefined || shiftEndTime !== undefined;
   const actorId = getActorId(auth);
 
   return withTransaction(async (transaction) => {
@@ -528,7 +494,15 @@ export async function updateUser(
       }
     }
 
-    if (scheduleInputs !== undefined) {
+    if (hasScheduleTimeInput) {
+      if (shiftStartTime === undefined || shiftEndTime === undefined) {
+        throw new ApiError(
+          400,
+          "SHIFT_TIME_PAIR_REQUIRED",
+          "ShiftStartTime and ShiftEndTime must be sent together."
+        );
+      }
+
       const profileForSchedule = hasProfileInput
         ? await profileRepository.findByAccountId(account.id, transaction)
         : currentProfile;
@@ -540,23 +514,23 @@ export async function updateUser(
         currentSchedule?.work_date ??
         profileForSchedule?.work_start_date ??
         formatBangkokDate();
+      const resolvedShiftNo = resolveShiftNoFromStartTime(shiftStartTime);
 
       await workScheduleRepository.deleteCurrentByAccountId(account.id, transaction);
 
-      for (const [index, scheduleInput] of scheduleInputs.entries()) {
-        await workScheduleRepository.create(
-          {
-            account_id: account.id,
-            shift_no: index + 1,
-            ...scheduleInput,
-            work_date: scheduleInput.work_date ?? fallbackWorkDate,
-            is_current: true,
-            created_by: actorId,
-            updated_by: actorId,
-          },
-          transaction
-        );
-      }
+      await workScheduleRepository.create(
+        {
+          account_id: account.id,
+          shift_no: resolvedShiftNo,
+          work_date: fallbackWorkDate,
+          shift_start_time: shiftStartTime,
+          shift_end_time: shiftEndTime,
+          is_current: true,
+          created_by: actorId,
+          updated_by: actorId,
+        },
+        transaction
+      );
     }
 
     return formatUserDetail(updatedAccount, transaction);
@@ -588,29 +562,6 @@ export async function resetPassword(
       message: "Password reset successfully.",
     };
   });
-}
-
-// Function ดึงรายการตารางงานของ user พร้อม pagination
-export async function listWorkSchedules(
-  id: number | string,
-  query: Record<string, unknown> = {},
-  _auth?: AccessTokenPayload
-) {
-  const account = await requireUserAccount(id);
-  const { page, limit } = parseWithSchema(paginationQuerySchema, query);
-  const filters: PaginationFilters = {
-    offset: (page - 1) * limit,
-    limit,
-  };
-  const [schedules, total] = await Promise.all([
-    workScheduleRepository.listByAccountId(account.id, filters),
-    workScheduleRepository.countByAccountId(account.id),
-  ]);
-
-  return {
-    data: schedules.map(formatScheduleWithShift),
-    pagination: buildPaginationMeta(page, limit, total),
-  };
 }
 
 // Function สร้างเวลา deadline จากเวลาปัจจุบัน
@@ -898,7 +849,12 @@ export async function listAdminWorkerStatuses(): Promise<{
 export async function forceAdminWorkerStatus(
   idParam: unknown,
   body: unknown
-): Promise<AdminWorkerStatusItem & { message: string }> {
+): Promise<{
+  message: string;
+  full_name: string;
+  worker_code: string | null;
+  status: AdminWorkerBoardStatus;
+}> {
   const input = parseWithSchema(adminForceWorkerStatusBodySchema, body);
   const settings = await getRuntimeSettings();
   const account = await requireUserAccount(
@@ -907,6 +863,14 @@ export async function forceAdminWorkerStatus(
 
   if (account.status !== "active") {
     throw new ApiError(403, "WORKER_NOT_ACTIVE", "Worker account is not active.");
+  }
+
+  if (!isWorkerSocketConnected(account.id)) {
+    throw new ApiError(
+      409,
+      "WORKER_NOT_ONLINE",
+      "Worker WebSocket is not connected. Admin can force status only for online workers."
+    );
   }
 
   const [queueEntry, currentAssignment, currentSchedule] = await Promise.all([
@@ -1014,6 +978,8 @@ export async function forceAdminWorkerStatus(
 
   return {
     message: "Worker status forced successfully.",
-    ...latest,
+    full_name: latest.full_name,
+    worker_code: latest.worker_code,
+    status: latest.status,
   };
 }

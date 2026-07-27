@@ -920,6 +920,24 @@ const workerApplicationRepositoryMock = {
       })),
   findGateTicketForCompletion: async (ticketId: number) =>
     state.gateTickets.find((ticket) => ticket.id === ticketId) ?? null,
+  listActiveVendorLineTargetsForTicket: async (ticketId: number) => {
+    const ticket = state.gateTickets.find((item) => item.id === ticketId);
+
+    if (!ticket?.vendor_line_id) {
+      return [];
+    }
+
+    return [
+      {
+        line_user_id: ticket.vendor_line_id,
+        target_type: "owner",
+      },
+      {
+        line_user_id: `${ticket.vendor_line_id}-member`,
+        target_type: "member",
+      },
+    ];
+  },
   findGateTicketForCompletionByReference: async (reference: string) =>
     state.gateTickets.find(
       (ticket) => ticket.boothCode === reference
@@ -1228,6 +1246,41 @@ const gateRepositoryMock = {
   },
   findVehicleJobByRef: async (ticketNo: string) =>
     state.vehicleJobs.find((job) => job.ticketNo === ticketNo) ?? null,
+  getGateTicketAppendState: async (ticketNo: string, boothCode: string) => {
+    const vehicleJob = state.vehicleJobs.find((job) => job.ticketNo === ticketNo);
+
+    if (!vehicleJob) {
+      return null;
+    }
+
+    const tickets = state.gateTickets.filter(
+      (ticket) => ticket.vehicle_job_id === vehicleJob.id
+    );
+    const boothCodes = new Set(tickets.map((ticket) => ticket.boothCode));
+    const duplicateBooth = tickets.find((ticket) => ticket.boothCode === boothCode);
+
+    return {
+      vehicle_job_id: vehicleJob.id,
+      booth_count: vehicleJob.booth_count,
+      existing_booth_count: boothCodes.size,
+      duplicate_booth: duplicateBooth
+        ? {
+            boothCode: duplicateBooth.boothCode,
+            marketCode: duplicateBooth.marketCode ?? "",
+          }
+        : null,
+    };
+  },
+  findActiveVendorLineTargetsByStall: async (_marketCode: string, boothCode: string) => [
+    {
+      line_user_id: `line-vendor-${boothCode.toLowerCase()}`,
+      target_type: "owner",
+    },
+    {
+      line_user_id: `line-member-${boothCode.toLowerCase()}`,
+      target_type: "member",
+    },
+  ],
   createVehicleJobFromGate: async (input: {
     gate_transaction_ref: string;
     ticketNo: string;
@@ -1500,6 +1553,62 @@ const authRepositoryMock = {
 };
 
 // Mock repository เธเธฑเนเธ admin settings เธชเธณเธซเธฃเธฑเธเธชเธฃเนเธฒเธ admin เนเธฅเธฐเธเธฑเธ”เธเธฒเธฃ permission เธเนเธฒเธ service เธเธฃเธดเธ
+function findWorkerAccountByIdentifier(identifier: string): AccountRecord | null {
+  const directAccount = state.authAccountsByUsername.get(identifier);
+
+  if (directAccount?.role === "worker") {
+    return directAccount;
+  }
+
+  const profile = (
+    Array.from(state.profiles.values()) as Array<{
+      account_id: number;
+      worker_code?: string;
+    }>
+  ).find((item) => item.worker_code === identifier);
+
+  if (!profile) {
+    return null;
+  }
+
+  const account = state.authAccountsById.get(profile.account_id);
+
+  return account?.role === "worker" ? account : null;
+}
+
+const adminWorkersRepositoryMock = {
+  accountRepository: {
+    findUserById: async (accountId: number | string) => {
+      const account = state.authAccountsById.get(Number(accountId));
+
+      return account?.role === "worker" ? account : null;
+    },
+    findUserByIdentifier: async (identifier: string) =>
+      findWorkerAccountByIdentifier(identifier),
+    listAllUsers: async () =>
+      Array.from(state.authAccountsById.values())
+        .filter((account) => account.role === "worker")
+        .sort((left, right) => right.id - left.id),
+  },
+  profileRepository: {
+    findByAccountId: async (accountId: number) =>
+      state.profiles.get(accountId) ?? null,
+    findByAccountIds: async (accountIds: number[]) =>
+      accountIds
+        .map((accountId) => state.profiles.get(accountId) ?? null)
+        .filter((profile): profile is NonNullable<typeof profile> => profile !== null),
+  },
+  workScheduleRepository: {
+    findCurrentByAccountId: async (accountId: number) =>
+      state.authSchedules.get(accountId) ?? null,
+    findById: async (scheduleId: number) =>
+      Array.from(state.authSchedules.values()).find(
+        (schedule) => (schedule as { id?: number }).id === scheduleId
+      ) ?? null,
+  },
+  sessionRepository: authRepositoryMock.sessionRepository,
+};
+
 const adminSettingsRepositoryMock = {
   accountRepository: {
     findAdminById: async (accountId: number) => {
@@ -1718,6 +1827,10 @@ function patchModuleLoader(): void {
 
     if (request === "../repositories/auth.repository") {
       return authRepositoryMock;
+    }
+
+    if (request === "../repositories/admin-workers.repository") {
+      return adminWorkersRepositoryMock;
     }
 
     if (request === "../repositories/admin-settings.repository") {

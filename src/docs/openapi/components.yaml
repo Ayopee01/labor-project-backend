@@ -350,12 +350,14 @@
           example: 2026-07-01
         shift_start_time:
           type: string
+          description: Time only in HH:mm. This is a daily recurring shift time.
           pattern: "^\\d{2}:\\d{2}$"
-          example: "06:00"
+          example: "08:00"
         shift_end_time:
           type: string
+          description: Time only in HH:mm. This is a daily recurring shift time.
           pattern: "^\\d{2}:\\d{2}$"
-          example: "18:00"
+          example: "17:00"
         shift_name:
           type: string
           example: day
@@ -583,6 +585,13 @@
         - shift_start_time
         - shift_end_time
       properties:
+        shift_no:
+          type: integer
+          enum:
+            - 1
+            - 2
+          description: Optional. 1 = morning shift, 2 = evening shift.
+          example: 1
         work_date:
           type: string
           format: date
@@ -604,7 +613,7 @@
         - nationality
         - shirt_type
         - shirt_number
-        - work_start_date
+        - shift_no
       properties:
         username:
           type: string
@@ -641,8 +650,15 @@
         work_start_date:
           type: string
           format: date
-          description: First working date for the worker profile.
+          description: Optional first working date for the worker profile. If omitted, backend uses the current Bangkok date.
           example: 2026-07-03
+        shift_no:
+          type: integer
+          enum:
+            - 1
+            - 2
+          description: Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00.
+          example: 1
         status:
           type: string
           enum:
@@ -650,16 +666,6 @@
             - inactive
           default: active
           example: active
-        work_schedule:
-          description: Legacy single-shift input. Send either work_schedule or work_schedules.
-          $ref: "#/components/schemas/WorkScheduleInput"
-        work_schedules:
-          type: array
-          description: Preferred input for current worker shifts. Send 1-2 schedules. The backend assigns shift_no by array order.
-          minItems: 1
-          maxItems: 2
-          items:
-            $ref: "#/components/schemas/WorkScheduleInput"
     CreateUserMultipartRequest:
       type: object
       required:
@@ -668,7 +674,7 @@
         - nationality
         - shirt_type
         - shirt_number
-        - work_start_date
+        - shift_no
       properties:
         image:
           type: string
@@ -705,8 +711,15 @@
         work_start_date:
           type: string
           format: date
-          description: First working date for the worker profile.
+          description: Optional first working date for the worker profile. If omitted, backend uses the current Bangkok date.
           example: 2026-07-03
+        shift_no:
+          type: integer
+          enum:
+            - 1
+            - 2
+          description: Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00.
+          example: 1
         status:
           type: string
           enum:
@@ -714,27 +727,6 @@
             - inactive
           default: active
           example: active
-        work_date:
-          type: string
-          format: date
-          description: Optional legacy field. Shift availability is checked by shift_start_time and shift_end_time only.
-          example: 2026-07-03
-        shift_start_time:
-          type: string
-          pattern: "^\\d{2}:\\d{2}$"
-          example: "08:00"
-        shift_end_time:
-          type: string
-          pattern: "^\\d{2}:\\d{2}$"
-          example: "17:00"
-        work_schedule:
-          type: string
-          description: Legacy single-shift input. Send a JSON string with shift_start_time and shift_end_time. work_date is optional and kept only for backward compatibility.
-          example: '{"shift_start_time":"08:00","shift_end_time":"17:00"}'
-        work_schedules:
-          type: string
-          description: Preferred input for current worker shifts. Send a JSON string array with 1-2 schedules. The backend assigns shift_no by array order.
-          example: '[{"shift_start_time":"08:00","shift_end_time":"12:00"},{"shift_start_time":"13:00","shift_end_time":"17:00"}]'
     UpdateUserRequest:
       type: object
       properties:
@@ -783,7 +775,7 @@
         work_start_date:
           type: string
           format: date
-          description: First working date for the worker profile.
+          description: Optional first working date for the worker profile.
           example: 2026-07-03
         work_date:
           type: string
@@ -792,12 +784,14 @@
           example: 2026-07-03
         shift_start_time:
           type: string
+          description: Optional custom time for this worker. Must be sent together with shift_end_time. Time only in HH:mm. Backend derives ShiftNo and ShiftName from this start time.
           pattern: "^\\d{2}:\\d{2}$"
-          example: "08:00"
+          example: "18:00"
         shift_end_time:
           type: string
+          description: Optional custom time for this worker. Must be sent together with shift_start_time. Time only in HH:mm.
           pattern: "^\\d{2}:\\d{2}$"
-          example: "17:00"
+          example: "08:00"
         profile:
           description: Backward compatible nested profile update.
           $ref: "#/components/schemas/UpdateWorkerProfileInput"
@@ -814,9 +808,9 @@
             - $ref: "#/components/schemas/WorkScheduleInput"
         work_schedules:
           type: array
-          description: Preferred input for current worker shifts. Replaces current schedule rows with 1-2 schedules. The backend assigns shift_no by array order.
+          description: Legacy array input. Replaces current schedule rows with one daily shift.
           minItems: 1
-          maxItems: 2
+          maxItems: 1
           items:
             $ref: "#/components/schemas/WorkScheduleInput"
     ResetPasswordRequest:
@@ -842,14 +836,16 @@
         full_name:
           type: string
           example: Worker Name
+        work_start_date:
+          type: string
+          nullable: true
+          format: date
+          description: Optional first working date for the worker profile.
+          example: 2026-07-03
         work_schedule:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/UserListSchedule"
-        work_schedules:
-          type: array
-          items:
-            $ref: "#/components/schemas/UserListSchedule"
         status:
           type: string
           enum:
@@ -869,18 +865,15 @@
             - 1
             - 2
           example: 1
-        work_date:
-          type: string
-          format: date
-          description: Legacy schedule date. Shift availability is checked by shift_start_time and shift_end_time only.
-          example: 2026-07-03
         shift_start_time:
           type: string
           pattern: "^\\d{2}:\\d{2}$"
+          description: Time only in HH:mm. This is a daily recurring shift time.
           example: "08:00"
         shift_end_time:
           type: string
           pattern: "^\\d{2}:\\d{2}$"
+          description: Time only in HH:mm. This is a daily recurring shift time.
           example: "17:00"
         shift_name:
           type: string
@@ -961,44 +954,33 @@
                 - Blue
                 - Green
               example: Navy
-            work_date:
+            work_start_date:
               type: string
               nullable: true
               format: date
-              description: Legacy schedule date. Shift availability is checked by shift_start_time and shift_end_time only.
+              description: Optional first working date for the worker profile.
               example: 2026-07-03
+            shift_no:
+              type: integer
+              nullable: true
+              enum:
+                - 1
+                - 2
+              example: 1
             shift_start_time:
               type: string
               nullable: true
+              description: Time only in HH:mm. This is a daily recurring shift time.
               example: "08:00"
             shift_end_time:
               type: string
               nullable: true
+              description: Time only in HH:mm. This is a daily recurring shift time.
               example: "17:00"
             shift_name:
               type: string
               nullable: true
               example: Morning shift
-            work_schedules:
-              type: array
-              items:
-                $ref: "#/components/schemas/UserListSchedule"
-    WorkScheduleResponse:
-      type: object
-      properties:
-        data:
-          nullable: true
-          allOf:
-            - $ref: "#/components/schemas/WorkSchedule"
-    WorkScheduleListResponse:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/WorkSchedule"
-        pagination:
-          $ref: "#/components/schemas/PaginationMeta"
     RuntimeSettings:
       type: object
       properties:
@@ -1427,7 +1409,7 @@
           type: integer
           minimum: 1
           example: 2
-          description: Total booth count under this TicketNo.
+          description: Maximum number of distinct BoothCode values allowed under this TicketNo. The same TicketNo cannot exceed this count.
         MarketCode:
           type: string
           example: "1123"
@@ -1438,7 +1420,7 @@
         BoothCode:
           type: string
           example: B-018
-          description: Booth code from Gate.
+          description: Booth code from Gate. Backend uses MarketCode + BoothCode to map the booth to owner/member LINE targets from internal master data.
         BoothName:
           type: string
           example: Orange Booth
@@ -2815,9 +2797,24 @@
           type: string
           example: Worker contacted admin for status correction.
     AdminForceWorkerStatusResponse:
-      allOf:
-        - $ref: "#/components/schemas/AdminWorkerStatusResponse"
-        - type: object
-          properties:
-            message:
-              type: string
+      type: object
+      properties:
+        Message:
+          type: string
+          example: Worker status forced successfully.
+        FullName:
+          type: string
+          example: MANY MANY
+        WorkerCode:
+          type: string
+          nullable: true
+          example: MN000115
+        Status:
+          type: string
+          enum:
+            - open_app
+            - ready
+            - assigned
+            - working
+            - break
+          example: open_app

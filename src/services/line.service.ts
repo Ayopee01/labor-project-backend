@@ -254,10 +254,19 @@ export async function handleLineWebhook(
         tokenPayload.ticket_id,
         transaction
       );
+      const vendorLineTargets = ticket
+        ? await workerApplicationRepository.listActiveVendorLineTargetsForTicket(
+            ticket.id,
+            transaction
+          )
+        : [];
+      const isVendorLineTarget = vendorLineTargets.some(
+        (target) => target.line_user_id === event.source?.userId
+      );
 
       if (
         !ticket ||
-        ticket.vendor_line_id !== event.source?.userId ||
+        !isVendorLineTarget ||
         ticket.boothCode !== tokenPayload.boothCode
       ) {
         return null;

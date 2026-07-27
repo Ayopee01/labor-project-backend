@@ -15,24 +15,6 @@ const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 
-// Route ดึงตารางงานปัจจุบันของ worker สำหรับบริบทงาน/คิว
-router.get(
-  "/jobs/workers/:id/work-schedules",
-  permissionMiddleware(["jobs:read"]),
-  async (req, res, next) => {
-    try {
-      const result = await adminWorkersService.listWorkSchedules(
-        String(req.params.id),
-        req.query,
-        req.auth
-      );
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
 // Route ดึงสถานะ worker ทั้งหมดสำหรับหน้า monitor/dispatch
 router.get(
   "/jobs/workers/status",

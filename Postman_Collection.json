@@ -75,7 +75,7 @@
     },
     {
       "key": "gateClientSecret",
-      "value": "gate_live_replace_me",
+      "value": "gate_live_RnqzqVz1OCeLiEMMQRrddGDjaWxfDt2a7779bKJomTc",
       "type": "string",
       "description": "Gate ClientSecret shown once by Admin Settings create/rotate Gate client APIs."
     },
@@ -532,13 +532,14 @@
                 {
                   "key": "WorkStartDate",
                   "value": "2026-07-03",
-                  "type": "text"
+                  "type": "text",
+                  "description": "Optional. First working date. If omitted, backend uses the current Bangkok date."
                 },
                 {
-                  "key": "WorkSchedules",
-                  "value": "[{\"ShiftStartTime\":\"08:00\",\"ShiftEndTime\":\"12:00\"},{\"ShiftStartTime\":\"13:00\",\"ShiftEndTime\":\"17:00\"}]",
+                  "key": "ShiftNo",
+                  "value": "1",
                   "type": "text",
-                  "description": "JSON string array. Send 1-2 current shifts for the worker. Backend assigns ShiftNo by array order."
+                  "description": "Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00."
                 },
                 {
                   "key": "Status",
@@ -561,7 +562,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: FullName, phone, nationality, ShirtType, ShirtNumber, WorkStartDate, WorkSchedules, status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. WorkSchedules is a JSON string array with 1-2 current shifts; backend assigns ShiftNo by array order. nationality is stored directly in worker_profiles. WorkStartDate is the first working date. Legacy ShiftStartTime/ShiftEndTime or WorkSchedule are still supported. Uploaded image is stored under /uploads/workers and saved as profile.ImageUrl. JSON body with ImageUrl/img is still supported when no file upload is needed."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: FullName, Phone, Nationality, ShirtType, ShirtNumber, ShiftNo, optional WorkStartDate, Status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. ShiftNo 1 uses preset 08:00-18:00 and ShiftNo 2 uses preset 18:00-08:00. WorkStartDate is optional; if omitted, backend uses the current Bangkok date. Uploaded image is stored under /uploads/workers and saved as profile.ImageUrl. JSON body with ImageUrl/img is still supported when no file upload is needed."
           },
           "response": []
         },
@@ -610,7 +611,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: WorkerCode, ShirtNumber, FullName, WorkSchedule, WorkSchedules, status, UpdatedAt. Shift availability uses only ShiftStartTime and ShiftEndTime."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: WorkerCode, ShirtNumber, FullName, WorkStartDate, WorkSchedule, Status, UpdatedAt. Shift availability uses only ShiftStartTime and ShiftEndTime; WorkSchedule does not return WorkDate."
           },
           "response": []
         },
@@ -641,7 +642,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{userId}} must be WorkerCode or username, for example MN000012. Response is trimmed for worker edit UI: ImageUrl, WorkerCode, FullName, status, and details. details includes phone, position, nationality, ShirtNumber, ShirtType, and all current WorkSchedules."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{userId}} must be WorkerCode or username, for example MN000012. Response is trimmed for worker edit UI: ImageUrl, WorkerCode, FullName, Status, and Details. Details includes Phone, Position, Nationality, ShirtNumber, ShirtType, WorkStartDate, ShiftNo, ShiftStartTime, ShiftEndTime, and ShiftName."
           },
           "response": []
         },
@@ -665,7 +666,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"ImageUrl\": \"https://example.com/uploads/workers/mn000012.jpg\",\n  \"FullName\": \"Worker One Updated\",\n  \"Phone\": \"0811111111\",\n  \"Nationality\": \"Myanmar\",\n  \"Status\": \"active\",\n  \"Position\": \"Worker\",\n  \"ShirtNumber\": \"12\",\n  \"ShirtType\": \"Navy\",\n  \"WorkStartDate\": \"2026-07-03\",\n  \"WorkSchedules\": [\n    {\n      \"ShiftStartTime\": \"08:00\",\n      \"ShiftEndTime\": \"12:00\"\n    },\n    {\n      \"ShiftStartTime\": \"13:00\",\n      \"ShiftEndTime\": \"17:00\"\n    }\n  ]\n}",
+              "raw": "{\n  \"ImageUrl\": \"https://example.com/uploads/workers/mn000012.jpg\",\n  \"FullName\": \"Worker One Updated\",\n  \"Phone\": \"0811111111\",\n  \"Nationality\": \"Myanmar\",\n  \"Status\": \"active\",\n  \"Position\": \"Worker\",\n  \"ShirtNumber\": \"12\",\n  \"ShirtType\": \"Navy\",\n  \"WorkStartDate\": \"2026-07-03\",\n  \"ShiftStartTime\": \"08:00\",\n  \"ShiftEndTime\": \"19:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -687,7 +688,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: ImageUrl/img, WorkerCode, FullName, phone, nationality, status, position, ShirtNumber, ShirtType, WorkStartDate, WorkSchedules. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. WorkSchedules replaces current schedule rows, accepts 1-2 shifts, and backend assigns ShiftNo by array order. work_date, ShiftStartTime/ShiftEndTime, nested profile, and WorkSchedule are still supported for backward compatibility.\nNotes: Admin only. {{userId}} must be WorkerCode or username. If nationality, ShirtType, or ShirtNumber is sent without WorkerCode, backend regenerates WorkerCode/username from nationality + ShirtType + ShirtNumber, using existing profile values for fields omitted from the request. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: ImageUrl/img, WorkerCode, FullName, Phone, Nationality, Status, Position, ShirtNumber, ShirtType, optional WorkStartDate, ShiftStartTime, ShiftEndTime. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. ShiftNo cannot be updated in this body. Admin edits only ShiftStartTime and ShiftEndTime; backend derives ShiftNo and ShiftName from ShiftStartTime. ShiftStartTime and ShiftEndTime must be time only in HH:mm and must be sent together.\nNotes: Admin only. {{userId}} must be WorkerCode or username. If nationality, ShirtType, or ShirtNumber is sent without WorkerCode, backend regenerates WorkerCode/username from nationality + ShirtType + ShirtNumber, using existing profile values for fields omitted from the request. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
           },
           "response": []
         },
@@ -743,49 +744,6 @@
     {
       "name": "Admin Jobs",
       "item": [
-        {
-          "name": "GET /api/admin/jobs/workers/:id/work-schedules",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text",
-                "description": "Required for protected routes. Format: Bearer <AccessToken>."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/jobs/workers/{{userId}}/work-schedules?page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "jobs",
-                "workers",
-                "{{userId}}",
-                "work-schedules"
-              ],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "20"
-                }
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/jobs/workers/{{userId}}/work-schedules?page=1&limit=20\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit\nBody: None\nNotes: Admin Jobs. {{userId}} must be WorkerCode or username. Returns the current worker work schedule for job operations."
-          },
-          "response": []
-        },
         {
           "name": "GET /api/admin/jobs/workers/status",
           "request": {
@@ -860,7 +818,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/workers/{{userId}}/status/force\nAuth: Admin access token\nBody: status open_app|ready|break, optional reason\nNotes: Admin Jobs. {{userId}} must be WorkerCode or username. open_app removes worker from dispatch queue and shows the worker as open_app, ready puts worker into Redis queue, break starts a configured break, default 15 minutes, and consumes a break count."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/workers/{{userId}}/status/force\nAuth: Admin access token\nBody: status open_app|ready|break, optional reason\nResponse: Message, FullName, WorkerCode, Status only.\nNotes: Admin Jobs. {{userId}} must be WorkerCode or username and must have an active Worker WebSocket connection. If the Worker is offline, response is 409 WORKER_NOT_ONLINE. open_app means the Worker is online/opened the app but not in ready queue; it removes the Worker from dispatch queue. ready puts the online Worker into Redis queue. break starts a configured break, default 15 minutes, and consumes a break count. Offline workers are not a board status and should not be shown by GET /api/admin/jobs/workers/status."
           },
           "response": []
         },
@@ -1696,7 +1654,7 @@
                 }
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create it with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: Gate payload, 1 request per ticket/booth/product. Required fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, MarketName, BoothCode, BoothName, LicensePlate, VehicleTypeCode, VehicleTypeName, ProductCode, ProductName, PackageCode, PackageName, Quantity, Dispatch. Backend derives the internal idempotency key from TicketNo + MarketCode + BoothCode + ProductCode and returns WorkersRequired = 1 for now; worker-count calculation will be added later.\nResponse: Result, Ticket, Market, Booth, Product, and Qr. Ticket includes TicketNo, TicketCreatedAt, BoothCount, vehicle info, WorkersRequired, and Status. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload. Success/replay responses do not include Message or GateTransactionRef. Qr.WorkerQrToken equals TicketNo, so Worker scans/sends TicketNo for check-in. GateTransactionRef is returned only in 409 mismatch errors for debugging.\nResult: 201 + Result CREATED for a new Gate transaction, 200 + Result REPLAYED when the same TicketNo + MarketCode + BoothCode + ProductCode is retried with the same payload, 409 when the same key is reused with a different payload.\nNotes: Saves gateResult, ticketNo, marketCode, boothCode, productCode, driverQrToken, and workerQrToken collection variables. Sending the same TicketNo with a new MarketCode/BoothCode/ProductCode appends or updates that market/booth/product under the same vehicle job. With Dispatch true, backend creates or marks the job as WORKING and immediately dispatches ready workers through WebSocket."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create it with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: Gate payload, 1 request per ticket/booth. Required fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, MarketName, BoothCode, BoothName, LicensePlate, VehicleTypeCode, VehicleTypeName, ProductCode, ProductName, PackageCode, PackageName, Quantity, Dispatch. Gate does not send VendorLineId; backend maps MarketCode + BoothCode to owner/member LINE targets from internal master_owner_stalls and master_member_stalls tables. Backend derives the internal idempotency key from TicketNo + MarketCode + BoothCode and returns WorkersRequired = 1 for now; worker-count calculation will be added later.\nResponse: Result, Ticket, Market, Booth, Product, and Qr. Ticket includes TicketNo, TicketCreatedAt, BoothCount, vehicle info, WorkersRequired, and Status. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload. Success/replay responses do not include Message or GateTransactionRef. Qr.WorkerQrToken equals TicketNo, so Worker scans/sends TicketNo for check-in. GateTransactionRef is returned only in 409 mismatch errors for debugging. Missing MarketCode + BoothCode LINE target mapping returns 409 BOOTH_VENDOR_LINE_NOT_CONFIGURED.\nResult: 201 + Result CREATED for a new Gate transaction, 200 + Result REPLAYED when the same TicketNo + MarketCode + BoothCode is retried with the same payload, 409 when the same key is reused with a different payload, the same TicketNo exceeds BoothCount, the same BoothCode is reused under one TicketNo, BoothCount changes for an existing TicketNo, or MarketCode + BoothCode has no active owner/member LINE target mapping.\nNotes: Saves gateResult, ticketNo, marketCode, boothCode, productCode, driverQrToken, and workerQrToken collection variables. BoothCount is the maximum number of distinct BoothCode values allowed under the same TicketNo. MarketCode may repeat, but BoothCode cannot repeat under the same TicketNo. With Dispatch true, backend creates or marks this vehicle job as WORKING and dispatches ready workers to this job first through WebSocket."
           },
           "response": []
         }

@@ -283,10 +283,10 @@ async function listUsers(
     where: buildUserWhere(filters),
     orderBy: [
       {
-        shiftNo: "asc",
+        createdAt: "desc",
       },
       {
-        id: "asc",
+        id: "desc",
       },
     ],
     skip: filters.offset,

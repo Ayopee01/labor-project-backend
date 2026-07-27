@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 
 import {
+  addAdmin,
   addDispatchableJob,
   addGateClient,
   addPendingAssignment,
@@ -77,6 +78,28 @@ async function gateAuthHeaders(
 
   return {
     Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+  };
+}
+
+async function loginJobAdmin(accountId: number): Promise<{ token: string }> {
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(accountId, passwordHash);
+  state.adminPermissions.set(admin.id, [
+    "jobs:read",
+    "workers:force_status",
+  ]);
+
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: admin.username,
+      password: "Admin@123456",
+    },
+  });
+
+  assert.equal(login.status, 200);
+
+  return {
+    token: login.body.access_token,
   };
 }
 
@@ -179,6 +202,7 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(state.gateTickets[0].marketCode, "MARKET-001");
   assert.equal(state.gateTickets[0].boothCode, "STALL-001");
   assert.equal(state.gateTickets[0].boothName, "Vendor A");
+  assert.equal(state.gateTickets[0].vendor_line_id, "line-vendor-stall-001");
   assert.equal(state.ticketProducts[0].productCode, "PRODUCT-001-001");
   assert.equal(state.ticketProducts[0].packageCode, "CRATE");
   assert.equal(state.ticketProducts[0].packageName, "crate");
@@ -195,6 +219,31 @@ test("POST /api/gate/tickets returns waiting_unload status when Dispatch is fals
 
   assert.equal(response.status, 201);
   assert.equal(response.body.Ticket.Status, "waiting_unload");
+});
+
+test("POST /api/gate/tickets dispatches a ready connected worker to the new Gate job", async () => {
+  const worker = addWorker(9701);
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.enqueueWorker(worker.id);
+
+  const response = await server.request("POST", "/api/gate/tickets", {
+    body: buildGateVehicleJobBody("007"),
+    headers: await gateAuthHeaders(),
+  });
+
+  const queueEntry = await workerQueue.getWorkerQueueStatus(worker.id);
+
+  assert.equal(response.status, 201);
+  assert.equal(state.vehicleJobs.length, 1);
+  assert.equal(state.assignments.length, 1);
+  assert.equal(state.assignments[0].vehicle_job_id, state.vehicleJobs[0].id);
+  assert.equal(state.assignments[0].worker_account_id, worker.id);
+  assert.equal(queueEntry?.status, "assigned");
+  assert.ok(
+    state.socketEvents.some(
+      (event) => event.accountId === worker.id && event.event === "WORKER_ASSIGNED"
+    )
+  );
 });
 
 test("POST /api/gate/tickets replays the same Gate request", async () => {
@@ -246,7 +295,10 @@ test("POST /api/gate/tickets rejects reused Gate ref with a different payload", 
 });
 
 test("POST /api/gate/tickets appends a new booth to the same Gate ticket", async () => {
-  const createdBody = buildGateVehicleJobBody("004");
+  const createdBody = {
+    ...buildGateVehicleJobBody("004"),
+    BoothCount: 2,
+  };
   const headers = await gateAuthHeaders();
   await server.request("POST", "/api/gate/tickets", { body: createdBody, headers });
 
@@ -277,6 +329,130 @@ test("POST /api/gate/tickets appends a new booth to the same Gate ticket", async
   assert.equal(state.gateTickets.length, 2);
   assert.equal(state.gateTickets[1].boothCode, "STALL-004-B");
   assert.equal(state.gateTickets[1].boothName, "Vendor B");
+});
+
+test("POST /api/gate/tickets rejects appending beyond BoothCount for the same TicketNo", async () => {
+  const createdBody = buildGateVehicleJobBody("008");
+  const headers = await gateAuthHeaders();
+  await server.request("POST", "/api/gate/tickets", { body: createdBody, headers });
+
+  const overLimit = await server.request("POST", "/api/gate/tickets", {
+    body: {
+      ...buildGateVehicleJobBody("009"),
+      TicketNo: createdBody.TicketNo,
+      BoothCount: 1,
+      BoothCode: "STALL-008-B",
+      ProductCode: "PRODUCT-008-002",
+    },
+    headers,
+  });
+
+  assert.equal(overLimit.status, 409);
+  assert.equal(overLimit.body.code, "GATE_TICKET_BOOTH_LIMIT_REACHED");
+  assert.equal(state.gateTickets.length, 1);
+});
+
+test("POST /api/gate/tickets rejects duplicate BoothCode under the same TicketNo", async () => {
+  const createdBody = {
+    ...buildGateVehicleJobBody("010"),
+    BoothCount: 2,
+  };
+  const headers = await gateAuthHeaders();
+  await server.request("POST", "/api/gate/tickets", { body: createdBody, headers });
+
+  const duplicateBooth = await server.request("POST", "/api/gate/tickets", {
+    body: {
+      ...buildGateVehicleJobBody("011"),
+      TicketNo: createdBody.TicketNo,
+      BoothCount: 2,
+      BoothCode: createdBody.BoothCode,
+      ProductCode: "PRODUCT-010-002",
+    },
+    headers,
+  });
+
+  assert.equal(duplicateBooth.status, 409);
+  assert.equal(duplicateBooth.body.code, "GATE_TICKET_BOOTH_ALREADY_EXISTS");
+  assert.equal(state.gateTickets.length, 1);
+});
+
+test("POST /api/gate/tickets rejects BoothCount changes for an existing TicketNo", async () => {
+  const createdBody = {
+    ...buildGateVehicleJobBody("012"),
+    BoothCount: 2,
+  };
+  const headers = await gateAuthHeaders();
+  await server.request("POST", "/api/gate/tickets", { body: createdBody, headers });
+
+  const mismatch = await server.request("POST", "/api/gate/tickets", {
+    body: {
+      ...buildGateVehicleJobBody("013"),
+      TicketNo: createdBody.TicketNo,
+      BoothCount: 3,
+      BoothCode: "STALL-012-B",
+      ProductCode: "PRODUCT-012-002",
+    },
+    headers,
+  });
+
+  assert.equal(mismatch.status, 409);
+  assert.equal(mismatch.body.code, "GATE_TICKET_BOOTH_COUNT_MISMATCH");
+  assert.equal(state.gateTickets.length, 1);
+});
+
+/* -------------------------------------- Admin Worker Status Route Tests -------------------------------------- */
+
+test("POST /api/admin/jobs/workers/:id/status/force rejects worker without WebSocket", async () => {
+  const { token } = await loginJobAdmin(9601);
+  const worker = addWorker(9602);
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    {
+      token,
+      body: {
+        status: "open_app",
+      },
+    }
+  );
+  const queueEntry = await workerQueue.getWorkerQueueStatus(worker.id);
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "WORKER_NOT_ONLINE");
+  assert.equal(queueEntry, null);
+});
+
+test("POST /api/admin/jobs/workers/:id/status/force allows connected worker", async () => {
+  const { token } = await loginJobAdmin(9611);
+  const worker = addWorker(9612);
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.recordWorkerHeartbeat(worker.id);
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    {
+      token,
+      body: {
+        status: "ready",
+      },
+    }
+  );
+  const queueEntry = await workerQueue.getWorkerQueueStatus(worker.id);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "full_name",
+    "message",
+    "status",
+    "worker_code",
+  ]);
+  assert.equal(response.body.message, "Worker status forced successfully.");
+  assert.equal(response.body.full_name, worker.full_name);
+  assert.equal(response.body.worker_code, worker.username);
+  assert.equal(response.body.status, "ready");
+  assert.equal(queueEntry?.status, "ready");
 });
 
 /* -------------------------------------- Worker Queue Route Tests -------------------------------------- */
@@ -1118,7 +1294,7 @@ test("POST /api/workers/me/tickets/:boothCode/complete submits quantities for ve
     response.body.items.map((product: { confirmed_quantity: string | null }) => product.confirmed_quantity),
     ["10", "4"]
   );
-  assert.equal(state.lineMessages.length, 1);
+  assert.equal(state.lineMessages.length, 2);
   const vendorTimeoutJob = state.queueJobs
     .get(process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string)
     ?.get(`vendor-confirm-timeout-${ticket.id}-${state.completionSubmissions[0].id}`);
@@ -1167,6 +1343,7 @@ test("POST /api/workers/me/tickets/:boothCode/complete submits quantities for ve
 
   const lineMessage = state.lineMessages[0] as {
     data?: {
+      to?: string;
       messages?: Array<{ text?: string }>;
     };
   };
@@ -1176,6 +1353,7 @@ test("POST /api/workers/me/tickets/:boothCode/complete submits quantities for ve
   const confirmToken = /token=([^\s]+)/.exec(confirmPostback ?? "")?.[1];
 
   assert.match(lineText, /Confirm: action=vendor_confirm_completion&token=/);
+  assert.equal(lineMessage.data?.to, ticket.vendor_line_id);
   assert.equal(typeof confirmPostback, "string");
   assert.equal(typeof rejectPostback, "string");
   assert.match(confirmPostback, /^action=vendor_confirm_completion&token=/);
@@ -1362,7 +1540,7 @@ test("POST /api/workers/me/tickets/:boothCode/complete allows submitting another
   assert.equal(currentTicket.status, "WORKING");
   assert.equal(nextTicket.status, "DELIVERED");
   assert.equal(assignment.status, "DELIVERED");
-  assert.equal(state.lineMessages.length, 1);
+  assert.equal(state.lineMessages.length, 2);
 });
 
 test("POST /api/workers/me/tickets/:boothCode/complete rejects before all required workers check in", async () => {

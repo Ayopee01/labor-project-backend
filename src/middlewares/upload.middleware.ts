@@ -69,6 +69,10 @@ function parseJsonField(value: unknown) {
   }
 }
 
+function parseAndNormalizeJsonField(value: unknown) {
+  return normalizeApiRequestPayload(parseJsonField(value));
+}
+
 function getWorkerImageFile(req: Request): Express.Multer.File | undefined {
   if (req.file) {
     return req.file;
@@ -100,11 +104,11 @@ export function normalizeCreateUserMultipartBody(
   }
 
   if (body.work_schedule) {
-    body.work_schedule = parseJsonField(body.work_schedule);
+    body.work_schedule = parseAndNormalizeJsonField(body.work_schedule);
   }
 
   if (body.work_schedules) {
-    body.work_schedules = parseJsonField(body.work_schedules);
+    body.work_schedules = parseAndNormalizeJsonField(body.work_schedules);
   } else if (
     body.work_date ||
     body.shift_start_time ||

@@ -11,7 +11,7 @@ export { listTicketWorkers } from "./shared/ticket-worker.repository";
 
 // import Types
 import type { DbConnection } from "../types/common.type";
-import type { CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto } from "../types/worker.type";
+import type { CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VendorLineTargetDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto } from "../types/worker.type";
 
 export { accountRepository, profileRepository, workScheduleRepository };
 
@@ -434,6 +434,78 @@ export async function findGateTicketForCompletion(
   });
 
   return mapGateTicket(ticket);
+}
+
+// Function ดึง LINE target ของเจ้าของแผงและสมาชิกแผงที่ยัง active สำหรับ ticket นี้
+export async function listActiveVendorLineTargetsForTicket(
+  ticketId: number,
+  connection?: DbConnection
+): Promise<VendorLineTargetDto[]> {
+  const db = client(connection);
+  const ticket = await db.gateTicket.findUnique({
+    where: {
+      id: ticketId,
+    },
+    include: {
+      marketJob: true,
+    },
+  });
+
+  if (!ticket) {
+    return [];
+  }
+
+  const ownerStall = await db.masterOwnerStall.findUnique({
+    where: {
+      marketCode_boothCode: {
+        marketCode: ticket.marketJob.marketCode,
+        boothCode: ticket.boothCode,
+      },
+    },
+  });
+
+  if (
+    !ownerStall ||
+    ownerStall.status !== "active" ||
+    ownerStall.ownerStatus !== "Normal" ||
+    !ownerStall.lineUserId
+  ) {
+    return [];
+  }
+
+  const members = await db.masterMemberStall.findMany({
+    where: {
+      marketCode: ownerStall.marketCode,
+      ownerIdCard: ownerStall.cardId,
+      ownerLineUserId: ownerStall.lineUserId,
+      status: "active",
+      memberStallStatusOnStall: "1",
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+  const seen = new Set<string>();
+  const targets: VendorLineTargetDto[] = [];
+  const addTarget = (lineUserId: string, targetType: VendorLineTargetDto["target_type"]) => {
+    if (seen.has(lineUserId)) {
+      return;
+    }
+
+    seen.add(lineUserId);
+    targets.push({
+      line_user_id: lineUserId,
+      target_type: targetType,
+    });
+  };
+
+  addTarget(ownerStall.lineUserId, "owner");
+
+  for (const member of members) {
+    addTarget(member.memberStallLineUserId, "member");
+  }
+
+  return targets;
 }
 
 // Function เธซเธฒ gate ticket เธ”เนเธงเธข boothCode เธซเธฃเธทเธญ ticketNo เธชเธณเธซเธฃเธฑเธ worker เธเธดเธ”เธเธฒเธ
