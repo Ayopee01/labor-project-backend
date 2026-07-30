@@ -8,7 +8,7 @@ import * as gateService from "../services/gate.service";
 // Config Express router สำหรับ Gate Flow routes
 const router = express.Router();
 
-// Route รับงานรถจาก Gate mock payload
+// Route receives one Gate ticket print item and creates/replays the matching labor job.
 router.post(
   "/tickets",
   gateClientAuthMiddleware,

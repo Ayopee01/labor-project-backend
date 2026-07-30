@@ -11,23 +11,34 @@ import { createGateClientBodySchema, updateGateClientBodySchema } from "../valid
 import ApiError from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
 
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config prefix for generated Gate secrets so real credentials are recognizable.
 const GATE_SECRET_PREFIX = "gate_live_";
+
+// Config generation size for Gate client ids and secrets.
 const GENERATED_CLIENT_ID_PREFIX = "gate_";
 const GENERATED_CLIENT_ID_BYTES = 8;
 const GENERATED_SECRET_BYTES = 32;
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function reads the current admin account id for created_by/updated_by audit fields.
 function getActorId(auth?: AccessTokenPayload): number | null {
   return auth?.account_id ?? null;
 }
 
+// Function generates a random client_id when Admin does not provide one.
 function generateGateClientId(): string {
   return `${GENERATED_CLIENT_ID_PREFIX}${randomBytes(GENERATED_CLIENT_ID_BYTES).toString("hex")}`;
 }
 
+// Function generates the plaintext secret shown only once after create/rotate.
 function generateGateClientSecret(): string {
   return `${GATE_SECRET_PREFIX}${randomBytes(GENERATED_SECRET_BYTES).toString("base64url")}`;
 }
 
+// Function parses client_id from path params and returns a standard API error when missing.
 function parseClientId(value: unknown): string {
   const clientId = String(value ?? "").trim();
 
@@ -38,12 +49,14 @@ function parseClientId(value: unknown): string {
   return clientId;
 }
 
+// Function removes secret_hash before returning Gate client data to Admin.
 function toPublicGateClient(client: GateClientDto): PublicGateClient {
   const { secret_hash: _secretHash, ...publicClient } = client;
 
   return publicClient;
 }
 
+// Function retries random client_id generation to avoid rare collisions.
 async function generateUniqueClientId(): Promise<string> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const clientId = generateGateClientId();
@@ -60,6 +73,7 @@ async function generateUniqueClientId(): Promise<string> {
   );
 }
 
+// Function loads a Gate client or throws 404 for Admin mutation endpoints.
 async function requireGateClient(clientIdParam: unknown): Promise<GateClientDto> {
   const clientId = parseClientId(clientIdParam);
   const client = await gateClientRepository.findByClientId(clientId);
@@ -71,6 +85,7 @@ async function requireGateClient(clientIdParam: unknown): Promise<GateClientDto>
   return client;
 }
 
+// Function lists Gate client credentials for Admin Settings without exposing secrets.
 export async function listGateClients(): Promise<GateClientListResponse> {
   const clients = await gateClientRepository.listGateClients();
 
@@ -79,6 +94,7 @@ export async function listGateClients(): Promise<GateClientListResponse> {
   };
 }
 
+// Function creates a Gate client and returns plaintext secret once for the Gate system to save.
 export async function createGateClient(
   body: unknown,
   auth?: AccessTokenPayload
@@ -111,6 +127,7 @@ export async function createGateClient(
   };
 }
 
+// Function updates visible Gate client metadata such as name or active/inactive status.
 export async function updateGateClient(
   clientIdParam: unknown,
   body: unknown,
@@ -133,6 +150,7 @@ export async function updateGateClient(
   };
 }
 
+// Function rotates a Gate client secret by replacing the hash and returning the new plaintext once.
 export async function rotateGateClientSecret(
   clientIdParam: unknown,
   auth?: AccessTokenPayload
@@ -152,6 +170,7 @@ export async function rotateGateClientSecret(
   };
 }
 
+// Function verifies Basic Auth client_id/client_secret for Gate API requests.
 export async function verifyGateClientCredentials(
   clientId: string,
   clientSecret: string

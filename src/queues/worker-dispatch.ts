@@ -14,6 +14,9 @@ import { buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload } from "../utils/worker-assignment-event";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function loads WorkerCode for one account id so queue notifications avoid exposing internal ids.
 async function getWorkerCode(
   accountId: number,
   connection?: DbConnection
@@ -26,6 +29,7 @@ async function getWorkerCode(
   return profile?.worker_code ?? null;
 }
 
+// Function builds account id -> WorkerCode map in one query to avoid N+1 lookups during dispatch.
 async function getWorkerCodeMap(accountIds: number[]): Promise<Map<number, string | null>> {
   const profiles = await workerApplicationRepository.profileRepository.findByAccountIds(
     accountIds
@@ -36,6 +40,7 @@ async function getWorkerCodeMap(accountIds: number[]): Promise<Map<number, strin
   );
 }
 
+// Function assigns ready workers from Redis FIFO queue to vehicle jobs that still need labor.
 export async function dispatchReadyWorkers(
   connection?: Parameters<typeof workerApplicationRepository.listDispatchableVehicleJobs>[0],
   options: {
@@ -129,6 +134,9 @@ export async function dispatchReadyWorkers(
   }
 }
 
+/* -------------------------------------- Types -------------------------------------- */
+
+// Type result of accept timeout handling used by the BullMQ timeout worker.
 type AssignmentAcceptTimeoutResult = {
   queue: Awaited<ReturnType<typeof markWorkerOpenApp>>;
   reason: string;
@@ -137,10 +145,14 @@ type AssignmentAcceptTimeoutResult = {
   closed_shift: boolean;
 };
 
+// Type result returned when closing a vehicle job after all tickets are completed.
 type CompletedVehicleJobResult = NonNullable<
   Awaited<ReturnType<typeof workerApplicationRepository.closeCompletedVehicleJobIfReady>>
 >;
 
+/* -------------------------------------- Timeout Handlers -------------------------------------- */
+
+// Function handles worker not accepting an assignment before the configured deadline.
 export async function handleAssignmentAcceptTimeout(input: {
   assignment: VehicleJobAssignmentDto;
   workerAccountId: number;
@@ -208,6 +220,7 @@ export async function handleAssignmentAcceptTimeout(input: {
   };
 }
 
+// Function handles worker accepting a job but missing the QR check-in deadline.
 async function handleAssignmentScanTimeout(input: {
   assignment: VehicleJobAssignmentDto;
   workerAccountId: number;
@@ -282,6 +295,7 @@ async function handleAssignmentScanTimeout(input: {
   });
 }
 
+// Function notifies Admin when an accepted assignment is near its QR scan deadline.
 async function handleAssignmentScanWarning(input: {
   assignment: VehicleJobAssignmentDto;
   workerAccountId: number;
@@ -336,6 +350,9 @@ async function handleAssignmentScanWarning(input: {
   });
 }
 
+/* -------------------------------------- Completion Helpers -------------------------------------- */
+
+// Function returns workers to queue after vehicle completion when schedule/socket still allow work.
 async function returnCompletedWorkersToQueue(
   input: CompletedVehicleJobResult | null
 ): Promise<Array<string | null>> {
@@ -418,6 +435,7 @@ async function returnCompletedWorkersToQueue(
   return requeuedWorkerCodes;
 }
 
+// Function auto-confirms delivered tickets when vendor does not confirm within runtime config.
 async function handleVendorConfirmationTimeout(input: {
   ticketId?: number;
   submissionId?: number;
@@ -566,6 +584,9 @@ async function handleVendorConfirmationTimeout(input: {
   });
 }
 
+/* -------------------------------------- Shift Handlers -------------------------------------- */
+
+// Function closes a worker shift at scheduled end and moves idle workers back to open_app.
 async function handleWorkerShiftEnd(input: {
   accountId: number;
   scheduleId: number;
@@ -627,6 +648,7 @@ async function handleWorkerShiftEnd(input: {
   });
 }
 
+// Function returns a worker from break to queue, or open_app if socket/shift/assignment no longer allow it.
 async function handleWorkerBreakReturn(input: {
   accountId: number;
   scheduleId: number;
@@ -685,6 +707,7 @@ async function handleWorkerBreakReturn(input: {
   });
 }
 
+// Function starts the shared BullMQ worker for accept, scan, warning, vendor, and shift timeout jobs.
 export function startAssignmentTimeoutProcessing(): void {
   startAssignmentTimeoutWorker(async ({ assignmentId, workerAccountId, ticketId, submissionId, kind }) => {
     if (kind === "vendor_confirm") {

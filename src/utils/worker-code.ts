@@ -2,12 +2,19 @@ import ApiError from "./api-error";
 
 /* -------------------------------------- Constants -------------------------------------- */
 
+// Config nationality values that can generate worker code prefixes.
 export const WORKER_NATIONALITIES = ["Myanmar", "Cambodia"] as const;
+
+// Config shirt colors that can generate worker code prefixes.
 export const WORKER_SHIRT_TYPES = ["Navy", "Blue", "Green"] as const;
 
+// Type value of supported worker nationality for worker code generation.
 type WorkerNationality = (typeof WORKER_NATIONALITIES)[number];
+
+// Type value of supported shirt color for worker code generation.
 type WorkerShirtType = (typeof WORKER_SHIRT_TYPES)[number];
 
+// Config prefix map for worker id pattern: nationality + shirt color + 6-digit shirt number.
 const WORKER_CODE_PREFIXES: Record<
   WorkerNationality,
   Record<WorkerShirtType, string>
@@ -24,6 +31,7 @@ const WORKER_CODE_PREFIXES: Record<
   },
 };
 
+// Type input for worker code generation.
 interface BuildWorkerCodeInput {
   nationality: string;
   shirt_type: string;

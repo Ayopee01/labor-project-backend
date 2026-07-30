@@ -64,7 +64,7 @@ router.post(
   }
 );
 
-// Route ดึงข้อมูลผู้ใช้จาก token ปัจจุบัน
+// Route register/refresh FCM token for Worker Mobile when login did not include one.
 router.post(
   "/push-token",
   authMiddleware,
@@ -84,6 +84,7 @@ router.post(
   }
 );
 
+// Route get current account profile from the active access token.
 router.get(
   "/me",
   authMiddleware,

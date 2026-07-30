@@ -4,10 +4,14 @@ import { prisma } from "../db/prisma";
 import type { DbConnection } from "../types/common.type";
 import type { PushPlatform, UpsertWorkerPushTokenInput, WorkerPushTokenDto } from "../types/push-notification.type";
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function converts nullable Date values to ISO strings for DTO responses.
 function toIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
+// Function normalizes platform from API/mobile input to the supported enum.
 export function normalizePushPlatform(value?: string | null): PushPlatform {
   const platform = value?.trim().toLowerCase();
 
@@ -18,10 +22,12 @@ export function normalizePushPlatform(value?: string | null): PushPlatform {
   return "unknown";
 }
 
+// Function hashes the FCM token for lookup/revoke without relying on plaintext comparison.
 export function hashFcmToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+// Function maps table worker_push_tokens to WorkerPushTokenDto.
 function mapWorkerPushToken(record: WorkerPushToken): WorkerPushTokenDto {
   return {
     id: record.id,
@@ -39,6 +45,7 @@ function mapWorkerPushToken(record: WorkerPushToken): WorkerPushTokenDto {
   };
 }
 
+// Function creates or refreshes the active FCM token for one WorkerCode/device/platform.
 export async function upsertWorkerPushToken(
   input: UpsertWorkerPushTokenInput,
   connection?: DbConnection
@@ -77,6 +84,7 @@ export async function upsertWorkerPushToken(
   return mapWorkerPushToken(record);
 }
 
+// Function lists active FCM tokens for WorkerCodes so notification logic does not use account_id.
 export async function listActiveTokensByWorkerCodes(
   workerCodes: string[],
   connection?: DbConnection
@@ -99,6 +107,7 @@ export async function listActiveTokensByWorkerCodes(
   return records.map(mapWorkerPushToken);
 }
 
+// Function revokes active FCM tokens tied to a session during logout/session replacement.
 export async function revokeBySessionId(
   sessionId: number,
   connection?: DbConnection
@@ -119,6 +128,7 @@ export async function revokeBySessionId(
   return result.count;
 }
 
+// Function revokes tokens that Firebase reports as invalid or unregistered.
 export async function revokeByTokenHashes(
   fcmTokenHashes: string[],
   connection?: DbConnection

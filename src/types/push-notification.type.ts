@@ -1,5 +1,7 @@
+// Type value of the client platform that owns an FCM token.
 export type PushPlatform = "android" | "ios" | "web" | "unknown";
 
+// Type DTO of table worker_push_tokens used for mobile push notification delivery.
 export interface WorkerPushTokenDto {
   id: number;
   worker_code: string;
@@ -15,6 +17,7 @@ export interface WorkerPushTokenDto {
   updated_at: string;
 }
 
+// Type repository input for registering or refreshing a worker FCM token.
 export interface UpsertWorkerPushTokenInput {
   worker_code: string;
   session_id?: number | null;
@@ -23,6 +26,7 @@ export interface UpsertWorkerPushTokenInput {
   fcm_token: string;
 }
 
+// Type response after Worker Mobile registers a push token.
 export interface WorkerPushRegistrationResponse {
   statusCode: number;
   code: string;
@@ -32,6 +36,7 @@ export interface WorkerPushRegistrationResponse {
   platform: PushPlatform;
 }
 
+// Type input for sending one push notification event to one or more WorkerCodes.
 export interface WorkerPushEventInput {
   worker_codes: string[];
   type: string;

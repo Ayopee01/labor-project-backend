@@ -3,6 +3,9 @@ import { client, requireMapped } from "./shared/repository-utils";
 import type { DbConnection } from "../types/common.type";
 import type { GateClientCreateInput, GateClientDto, GateClientUpdateInput } from "../types/gate-client.type";
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function converts Date fields from Prisma records to API-safe ISO strings.
 function toIsoString(value: Date | string | null): string | null {
   if (value instanceof Date) {
     return value.toISOString();
@@ -11,6 +14,7 @@ function toIsoString(value: Date | string | null): string | null {
   return value;
 }
 
+// Function maps table gate_clients to GateClientDto and normalizes unknown status to active.
 function mapGateClient(record: {
   id: number;
   clientId: string;
@@ -41,6 +45,7 @@ function mapGateClient(record: {
   };
 }
 
+// Function lists Gate client credentials for Admin Settings without filtering by status.
 export async function listGateClients(
   connection?: DbConnection
 ): Promise<GateClientDto[]> {
@@ -55,6 +60,7 @@ export async function listGateClients(
     .filter((record): record is GateClientDto => record !== null);
 }
 
+// Function finds one Gate client by client_id for auth verification or Admin mutation.
 export async function findByClientId(
   clientId: string,
   connection?: DbConnection
@@ -68,6 +74,7 @@ export async function findByClientId(
   return mapGateClient(record);
 }
 
+// Function checks client_id uniqueness before creating generated or custom credentials.
 export async function clientIdExists(
   clientId: string,
   connection?: DbConnection
@@ -84,6 +91,7 @@ export async function clientIdExists(
   return Boolean(record);
 }
 
+// Function creates a Gate client credential with a hashed secret only.
 export async function createGateClient(
   input: GateClientCreateInput,
   connection?: DbConnection
@@ -102,6 +110,7 @@ export async function createGateClient(
   return requireMapped(mapGateClient(record), "Gate client", "create");
 }
 
+// Function updates Gate client name/status while keeping the existing secret hash.
 export async function updateGateClient(
   clientId: string,
   input: GateClientUpdateInput,
@@ -121,6 +130,7 @@ export async function updateGateClient(
   return requireMapped(mapGateClient(record), "Gate client", "update");
 }
 
+// Function replaces the stored secret hash when Admin rotates a Gate client secret.
 export async function updateGateClientSecret(
   clientId: string,
   secretHash: string,
@@ -140,6 +150,7 @@ export async function updateGateClientSecret(
   return requireMapped(mapGateClient(record), "Gate client", "secret update");
 }
 
+// Function records the last successful Basic Auth verification time.
 export async function updateLastUsedAt(
   clientId: string,
   connection?: DbConnection

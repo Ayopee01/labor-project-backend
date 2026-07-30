@@ -56,6 +56,7 @@ export interface GateVehicleJobBody {
   Dispatch: boolean;
 }
 
+// Type Ticket object returned to Gate after create/replay.
 interface GateVehicleJobResponseTicket {
   TicketNo: string;
   TicketCreatedAt: string;
@@ -67,16 +68,19 @@ interface GateVehicleJobResponseTicket {
   Status: GateVehicleJobResponseStatus;
 }
 
+// Type Market object returned to Gate after create/replay.
 interface GateVehicleJobResponseMarket {
   MarketCode: string;
   MarketName: string;
 }
 
+// Type Booth object returned to Gate after create/replay.
 interface GateVehicleJobResponseBooth {
   BoothCode: string;
   BoothName: string | null;
 }
 
+// Type Product object returned to Gate after create/replay.
 interface GateVehicleJobResponseProduct {
   ProductCode: string;
   ProductName: string;

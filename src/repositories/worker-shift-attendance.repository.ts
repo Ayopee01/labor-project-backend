@@ -4,6 +4,9 @@ import type { WorkScheduleDto } from "../types/admin-workers.type";
 import type { DbConnection } from "../types/common.type";
 import { client } from "./shared/repository-utils";
 
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config close reasons stored in worker_shift_attendances for daily/shift queue eligibility audit.
 export const WORKER_SHIFT_CLOSE_REASONS = [
   "worker_offline",
   "shift_ended",
@@ -11,18 +14,26 @@ export const WORKER_SHIFT_CLOSE_REASONS = [
   "ticket_delivered_after_shift_end",
 ] as const;
 
+/* -------------------------------------- Types -------------------------------------- */
+
+// Type value of close_reason for worker_shift_attendances.
 export type WorkerShiftCloseReason = (typeof WORKER_SHIFT_CLOSE_REASONS)[number];
 
+// Type unique key used to identify one worker in one concrete shift instance.
 type WorkerShiftAttendanceKeyInput = {
   account_id: number;
   shift_instance_key: string;
 };
 
+// Type write input that includes the current schedule snapshot stored on attendance records.
 type WorkerShiftAttendanceWriteInput = WorkerShiftAttendanceKeyInput & {
   worker_code: string;
   schedule: WorkScheduleDto;
 };
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function builds a denormalized shift snapshot so history survives future schedule changes.
 function buildShiftSnapshot(input: WorkerShiftAttendanceWriteInput) {
   return {
     workerCode: input.worker_code,
@@ -32,6 +43,7 @@ function buildShiftSnapshot(input: WorkerShiftAttendanceWriteInput) {
   };
 }
 
+// Function finds one attendance record for a worker and shift instance.
 export async function findByWorkerAndShift(
   input: WorkerShiftAttendanceKeyInput,
   connection?: DbConnection
@@ -48,6 +60,7 @@ export async function findByWorkerAndShift(
   });
 }
 
+// Function marks that a worker used their one allowed online entry for this shift.
 export async function markWorkerShiftOnline(
   input: WorkerShiftAttendanceWriteInput,
   connection?: DbConnection
@@ -77,6 +90,7 @@ export async function markWorkerShiftOnline(
   });
 }
 
+// Function closes a worker shift and creates an audit row if the worker never went online first.
 export async function closeWorkerShift(
   input: WorkerShiftAttendanceWriteInput & {
     reason: WorkerShiftCloseReason;

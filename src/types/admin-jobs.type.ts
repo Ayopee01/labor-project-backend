@@ -11,9 +11,11 @@ export interface VehicleJobListFilters {
   limit?: number;
 }
 
+// Type value of operation_status filter for Admin vehicle operation board.
 export type VehicleOperationStatus =
   (typeof VEHICLE_OPERATION_STATUS)[keyof typeof VEHICLE_OPERATION_STATUS];
 
+// Type filter for Admin vehicle operation board, separated from history filters.
 export interface VehicleJobOperationFilters {
   search?: string;
   operation_status?: VehicleOperationStatus;
@@ -54,6 +56,7 @@ export interface AdminVehicleJobHistoryVehicleResponse extends AdminVehicleJobLi
   updated_at: string;
 }
 
+// Type product row shown inside Admin vehicle job history and operation responses.
 export interface AdminVehicleJobHistoryProductResponse {
   productCode: string;
   productName: string;
@@ -63,6 +66,7 @@ export interface AdminVehicleJobHistoryProductResponse {
   confirmed_quantity: string | null;
 }
 
+// Type booth/ticket row shown inside Admin vehicle job history and operation responses.
 export interface AdminVehicleJobHistoryTicketResponse {
   boothCode: string;
   boothName: string | null;
@@ -75,6 +79,7 @@ export interface AdminVehicleJobHistoryTicketResponse {
   products: AdminVehicleJobHistoryProductResponse[];
 }
 
+// Type market row that groups booth/ticket rows in Admin vehicle job history.
 export interface AdminVehicleJobHistoryMarketResponse {
   marketCode: string;
   marketName: string;
@@ -85,11 +90,13 @@ export interface AdminVehicleJobHistoryMarketResponse {
   tickets: AdminVehicleJobHistoryTicketResponse[];
 }
 
+// Type response item for Admin vehicle job history.
 export interface AdminVehicleJobHistoryItemResponse {
   vehicle_job: AdminVehicleJobHistoryVehicleResponse;
   markets: AdminVehicleJobHistoryMarketResponse[];
 }
 
+// Type status counts for the left list of Admin vehicle operation board.
 export interface AdminVehicleJobOperationSummaryResponse {
   total: number;
   unload_now: number;
@@ -98,6 +105,7 @@ export interface AdminVehicleJobOperationSummaryResponse {
   driver_waiting_queue: number;
 }
 
+// Type worker assignment counts for one vehicle job in Admin operation board.
 export interface AdminVehicleJobOperationWorkerSummaryResponse {
   required: number;
   assigned: number;
@@ -113,6 +121,7 @@ export interface AdminVehicleJobOperationWorkerSummaryResponse {
   missing: number;
 }
 
+// Type market/booth/product counts for one vehicle job in Admin operation board.
 export interface AdminVehicleJobOperationMarketSummaryResponse {
   total: number;
   stalls: number;
@@ -122,6 +131,7 @@ export interface AdminVehicleJobOperationMarketSummaryResponse {
   rejected: number;
 }
 
+// Type worker row shown in one vehicle operation detail.
 export interface AdminVehicleJobOperationWorkerResponse {
   worker_code: string | null;
   full_name: string;
@@ -139,11 +149,13 @@ export interface AdminVehicleJobOperationWorkerResponse {
   updated_at: string;
 }
 
+// Type booth/ticket row with product count for Admin operation detail.
 export interface AdminVehicleJobOperationTicketResponse
   extends AdminVehicleJobHistoryTicketResponse {
   product_count: number;
 }
 
+// Type market row with summary for Admin operation detail.
 export interface AdminVehicleJobOperationMarketResponse
   extends AdminVehicleJobHistoryMarketResponse {
   summary: {
@@ -156,6 +168,7 @@ export interface AdminVehicleJobOperationMarketResponse
   tickets: AdminVehicleJobOperationTicketResponse[];
 }
 
+// Type full operation board item for one vehicle job.
 export interface AdminVehicleJobOperationItemResponse {
   operation_status: VehicleOperationStatus;
   vehicle_job: AdminVehicleJobHistoryVehicleResponse & {
@@ -176,6 +189,7 @@ export interface AdminVehicleJobOperationItemResponse {
   markets: AdminVehicleJobOperationMarketResponse[];
 }
 
+// Type list response for Admin operation board.
 export interface AdminVehicleJobOperationListResponse {
   server_time: string;
   summary: AdminVehicleJobOperationSummaryResponse;
@@ -188,6 +202,7 @@ export interface AdminVehicleJobOperationListResponse {
   };
 }
 
+// Type simple action response shared by Admin job mutations.
 export interface AdminVehicleJobActionResponse {
   message: string;
   ticketNo: string;
@@ -250,6 +265,7 @@ export interface AdminCancelVehicleJobAndRequeueResponse {
   requeued_worker_codes: Array<string | null>;
 }
 
+// Type response after cancelling one market job.
 export interface AdminMarketJobActionResponse {
   message: string;
   ticketNo: string | null;
@@ -257,6 +273,7 @@ export interface AdminMarketJobActionResponse {
   status: string;
 }
 
+// Type response after cancelling one booth/ticket job.
 export interface AdminStallJobActionResponse {
   message: string;
   ticketNo: string | null;

@@ -311,7 +311,6 @@ export async function getWorkerQueueStatuses(
   return result;
 }
 
-// Function บันทึก heartbeat ของ worker เพื่อให้ Admin เห็น presence ล่าสุด
 // Function ดึง rank จริงใน Redis ready queue ของ worker หลายคน เพื่อให้ Admin board เรียงคิวตรงกับ dispatch
 export async function getWorkerReadyQueueRanks(
   accountIds: number[]

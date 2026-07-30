@@ -199,7 +199,7 @@ function isScanDeadlineExpired(scanDeadlineAt: string | null): boolean {
   return !Number.isFinite(deadlineMs) || deadlineMs <= Date.now();
 }
 
-// Function เธ•เธฃเธงเธ auth เธงเนเธฒเน€เธเนเธ worker เธ—เธตเน active เธเนเธญเธเธ—เธณเธเธฒเธเนเธ Worker Mobile flow
+// Function schedules the automatic shift-end job when the active schedule still has time left.
 async function scheduleWorkerShiftEndIfNeeded(
   accountId: number,
   schedule: WorkScheduleDto
@@ -216,6 +216,7 @@ async function scheduleWorkerShiftEndIfNeeded(
   }
 }
 
+// Function records DB attendance and Redis marker when worker enters the queue for this shift.
 async function markWorkerAttendanceOnline(
   account: AccountDto,
   schedule: WorkScheduleDto,
@@ -235,6 +236,7 @@ async function markWorkerAttendanceOnline(
   await markWorkerShiftOnlineUsed(account.id, shiftInstanceKey);
 }
 
+// Function closes DB attendance and Redis marker so the worker cannot re-enter that shift.
 async function closeWorkerAttendanceShift(
   account: AccountDto,
   schedule: WorkScheduleDto,
@@ -256,6 +258,7 @@ async function closeWorkerAttendanceShift(
   await markWorkerShiftClosed(account.id, shiftInstanceKey);
 }
 
+// Function chooses the vendor confirmation timeout by first delivery or reject resubmission flow.
 function getVendorConfirmationTimeoutMs(
   ticket: GateTicketDto,
   settings: Awaited<ReturnType<typeof getRuntimeSettings>>
@@ -268,6 +271,7 @@ function getVendorConfirmationTimeoutMs(
   return timeoutHours * 60 * 60 * 1000;
 }
 
+// Function verifies the current auth payload belongs to an active worker account.
 async function requireWorker(auth?: AccessTokenPayload) {
   if (!auth) {
     throw new ApiError(401, "UNAUTHORIZED", "Authentication is required.");

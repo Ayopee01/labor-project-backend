@@ -87,6 +87,7 @@ export async function findCurrentOpenTicketByVehicleJob(
   return null;
 }
 
+// Function calculates whether all required workers have scanned QR for a vehicle job.
 export async function getVehicleWorkReadiness(
   vehicleJobId: number,
   connection?: DbConnection
@@ -112,6 +113,7 @@ export async function getVehicleWorkReadiness(
   };
 }
 
+// Function moves the next non-terminal market/ticket to WORKING once the vehicle is ready.
 export async function activateNextTicketIfReady(
   vehicleJobId: number,
   connection?: DbConnection
@@ -153,8 +155,7 @@ export async function activateNextTicketIfReady(
   };
 }
 
-// Function เธ”เธถเธ assignment เธ—เธตเนเธซเธกเธ”เน€เธงเธฅเธฒเธฃเธฑเธเธเธฒเธเนเธฅเนเธง
-// Function เธ”เธถเธเธเธฒเธเธฃเธ–เธ—เธตเนเธเธฃเนเธญเธก dispatch เธ•เธฒเธกเธฅเธณเธ”เธฑเธเธเธฒเธฃเธชเธฃเนเธฒเธ
+// Function lists active vehicle jobs that still may receive workers from the ready queue.
 export async function listDispatchableVehicleJobs(
   connection?: DbConnection
 ): Promise<VehicleJobDto[]> {
@@ -543,7 +544,7 @@ export async function listTicketProducts(
     .filter((product): product is TicketProductDto => product !== null);
 }
 
-// Function เธชเธฃเนเธฒเธ ticket workers เธเธฒเธ assignment เธเธญเธเธฃเธ– เธ–เนเธฒเธขเธฑเธเนเธกเนเธกเธต mapping เธฃเธฐเธ”เธฑเธ ticket
+// Function updates confirmed quantities for every product the worker submits on ticket completion.
 export async function updateTicketProductConfirmations(
   ticketId: number,
   items: TicketProductConfirmationInput[],

@@ -110,10 +110,12 @@ const openapi = swaggerJsdoc({
   ],
 });
 
+// Function checks plain objects before recursively transforming OpenAPI schemas.
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+// Config description text replacements for field names that should display as PascalCase in Swagger.
 const swaggerDescriptionReplacements: Array<[string, string]> = [
   ["access_token", "AccessToken"],
   ["refresh_token", "RefreshToken"],
@@ -130,6 +132,7 @@ const swaggerDescriptionReplacements: Array<[string, string]> = [
   ["accept_deadline_at", "AcceptDeadlineAt"],
 ];
 
+// Function rewrites selected schema descriptions so Swagger matches the PascalCase API contract.
 function transformDescriptionText(description: string): string {
   return swaggerDescriptionReplacements.reduce(
     (nextDescription, [from, to]) => nextDescription.split(from).join(to),
@@ -137,6 +140,7 @@ function transformDescriptionText(description: string): string {
   );
 }
 
+// Function recursively converts OpenAPI schema property names to PascalCase for public docs.
 function transformSchemaKeys(schema: unknown, seen = new Set<unknown>()): void {
   if (Array.isArray(schema)) {
     for (const entry of schema) {

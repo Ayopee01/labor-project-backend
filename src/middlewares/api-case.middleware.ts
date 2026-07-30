@@ -1,7 +1,13 @@
 import type { NextFunction, Request, Response } from "express";
 
+/* -------------------------------------- Types -------------------------------------- */
+
+// Type plain object used by recursive request/response key conversion.
 type PlainObject = Record<string, unknown>;
 
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config explicit PascalCase -> internal key mapping for API fields that cannot be inferred safely.
 const requestKeyMap: Record<string, string> = {
   AccessToken: "access_token",
   AccountId: "account_id",
@@ -103,14 +109,19 @@ const requestKeyMap: Record<string, string> = {
   WorkStartDate: "work_start_date",
 };
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function checks for plain JSON objects before recursively transforming keys.
 function isPlainObject(value: unknown): value is PlainObject {
   return Object.prototype.toString.call(value) === "[object Object]";
 }
 
+// Function lowercases only the first letter for simple PascalCase body keys.
 function lowerFirst(value: string): string {
   return value.charAt(0).toLowerCase() + value.slice(1);
 }
 
+// Function uppercases only the first letter when building PascalCase response keys.
 function capitalize(value: string): string {
   if (!value) {
     return value;
@@ -119,6 +130,7 @@ function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+// Function converts snake_case, kebab-case, spaced, or camelCase keys to PascalCase for API responses.
 export function toPascalCaseKey(key: string): string {
   if (!key.includes("_") && /^[A-Z]/.test(key)) {
     return key;
@@ -132,6 +144,7 @@ export function toPascalCaseKey(key: string): string {
     .join("");
 }
 
+// Function converts public request keys to internal service/repository keys.
 function normalizeRequestKey(key: string): string {
   if (requestKeyMap[key]) {
     return requestKeyMap[key];
@@ -144,6 +157,7 @@ function normalizeRequestKey(key: string): string {
   return key;
 }
 
+// Function recursively transforms object keys while preserving arrays, Date, and scalar values.
 function transformObjectKeys(
   value: unknown,
   keyTransformer: (key: string) => string
@@ -164,18 +178,22 @@ function transformObjectKeys(
   );
 }
 
+// Function converts request bodies from public API casing to internal casing.
 export function normalizeApiRequestPayload(value: unknown): unknown {
   return transformObjectKeys(value, normalizeRequestKey);
 }
 
+// Function converts service response payloads to public PascalCase API casing.
 export function toPascalCasePayload(value: unknown): unknown {
   return transformObjectKeys(value, toPascalCaseKey);
 }
 
+// Function skips casing middleware for Swagger/static upload routes.
 function shouldSkipCaseMiddleware(req: Request): boolean {
   return req.path.startsWith("/api-docs") || req.path.startsWith("/uploads");
 }
 
+// Function normalizes incoming JSON bodies before routes/services parse validation schemas.
 export function normalizeApiRequestBody(
   req: Request,
   _res: Response,
@@ -191,6 +209,7 @@ export function normalizeApiRequestBody(
   next();
 }
 
+// Function wraps res.json so API responses use PascalCase without changing internal DTOs.
 export function pascalCaseApiResponse(
   req: Request,
   res: Response,

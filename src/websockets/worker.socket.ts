@@ -43,6 +43,7 @@ type WorkerSocket = WebSocket & {
 // Type ส่วน payload ที่ส่งเข้า Worker WebSocket event
 type WorkerSocketPayload = Record<string, unknown>;
 
+// Type options for sending Worker WebSocket events with optional FCM push delivery.
 type WorkerSocketEventOptions = {
   push?: boolean;
   pushTitle?: string;
@@ -57,6 +58,7 @@ const workerSockets = new Map<number, Set<WorkerSocket>>();
 // State เก็บ timer grace period หลัง socket ของ worker หลุด
 const disconnectTimers = new Map<number, NodeJS.Timeout>();
 
+// Config Worker WebSocket events that should also trigger FCM push notifications.
 const PUSH_WORKER_SOCKET_EVENTS = new Set<WorkerSocketEventType>([
   "WORKER_ASSIGNED",
   "ASSIGNMENT_TIMEOUT",
@@ -278,6 +280,7 @@ export function sendWorkerSocketEvent(
   return true;
 }
 
+// Function builds the FCM notification title that matches a Worker WebSocket event type.
 function buildWorkerPushTitle(type: WorkerSocketEventType): string {
   switch (type) {
     case "WORKER_ASSIGNED":
@@ -302,6 +305,7 @@ function buildWorkerPushTitle(type: WorkerSocketEventType): string {
   }
 }
 
+// Function builds the FCM notification body while keeping detailed data in the payload.
 function buildWorkerPushMessage(
   type: WorkerSocketEventType,
   payload: WorkerSocketPayload

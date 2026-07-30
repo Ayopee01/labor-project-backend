@@ -4,6 +4,9 @@ import * as gateClientsService from "../services/gate-clients.service";
 
 import ApiError from "../utils/api-error";
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function decodes HTTP Basic credentials as client_id:client_secret for Gate API calls.
 function decodeBasicCredentials(authorization: string | undefined): {
   clientId: string;
   clientSecret: string;
@@ -50,6 +53,7 @@ function decodeBasicCredentials(authorization: string | undefined): {
   };
 }
 
+// Function authenticates Gate requests and attaches the public Gate client to req.gateClient.
 export default async function gateClientAuthMiddleware(
   req: Request,
   _res: Response,

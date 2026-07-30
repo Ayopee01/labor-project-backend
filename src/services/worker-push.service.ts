@@ -10,19 +10,31 @@ import { parseWithSchema } from "../validation/parser";
 import { workerPushTokenBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config Firebase multicast batch limit per Admin SDK request.
 const FCM_MULTICAST_LIMIT = 500;
+
+// Config Firebase errors that mean the stored token should be revoked.
 const INVALID_FCM_ERROR_CODES = new Set([
   "messaging/invalid-argument",
   "messaging/registration-token-not-registered",
   "messaging/invalid-registration-token",
 ]);
 
+/* -------------------------------------- State -------------------------------------- */
+
+// State caches Firebase env readiness so every notification does not re-check env parsing.
 let firebaseConfigured: boolean | null = null;
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function normalizes multiline private key values stored in .env.
 function getFirebasePrivateKey(): string | undefined {
   return process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 }
 
+// Function checks whether Firebase Admin SDK can be initialized in this environment.
 function isFirebaseConfigured(): boolean {
   if (firebaseConfigured !== null) {
     return firebaseConfigured;
@@ -37,6 +49,7 @@ function isFirebaseConfigured(): boolean {
   return firebaseConfigured;
 }
 
+// Function initializes Firebase Admin SDK lazily before sending the first push.
 function ensureFirebaseApp(): boolean {
   if (!isFirebaseConfigured()) {
     return false;
@@ -55,6 +68,7 @@ function ensureFirebaseApp(): boolean {
   return true;
 }
 
+// Function converts WebSocket-style payload objects to string-only FCM data payloads.
 function toFcmData(payload?: Record<string, unknown>): Record<string, string> {
   const data: Record<string, string> = {};
 
@@ -69,6 +83,7 @@ function toFcmData(payload?: Record<string, unknown>): Record<string, string> {
   return data;
 }
 
+// Function splits token arrays into Firebase-compatible multicast chunks.
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
 
@@ -79,10 +94,12 @@ function chunk<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
+// Function narrows auth payload to an active Worker token shape for push token registration.
 function isWorkerAuth(auth?: AccessTokenPayload): auth is AccessTokenPayload {
   return Boolean(auth && auth.role === "worker" && auth.account_id && auth.session_id);
 }
 
+// Function registers or refreshes an FCM token from the authenticated Worker Mobile API.
 export async function registerWorkerPushToken(
   auth: AccessTokenPayload | undefined,
   session: SessionDto | undefined,
@@ -118,6 +135,7 @@ export async function registerWorkerPushToken(
   };
 }
 
+// Function registers an FCM token during auth login/force-login when Mobile sends one.
 export async function registerWorkerPushTokenForAccount(input: {
   worker_code: string;
   session_id: number;
@@ -138,6 +156,7 @@ export async function registerWorkerPushTokenForAccount(input: {
   }, connection);
 }
 
+// Function revokes all active push tokens tied to a session when the session is revoked.
 export async function revokeWorkerPushTokensBySession(
   sessionId: number,
   connection?: DbConnection
@@ -145,6 +164,7 @@ export async function revokeWorkerPushTokensBySession(
   await workerPushTokenRepository.revokeBySessionId(sessionId, connection);
 }
 
+// Function sends FCM push notifications by WorkerCode and revokes invalid stored tokens.
 export async function sendWorkerPushNotification(
   input: WorkerPushEventInput
 ): Promise<void> {
@@ -189,6 +209,7 @@ export async function sendWorkerPushNotification(
   await workerPushTokenRepository.revokeByTokenHashes(invalidTokenHashes);
 }
 
+// Function bridges internal account ids to WorkerCode before sending mobile push notifications.
 export async function sendWorkerPushNotificationByAccountIds(input: {
   account_ids: number[];
   type: string;
