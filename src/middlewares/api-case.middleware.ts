@@ -33,6 +33,7 @@ const requestKeyMap: Record<string, string> = {
   EndTime: "end_time",
   ExpiresAt: "expires_at",
   ExpiresIn: "expires_in",
+  FcmToken: "fcm_token",
   FullName: "full_name",
   GateTransactionRef: "gate_transaction_ref",
   ImageUrl: "image_url",

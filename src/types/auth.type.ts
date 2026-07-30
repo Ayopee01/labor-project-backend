@@ -74,6 +74,7 @@ export interface PendingSessionInput {
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+  session: SessionDto;
 }
 
 // Type ส่วน shift ที่แสดงใน profile/me ของ worker

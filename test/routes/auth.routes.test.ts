@@ -8,6 +8,7 @@ import {
   resetRouteTestState,
   restoreRouteTestLoader,
   startRouteTestServer,
+  state,
   type TestServer,
 } from "../helpers/app-test-harness";
 
@@ -168,6 +169,52 @@ test("GET /api/auth/me returns current worker account from access token", async 
   assert.equal(response.body.phone, worker.phone);
   assert.equal(response.body.shift.start_time, "00:00");
   assert.equal(response.body.shift.end_time, "23:59");
+});
+
+test("worker auth flow stores, refreshes, and revokes FCM token by WorkerCode", async () => {
+  const passwordHash = await password.hashPassword("Worker@123456");
+  const worker = addWorker(1010, passwordHash);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: worker.username,
+      password: "Worker@123456",
+      device_id: "mobile-push-1010",
+      device_name: "Worker Mobile",
+      fcm_token: "fcm-token-1010-a",
+      platform: "android",
+    },
+  });
+
+  assert.equal(login.status, 200);
+  assert.equal(state.workerPushTokens.length, 1);
+  assert.equal(state.workerPushTokens[0].worker_code, worker.username);
+  assert.equal(state.workerPushTokens[0].device_id, "mobile-push-1010");
+  assert.equal(state.workerPushTokens[0].platform, "android");
+  assert.equal(state.workerPushTokens[0].fcm_token, "fcm-token-1010-a");
+  assert.equal(state.workerPushTokens[0].is_active, true);
+
+  const refreshPushToken = await server.request("POST", "/api/workers/me/push-token", {
+    token: login.body.access_token,
+    body: {
+      fcm_token: "fcm-token-1010-b",
+      platform: "android",
+    },
+  });
+
+  assert.equal(refreshPushToken.status, 200);
+  assert.equal(refreshPushToken.body.code, "WORKER_PUSH_TOKEN_REGISTERED");
+  assert.equal(refreshPushToken.body.worker_code, worker.username);
+  assert.equal(refreshPushToken.body.device_id, "mobile-push-1010");
+  assert.equal(refreshPushToken.body.platform, "android");
+  assert.equal(state.workerPushTokens.length, 1);
+  assert.equal(state.workerPushTokens[0].fcm_token, "fcm-token-1010-b");
+
+  const logout = await server.request("POST", "/api/auth/logout", {
+    token: login.body.access_token,
+  });
+
+  assert.equal(logout.status, 200);
+  assert.equal(state.workerPushTokens[0].is_active, false);
 });
 
 test("PATCH /api/auth/me/password changes own password and keeps current session active", async () => {

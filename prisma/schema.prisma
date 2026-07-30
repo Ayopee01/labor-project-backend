@@ -349,9 +349,33 @@ model UserSession {
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
   account Account @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  workerPushTokens WorkerPushToken[] @relation("WorkerPushTokenSession")
 
   @@index([accountId, isActive])
   @@map("user_sessions")
+}
+
+model WorkerPushToken {
+  id           Int       @id @default(autoincrement())
+  workerCode   String    @map("worker_code") @db.VarChar(100)
+  sessionId    Int?      @map("session_id")
+  deviceId     String    @map("device_id") @db.VarChar(255)
+  platform     String    @default("unknown") @db.VarChar(30)
+  fcmToken     String    @map("fcm_token") @db.Text
+  fcmTokenHash String    @map("fcm_token_hash") @db.VarChar(64)
+  isActive     Boolean   @default(true) @map("is_active")
+  lastSeenAt   DateTime  @default(now()) @map("last_seen_at") @db.Timestamp(3)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamp(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  session UserSession? @relation("WorkerPushTokenSession", fields: [sessionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([workerCode, deviceId, platform])
+  @@index([fcmTokenHash])
+  @@index([workerCode, isActive])
+  @@index([sessionId, isActive])
+  @@map("worker_push_tokens")
 }
 
 model WorkerWorkSchedule {

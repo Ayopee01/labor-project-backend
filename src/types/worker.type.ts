@@ -126,12 +126,9 @@ export interface WorkerQueueEntryDto {
 
 // Type ส่วน response หลัง worker online/open_app พร้อมสรุปงานและจำนวนพักในกะ
 export interface WorkerOnlineResponse {
-  full_name: string;
-  worker_code: string | null;
-  status: WorkerWorkStatus;
-  today_job_count: number;
-  break_count_used: number;
-  completed_job_count: number;
+  statusCode: number;
+  code: string;
+  message: string;
 }
 
 // Type ส่วน response หลัง worker กดพัก
@@ -164,6 +161,9 @@ export interface WorkerStatusResponse {
   worker_code: string | null;
   image_url: string | null;
   status: WorkerWorkStatus;
+  today_job_count: number;
+  break_count_used: number;
+  completed_job_count: number;
   nationality: string | null;
   work_start_date: string | null;
   phone: string | null;

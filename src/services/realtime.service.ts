@@ -1,5 +1,6 @@
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import { publishNotification } from "./notifications.service";
+import { sendWorkerPushNotificationByAccountIds } from "./worker-push.service";
 
 import type { PublishRealtimeEventInput } from "../types/notifications.type";
 import type { WorkerSocketEventType } from "../types/worker.type";
@@ -25,11 +26,26 @@ export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
   const workerAccountIds = [...new Set(input.worker_account_ids ?? [])];
   const workerPayload = input.worker_payload ?? payload;
 
+  if (workerAccountIds.length > 0) {
+    void sendWorkerPushNotificationByAccountIds({
+      account_ids: workerAccountIds,
+      type: input.type,
+      title: input.title,
+      message: input.message,
+      payload: workerPayload,
+    }).catch((error) => {
+      console.error("Failed to send worker push notification.", error);
+    });
+  }
+
   for (const workerAccountId of workerAccountIds) {
     sendWorkerSocketEvent(
       workerAccountId,
       input.type as WorkerSocketEventType,
-      workerPayload
+      workerPayload,
+      {
+        push: false,
+      }
     );
   }
 }

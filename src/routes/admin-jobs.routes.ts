@@ -31,12 +31,12 @@ router.get(
 
 // Route บังคับเปลี่ยนสถานะ worker จากหน้า monitor/dispatch
 router.post(
-  "/jobs/workers/:id/status/force",
+  "/jobs/workers/:workerCode/status/force",
   permissionMiddleware(["workers:force_status"]),
   async (req, res, next) => {
     try {
       const result = await adminWorkersService.forceAdminWorkerStatus(
-        req.params.id,
+        req.params.workerCode,
         req.body
       );
       res.json(result);

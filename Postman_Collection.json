@@ -68,6 +68,18 @@
       "description": "Client device name sent in login body."
     },
     {
+      "key": "fcmToken",
+      "value": "postman-fcm-token",
+      "type": "string",
+      "description": "Worker Firebase Cloud Messaging token for push notification tests."
+    },
+    {
+      "key": "pushPlatform",
+      "value": "android",
+      "type": "string",
+      "description": "Worker push token platform: android, ios, web, or unknown."
+    },
+    {
       "key": "gateClientId",
       "value": "gate-main",
       "type": "string",
@@ -80,10 +92,10 @@
       "description": "Gate ClientSecret shown once by Admin Settings create/rotate Gate client APIs."
     },
     {
-      "key": "userId",
+      "key": "workerCode",
       "value": "MN000012",
       "type": "string",
-      "description": "Worker code or username used by Admin Workers /:id routes, for example MN000012."
+      "description": "WorkerCode used by Admin Workers /:workerCode routes, for example MN000012."
     },
     {
       "key": "adminUserId",
@@ -144,12 +156,6 @@
       "value": "",
       "type": "string",
       "description": "Driver guest session token returned by POST /api/driver/qr-sessions."
-    },
-    {
-      "key": "workerCode",
-      "value": "MN000012",
-      "type": "string",
-      "description": "Worker code used by admin assignment APIs."
     }
   ],
   "item": [
@@ -244,7 +250,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"Username\": \"MN000012\",\n  \"Password\": \"0812345678\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\"\n}",
+              "raw": "{\n  \"Username\": \"MN000012\",\n  \"Password\": \"0812345678\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\",\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -262,7 +268,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone from worker creation, DeviceId, and DeviceName.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone from worker creation, DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
           "response": []
         },
@@ -297,7 +303,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"LoginChallengeToken\": \"{{loginChallengeToken}}\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\"\n}",
+              "raw": "{\n  \"LoginChallengeToken\": \"{{loginChallengeToken}}\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\",\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -316,7 +322,7 @@
                 "confirm-force"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName, optional FcmToken, optional Platform\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken. If FcmToken is sent, backend revokes the old session push token and stores the new token for this WorkerCode."
           },
           "response": []
         },
@@ -616,7 +622,7 @@
           "response": []
         },
         {
-          "name": "GET /api/admin/users/:id",
+          "name": "GET /api/admin/users/:workerCode",
           "request": {
             "method": "GET",
             "header": [
@@ -628,7 +634,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/users/{{userId}}",
+              "raw": "{{baseUrl}}/api/admin/users/{{workerCode}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -636,18 +642,18 @@
                 "api",
                 "admin",
                 "users",
-                "{{userId}}"
+                "{{workerCode}}"
               ]
             },
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{userId}} must be WorkerCode or username, for example MN000012. Response is trimmed for worker edit UI: ImageUrl, WorkerCode, FullName, Status, and Details. Details includes Phone, Position, Nationality, ShirtNumber, ShirtType, WorkStartDate, ShiftNo, ShiftStartTime, ShiftEndTime, and ShiftName."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{workerCode}} must be WorkerCode, for example MN000012. Response is trimmed for worker edit UI: ImageUrl, WorkerCode, FullName, Status, and Details. Details includes Phone, Position, Nationality, ShirtNumber, ShirtType, WorkStartDate, ShiftNo, ShiftStartTime, ShiftEndTime, and ShiftName."
           },
           "response": []
         },
         {
-          "name": "PATCH /api/admin/users/:id",
+          "name": "PATCH /api/admin/users/:workerCode",
           "request": {
             "method": "PATCH",
             "header": [
@@ -674,7 +680,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/admin/users/{{userId}}",
+              "raw": "{{baseUrl}}/api/admin/users/{{workerCode}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -682,18 +688,18 @@
                 "api",
                 "admin",
                 "users",
-                "{{userId}}"
+                "{{workerCode}}"
               ]
             },
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: ImageUrl/img, WorkerCode, FullName, Phone, Nationality, Status, Position, ShirtNumber, ShirtType, optional WorkStartDate, ShiftStartTime, ShiftEndTime. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. ShiftNo cannot be updated in this body. Admin edits only ShiftStartTime and ShiftEndTime; backend derives ShiftNo and ShiftName from ShiftStartTime. ShiftStartTime and ShiftEndTime must be time only in HH:mm and must be sent together.\nNotes: Admin only. {{userId}} must be WorkerCode or username. If nationality, ShirtType, or ShirtNumber is sent without WorkerCode, backend regenerates WorkerCode/username from nationality + ShirtType + ShirtNumber, using existing profile values for fields omitted from the request. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{userId}}/password."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: ImageUrl/img, WorkerCode, FullName, Phone, Nationality, Status, Position, ShirtNumber, ShirtType, optional WorkStartDate, ShiftStartTime, ShiftEndTime. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. ShiftNo cannot be updated in this body. Admin edits only ShiftStartTime and ShiftEndTime; backend derives ShiftNo and ShiftName from ShiftStartTime. ShiftStartTime and ShiftEndTime must be time only in HH:mm and must be sent together.\nNotes: Admin only. {{workerCode}} must be WorkerCode. If nationality, ShirtType, or ShirtNumber is sent without WorkerCode, backend regenerates WorkerCode/username from nationality + ShirtType + ShirtNumber, using existing profile values for fields omitted from the request. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{workerCode}}/password."
           },
           "response": []
         },
         {
-          "name": "PATCH /api/admin/users/:id/password",
+          "name": "PATCH /api/admin/users/:workerCode/password",
           "request": {
             "method": "PATCH",
             "header": [
@@ -720,7 +726,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/admin/users/{{userId}}/password",
+              "raw": "{{baseUrl}}/api/admin/users/{{workerCode}}/password",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -728,14 +734,14 @@
                 "api",
                 "admin",
                 "users",
-                "{{userId}}",
+                "{{workerCode}}",
                 "password"
               ]
             },
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{userId}}/password\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON: NewPassword\nNotes: Admin only. {{userId}} must be WorkerCode or username. Resets worker password and revokes worker sessions."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}/password\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON: NewPassword\nNotes: Admin only. {{workerCode}} must be WorkerCode. Resets worker password and revokes worker sessions."
           },
           "response": []
         }
@@ -776,7 +782,7 @@
           "response": []
         },
         {
-          "name": "POST /api/admin/jobs/workers/:id/status/force",
+          "name": "POST /api/admin/jobs/workers/:workerCode/status/force",
           "request": {
             "method": "POST",
             "header": [
@@ -801,7 +807,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/admin/jobs/workers/{{userId}}/status/force",
+              "raw": "{{baseUrl}}/api/admin/jobs/workers/{{workerCode}}/status/force",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -810,7 +816,7 @@
                 "admin",
                 "jobs",
                 "workers",
-                "{{userId}}",
+                "{{workerCode}}",
                 "status",
                 "force"
               ]
@@ -818,7 +824,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/workers/{{userId}}/status/force\nAuth: Admin access token\nBody: status open_app|ready|break, optional reason\nResponse: Message, FullName, WorkerCode, Status only.\nNotes: Admin Jobs. {{userId}} must be WorkerCode or username and must have an active Worker WebSocket connection. If the Worker is offline, response is 409 WORKER_NOT_ONLINE. open_app means the Worker is online/opened the app but not in ready queue; it removes the Worker from dispatch queue. ready puts the online Worker into Redis queue. break starts a configured break, default 15 minutes, and consumes a break count. Offline workers are not a board status and should not be shown by GET /api/admin/jobs/workers/status."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/workers/{{workerCode}}/status/force\nAuth: Admin access token\nBody: status open_app|ready|break, optional reason\nResponse: Message, FullName, WorkerCode, Status only.\nNotes: Admin Jobs. {{workerCode}} must be WorkerCode and must have an active Worker WebSocket connection. If the Worker is offline, response is 409 WORKER_NOT_ONLINE. open_app means the Worker is online/opened the app but not in ready queue; it removes the Worker from dispatch queue. ready puts the online Worker into Redis queue. break starts a configured break, default 15 minutes, and consumes a break count. Offline workers are not a board status and should not be shown by GET /api/admin/jobs/workers/status."
           },
           "response": []
         },
@@ -1807,7 +1813,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/online\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, status, TodayJobCount, BreakCountUsed, CompletedJobCount.\nNotes: Requires active /ws/workers WebSocket. From open_app, worker can enter queue only once per shift/day. If current status is break, worker can call this endpoint to return early before break timer ends. Returns 403 if the worker has no current schedule or is outside the assigned shift. OUTSIDE_WORK_SHIFT includes shift and remaining_time text for the mobile modal."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/online\nAuth: Worker access token\nBody: None\nResponse: StatusCode, Code, Message. Success response is { \"StatusCode\": 200, \"Code\": \"WORKER_ONLINE_SUCCESS\", \"Message\": \"Worker entered queue successfully.\" }.\nNotes: Requires active /ws/workers WebSocket. From open_app, worker can enter queue only once per shift/day. If current status is break, worker can call this endpoint to return early before break timer ends. Returns 403 if the worker has no current schedule or is outside the assigned shift. OUTSIDE_WORK_SHIFT includes shift and remaining_time text for the mobile modal. Daily counts are returned by GET /api/workers/me/status."
           },
           "response": []
         },
@@ -1837,7 +1843,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/offline\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, status, TodayJobCount, BreakCountUsed, CompletedJobCount. The worker is removed from Redis queue internally, response status is open_app, and the current shift is closed so the worker cannot re-enter queue in the same shift."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/offline\nAuth: Worker access token\nBody: None\nResponse: StatusCode, Code, Message. Success response is { \"StatusCode\": 200, \"Code\": \"WORKER_OFFLINE_SUCCESS\", \"Message\": \"Worker left queue successfully.\" }. The worker is removed from Redis queue internally and the current shift is closed so the worker cannot re-enter queue in the same shift. Daily counts are returned by GET /api/workers/me/status."
           },
           "response": []
         },
@@ -1897,7 +1903,51 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, status, nationality, WorkStartDate, phone, and shift name/start/end. status is one of open_app, ready, assigned, working, break. When status is break, response also includes BreakUntil and RemainingBreakTime with TotalSeconds, minutes, seconds, and text."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, working, break. When Status is break, response also includes BreakUntil and RemainingBreakTime with TotalSeconds, Minutes, Seconds, and Text."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/workers/me/push-token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/push-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "push-token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/push-token\nAuth: Worker access token\nBody: FcmToken required, Platform optional. DeviceId is optional and defaults to the current session DeviceId.\nResponse: StatusCode, Code, Message, WorkerCode, DeviceId, Platform. FcmToken is not returned.\nNotes: Use after login or whenever Firebase returns a refreshed token. Backend stores token by WorkerCode + DeviceId + Platform and uses it for worker push notifications."
           },
           "response": []
         },
@@ -2189,7 +2239,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"Events\": [\n    {\n      \"Type\": \"postback\",\n      \"Source\": {\n        \"UserId\": \"line-vendor-a\"\n      },\n      \"Postback\": {\n        \"Data\": \"action=vendor_reject_completion&token={{vendorRejectToken}}&reject_reason=จำนวนถุงไม่ตรงกับใบสั่ง\"\n      }\n    }\n  ]\n}",
+              "raw": "{\n  \"Events\": [\n    {\n      \"Type\": \"postback\",\n      \"Source\": {\n        \"UserId\": \"line-vendor-a\"\n      },\n      \"Postback\": {\n        \"Data\": \"action=vendor_reject_completion&token={{vendorRejectToken}}&reject_reason=Quantity mismatch\"\n      }\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

@@ -290,12 +290,6 @@
     WorkerProfile:
       type: object
       properties:
-        id:
-          type: integer
-          example: 10
-        account_id:
-          type: integer
-          example: 1
         worker_code:
           type: string
           example: MN000142
@@ -331,12 +325,9 @@
     WorkSchedule:
       type: object
       properties:
-        id:
-          type: integer
-          example: 25
-        account_id:
-          type: integer
-          example: 1
+        worker_code:
+          type: string
+          example: MN000142
         shift_no:
           type: integer
           enum:
@@ -397,6 +388,19 @@
           type: string
           description: Required when the account role is worker. Omit for admin login.
           example: Chrome on Windows
+        fcm_token:
+          type: string
+          description: Optional for worker login. Mobile FCM registration token used for background push notifications.
+          example: fcm-registration-token
+        platform:
+          type: string
+          description: Optional push token platform. Defaults to unknown when omitted.
+          enum:
+            - android
+            - ios
+            - web
+            - unknown
+          example: android
     ConfirmForceLoginRequest:
       type: object
       required:
@@ -413,6 +417,18 @@
         device_name:
           type: string
           example: Chrome on Windows
+        fcm_token:
+          type: string
+          description: Optional worker FCM registration token for the new forced-login session.
+          example: fcm-registration-token
+        platform:
+          type: string
+          enum:
+            - android
+            - ios
+            - web
+            - unknown
+          example: android
     RefreshRequest:
       type: object
       required:
@@ -1764,7 +1780,7 @@
               example: 2
             LicensePlate:
               type: string
-              example: กข 1234 กรุงเทพมหานคร
+              example: ABC-1234
             VehicleTypeCode:
               type: string
               nullable: true
@@ -1772,7 +1788,7 @@
             VehicleTypeName:
               type: string
               nullable: true
-              example: รถกระบะ
+              example: Pickup truck
             WorkersRequired:
               type: integer
               example: 1
@@ -1795,7 +1811,7 @@
               example: "1123"
             MarketName:
               type: string
-              example: ตลาดส้ม
+              example: Orange Market
         Booth:
           type: object
           required:
@@ -1808,7 +1824,7 @@
             BoothName:
               type: string
               nullable: true
-              example: แผงส้มเจริญผล
+              example: Orange Stall
         Product:
           type: object
           required:
@@ -1823,13 +1839,13 @@
               example: FRUIT-ORG001
             ProductName:
               type: string
-              example: ส้มเขียวหวาน
+              example: Tangerine
             PackageCode:
               type: string
               example: "22"
             PackageName:
               type: string
-              example: แพ็กเกจส้ม
+              example: Orange package
             Quantity:
               type: number
               example: 180
@@ -2358,10 +2374,10 @@
     WorkerQueueEntry:
       type: object
       properties:
-        id:
-          type: integer
-        account_id:
-          type: integer
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
         status:
           type: string
           description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, working, or break.
@@ -2387,32 +2403,60 @@
     WorkerOnlineResponse:
       type: object
       properties:
-        full_name:
+        statusCode:
+          type: integer
+          example: 200
+        code:
           type: string
-          example: Worker Name
+          enum:
+            - WORKER_ONLINE_SUCCESS
+            - WORKER_OFFLINE_SUCCESS
+          example: WORKER_ONLINE_SUCCESS
+        message:
+          type: string
+          example: Worker entered queue successfully.
+    WorkerPushTokenRequest:
+      type: object
+      required:
+        - fcm_token
+      properties:
+        fcm_token:
+          type: string
+          description: Firebase Cloud Messaging registration token from the worker mobile app.
+          example: fcm-registration-token
+        device_id:
+          type: string
+          description: Optional. Defaults to the authenticated session device_id.
+          example: worker-device-001
+        platform:
+          type: string
+          enum:
+            - android
+            - ios
+            - web
+            - unknown
+          example: android
+    WorkerPushTokenResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 200
+        code:
+          type: string
+          example: WORKER_PUSH_TOKEN_REGISTERED
+        message:
+          type: string
+          example: Worker push token registered successfully.
         worker_code:
           type: string
-          nullable: true
-          example: MN000142
-        status:
+          example: MN000012
+        device_id:
           type: string
-          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, working, or break.
-          enum:
-            - open_app
-            - ready
-            - assigned
-            - working
-            - break
-          example: ready
-        today_job_count:
-          type: integer
-          example: 3
-        break_count_used:
-          type: integer
-          example: 1
-        completed_job_count:
-          type: integer
-          example: 2
+          example: worker-device-001
+        platform:
+          type: string
+          example: android
     WorkerBreakResponse:
       type: object
       properties:
@@ -2671,6 +2715,15 @@
             - working
             - break
           example: break
+        today_job_count:
+          type: integer
+          example: 3
+        break_count_used:
+          type: integer
+          example: 1
+        completed_job_count:
+          type: integer
+          example: 2
         nationality:
           type: string
           nullable: true

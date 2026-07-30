@@ -10,6 +10,7 @@ import { findActiveByIdAndAccountId } from "../repositories/shared/session.repos
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
 import { getWorkerQueueStatus, markWorkerOpenApp, recordWorkerHeartbeat } from "../queues/worker-queue";
 import { publishNotification } from "../services/notifications.service";
+import { sendWorkerPushNotificationByAccountIds } from "../services/worker-push.service";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
 
 // import Types
@@ -42,6 +43,12 @@ type WorkerSocket = WebSocket & {
 // Type ส่วน payload ที่ส่งเข้า Worker WebSocket event
 type WorkerSocketPayload = Record<string, unknown>;
 
+type WorkerSocketEventOptions = {
+  push?: boolean;
+  pushTitle?: string;
+  pushMessage?: string;
+};
+
 /* -------------------------------------- State -------------------------------------- */
 
 // State เก็บ socket ที่เปิดอยู่ของ worker แต่ละคน
@@ -49,6 +56,19 @@ const workerSockets = new Map<number, Set<WorkerSocket>>();
 
 // State เก็บ timer grace period หลัง socket ของ worker หลุด
 const disconnectTimers = new Map<number, NodeJS.Timeout>();
+
+const PUSH_WORKER_SOCKET_EVENTS = new Set<WorkerSocketEventType>([
+  "WORKER_ASSIGNED",
+  "ASSIGNMENT_TIMEOUT",
+  "ASSIGNMENT_CANCELLED",
+  "ASSIGNMENT_SCAN_DEADLINE_EXTENDED",
+  "ASSIGNMENT_SCAN_DEADLINE_SHORTENED",
+  "TICKET_COMPLETION_SUBMITTED",
+  "TICKET_COMPLETION_RESULT",
+  "STALL_JOB_CANCELLED",
+  "MARKET_JOB_CANCELLED",
+  "VEHICLE_JOB_CANCELLED",
+]);
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -220,9 +240,23 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
 export function sendWorkerSocketEvent(
   accountId: number,
   type: WorkerSocketEventType,
-  payload: WorkerSocketPayload = {}
+  payload: WorkerSocketPayload = {},
+  options: WorkerSocketEventOptions = {}
 ): boolean {
   const sockets = workerSockets.get(accountId);
+  const shouldPush = options.push ?? PUSH_WORKER_SOCKET_EVENTS.has(type);
+
+  if (shouldPush) {
+    void sendWorkerPushNotificationByAccountIds({
+      account_ids: [accountId],
+      type,
+      title: options.pushTitle ?? buildWorkerPushTitle(type),
+      message: options.pushMessage ?? buildWorkerPushMessage(type, payload),
+      payload,
+    }).catch((error) => {
+      console.error("Failed to send worker push notification.", error);
+    });
+  }
 
   if (!sockets || sockets.size === 0) {
     return false;
@@ -242,6 +276,63 @@ export function sendWorkerSocketEvent(
   }
 
   return true;
+}
+
+function buildWorkerPushTitle(type: WorkerSocketEventType): string {
+  switch (type) {
+    case "WORKER_ASSIGNED":
+      return "New assignment";
+    case "ASSIGNMENT_TIMEOUT":
+      return "Assignment timed out";
+    case "ASSIGNMENT_CANCELLED":
+    case "STALL_JOB_CANCELLED":
+    case "MARKET_JOB_CANCELLED":
+    case "VEHICLE_JOB_CANCELLED":
+      return "Assignment cancelled";
+    case "ASSIGNMENT_SCAN_DEADLINE_EXTENDED":
+      return "Scan deadline extended";
+    case "ASSIGNMENT_SCAN_DEADLINE_SHORTENED":
+      return "Scan deadline updated";
+    case "TICKET_COMPLETION_SUBMITTED":
+      return "Ticket submitted";
+    case "TICKET_COMPLETION_RESULT":
+      return "Ticket result updated";
+    default:
+      return "Worker notification";
+  }
+}
+
+function buildWorkerPushMessage(
+  type: WorkerSocketEventType,
+  payload: WorkerSocketPayload
+): string {
+  const ticketNo = typeof payload.ticketNo === "string" ? payload.ticketNo : null;
+
+  switch (type) {
+    case "WORKER_ASSIGNED":
+      return ticketNo
+        ? `You have a new assignment for ticket ${ticketNo}.`
+        : "You have a new assignment.";
+    case "ASSIGNMENT_TIMEOUT":
+      return "Your assignment deadline has expired.";
+    case "ASSIGNMENT_CANCELLED":
+    case "STALL_JOB_CANCELLED":
+    case "MARKET_JOB_CANCELLED":
+    case "VEHICLE_JOB_CANCELLED":
+      return ticketNo
+        ? `Assignment ${ticketNo} was cancelled.`
+        : "Your assignment was cancelled.";
+    case "ASSIGNMENT_SCAN_DEADLINE_EXTENDED":
+      return "Your QR scan deadline was extended.";
+    case "ASSIGNMENT_SCAN_DEADLINE_SHORTENED":
+      return "Please scan QR before the updated deadline.";
+    case "TICKET_COMPLETION_SUBMITTED":
+      return "Ticket completion is waiting for vendor confirmation.";
+    case "TICKET_COMPLETION_RESULT":
+      return "Vendor confirmation result is available.";
+    default:
+      return "A worker notification is available.";
+  }
 }
 
 // Function ตรวจว่า worker ยังมี socket connected อยู่หรือไม่

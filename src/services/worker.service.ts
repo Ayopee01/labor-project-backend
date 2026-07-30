@@ -51,8 +51,10 @@ function buildRemainingBreakTime(
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   const textParts = [
-    minutes > 0 ? `${minutes} เธเธฒเธ—เธต` : null,
-    seconds > 0 || minutes === 0 ? `${seconds} เธงเธดเธเธฒเธ—เธต` : null,
+    minutes > 0 ? `${minutes} ${minutes === 1 ? "minute" : "minutes"}` : null,
+    seconds > 0 || minutes === 0
+      ? `${seconds} ${seconds === 1 ? "second" : "seconds"}`
+      : null,
   ].filter((part): part is string => Boolean(part));
 
   return {
@@ -76,25 +78,22 @@ function withBreakUsage(
   };
 }
 
-// Function เธชเธฃเนเธฒเธ response เธซเธฅเธฑเธ worker online/open_app เธเธฃเนเธญเธกเธชเธฃเธธเธเธเธฒเธเนเธฅเธฐเธเธณเธเธงเธเธเธฑเธเธเธญเธเธงเธฑเธ/เธเธฐ
-async function buildWorkerOnlineResponse(
-  account: AccountDto,
-  queueEntry: WorkerQueueEntryDto,
+async function buildWorkerDailySummary(
+  accountId: number,
   schedule: WorkScheduleDto | null,
-  assignment: VehicleJobAssignmentDto | null = null,
   connection?: Parameters<typeof workerApplicationRepository.listWorkerAssignmentHistoryByDate>[3]
-): Promise<WorkerOnlineResponse> {
+): Promise<Pick<WorkerStatusResponse, "today_job_count" | "break_count_used" | "completed_job_count">> {
   const today = formatBangkokDate();
   const { startAt, endAt } = buildBangkokDateRange(today);
   const shiftInstanceKey = schedule ? buildWorkScheduleShiftInstanceKey(schedule) : null;
   const [assignmentHistory, breakCountUsed] = await Promise.all([
     workerApplicationRepository.listWorkerAssignmentHistoryByDate(
-      account.id,
+      accountId,
       startAt,
       endAt,
       connection
     ),
-    shiftInstanceKey ? getWorkerBreakCount(account.id, shiftInstanceKey) : 0,
+    shiftInstanceKey ? getWorkerBreakCount(accountId, shiftInstanceKey) : 0,
   ]);
   const completedJobCount = assignmentHistory.filter(({ assignment }) =>
     assignment.status === "COMPLETED" || Boolean(assignment.completed_at)
@@ -104,12 +103,18 @@ async function buildWorkerOnlineResponse(
   ).length;
 
   return {
-    full_name: account.full_name,
-    worker_code: account.username,
-    status: resolveWorkerWorkStatus(queueEntry, assignment),
     today_job_count: todayJobCount,
     break_count_used: breakCountUsed,
     completed_job_count: completedJobCount,
+  };
+}
+
+// Function เธชเธฃเนเธฒเธ response เธซเธฅเธฑเธ worker online/open_app
+function buildWorkerQueueActionResponse(code: string, message: string): WorkerOnlineResponse {
+  return {
+    statusCode: 200,
+    code,
+    message,
   };
 }
 
@@ -329,7 +334,11 @@ function buildVendorCompletionMessage(
     const expectedQuantity = Number(product.quantity);
     const confirmedQuantity = Number(product.confirmed_quantity ?? 0);
     const diff = confirmedQuantity - expectedQuantity;
-    const diffText = diff === 0 ? "เธ•เธฃเธ" : diff > 0 ? `เน€เธเธดเธ ${diff}` : `เธเธฒเธ” ${Math.abs(diff)}`;
+    const diffText = diff === 0
+      ? "matched"
+      : diff > 0
+        ? `over ${diff}`
+        : `short ${Math.abs(diff)}`;
 
     return [
       `- ${product.packageCode} / ${product.productName}`,
@@ -512,18 +521,16 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
       throw new ApiError(404, "WORKER_QUEUE_NOT_FOUND", "Worker queue entry not found.");
     }
 
-    const response = await buildWorkerOnlineResponse(
-      account,
-      latestQueueEntry,
-      currentSchedule,
-      latestAssignment,
-      transaction
+    const workerCode = account.username;
+    const response = buildWorkerQueueActionResponse(
+      "WORKER_ONLINE_SUCCESS",
+      "Worker entered queue successfully."
     );
 
     sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
       queue: buildWorkerQueueSocketPayload(
         latestQueueEntry,
-        response.worker_code,
+        workerCode,
         latestAssignment
       ),
     });
@@ -532,10 +539,10 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
       title: "Worker online",
       message: `Worker ${account.full_name} is ready for work.`,
       payload: {
-        worker_code: response.worker_code,
+        worker_code: workerCode,
         queue: buildWorkerQueueSocketPayload(
           latestQueueEntry,
-          response.worker_code,
+          workerCode,
           latestAssignment
         ),
         reason: "worker_online",
@@ -570,17 +577,16 @@ export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOn
   }
 
   const queueEntry = await markWorkerOpenApp(account.id);
-  const response = await buildWorkerOnlineResponse(
-    account,
-    queueEntry,
-    currentSchedule,
-    currentAssignment
+  const workerCode = account.username;
+  const response = buildWorkerQueueActionResponse(
+    "WORKER_OFFLINE_SUCCESS",
+    "Worker left queue successfully."
   );
 
   sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
     queue: buildWorkerQueueSocketPayload(
       queueEntry,
-      response.worker_code,
+      workerCode,
       currentAssignment
     ),
   });
@@ -589,10 +595,10 @@ export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOn
     title: "Worker moved to open_app",
     message: `Worker ${account.full_name} moved to open_app.`,
     payload: {
-      worker_code: response.worker_code,
+      worker_code: workerCode,
       queue: buildWorkerQueueSocketPayload(
         queueEntry,
-        response.worker_code,
+        workerCode,
         currentAssignment
       ),
       reason: "worker_open_app",
@@ -723,11 +729,13 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
   ]);
   const schedule = formatScheduleWithShift(currentSchedule);
   const status = resolveWorkerWorkStatus(queueEntry, currentAssignment);
+  const dailySummary = await buildWorkerDailySummary(account.id, currentSchedule);
   const response: WorkerStatusResponse = {
     full_name: account.full_name,
     worker_code: account.username,
     image_url: profile?.image_url ?? null,
     status,
+    ...dailySummary,
     nationality: profile?.nationality ?? null,
     work_start_date: profile?.work_start_date ?? null,
     phone: account.phone,

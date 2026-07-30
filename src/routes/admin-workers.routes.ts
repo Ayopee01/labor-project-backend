@@ -49,13 +49,13 @@ router.get(
   }
 );
 
-// Route ดึงรายละเอียด worker รายคนด้วย worker_code หรือ username
+// Route ดึงรายละเอียด worker รายคนด้วย WorkerCode
 router.get(
-  "/:id",
+  "/:workerCode",
   permissionMiddleware(["workers:read"]),
   async (req, res, next) => {
     try {
-      const result = await adminWorkersService.getUser(String(req.params.id), req.auth);
+      const result = await adminWorkersService.getUser(String(req.params.workerCode), req.auth);
       res.json(result);
     } catch (error) {
       next(error);
@@ -65,12 +65,12 @@ router.get(
 
 // Route แก้ไขข้อมูล worker จากหน้า Admin Workers
 router.patch(
-  "/:id",
+  "/:workerCode",
   permissionMiddleware(["workers:update"]),
   async (req, res, next) => {
     try {
       const result = await adminWorkersService.updateUser(
-        String(req.params.id),
+        String(req.params.workerCode),
         req.body,
         req.auth
       );
@@ -83,12 +83,12 @@ router.patch(
 
 // Route reset password ของ worker และ revoke session เดิม
 router.patch(
-  "/:id/password",
+  "/:workerCode/password",
   permissionMiddleware(["workers:reset_password"]),
   async (req, res, next) => {
     try {
       const result = await adminWorkersService.resetPassword(
-        String(req.params.id),
+        String(req.params.workerCode),
         req.body,
         req.auth
       );

@@ -104,6 +104,16 @@ const optionalLowercaseString = z.preprocess(
     .optional()
 );
 
+const pushPlatformSchema = z.preprocess(
+  emptyStringToUndefined,
+  z
+    .string()
+    .trim()
+    .toLowerCase()
+    .pipe(z.enum(["android", "ios", "web", "unknown"]))
+    .optional()
+);
+
 // Format page แบบ optional จริง ถ้าไม่ส่งจะเป็น undefined เพื่อให้ endpoint เลือกดึงทั้งหมดได้
 const optionalPageNumber = z.preprocess(
   emptyStringToUndefined,
@@ -129,6 +139,8 @@ export const loginBodySchema = z.object({
   password: trimmedString,
   device_id: optionalTrimmedString,
   device_name: optionalTrimmedString,
+  fcm_token: optionalTrimmedString,
+  platform: pushPlatformSchema,
 });
 
 // Schema body สำหรับยืนยัน force login ด้วย challenge token และอุปกรณ์ใหม่
@@ -136,6 +148,14 @@ export const confirmForceLoginBodySchema = z.object({
   login_challenge_token: trimmedString,
   device_id: trimmedString,
   device_name: trimmedString,
+  fcm_token: optionalTrimmedString,
+  platform: pushPlatformSchema,
+});
+
+export const workerPushTokenBodySchema = z.object({
+  fcm_token: trimmedString,
+  device_id: optionalTrimmedString,
+  platform: pushPlatformSchema,
 });
 
 // Schema body สำหรับขอ access token ใหม่ด้วย refresh token

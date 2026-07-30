@@ -402,7 +402,7 @@ test("POST /api/gate/tickets rejects BoothCount changes for an existing TicketNo
 
 /* -------------------------------------- Admin Worker Status Route Tests -------------------------------------- */
 
-test("POST /api/admin/jobs/workers/:id/status/force rejects worker without WebSocket", async () => {
+test("POST /api/admin/jobs/workers/:workerCode/status/force rejects worker without WebSocket", async () => {
   const { token } = await loginJobAdmin(9601);
   const worker = addWorker(9602);
 
@@ -423,7 +423,7 @@ test("POST /api/admin/jobs/workers/:id/status/force rejects worker without WebSo
   assert.equal(queueEntry, null);
 });
 
-test("POST /api/admin/jobs/workers/:id/status/force allows connected worker", async () => {
+test("POST /api/admin/jobs/workers/:workerCode/status/force allows connected worker", async () => {
   const { token } = await loginJobAdmin(9611);
   const worker = addWorker(9612);
   state.connectedWorkers.add(worker.id);
@@ -470,20 +470,10 @@ test("POST /api/workers/me/online puts worker into queue", async () => {
 
   // Step Assert worker เธญเธขเธนเนเนเธ queue เธ”เนเธงเธขเธชเธ–เธฒเธเธฐ ready
   assert.equal(response.status, 200);
-  assert.deepEqual(Object.keys(response.body).sort(), [
-    "break_count_used",
-    "completed_job_count",
-    "full_name",
-    "status",
-    "today_job_count",
-    "worker_code",
-  ]);
-  assert.equal(response.body.full_name, worker.full_name);
-  assert.equal(response.body.worker_code, `W${worker.id}`);
-  assert.equal(response.body.status, "ready");
-  assert.equal(response.body.today_job_count, 0);
-  assert.equal(response.body.break_count_used, 0);
-  assert.equal(response.body.completed_job_count, 0);
+  assert.deepEqual(Object.keys(response.body).sort(), ["code", "message", "statusCode"]);
+  assert.equal(response.body.statusCode, 200);
+  assert.equal(response.body.code, "WORKER_ONLINE_SUCCESS");
+  assert.equal(response.body.message, "Worker entered queue successfully.");
 });
 
 test("POST /api/workers/me/online dispatches an existing ready job when queue was empty", async () => {
@@ -496,7 +486,10 @@ test("POST /api/workers/me/online dispatches an existing ready job when queue wa
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.status, "assigned");
+  assert.deepEqual(Object.keys(response.body).sort(), ["code", "message", "statusCode"]);
+  assert.equal(response.body.statusCode, 200);
+  assert.equal(response.body.code, "WORKER_ONLINE_SUCCESS");
+  assert.equal(response.body.message, "Worker entered queue successfully.");
   assert.equal(state.assignments.length, 1);
   assert.equal(state.assignments[0].vehicle_job_id, job.id);
   assert.equal(state.assignments[0].worker_account_id, worker.id);
@@ -512,7 +505,7 @@ test("POST /api/workers/me/online dispatches an existing ready job when queue wa
   );
 });
 
-test("POST /api/workers/me/online does not count TIMEOUT assignments", async () => {
+test("GET /api/workers/me/status does not count TIMEOUT assignments", async () => {
   const { token, worker } = await loginWorker(104);
   state.connectedWorkers.add(worker.id);
   const timeoutAssignment = addPendingAssignment(10201, 1020, worker.id);
@@ -521,7 +514,10 @@ test("POST /api/workers/me/online does not count TIMEOUT assignments", async () 
   completedAssignment.status = "COMPLETED";
   completedAssignment.completed_at = new Date().toISOString();
 
-  const response = await server.request("POST", "/api/workers/me/online", {
+  await server.request("POST", "/api/workers/me/online", {
+    token,
+  });
+  const response = await server.request("GET", "/api/workers/me/status", {
     token,
   });
 
@@ -580,7 +576,7 @@ test("GET /api/workers/me/assignments/history returns scan audit fields and time
   assert.equal(response.body.data[1].scan_deadline_at, null);
 });
 
-test("POST /api/workers/me/offline returns worker daily summary", async () => {
+test("POST /api/workers/me/offline returns queue exit success status", async () => {
   const { token, worker } = await loginWorker(103);
   await workerQueue.enqueueWorker(worker.id);
 
@@ -589,20 +585,10 @@ test("POST /api/workers/me/offline returns worker daily summary", async () => {
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(Object.keys(response.body).sort(), [
-    "break_count_used",
-    "completed_job_count",
-    "full_name",
-    "status",
-    "today_job_count",
-    "worker_code",
-  ]);
-  assert.equal(response.body.full_name, worker.full_name);
-  assert.equal(response.body.worker_code, `W${worker.id}`);
-  assert.equal(response.body.status, "open_app");
-  assert.equal(response.body.today_job_count, 0);
-  assert.equal(response.body.break_count_used, 0);
-  assert.equal(response.body.completed_job_count, 0);
+  assert.deepEqual(Object.keys(response.body).sort(), ["code", "message", "statusCode"]);
+  assert.equal(response.body.statusCode, 200);
+  assert.equal(response.body.code, "WORKER_OFFLINE_SUCCESS");
+  assert.equal(response.body.message, "Worker left queue successfully.");
 });
 
 test("POST /api/workers/me/online rejects re-entry after worker ends the shift", async () => {
@@ -695,7 +681,10 @@ test("POST /api/workers/me/online ends break early and removes pending break ret
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.status, "ready");
+  assert.deepEqual(Object.keys(response.body).sort(), ["code", "message", "statusCode"]);
+  assert.equal(response.body.statusCode, 200);
+  assert.equal(response.body.code, "WORKER_ONLINE_SUCCESS");
+  assert.equal(response.body.message, "Worker entered queue successfully.");
   assert.equal(queuedBreakJob?.removed, true);
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");
 });
@@ -710,12 +699,15 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
 
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
+    "break_count_used",
+    "completed_job_count",
     "full_name",
     "image_url",
     "nationality",
     "phone",
     "shift",
     "status",
+    "today_job_count",
     "work_start_date",
     "worker_code",
   ]);
@@ -723,6 +715,9 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
   assert.equal(response.body.worker_code, `W${worker.id}`);
   assert.equal(response.body.image_url, null);
   assert.equal(response.body.status, "ready");
+  assert.equal(response.body.today_job_count, 0);
+  assert.equal(response.body.break_count_used, 0);
+  assert.equal(response.body.completed_job_count, 0);
   assert.equal(response.body.nationality, "Thai");
   assert.equal(response.body.work_start_date, "2026-01-01");
   assert.equal(response.body.phone, worker.phone);
@@ -804,6 +799,8 @@ test("GET /api/workers/me/status returns remaining break time while on break", a
     response.body.remaining_break_time.total_seconds % 60
   );
   assert.equal(typeof response.body.remaining_break_time.text, "string");
+  assert.match(response.body.remaining_break_time.text, /minute|second/);
+  assert.doesNotMatch(response.body.remaining_break_time.text, /[ก-๙]|เธ/);
 });
 
 /* -------------------------------------- Worker Queue Function Tests -------------------------------------- */

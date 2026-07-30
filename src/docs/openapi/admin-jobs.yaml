@@ -20,7 +20,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/jobs/workers/{id}/status/force:
+  /api/admin/jobs/workers/{workerCode}/status/force:
     post:
       tags:
         - Admin Jobs
@@ -30,11 +30,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: workerCode
           required: true
           schema:
             type: string
-          description: Worker code or username, for example MN000115.
+          description: WorkerCode, for example MN000115.
       requestBody:
         required: true
         content:

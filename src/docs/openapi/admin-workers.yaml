@@ -74,7 +74,7 @@ paths:
           name: search
           schema:
             type: string
-          description: Search by username, name, or worker code.
+          description: Search by worker code or name.
         - in: query
           name: status
           schema:
@@ -102,7 +102,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/users/{id}:
+  /api/admin/users/{workerCode}:
     get:
       tags:
         - Admin Workers
@@ -112,11 +112,11 @@ paths:
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: workerCode
           required: true
           schema:
             type: string
-          description: Worker code or username, for example MN000115.
+          description: WorkerCode, for example MN000115.
       responses:
         "200":
           description: Worker account details.
@@ -151,11 +151,11 @@ paths:
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: workerCode
           required: true
           schema:
             type: string
-          description: Worker code or username, for example MN000115.
+          description: WorkerCode, for example MN000115.
       requestBody:
         required: true
         content:
@@ -199,7 +199,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/users/{id}/password:
+  /api/admin/users/{workerCode}/password:
     patch:
       tags:
         - Admin Workers
@@ -209,11 +209,11 @@ paths:
         - bearerAuth: []
       parameters:
         - in: path
-          name: id
+          name: workerCode
           required: true
           schema:
             type: string
-          description: Worker code or username, for example MN000115.
+          description: WorkerCode, for example MN000115.
       requestBody:
         required: true
         content:

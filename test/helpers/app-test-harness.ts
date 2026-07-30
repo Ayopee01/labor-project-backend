@@ -184,6 +184,15 @@ export const state = {
   notifications: [] as unknown[],
   realtimeEvents: [] as unknown[],
   lineMessages: [] as unknown[],
+  workerPushTokens: [] as Array<{
+    worker_code: string;
+    session_id: number | null;
+    device_id: string;
+    platform: string;
+    fcm_token: string;
+    fcm_token_hash: string;
+    is_active: boolean;
+  }>,
   workers: new Map<number, AccountRecord>(),
   schedules: new Map<number, unknown>(),
   vehicleJobs: [] as VehicleJobRecord[],
@@ -389,6 +398,7 @@ export function resetRouteTestState(): void {
   state.notifications.length = 0;
   state.realtimeEvents.length = 0;
   state.lineMessages.length = 0;
+  state.workerPushTokens.length = 0;
   state.workers.clear();
   state.schedules.clear();
   state.vehicleJobs.length = 0;
@@ -1553,6 +1563,83 @@ const authRepositoryMock = {
 };
 
 // Mock repository เธเธฑเนเธ admin settings เธชเธณเธซเธฃเธฑเธเธชเธฃเนเธฒเธ admin เนเธฅเธฐเธเธฑเธ”เธเธฒเธฃ permission เธเนเธฒเธ service เธเธฃเธดเธ
+const workerPushTokenRepositoryMock = {
+  upsertWorkerPushToken: async (input: {
+    worker_code: string;
+    session_id?: number | null;
+    device_id: string;
+    platform?: string | null;
+    fcm_token: string;
+  }) => {
+    const platform = input.platform ?? "unknown";
+    const existingIndex = state.workerPushTokens.findIndex(
+      (token) =>
+        token.worker_code === input.worker_code &&
+        token.device_id === input.device_id &&
+        token.platform === platform
+    );
+    const token = {
+      worker_code: input.worker_code,
+      session_id: input.session_id ?? null,
+      device_id: input.device_id,
+      platform,
+      fcm_token: input.fcm_token,
+      fcm_token_hash: `hash:${input.fcm_token}`,
+      is_active: true,
+    };
+
+    if (existingIndex >= 0) {
+      state.workerPushTokens[existingIndex] = token;
+    } else {
+      state.workerPushTokens.push(token);
+    }
+
+    return {
+      id: existingIndex >= 0 ? existingIndex + 1 : state.workerPushTokens.length,
+      ...token,
+      last_seen_at: new Date().toISOString(),
+      revoked_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  },
+  listActiveTokensByWorkerCodes: async (workerCodes: string[]) =>
+    state.workerPushTokens
+      .filter((token) => token.is_active && workerCodes.includes(token.worker_code))
+      .map((token, index) => ({
+        id: index + 1,
+        ...token,
+        last_seen_at: new Date().toISOString(),
+        revoked_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })),
+  revokeBySessionId: async (sessionId: number) => {
+    let count = 0;
+
+    for (const token of state.workerPushTokens) {
+      if (token.session_id === sessionId && token.is_active) {
+        token.is_active = false;
+        count += 1;
+      }
+    }
+
+    return count;
+  },
+  revokeByTokenHashes: async (hashes: string[]) => {
+    let count = 0;
+
+    for (const token of state.workerPushTokens) {
+      if (hashes.includes(token.fcm_token_hash) && token.is_active) {
+        token.is_active = false;
+        count += 1;
+      }
+    }
+
+    return count;
+  },
+};
+
 function findWorkerAccountByIdentifier(identifier: string): AccountRecord | null {
   const directAccount = state.authAccountsByUsername.get(identifier);
 
@@ -1827,6 +1914,10 @@ function patchModuleLoader(): void {
 
     if (request === "../repositories/auth.repository") {
       return authRepositoryMock;
+    }
+
+    if (request === "../repositories/worker-push-token.repository") {
+      return workerPushTokenRepositoryMock;
     }
 
     if (request === "../repositories/admin-workers.repository") {

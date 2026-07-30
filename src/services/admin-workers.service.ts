@@ -962,13 +962,13 @@ export async function forceAdminWorkerStatus(
     title: "Worker status forced",
     message: `Worker ${account.full_name} status was forced by admin.`,
     payload: {
-      worker_account_id: account.id,
+      worker_code: latest.worker_code,
       queue: buildWorkerQueueSocketPayload(
         latestQueue,
         latest.worker_code,
         latestAssignment
       ),
-      current_assignment: latestAssignment,
+      current_assignment: latestAssignmentPayload,
       reason: "admin_force_status",
     },
     audience: {

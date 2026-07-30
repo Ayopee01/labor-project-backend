@@ -5,10 +5,10 @@ import ApiError from "./api-error";
 /* -------------------------------------- Config -------------------------------------- */
 
 // Config ชื่อกะสำหรับช่วงเช้า
-const MORNING_SHIFT = "กะเช้า";
+const MORNING_SHIFT = "Morning shift";
 
 // Config ชื่อกะสำหรับช่วงกลางคืน
-const NIGHT_SHIFT = "กะเย็น";
+const NIGHT_SHIFT = "Evening shift";
 
 const SHIFT_PRESETS = {
   1: {
@@ -154,11 +154,11 @@ function formatRemainingTime(totalMinutes: number): string {
   const textParts = [];
 
   if (hours > 0) {
-    textParts.push(`${hours} ชม.`);
+    textParts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
   }
 
   if (minutes > 0 || textParts.length === 0) {
-    textParts.push(`${minutes} นาที`);
+    textParts.push(`${minutes} ${minutes === 1 ? "minute" : "minutes"}`);
   }
 
   return textParts.join(" ");

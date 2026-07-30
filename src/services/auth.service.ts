@@ -1,6 +1,7 @@
 import { accountRepository, profileRepository, sessionRepository, workScheduleRepository } from "../repositories/auth.repository";
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
 import { getAccountPermissions } from "./admin-settings.service";
+import { registerWorkerPushTokenForAccount, revokeWorkerPushTokensBySession } from "./worker-push.service";
 import { withTransaction } from "../db/prisma";
 import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto } from "../types/auth.type";
 import type { DbConnection } from "../types/common.type";
@@ -208,6 +209,7 @@ async function createSession(
   return {
     accessToken,
     refreshToken,
+    session,
   };
 }
 
@@ -230,6 +232,8 @@ export async function login(body: unknown) {
     password,
     device_id: deviceId,
     device_name: deviceName,
+    fcm_token: fcmToken,
+    platform,
   } = parseWithSchema(loginBodySchema, body);
   const account = await accountRepository.findByUsername(username);
 
@@ -279,6 +283,7 @@ export async function login(body: unknown) {
   return withTransaction(async (transaction) => {
     if (activeSession) {
       await sessionRepository.revoke(activeSession.id, transaction);
+      await revokeWorkerPushTokensBySession(activeSession.id, transaction);
     }
 
     const tokens = await createSession(
@@ -287,6 +292,18 @@ export async function login(body: unknown) {
       sessionDevice.deviceName,
       transaction
     );
+    if (account.role === WORKER_ROLE) {
+      await registerWorkerPushTokenForAccount(
+        {
+          worker_code: account.username,
+          session_id: tokens.session.id,
+          device_id: sessionDevice.deviceId,
+          platform,
+          fcm_token: fcmToken,
+        },
+        transaction
+      );
+    }
 
     return buildAuthSuccessResponse(tokens);
   });
@@ -298,6 +315,8 @@ export async function confirmForceLogin(body: unknown) {
     login_challenge_token: loginChallengeToken,
     device_id: deviceId,
     device_name: deviceName,
+    fcm_token: fcmToken,
+    platform,
   } = parseWithSchema(confirmForceLoginBodySchema, body);
   const challenge = verifyLoginChallengeToken(loginChallengeToken);
 
@@ -337,8 +356,21 @@ export async function confirmForceLogin(body: unknown) {
 
   return withTransaction(async (transaction) => {
     await sessionRepository.revoke(oldSession.id, transaction);
+    await revokeWorkerPushTokensBySession(oldSession.id, transaction);
 
     const tokens = await createSession(account, deviceId, deviceName, transaction);
+    if (account.role === WORKER_ROLE) {
+      await registerWorkerPushTokenForAccount(
+        {
+          worker_code: account.username,
+          session_id: tokens.session.id,
+          device_id: deviceId,
+          platform,
+          fcm_token: fcmToken,
+        },
+        transaction
+      );
+    }
 
     return buildAuthSuccessResponse(tokens);
   });
@@ -406,7 +438,10 @@ export async function logout(auth?: AccessTokenPayload) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
   }
 
-  await sessionRepository.revoke(auth.session_id);
+  await withTransaction(async (transaction) => {
+    await sessionRepository.revoke(auth.session_id, transaction);
+    await revokeWorkerPushTokensBySession(auth.session_id, transaction);
+  });
 
   return {
     message: "Logged out successfully.",

@@ -406,6 +406,8 @@ test("shift utility calculates shifts from start time", () => {
   // Step Arrange คำนวณชื่อกะเช้าและกะกลางคืนจาก boundary หลัก
   const morningShift = shift.calculateShiftName("06:00");
   const nightShift = shift.calculateShiftName("18:00");
+  assert.equal(morningShift, "Morning shift");
+  assert.equal(nightShift, "Evening shift");
 
   // Step Assert เวลาในช่วงเช้าคืนชื่อกะเดียวกัน และ 18:00 เป็นกะกลางคืน
   assert.equal(shift.calculateShiftName("08:00"), morningShift);
@@ -483,8 +485,8 @@ test("shift utility checks whether a time is inside work schedule", () => {
     new Date("2026-07-13T05:32:00+07:00")
   );
 
-  assert.equal(waitInfo.shift.name, "กะเช้า");
+  assert.equal(waitInfo.shift.name, "Morning shift");
   assert.equal(waitInfo.shift.start_time, "08:00");
   assert.equal(waitInfo.shift.end_time, "17:00");
-  assert.equal(waitInfo.remaining_time, "2 ชม. 28 นาที");
+  assert.equal(waitInfo.remaining_time, "2 hours 28 minutes");
 });
