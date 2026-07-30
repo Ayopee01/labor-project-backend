@@ -37,6 +37,7 @@ model Account {
   createdAccounts Account[]          @relation("AccountCreatedBy")
   sessions        UserSession[]
   jobAssignments VehicleJobAssignment[] @relation("AssignmentWorker")
+  shiftAttendances WorkerShiftAttendance[] @relation("WorkerShiftAttendanceAccount")
   permissions     AccountPermission[]
   ticketWorkers   TicketWorker[]
   submittedTicketCompletions TicketCompletionSubmission[] @relation("TicketCompletionSubmitter")
@@ -46,6 +47,30 @@ model Account {
   @@index([role, source])
   @@index([masterUpdatedAt])
   @@map("accounts")
+}
+
+model WorkerShiftAttendance {
+  id               Int       @id @default(autoincrement())
+  accountId        Int       @map("account_id")
+  workerCode       String    @map("worker_code") @db.VarChar(100)
+  shiftInstanceKey String    @map("shift_instance_key") @db.VarChar(100)
+  shiftNo          Int       @map("shift_no")
+  shiftStartTime   String    @map("shift_start_time") @db.Char(5)
+  shiftEndTime     String    @map("shift_end_time") @db.Char(5)
+  firstOnlineAt    DateTime? @map("first_online_at") @db.Timestamp(3)
+  lastOnlineAt     DateTime? @map("last_online_at") @db.Timestamp(3)
+  offlineAt        DateTime? @map("offline_at") @db.Timestamp(3)
+  closedAt         DateTime? @map("closed_at") @db.Timestamp(3)
+  closeReason      String?   @map("close_reason") @db.VarChar(100)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  account Account @relation("WorkerShiftAttendanceAccount", fields: [accountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([accountId, shiftInstanceKey])
+  @@index([workerCode, shiftInstanceKey])
+  @@index([closedAt])
+  @@map("worker_shift_attendances")
 }
 
 model GateClient {

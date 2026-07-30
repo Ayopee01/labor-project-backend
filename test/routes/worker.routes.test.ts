@@ -474,6 +474,10 @@ test("POST /api/workers/me/online puts worker into queue", async () => {
   assert.equal(response.body.statusCode, 200);
   assert.equal(response.body.code, "WORKER_ONLINE_SUCCESS");
   assert.equal(response.body.message, "Worker entered queue successfully.");
+  assert.equal(state.shiftAttendances.length, 1);
+  assert.equal(state.shiftAttendances[0].accountId, worker.id);
+  assert.ok(state.shiftAttendances[0].firstOnlineAt);
+  assert.equal(state.shiftAttendances[0].closedAt, null);
 });
 
 test("POST /api/workers/me/online dispatches an existing ready job when queue was empty", async () => {
@@ -609,6 +613,26 @@ test("POST /api/workers/me/online rejects re-entry after worker ends the shift",
   assert.equal(offline.status, 200);
   assert.equal(secondOnline.status, 409);
   assert.equal(secondOnline.body.code, "WORKER_SHIFT_CLOSED");
+  assert.equal(state.shiftAttendances[0].closeReason, "worker_offline");
+});
+
+test("POST /api/workers/me/online uses DB attendance as the primary shift-entry guard", async () => {
+  const { token, worker } = await loginWorker(107);
+  state.connectedWorkers.add(worker.id);
+
+  const firstOnline = await server.request("POST", "/api/workers/me/online", {
+    token,
+  });
+  await workerQueue.markWorkerOpenApp(worker.id);
+  const secondOnline = await server.request("POST", "/api/workers/me/online", {
+    token,
+  });
+
+  assert.equal(firstOnline.status, 200);
+  assert.equal(secondOnline.status, 409);
+  assert.equal(secondOnline.body.code, "WORKER_SHIFT_ONLINE_ALREADY_USED");
+  assert.equal(state.shiftAttendances.length, 1);
+  assert.equal(state.shiftAttendances[0].closedAt, null);
 });
 
 test("POST /api/workers/me/break returns worker break summary", async () => {

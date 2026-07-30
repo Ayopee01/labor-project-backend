@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 // import
 import { withTransaction } from "../db/prisma";
 import { enqueueLineMessage } from "../queues/notification-queue";
-import { enqueueWorker, getWorkerBreakCount, getWorkerQueueStatus, hasWorkerShiftOnlineUsed, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, markWorkerShiftClosed, markWorkerShiftOnlineUsed, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, removeWorkerBreakReturn, resetWorkerAcceptTimeoutCount, scheduleScanTimeout, scheduleScanWarning, scheduleVendorConfirmationTimeout, scheduleWorkerBreakReturn, scheduleWorkerShiftEnd, isWorkerShiftClosed } from "../queues/worker-queue";
+import { enqueueWorker, getWorkerBreakCount, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, markWorkerShiftClosed, markWorkerShiftOnlineUsed, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, removeWorkerBreakReturn, resetWorkerAcceptTimeoutCount, scheduleScanTimeout, scheduleScanWarning, scheduleVendorConfirmationTimeout, scheduleWorkerBreakReturn, scheduleWorkerShiftEnd } from "../queues/worker-queue";
 import { dispatchReadyWorkers, handleAssignmentAcceptTimeout } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as lineRepository from "../repositories/line.repository";
@@ -16,6 +16,8 @@ import { getRuntimeSettings } from "./admin-settings.service";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
 import type { AccountDto, WorkScheduleDto } from "../types/admin-workers.type";
+import type { DbConnection } from "../types/common.type";
+import type { WorkerShiftCloseReason } from "../repositories/worker-shift-attendance.repository";
 // import Validation
 import { parseWithSchema } from "../validation/parser";
 import { workerAssignmentHistoryQuerySchema, workerScanBodySchema, workerTicketCompleteBodySchema } from "../validation/schemas";
@@ -212,6 +214,46 @@ async function scheduleWorkerShiftEndIfNeeded(
       buildWorkScheduleShiftInstanceKey(schedule)
     );
   }
+}
+
+async function markWorkerAttendanceOnline(
+  account: AccountDto,
+  schedule: WorkScheduleDto,
+  shiftInstanceKey: string,
+  connection?: DbConnection
+): Promise<void> {
+  await workerApplicationRepository.workerShiftAttendanceRepository.markWorkerShiftOnline(
+    {
+      account_id: account.id,
+      worker_code: account.username,
+      schedule,
+      shift_instance_key: shiftInstanceKey,
+    },
+    connection
+  );
+
+  await markWorkerShiftOnlineUsed(account.id, shiftInstanceKey);
+}
+
+async function closeWorkerAttendanceShift(
+  account: AccountDto,
+  schedule: WorkScheduleDto,
+  shiftInstanceKey: string,
+  reason: WorkerShiftCloseReason,
+  connection?: DbConnection
+): Promise<void> {
+  await workerApplicationRepository.workerShiftAttendanceRepository.closeWorkerShift(
+    {
+      account_id: account.id,
+      worker_code: account.username,
+      schedule,
+      shift_instance_key: shiftInstanceKey,
+      reason,
+    },
+    connection
+  );
+
+  await markWorkerShiftClosed(account.id, shiftInstanceKey);
 }
 
 function getVendorConfirmationTimeoutMs(
@@ -479,11 +521,18 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
 
     const currentQueueEntry = await getWorkerQueueStatus(account.id);
     const isReturningFromBreak = currentQueueEntry?.status === "break";
+    const attendance = await workerApplicationRepository.workerShiftAttendanceRepository.findByWorkerAndShift(
+      {
+        account_id: account.id,
+        shift_instance_key: shiftInstanceKey,
+      },
+      transaction
+    );
 
     if (isReturningFromBreak) {
       await removeWorkerBreakReturn(account.id, currentSchedule.id);
     } else {
-      if (await isWorkerShiftClosed(account.id, shiftInstanceKey)) {
+      if (attendance?.closedAt) {
         throw new ApiError(
           409,
           "WORKER_SHIFT_CLOSED",
@@ -491,20 +540,15 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
         );
       }
 
-      const onlineUsed = await hasWorkerShiftOnlineUsed(account.id, shiftInstanceKey);
-
-      if (onlineUsed && currentQueueEntry?.status !== "ready") {
+      if (attendance?.firstOnlineAt && currentQueueEntry?.status !== "ready") {
         throw new ApiError(
           409,
           "WORKER_SHIFT_ONLINE_ALREADY_USED",
           "Worker can go online from open_app only once in this shift."
         );
       }
-
-      if (!onlineUsed) {
-        await markWorkerShiftOnlineUsed(account.id, shiftInstanceKey);
-      }
     }
+    await markWorkerAttendanceOnline(account, currentSchedule, shiftInstanceKey, transaction);
     await scheduleWorkerShiftEndIfNeeded(account.id, currentSchedule);
 
     await enqueueWorker(account.id);
@@ -570,9 +614,13 @@ export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOn
   }
 
   if (currentSchedule) {
-    await markWorkerShiftClosed(
-      account.id,
-      buildWorkScheduleShiftInstanceKey(currentSchedule)
+    const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
+
+    await closeWorkerAttendanceShift(
+      account,
+      currentSchedule,
+      shiftInstanceKey,
+      "worker_offline"
     );
   }
 
@@ -1244,6 +1292,16 @@ export async function completeWorkerTicket(
     !currentScheduleAfterSubmit ||
     !isTimeInWorkSchedule(currentScheduleAfterSubmit)
   ) {
+    if (currentScheduleAfterSubmit) {
+      const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentScheduleAfterSubmit);
+
+      await closeWorkerAttendanceShift(
+        account,
+        currentScheduleAfterSubmit,
+        shiftInstanceKey,
+        "ticket_delivered_after_shift_end"
+      );
+    }
     const queue = await markWorkerOpenApp(account.id);
 
     if (isWorkerSocketConnected(account.id)) {

@@ -104,6 +104,23 @@ type GateTicketRecord = {
 };
 
 // Type record product เนเธ ticket เน€เธเธทเนเธญเธ—เธ”เธชเธญเธเธเธฒเธฃเธเธฃเธญเธเธเธณเธเธงเธเธชเธดเธเธเนเธฒเนเธซเนเธเธฃเธ
+type WorkerShiftAttendanceRecord = {
+  id: number;
+  accountId: number;
+  workerCode: string;
+  shiftInstanceKey: string;
+  shiftNo: number;
+  shiftStartTime: string;
+  shiftEndTime: string;
+  firstOnlineAt: string | null;
+  lastOnlineAt: string | null;
+  offlineAt: string | null;
+  closedAt: string | null;
+  closeReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type TicketProductRecord = {
   id: number;
   ticket_id: number;
@@ -203,6 +220,7 @@ export const state = {
   completionSubmissions: [] as TicketCompletionSubmissionRecord[],
   gateRequestLogs: [] as GateRequestLogRecord[],
   gateClients: new Map<string, GateClientRecord>(),
+  shiftAttendances: [] as WorkerShiftAttendanceRecord[],
   authAccountsByUsername: new Map<string, AccountRecord>(),
   authAccountsById: new Map<number, AccountRecord>(),
   adminPermissions: new Map<number, string[]>(),
@@ -216,6 +234,7 @@ export const state = {
   nextTicketWorkerId: 1,
   nextSubmissionId: 1,
   nextGateClientId: 1,
+  nextShiftAttendanceId: 1,
 };
 
 /* -------------------------------------- Fake Infra -------------------------------------- */
@@ -409,6 +428,7 @@ export function resetRouteTestState(): void {
   state.completionSubmissions.length = 0;
   state.gateRequestLogs.length = 0;
   state.gateClients.clear();
+  state.shiftAttendances.length = 0;
   state.authAccountsByUsername.clear();
   state.authAccountsById.clear();
   state.adminPermissions.clear();
@@ -424,6 +444,7 @@ export function resetRouteTestState(): void {
   state.nextTicketWorkerId = 1;
   state.nextSubmissionId = 1;
   state.nextGateClientId = 1;
+  state.nextShiftAttendanceId = 1;
 }
 
 // Function เน€เธเธดเนเธก worker account เธเธฃเนเธญเธก profile/schedule เธฅเธ mock repository state
@@ -697,6 +718,118 @@ const workerApplicationRepositoryMock = {
       Array.from(state.schedules.values()).find(
         (schedule) => (schedule as { id?: number }).id === scheduleId
       ) ?? null,
+  },
+  workerShiftAttendanceRepository: {
+    findByWorkerAndShift: async (input: {
+      account_id: number;
+      shift_instance_key: string;
+    }) =>
+      state.shiftAttendances.find(
+        (attendance) =>
+          attendance.accountId === input.account_id &&
+          attendance.shiftInstanceKey === input.shift_instance_key
+      ) ?? null,
+    markWorkerShiftOnline: async (input: {
+      account_id: number;
+      worker_code: string;
+      shift_instance_key: string;
+      schedule: {
+        shift_no: number;
+        shift_start_time: string;
+        shift_end_time: string;
+      };
+    }) => {
+      const now = new Date().toISOString();
+      let attendance = state.shiftAttendances.find(
+        (item) =>
+          item.accountId === input.account_id &&
+          item.shiftInstanceKey === input.shift_instance_key
+      );
+
+      if (!attendance) {
+        attendance = {
+          id: state.nextShiftAttendanceId++,
+          accountId: input.account_id,
+          workerCode: input.worker_code,
+          shiftInstanceKey: input.shift_instance_key,
+          shiftNo: input.schedule.shift_no,
+          shiftStartTime: input.schedule.shift_start_time,
+          shiftEndTime: input.schedule.shift_end_time,
+          firstOnlineAt: now,
+          lastOnlineAt: now,
+          offlineAt: null,
+          closedAt: null,
+          closeReason: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        state.shiftAttendances.push(attendance);
+      } else {
+        attendance.workerCode = input.worker_code;
+        attendance.shiftNo = input.schedule.shift_no;
+        attendance.shiftStartTime = input.schedule.shift_start_time;
+        attendance.shiftEndTime = input.schedule.shift_end_time;
+        attendance.lastOnlineAt = now;
+        attendance.updatedAt = now;
+      }
+
+      return attendance;
+    },
+    closeWorkerShift: async (input: {
+      account_id: number;
+      worker_code: string;
+      shift_instance_key: string;
+      schedule: {
+        shift_no: number;
+        shift_start_time: string;
+        shift_end_time: string;
+      };
+      reason: string;
+    }) => {
+      const now = new Date().toISOString();
+      let attendance = state.shiftAttendances.find(
+        (item) =>
+          item.accountId === input.account_id &&
+          item.shiftInstanceKey === input.shift_instance_key
+      );
+
+      if (attendance?.closedAt) {
+        return attendance;
+      }
+
+      if (!attendance) {
+        attendance = {
+          id: state.nextShiftAttendanceId++,
+          accountId: input.account_id,
+          workerCode: input.worker_code,
+          shiftInstanceKey: input.shift_instance_key,
+          shiftNo: input.schedule.shift_no,
+          shiftStartTime: input.schedule.shift_start_time,
+          shiftEndTime: input.schedule.shift_end_time,
+          firstOnlineAt: null,
+          lastOnlineAt: null,
+          offlineAt: now,
+          closedAt: now,
+          closeReason: input.reason,
+          createdAt: now,
+          updatedAt: now,
+        };
+        state.shiftAttendances.push(attendance);
+
+        return attendance;
+      }
+
+      attendance.workerCode = input.worker_code;
+      attendance.shiftNo = input.schedule.shift_no;
+      attendance.shiftStartTime = input.schedule.shift_start_time;
+      attendance.shiftEndTime = input.schedule.shift_end_time;
+      attendance.offlineAt = now;
+      attendance.closedAt = now;
+      attendance.closeReason = input.reason;
+      attendance.updatedAt = now;
+
+      return attendance;
+    },
   },
   listDispatchableVehicleJobs: async () =>
     state.vehicleJobs.filter((job) => job.status === "WORKING"),

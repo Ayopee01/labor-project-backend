@@ -2,6 +2,7 @@
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import * as workScheduleRepository from "./shared/work-schedule.repository";
+import * as workerShiftAttendanceRepository from "./worker-shift-attendance.repository";
 import { ACTIVE_ASSIGNMENT_STATUSES, FINISHED_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct, mapTicketWorker, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
@@ -13,7 +14,7 @@ export { listTicketWorkers } from "./shared/ticket-worker.repository";
 import type { DbConnection } from "../types/common.type";
 import type { CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VendorLineTargetDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto } from "../types/worker.type";
 
-export { accountRepository, profileRepository, workScheduleRepository };
+export { accountRepository, profileRepository, workScheduleRepository, workerShiftAttendanceRepository };
 
 /* -------------------------------------- Functions -------------------------------------- */
 

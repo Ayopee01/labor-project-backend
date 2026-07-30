@@ -14,9 +14,13 @@ import { buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload } from "../utils/worker-assignment-event";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 
-async function getWorkerCode(accountId: number): Promise<string | null> {
+async function getWorkerCode(
+  accountId: number,
+  connection?: DbConnection
+): Promise<string | null> {
   const profile = await workerApplicationRepository.profileRepository.findByAccountId(
-    accountId
+    accountId,
+    connection
   );
 
   return profile?.worker_code ?? null;
@@ -167,6 +171,17 @@ export async function handleAssignmentAcceptTimeout(input: {
     );
 
     if (timeoutCount >= settings.worker_accept_timeout_limit) {
+      const workerCode = await getWorkerCode(input.workerAccountId, input.connection);
+      await workerApplicationRepository.workerShiftAttendanceRepository.closeWorkerShift(
+        {
+          account_id: input.workerAccountId,
+          worker_code: workerCode ?? String(input.workerAccountId),
+          schedule: currentSchedule,
+          shift_instance_key: shiftInstanceKey,
+          reason: "assignment_timeout_limit_reached",
+        },
+        input.connection
+      );
       await markWorkerShiftClosed(input.workerAccountId, shiftInstanceKey);
       queue = await markWorkerOpenApp(input.workerAccountId);
       reason = "assignment_timeout_limit_reached";
@@ -562,9 +577,23 @@ async function handleWorkerShiftEnd(input: {
     return;
   }
 
+  const shiftInstanceKey =
+    input.shiftInstanceKey ?? buildWorkScheduleShiftInstanceKey(schedule);
+  const workerCode = await getWorkerCode(input.accountId);
+
+  await workerApplicationRepository.workerShiftAttendanceRepository.closeWorkerShift(
+    {
+      account_id: input.accountId,
+      worker_code: workerCode ?? String(input.accountId),
+      schedule,
+      shift_instance_key: shiftInstanceKey,
+      reason: "shift_ended",
+    }
+  );
+
   await markWorkerShiftClosed(
     input.accountId,
-    input.shiftInstanceKey ?? buildWorkScheduleShiftInstanceKey(schedule)
+    shiftInstanceKey
   );
 
   const currentAssignment = await workerApplicationRepository.findCurrentAssignmentByWorker(
@@ -575,7 +604,6 @@ async function handleWorkerShiftEnd(input: {
     return;
   }
 
-  const workerCode = await getWorkerCode(input.accountId);
   const queue = await markWorkerOpenApp(input.accountId);
 
   if (isWorkerSocketConnected(input.accountId)) {
