@@ -36,7 +36,7 @@ export async function findById(
   connection?: DbConnection
 ): Promise<WorkScheduleDto | null> {
   const db = client(connection);
-  const schedule = await db.workerWorkSchedule.findUnique({
+  const schedule = await db.account.findUnique({
     where: {
       id: scheduleId,
     },
@@ -50,22 +50,13 @@ export async function listCurrentByAccountId(
   connection?: DbConnection
 ): Promise<WorkScheduleDto[]> {
   const db = client(connection);
-  const schedules = await db.workerWorkSchedule.findMany({
+  const account = await db.account.findUnique({
     where: {
-      accountId: toAccountId(accountId),
-      isCurrent: true,
+      id: toAccountId(accountId),
+      role: "worker",
     },
-    orderBy: [
-      {
-        shiftNo: "asc",
-      },
-      {
-        id: "asc",
-      },
-    ],
   });
+  const schedule = mapSchedule(account);
 
-  return schedules
-    .map((schedule) => mapSchedule(schedule))
-    .filter((schedule): schedule is WorkScheduleDto => schedule !== null);
+  return schedule ? [schedule] : [];
 }

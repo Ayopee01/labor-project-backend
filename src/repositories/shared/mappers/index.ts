@@ -1,11 +1,11 @@
 // import Library
-import type { Account, DriverSession, GateTicket, MarketJob, TicketCompletionSubmission, TicketProduct, TicketWorker, UserSession, WorkerWorkSchedule, VehicleJob, VehicleJobAssignment, WorkerProfile } from "@prisma/client";
+import type { Account, DriverSession, GateTicket, MarketJob, TicketCompletionSubmission, TicketProduct, TicketWorker, UserSession, VehicleJob, VehicleJobAssignment } from "@prisma/client";
 
 // import Types
 import type { SessionDto } from "../../../types/auth.type";
 import type { DriverSessionDto } from "../../../types/driver.type";
 import type { GateTicketDto, MarketJobDto, TicketCompletionSubmissionDto, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto } from "../../../types/worker.type";
-import { ACCOUNT_ROLES, type AccountDto, type AccountRole, type ProfileDto, type SafeAccountDto, type WorkScheduleDto } from "../../../types/admin-workers.type";
+import { ACCOUNT_ROLES, ACCOUNT_SOURCES, type AccountDto, type AccountRole, type AccountSource, type ProfileDto, type SafeAccountDto, type WorkScheduleDto } from "../../../types/admin-workers.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -43,7 +43,14 @@ export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | nu
     return null;
   }
 
-  const { password_hash: _passwordHash, ...safeAccount } = account;
+  const {
+    password_hash: _passwordHash,
+    source: _source,
+    master_worker_id: _masterWorkerId,
+    master_updated_at: _masterUpdatedAt,
+    synced_at: _syncedAt,
+    ...safeAccount
+  } = account;
 
   return safeAccount;
 }
@@ -55,6 +62,14 @@ function toAccountRole(role: string): AccountRole {
   }
 
   throw new Error(`Unsupported account role: ${role}`);
+}
+
+function toAccountSource(source: string): AccountSource {
+  if ((ACCOUNT_SOURCES as readonly string[]).includes(source)) {
+    return source as AccountSource;
+  }
+
+  return "internal";
 }
 
 // Function แปลง record จาก table accounts เป็น AccountDto
@@ -73,6 +88,18 @@ export function mapAccount(record: Account | null): AccountDto | null {
     position: record.position,
     email: record.email,
     phone: record.phone,
+    image_url: record.imageUrl,
+    nationality: record.nationality,
+    work_start_date: record.workStartDate,
+    shirt_type: record.shirtType,
+    shirt_number: record.shirtNumber,
+    shift_no: record.shiftNo,
+    shift_start_time: record.shiftStartTime,
+    shift_end_time: record.shiftEndTime,
+    source: toAccountSource(record.source),
+    master_worker_id: record.masterWorkerId,
+    master_updated_at: toIsoString(record.masterUpdatedAt),
+    synced_at: toIsoString(record.syncedAt),
     permission_level: record.permissionLevel,
     created_by: record.createdBy,
     created_at: toIsoString(record.createdAt),
@@ -80,11 +107,11 @@ export function mapAccount(record: Account | null): AccountDto | null {
   };
 }
 
-type WorkerProfileWithAccount = WorkerProfile & {
+type WorkerProfileWithAccount = Account & {
   account?: Pick<Account, "username" | "phone"> | null;
 };
 
-// Function แปลง record จาก table worker_profiles เป็น ProfileDto
+// Map worker profile fields stored on accounts into the existing profile DTO.
 export function mapProfile(record: WorkerProfileWithAccount | null): ProfileDto | null {
   if (!record) {
     return null;
@@ -92,33 +119,38 @@ export function mapProfile(record: WorkerProfileWithAccount | null): ProfileDto 
 
   return {
     id: record.id,
-    account_id: record.accountId,
-    worker_code: record.account?.username ?? null,
+    account_id: record.id,
+    worker_code: record.username,
     image_url: record.imageUrl,
-    nationality: record.nationality,
-    work_start_date: toDateString(record.workStartDate),
-    phone: record.account?.phone ?? null,
+    nationality: record.nationality ?? "",
+    work_start_date: record.workStartDate ? toDateString(record.workStartDate) : "",
+    phone: record.phone,
     shirt_type: record.shirtType,
     shirt_number: record.shirtNumber,
   };
 }
 
-// Function แปลง record จาก table worker_work_schedules เป็น WorkScheduleDto
-export function mapSchedule(record: WorkerWorkSchedule | null): WorkScheduleDto | null {
-  if (!record) {
+// Map current worker schedule fields stored on accounts into the existing schedule DTO.
+export function mapSchedule(record: Account | null): WorkScheduleDto | null {
+  if (
+    !record ||
+    record.shiftNo === null ||
+    record.shiftStartTime === null ||
+    record.shiftEndTime === null
+  ) {
     return null;
   }
 
   return {
     id: record.id,
-    account_id: record.accountId,
+    account_id: record.id,
     shift_no: record.shiftNo,
-    work_date: toDateString(record.workDate),
+    work_date: record.workStartDate ? toDateString(record.workStartDate) : toDateString(record.createdAt),
     shift_start_time: record.shiftStartTime,
     shift_end_time: record.shiftEndTime,
-    is_current: record.isCurrent,
+    is_current: true,
     created_by: record.createdBy,
-    updated_by: record.updatedBy,
+    updated_by: null,
     created_at: toIsoString(record.createdAt),
     updated_at: toIsoString(record.updatedAt),
   };
@@ -165,7 +197,7 @@ export function mapVehicleJob(record: VehicleJob | null): VehicleJobDto | null {
     dispatch_now: record.dispatchNow,
     status: record.status,
     driver_qr_token: record.driverQrToken,
-    worker_qr_token: record.workerQrToken,
+    worker_qr_token: record.ticketNo,
     created_at: toIsoString(record.createdAt),
     updated_at: toIsoString(record.updatedAt),
   };
@@ -204,7 +236,7 @@ export function mapGateTicket(record: GateTicket | null): GateTicketDto | null {
     vendor_line_id: record.vendorLineId,
     reject_reason: record.rejectReason,
     status: record.status,
-    confirmation_status: record.confirmationStatus,
+    confirmation_status: record.status,
     created_at: toIsoString(record.createdAt),
     updated_at: toIsoString(record.updatedAt),
   };

@@ -382,19 +382,19 @@
           example: "123456"
         device_id:
           type: string
-          description: Required for worker login. Omit for admin login.
+          description: Required for worker login. Omit for admin login. PascalCase body key DeviceId is also accepted.
           example: browser-device-id
         device_name:
           type: string
-          description: Required when the account role is worker. Omit for admin login.
+          description: Required when the account role is worker. Omit for admin login. PascalCase body key DeviceName is also accepted.
           example: Chrome on Windows
         fcm_token:
           type: string
-          description: Optional for worker login. Mobile FCM registration token used for background push notifications.
+          description: Optional for worker login. Mobile FCM registration token from Firebase SDK, used for background push notifications. PascalCase body key FcmToken is also accepted. If unavailable during login, call POST /api/auth/push-token after login.
           example: fcm-registration-token
         platform:
           type: string
-          description: Optional push token platform. Defaults to unknown when omitted.
+          description: Optional push token platform. PascalCase body key Platform is also accepted. Defaults to unknown when omitted.
           enum:
             - android
             - ios
@@ -419,7 +419,7 @@
           example: Chrome on Windows
         fcm_token:
           type: string
-          description: Optional worker FCM registration token for the new forced-login session.
+          description: Optional worker FCM registration token for the new forced-login session. PascalCase body key FcmToken is also accepted. If unavailable during force login, call POST /api/auth/push-token after this request succeeds.
           example: fcm-registration-token
         platform:
           type: string
@@ -2422,11 +2422,11 @@
       properties:
         fcm_token:
           type: string
-          description: Firebase Cloud Messaging registration token from the worker mobile app.
+          description: Firebase Cloud Messaging registration token from the worker mobile app. This endpoint registers a token that Mobile already received from Firebase SDK; the backend does not create FCM tokens. PascalCase body key FcmToken is also accepted.
           example: fcm-registration-token
         device_id:
           type: string
-          description: Optional. Defaults to the authenticated session device_id.
+          description: Optional. Defaults to the authenticated session device_id. PascalCase body key DeviceId is also accepted.
           example: worker-device-001
         platform:
           type: string

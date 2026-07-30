@@ -222,11 +222,7 @@ export async function listVehicleJobAssignmentTeam(
       id: "asc",
     },
     include: {
-      worker: {
-        include: {
-          profile: true,
-        },
-      },
+      worker: true,
     },
   });
 
@@ -239,7 +235,7 @@ export async function listVehicleJobAssignmentTeam(
     return {
       full_name: assignment.worker.fullName,
       worker_code: assignment.worker.username,
-      image_url: assignment.worker.profile?.imageUrl ?? null,
+      image_url: assignment.worker.imageUrl ?? null,
       scan_status: buildAssignmentScanStatus(assignmentDto),
     };
   });
@@ -649,7 +645,6 @@ export async function markTicketDelivered(
     },
     data: {
       status: "DELIVERED",
-      confirmationStatus: "DELIVERED",
       rejectReason: null,
     },
   });
@@ -774,7 +769,6 @@ export async function confirmTicketCompletion(
     },
     data: {
       status: "COMPLETED",
-      confirmationStatus: "COMPLETED",
     },
   });
 
@@ -965,7 +959,6 @@ export async function rejectTicketCompletion(
     },
     data: {
       status: "REJECT",
-      confirmationStatus: "REJECT",
       rejectReason: rejectReason ?? null,
     },
   });

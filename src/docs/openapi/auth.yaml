@@ -4,6 +4,9 @@ paths:
       tags:
         - Auth
       summary: Log in and create a user session.
+      description: |
+        Worker Mobile should send DeviceId and DeviceName on login. If Firebase SDK already has an FCM token, send FcmToken and Platform in this request so the backend can store the push token immediately.
+        If the mobile app does not have an FCM token yet, login can continue without it; call POST /api/auth/push-token later after Firebase SDK returns the token.
       operationId: login
       requestBody:
         required: true
@@ -41,6 +44,9 @@ paths:
       tags:
         - Auth
       summary: Confirm forced login and replace the old active session.
+      description: |
+        Use after login returns ACTIVE_SESSION_EXISTS. If Firebase SDK already has the latest FCM token for the new device session, send FcmToken and Platform here.
+        If the token is not available yet, call POST /api/auth/push-token after this request succeeds.
       operationId: confirmForceLogin
       requestBody:
         required: true
@@ -121,6 +127,50 @@ paths:
                 $ref: "#/components/schemas/LogoutSuccessResponse"
         "401":
           description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/push-token:
+    post:
+      tags:
+        - Auth
+      summary: Register or refresh the current worker device FCM token.
+      description: |
+        Worker Mobile can call this after login when FcmToken was not available during Auth login, or whenever Firebase SDK returns a refreshed FCM token.
+        This endpoint does not request a token from Firebase. Mobile must obtain the FCM token from Firebase SDK first, then send it to the backend.
+        The backend stores the token by WorkerCode + DeviceId + Platform and uses it for worker push notifications.
+        The raw FCM token is never returned in the response.
+      operationId: registerAuthPushToken
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerPushTokenRequest"
+      responses:
+        "200":
+          description: Worker push token registered successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerPushTokenResponse"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Only worker accounts can register worker push tokens.
           content:
             application/json:
               schema:

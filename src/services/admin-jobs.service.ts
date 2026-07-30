@@ -167,37 +167,44 @@ function toOperationWorkerStatus(assignmentStatus: string): string {
 }
 
 function resolveOperationWorkerShiftName(
-  schedules: VehicleJobOperationRecord["assignments"][number]["worker"]["workSchedules"]
+  worker: VehicleJobOperationRecord["assignments"][number]["worker"]
 ): string | null {
-  const scheduleDtos = schedules.map((schedule) => ({
-    id: schedule.id,
-    account_id: schedule.accountId,
-    shift_no: schedule.shiftNo,
-    work_date: schedule.workDate,
-    shift_start_time: schedule.shiftStartTime,
-    shift_end_time: schedule.shiftEndTime,
-    is_current: schedule.isCurrent,
-    created_by: schedule.createdBy,
-    updated_by: schedule.updatedBy,
-    created_at: schedule.createdAt.toISOString(),
-    updated_at: schedule.updatedAt.toISOString(),
-  }));
-  const activeSchedule =
-    findActiveWorkSchedule(scheduleDtos) ?? scheduleDtos[0] ?? null;
+  if (
+    worker.shiftNo === null ||
+    worker.shiftStartTime === null ||
+    worker.shiftEndTime === null
+  ) {
+    return null;
+  }
+
+  const scheduleDto = {
+    id: worker.id,
+    account_id: worker.id,
+    shift_no: worker.shiftNo,
+    work_date: worker.workStartDate ?? worker.createdAt.toISOString().slice(0, 10),
+    shift_start_time: worker.shiftStartTime,
+    shift_end_time: worker.shiftEndTime,
+    is_current: true,
+    created_by: worker.createdBy,
+    updated_by: null,
+    created_at: worker.createdAt.toISOString(),
+    updated_at: worker.updatedAt.toISOString(),
+  };
+  const activeSchedule = findActiveWorkSchedule([scheduleDto]) ?? scheduleDto;
 
   return formatScheduleWithShift(activeSchedule)?.shift_name ?? null;
 }
 
 function isTicketRejected(ticket: VehicleJobOperationRecord["marketJobs"][number]["tickets"][number]): boolean {
-  return ticket.status === "REJECT" || ticket.confirmationStatus === "REJECT";
+  return ticket.status === "REJECT";
 }
 
 function isTicketDelivered(ticket: VehicleJobOperationRecord["marketJobs"][number]["tickets"][number]): boolean {
-  return ticket.status === "DELIVERED" || ticket.confirmationStatus === "DELIVERED";
+  return ticket.status === "DELIVERED";
 }
 
 function isTicketCompleted(ticket: VehicleJobOperationRecord["marketJobs"][number]["tickets"][number]): boolean {
-  return ticket.status === "COMPLETED" || ticket.confirmationStatus === "COMPLETED";
+  return ticket.status === "COMPLETED";
 }
 
 function listOperationTickets(record: VehicleJobOperationRecord): VehicleJobOperationRecord["marketJobs"][number]["tickets"] {
@@ -342,7 +349,7 @@ function formatOperationMarkets(
       vendor_line_id: ticket.vendorLineId,
       reject_reason: ticket.rejectReason,
       status: ticket.status,
-      confirmation_status: ticket.confirmationStatus,
+      confirmation_status: ticket.status,
       created_at: ticket.createdAt.toISOString(),
       updated_at: ticket.updatedAt.toISOString(),
       product_count: ticket.products.length,
@@ -408,9 +415,9 @@ function formatVehicleOperationItem(
     workers: record.assignments.map((assignment) => ({
       worker_code: assignment.worker.username,
       full_name: assignment.worker.fullName,
-      shirt_number: assignment.worker.profile?.shirtNumber ?? null,
-      image_url: assignment.worker.profile?.imageUrl ?? null,
-      shift_name: resolveOperationWorkerShiftName(assignment.worker.workSchedules),
+      shirt_number: assignment.worker.shirtNumber ?? null,
+      image_url: assignment.worker.imageUrl ?? null,
+      shift_name: resolveOperationWorkerShiftName(assignment.worker),
       assignment_status: assignment.status,
       worker_status: toOperationWorkerStatus(assignment.status),
       accept_deadline_at: toIsoString(assignment.acceptDeadlineAt),

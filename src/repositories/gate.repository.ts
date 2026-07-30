@@ -221,7 +221,6 @@ export async function createVehicleJobFromGate(
         dispatchNow,
         status: vehicleStatus,
         driverQrToken: createRandomToken("driver_qr"),
-        workerQrToken: input.ticketNo,
       },
     }));
   const shouldUpdateVehicle =
@@ -232,7 +231,6 @@ export async function createVehicleJobFromGate(
       existingVehicleJob.ticketCreatedAt.getTime() !== input.ticket_created_at.getTime() ||
       existingVehicleJob.boothCount !== input.booth_count ||
       existingVehicleJob.workersRequired !== 1 ||
-      existingVehicleJob.workerQrToken !== input.ticketNo ||
       (dispatchNow && !existingVehicleJob.dispatchNow) ||
       (dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT));
   const savedVehicleJob = shouldUpdateVehicle
@@ -247,7 +245,6 @@ export async function createVehicleJobFromGate(
           ticketCreatedAt: input.ticket_created_at,
           boothCount: input.booth_count,
           workersRequired: 1,
-          workerQrToken: input.ticketNo,
           dispatchNow: existingVehicleJob.dispatchNow || dispatchNow,
           status: dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT
             ? vehicleStatus
@@ -304,7 +301,6 @@ export async function createVehicleJobFromGate(
           vendorLineId: ticket.vendor_line_id ?? null,
           rejectReason: ticket.reject_reason ?? null,
           status: ticketStatus,
-          confirmationStatus: ticketStatus,
         },
       });
 

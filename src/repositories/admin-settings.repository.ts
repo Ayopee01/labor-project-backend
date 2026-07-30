@@ -69,6 +69,10 @@ function buildAdminAccountCreateData(account: AccountCreateInput) {
     position: account.position ?? null,
     email: account.email ?? null,
     phone: account.phone ?? null,
+    source: account.source ?? "internal",
+    masterWorkerId: account.master_worker_id ?? null,
+    masterUpdatedAt: account.master_updated_at ?? null,
+    syncedAt: account.synced_at ?? null,
     permissionLevel: account.permission_level ?? null,
     createdBy: account.created_by ?? null,
   };

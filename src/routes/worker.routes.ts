@@ -6,7 +6,6 @@ import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 // import Service
 import * as workerService from "../services/worker.service";
-import * as workerPushService from "../services/worker-push.service";
 
 // Config Express router สำหรับ Worker Application routes
 const router = express.Router();
@@ -66,22 +65,6 @@ router.get(
 );
 
 // Route ดึงประวัติงานของ worker ตามวันที่
-router.post(
-  "/me/push-token",
-  async (req, res, next) => {
-    try {
-      const result = await workerPushService.registerWorkerPushToken(
-        req.auth,
-        req.session,
-        req.body
-      );
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
 router.get(
   "/me/assignments/history",
   async (req, res, next) => {

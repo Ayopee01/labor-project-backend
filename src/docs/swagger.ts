@@ -39,7 +39,8 @@ function sortSwaggerOperations(
     "post /api/auth/login/confirm-force": 11,
     "post /api/auth/refresh": 12,
     "post /api/auth/logout": 13,
-    "get /api/auth/me": 14,
+    "post /api/auth/push-token": 14,
+    "get /api/auth/me": 15,
     // Admin
     "get /api/admin/users": 20,
     "get /api/admin/users/{id}": 21,

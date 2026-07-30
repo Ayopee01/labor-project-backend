@@ -33,19 +33,7 @@ export type VehicleJobOperationRecord = Prisma.VehicleJobGetPayload<{
     };
     assignments: {
       include: {
-        worker: {
-          include: {
-            profile: true;
-            workSchedules: {
-              where: {
-                isCurrent: true,
-              },
-              orderBy: {
-                shiftNo: "asc",
-              },
-            },
-          };
-        };
+        worker: true;
       };
     };
   };
@@ -82,14 +70,7 @@ export async function listVehicleJobs(
         {
           tickets: {
             some: {
-              OR: [
-                {
-                  status: statusFilter,
-                },
-                {
-                  confirmationStatus: statusFilter,
-                },
-              ],
+              status: statusFilter,
             },
           },
         },
@@ -423,19 +404,7 @@ export async function listVehicleJobOperations(
           },
         ],
         include: {
-          worker: {
-            include: {
-              profile: true,
-              workSchedules: {
-                where: {
-                  isCurrent: true,
-                },
-                orderBy: {
-                  shiftNo: "asc",
-                },
-              },
-            },
-          },
+          worker: true,
         },
       },
     },
@@ -575,7 +544,6 @@ export async function cancelVehicleJob(
           where: {},
           data: {
             status: "CANCELLED",
-            confirmationStatus: "CANCELLED",
           },
         },
       },
@@ -602,7 +570,6 @@ export async function cancelMarketJob(
           where: {},
           data: {
             status: "CANCELLED",
-            confirmationStatus: "CANCELLED",
           },
         },
       },
@@ -624,7 +591,6 @@ export async function cancelGateTicket(
     },
     data: {
       status: "CANCELLED",
-      confirmationStatus: "CANCELLED",
     },
   });
 

@@ -2,9 +2,11 @@
 import type { WorkerWorkStatus } from "./worker-status.type";
 
 export const ACCOUNT_ROLES = ["admin", "worker"] as const;
+export const ACCOUNT_SOURCES = ["internal", "master_sync"] as const;
 
 // Type ส่วน Value ของ role account ที่ระบบรองรับ
 export type AccountRole = (typeof ACCOUNT_ROLES)[number];
+export type AccountSource = (typeof ACCOUNT_SOURCES)[number];
 
 // Type ส่วน Value ของ status account: schema DB เก็บเป็น string
 export type AccountStatus = string;
@@ -20,6 +22,18 @@ export interface AccountDto {
   position: string | null;
   email: string | null;
   phone: string | null;
+  image_url: string | null;
+  nationality: string | null;
+  work_start_date: string | null;
+  shirt_type: string | null;
+  shirt_number: string | null;
+  shift_no: number | null;
+  shift_start_time: string | null;
+  shift_end_time: string | null;
+  source: AccountSource;
+  master_worker_id: string | null;
+  master_updated_at: string | null;
+  synced_at: string | null;
   permission_level: string | null;
   created_by: number | null;
   created_at: string;
@@ -27,9 +41,12 @@ export interface AccountDto {
 }
 
 // Type ส่วน DTO ของ account ที่ปลอดภัยสำหรับ response
-export type SafeAccountDto = Omit<AccountDto, "password_hash">;
+export type SafeAccountDto = Omit<
+  AccountDto,
+  "password_hash" | "source" | "master_worker_id" | "master_updated_at" | "synced_at"
+>;
 
-// Type ส่วน DTO ของ worker profile. worker_code/phone มาจาก accounts เพื่อไม่เก็บซ้ำใน worker_profiles
+// Worker profile DTO. Profile fields are stored on accounts after the table merge.
 export interface ProfileDto {
   id: number;
   account_id: number;
@@ -42,7 +59,7 @@ export interface ProfileDto {
   shirt_number: string | null;
 }
 
-// Type ส่วน DTO ของ table worker_work_schedules
+// Current worker schedule DTO. Schedule fields are stored on accounts after the table merge.
 export interface WorkScheduleDto {
   id: number;
   account_id: number;
@@ -72,6 +89,18 @@ export interface AccountCreateInput {
   position?: string | null;
   email?: string | null;
   phone?: string | null;
+  image_url?: string | null;
+  nationality?: string | null;
+  work_start_date?: string | null;
+  shirt_type?: string | null;
+  shirt_number?: string | null;
+  shift_no?: number | null;
+  shift_start_time?: string | null;
+  shift_end_time?: string | null;
+  source?: AccountSource;
+  master_worker_id?: string | null;
+  master_updated_at?: Date | string | null;
+  synced_at?: Date | string | null;
   permission_level?: string | null;
   created_by?: number | null;
 }

@@ -26,17 +26,9 @@ export async function findByAccountId(
   connection?: DbConnection
 ): Promise<ProfileDto | null> {
   const db = client(connection);
-  const profile = await db.workerProfile.findUnique({
+  const profile = await db.account.findUnique({
     where: {
-      accountId: toAccountId(accountId),
-    },
-    include: {
-      account: {
-        select: {
-          username: true,
-          phone: true,
-        },
-      },
+      id: toAccountId(accountId),
     },
   });
 
@@ -57,19 +49,12 @@ export async function findByAccountIds(
   }
 
   const db = client(connection);
-  const profiles = await db.workerProfile.findMany({
+  const profiles = await db.account.findMany({
     where: {
-      accountId: {
+      id: {
         in: ids,
       },
-    },
-    include: {
-      account: {
-        select: {
-          username: true,
-          phone: true,
-        },
-      },
+      role: "worker",
     },
   });
 

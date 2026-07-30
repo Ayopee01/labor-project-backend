@@ -2,8 +2,10 @@
 import express from "express";
 // import
 import authMiddleware from "../middlewares/auth.middleware";
+import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 import * as authService from "../services/auth.service";
+import * as workerPushService from "../services/worker-push.service";
 
 // Config Express router สำหรับ Auth routes
 const router = express.Router();
@@ -63,6 +65,25 @@ router.post(
 );
 
 // Route ดึงข้อมูลผู้ใช้จาก token ปัจจุบัน
+router.post(
+  "/push-token",
+  authMiddleware,
+  sessionMiddleware,
+  roleMiddleware(["worker"]),
+  async (req, res, next) => {
+    try {
+      const result = await workerPushService.registerWorkerPushToken(
+        req.auth,
+        req.session,
+        req.body
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.get(
   "/me",
   authMiddleware,

@@ -16,6 +16,18 @@ model Account {
   position        String?  @db.VarChar(255)
   email           String?  @db.VarChar(255)
   phone           String?  @db.VarChar(50)
+  imageUrl        String?  @map("image_url") @db.VarChar(512)
+  nationality     String?  @db.VarChar(100)
+  workStartDate   String?  @map("work_start_date") @db.Char(10)
+  shirtType       String?  @map("shirt_type") @db.VarChar(50)
+  shirtNumber     String?  @unique @map("shirt_number") @db.VarChar(50)
+  shiftNo         Int?     @map("shift_no")
+  shiftStartTime  String?  @map("shift_start_time") @db.Char(5)
+  shiftEndTime    String?  @map("shift_end_time") @db.Char(5)
+  source          String   @default("internal") @db.VarChar(30)
+  masterWorkerId  String?  @unique @map("master_worker_id") @db.VarChar(100)
+  masterUpdatedAt DateTime? @map("master_updated_at") @db.Timestamp(3)
+  syncedAt        DateTime? @map("synced_at") @db.Timestamp(3)
   permissionLevel String?  @map("permission_level") @db.VarChar(50)
   createdBy       Int?     @map("created_by")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(3)
@@ -23,11 +35,7 @@ model Account {
 
   creator         Account?           @relation("AccountCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdAccounts Account[]          @relation("AccountCreatedBy")
-  profile         WorkerProfile?
   sessions        UserSession[]
-  workSchedules   WorkerWorkSchedule[] @relation("ScheduleAccount")
-  createdSchedules WorkerWorkSchedule[] @relation("ScheduleCreatedBy")
-  updatedSchedules WorkerWorkSchedule[] @relation("ScheduleUpdatedBy")
   jobAssignments VehicleJobAssignment[] @relation("AssignmentWorker")
   permissions     AccountPermission[]
   ticketWorkers   TicketWorker[]
@@ -35,6 +43,8 @@ model Account {
   createdGateClients GateClient[] @relation("GateClientCreatedBy")
   updatedGateClients GateClient[] @relation("GateClientUpdatedBy")
 
+  @@index([role, source])
+  @@index([masterUpdatedAt])
   @@map("accounts")
 }
 
@@ -106,7 +116,6 @@ model VehicleJob {
   dispatchNow       Boolean  @default(false) @map("dispatch_now")
   status            String   @default("WAIT") @db.VarChar(30)
   driverQrToken     String   @unique @map("driver_qr_token") @db.VarChar(255)
-  workerQrToken     String   @unique @map("worker_qr_token") @db.VarChar(255)
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
 
@@ -147,7 +156,6 @@ model GateTicket {
   vendorLineId String?   @map("vendor_line_id") @db.VarChar(255)
   rejectReason String?   @map("reject_reason") @db.Text
   status       String    @default("WAIT") @db.VarChar(30)
-  confirmationStatus String @default("WAIT") @map("confirmation_status") @db.VarChar(30)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
@@ -319,20 +327,6 @@ model VehicleJobAssignment {
   @@map("vehicle_job_assignments")
 }
 
-model WorkerProfile {
-  id              Int     @id @default(autoincrement())
-  accountId       Int     @unique @map("account_id")
-  imageUrl        String? @map("image_url") @db.VarChar(512)
-  nationality     String  @db.VarChar(100)
-  workStartDate   String  @map("work_start_date") @db.Char(10)
-  shirtType       String? @map("shirt_type") @db.VarChar(50)
-  shirtNumber     String? @unique @map("shirt_number") @db.VarChar(50)
-
-  account Account @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@map("worker_profiles")
-}
-
 model UserSession {
   id               Int       @id @default(autoincrement())
   accountId        Int       @map("account_id")
@@ -376,25 +370,4 @@ model WorkerPushToken {
   @@index([workerCode, isActive])
   @@index([sessionId, isActive])
   @@map("worker_push_tokens")
-}
-
-model WorkerWorkSchedule {
-  id             Int      @id @default(autoincrement())
-  accountId      Int      @map("account_id")
-  shiftNo        Int      @default(1) @map("shift_no")
-  workDate       String   @map("work_date") @db.Char(10)
-  shiftStartTime String   @map("shift_start_time") @db.Char(5)
-  shiftEndTime   String   @map("shift_end_time") @db.Char(5)
-  isCurrent      Boolean  @default(true) @map("is_current")
-  createdBy      Int?     @map("created_by")
-  updatedBy      Int?     @map("updated_by")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  account          Account  @relation("ScheduleAccount", fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  createdByAccount Account? @relation("ScheduleCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  updatedByAccount Account? @relation("ScheduleUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([accountId, isCurrent])
-  @@map("worker_work_schedules")
 }

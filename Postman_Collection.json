@@ -268,7 +268,62 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone from worker creation, DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone from worker creation, DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/login - Worker without FCM token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let body = {};",
+                  "try { body = pm.response.json(); } catch (error) {}",
+                  "if (body.AccessToken) pm.collectionVariables.set('accessToken', body.AccessToken);",
+                  "if (body.RefreshToken) pm.collectionVariables.set('refreshToken', body.RefreshToken);",
+                  "if (body.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.LoginChallengeToken);",
+                  "if (body.Details && body.Details.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.Details.LoginChallengeToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text",
+                "description": "Required when sending JSON body."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Username\": \"MN000012\",\n  \"Password\": \"0812345678\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone, DeviceId, and DeviceName. FcmToken is intentionally omitted in this example.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Use this when Mobile has not received an FCM token from Firebase SDK yet. After login succeeds and Firebase SDK returns the token, call POST /api/auth/push-token with FcmToken and Platform."
           },
           "response": []
         },
@@ -322,7 +377,51 @@
                 "confirm-force"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName, optional FcmToken, optional Platform\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken. If FcmToken is sent, backend revokes the old session push token and stores the new token for this WorkerCode."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName, optional FcmToken, optional Platform\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken. If FcmToken is sent, backend revokes the old session push token and stores the new token for this WorkerCode. If Mobile does not have an FCM token yet, omit it here and call POST /api/auth/push-token after Firebase SDK returns the token."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/push-token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text",
+                "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/push-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "push-token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/push-token\nAuth: Worker access token\nBody: FcmToken required, Platform optional. DeviceId is optional and defaults to the current session DeviceId.\nResponse: StatusCode, Code, Message, WorkerCode, DeviceId, Platform. FcmToken is not returned.\nNotes: Use after login when FcmToken was not available during Auth login, or whenever Firebase SDK returns a refreshed token. This endpoint does not request a token from Firebase; Mobile must obtain the FCM token from Firebase SDK first. Backend stores token by WorkerCode + DeviceId + Platform and uses it for worker push notifications."
           },
           "response": []
         },
@@ -568,7 +667,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: FullName, Phone, Nationality, ShirtType, ShirtNumber, ShiftNo, optional WorkStartDate, Status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. ShiftNo 1 uses preset 08:00-18:00 and ShiftNo 2 uses preset 18:00-08:00. WorkStartDate is optional; if omitted, backend uses the current Bangkok date. Uploaded image is stored under /uploads/workers and saved as profile.ImageUrl. JSON body with ImageUrl/img is still supported when no file upload is needed."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: FullName, Phone, Nationality, ShirtType, ShirtNumber, ShiftNo, optional WorkStartDate, Status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. ShiftNo 1 uses preset 08:00-18:00 and ShiftNo 2 uses preset 18:00-08:00. WorkStartDate is optional; if omitted, backend uses the current Bangkok date. Uploaded image is stored under /uploads/workers and saved as accounts.ImageUrl. JSON body with ImageUrl/img is still supported when no file upload is needed."
           },
           "response": []
         },
@@ -1904,50 +2003,6 @@
               "type": "noauth"
             },
             "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, working, break. When Status is break, response also includes BreakUntil and RemainingBreakTime with TotalSeconds, Minutes, Seconds, and Text."
-          },
-          "response": []
-        },
-        {
-          "name": "POST /api/workers/me/push-token",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/workers/me/push-token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "workers",
-                "me",
-                "push-token"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/push-token\nAuth: Worker access token\nBody: FcmToken required, Platform optional. DeviceId is optional and defaults to the current session DeviceId.\nResponse: StatusCode, Code, Message, WorkerCode, DeviceId, Platform. FcmToken is not returned.\nNotes: Use after login or whenever Firebase returns a refreshed token. Backend stores token by WorkerCode + DeviceId + Platform and uses it for worker push notifications."
           },
           "response": []
         },

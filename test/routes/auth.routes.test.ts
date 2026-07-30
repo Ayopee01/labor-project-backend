@@ -193,7 +193,7 @@ test("worker auth flow stores, refreshes, and revokes FCM token by WorkerCode", 
   assert.equal(state.workerPushTokens[0].fcm_token, "fcm-token-1010-a");
   assert.equal(state.workerPushTokens[0].is_active, true);
 
-  const refreshPushToken = await server.request("POST", "/api/workers/me/push-token", {
+  const refreshPushToken = await server.request("POST", "/api/auth/push-token", {
     token: login.body.access_token,
     body: {
       fcm_token: "fcm-token-1010-b",
@@ -215,6 +215,39 @@ test("worker auth flow stores, refreshes, and revokes FCM token by WorkerCode", 
 
   assert.equal(logout.status, 200);
   assert.equal(state.workerPushTokens[0].is_active, false);
+});
+
+test("worker can register FCM token after login when token was not available during auth", async () => {
+  const passwordHash = await password.hashPassword("Worker@123456");
+  const worker = addWorker(1011, passwordHash);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: worker.username,
+      password: "Worker@123456",
+      device_id: "mobile-push-1011",
+      device_name: "Worker Mobile",
+    },
+  });
+
+  assert.equal(login.status, 200);
+  assert.equal(state.workerPushTokens.length, 0);
+
+  const registerPushToken = await server.request("POST", "/api/auth/push-token", {
+    token: login.body.access_token,
+    body: {
+      fcm_token: "fcm-token-1011-late",
+      platform: "ios",
+    },
+  });
+
+  assert.equal(registerPushToken.status, 200);
+  assert.equal(registerPushToken.body.code, "WORKER_PUSH_TOKEN_REGISTERED");
+  assert.equal(registerPushToken.body.worker_code, worker.username);
+  assert.equal(registerPushToken.body.device_id, "mobile-push-1011");
+  assert.equal(registerPushToken.body.platform, "ios");
+  assert.equal(state.workerPushTokens.length, 1);
+  assert.equal(state.workerPushTokens[0].worker_code, worker.username);
+  assert.equal(state.workerPushTokens[0].fcm_token, "fcm-token-1011-late");
 });
 
 test("PATCH /api/auth/me/password changes own password and keeps current session active", async () => {

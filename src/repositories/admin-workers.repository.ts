@@ -55,13 +55,9 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
       },
     },
     {
-      profile: {
-        is: {
-          nationality: {
-            contains: search,
-            mode: SEARCH_MODE,
-          },
-        },
+      nationality: {
+        contains: search,
+        mode: SEARCH_MODE,
       },
     },
     {
@@ -71,13 +67,9 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
       },
     },
     {
-      profile: {
-        is: {
-          shirtNumber: {
-            contains: search,
-            mode: SEARCH_MODE,
-          },
-        },
+      shirtNumber: {
+        contains: search,
+        mode: SEARCH_MODE,
       },
     },
   ];
@@ -135,6 +127,18 @@ function buildAccountCreateData(account: AccountCreateInput): Prisma.AccountUnch
     position: account.position ?? null,
     email: account.email ?? null,
     phone: account.phone ?? null,
+    imageUrl: account.image_url ?? null,
+    nationality: account.nationality ?? null,
+    workStartDate: account.work_start_date ?? null,
+    shirtType: account.shirt_type ?? null,
+    shirtNumber: account.shirt_number ?? null,
+    shiftNo: account.shift_no ?? null,
+    shiftStartTime: account.shift_start_time ?? null,
+    shiftEndTime: account.shift_end_time ?? null,
+    source: account.source ?? "internal",
+    masterWorkerId: account.master_worker_id ?? null,
+    masterUpdatedAt: account.master_updated_at ?? null,
+    syncedAt: account.synced_at ?? null,
     permissionLevel: account.permission_level ?? null,
     createdBy: account.created_by ?? null,
   };
@@ -213,33 +217,24 @@ function isWorkScheduleDto(schedule: WorkScheduleDto | null): schedule is WorkSc
 // Function แปลง input สร้างตารางงานเป็น Prisma create data
 function buildScheduleCreateData(
   schedule: WorkScheduleCreateInput
-): Prisma.WorkerWorkScheduleUncheckedCreateInput {
+): Prisma.AccountUncheckedUpdateInput {
   return {
-    accountId: toAccountId(schedule.account_id),
     shiftNo: schedule.shift_no ?? 1,
-    workDate: schedule.work_date,
+    workStartDate: schedule.work_date,
     shiftStartTime: schedule.shift_start_time,
     shiftEndTime: schedule.shift_end_time,
-    isCurrent: schedule.is_current !== false,
-    createdBy: schedule.created_by ?? null,
-    updatedBy: schedule.updated_by ?? null,
   };
 }
 
 // Function แปลง input แก้ไขตารางงานปัจจุบันเป็น Prisma update data
 function buildScheduleUpdateData(
   schedule: WorkScheduleUpdateInput
-): Prisma.WorkerWorkScheduleUncheckedUpdateInput {
+): Prisma.AccountUncheckedUpdateInput {
   return {
     ...(schedule.shift_no !== undefined && { shiftNo: schedule.shift_no }),
-    workDate: schedule.work_date,
+    workStartDate: schedule.work_date,
     shiftStartTime: schedule.shift_start_time,
     shiftEndTime: schedule.shift_end_time,
-    isCurrent: true,
-    updatedBy:
-      schedule.updated_by === undefined || schedule.updated_by === null
-        ? null
-        : toAccountId(schedule.updated_by),
   };
 }
 
@@ -408,12 +403,13 @@ async function shirtNumberExists(
   connection?: DbConnection
 ): Promise<boolean> {
   const db = client(connection);
-  const profile = await db.workerProfile.findFirst({
+  const account = await db.account.findFirst({
     where: {
       shirtNumber,
+      role: WORKER_ROLE,
       ...(exceptAccountId !== undefined &&
         exceptAccountId !== null && {
-          accountId: {
+          id: {
             not: toAccountId(exceptAccountId),
           },
         }),
@@ -423,7 +419,7 @@ async function shirtNumberExists(
     },
   });
 
-  return Boolean(profile);
+  return Boolean(account);
 }
 
 // Function สร้าง profile ของ worker
@@ -432,22 +428,16 @@ async function createProfile(
   connection?: DbConnection
 ): Promise<ProfileDto> {
   const db = client(connection);
-  const createdProfile = await db.workerProfile.create({
-    data: {
-      accountId: toAccountId(profile.account_id),
-      ...buildProfileCreateData(profile),
+  const updatedAccount = await db.account.update({
+    where: {
+      id: toAccountId(profile.account_id),
     },
-    include: {
-      account: {
-        select: {
-          username: true,
-          phone: true,
-        },
-      },
+    data: {
+      ...buildProfileCreateData(profile),
     },
   });
 
-  return requireMapped(mapProfile(createdProfile), "Profile", "create");
+  return requireMapped(mapProfile(updatedAccount), "Profile", "create");
 }
 
 // Function อัปเดต profile จาก account id
@@ -457,22 +447,14 @@ async function updateProfileByAccountId(
   connection?: DbConnection
 ): Promise<ProfileDto> {
   const db = client(connection);
-  const updatedProfile = await db.workerProfile.update({
+  const updatedAccount = await db.account.update({
     where: {
-      accountId: toAccountId(accountId),
+      id: toAccountId(accountId),
     },
     data: buildProfileData(profile),
-    include: {
-      account: {
-        select: {
-          username: true,
-          phone: true,
-        },
-      },
-    },
   });
 
-  return requireMapped(mapProfile(updatedProfile), "Profile", "update");
+  return requireMapped(mapProfile(updatedAccount), "Profile", "update");
 }
 
 // Function สร้างตารางงานของ worker
@@ -481,11 +463,14 @@ async function createWorkSchedule(
   connection?: DbConnection
 ): Promise<WorkScheduleDto> {
   const db = client(connection);
-  const createdSchedule = await db.workerWorkSchedule.create({
+  const updatedAccount = await db.account.update({
+    where: {
+      id: toAccountId(schedule.account_id),
+    },
     data: buildScheduleCreateData(schedule),
   });
 
-  return requireMapped(mapSchedule(createdSchedule), "Schedule", "create");
+  return requireMapped(mapSchedule(updatedAccount), "Schedule", "create");
 }
 
 // Function อัปเดตตารางงานปัจจุบันของ worker
@@ -495,33 +480,34 @@ async function updateCurrentWorkScheduleByAccountId(
   connection?: DbConnection
 ): Promise<WorkScheduleDto | null> {
   const db = client(connection);
-  const currentSchedule = await db.workerWorkSchedule.findFirst({
+  const currentSchedule = await db.account.findFirst({
     where: {
-      accountId: toAccountId(accountId),
-      isCurrent: true,
+      id: toAccountId(accountId),
+      role: WORKER_ROLE,
+      shiftNo: {
+        not: null,
+      },
+      shiftStartTime: {
+        not: null,
+      },
+      shiftEndTime: {
+        not: null,
+      },
     },
-    orderBy: [
-      {
-        shiftNo: "asc",
-      },
-      {
-        id: "asc",
-      },
-    ],
   });
 
   if (!currentSchedule) {
     return null;
   }
 
-  const updatedSchedule = await db.workerWorkSchedule.update({
+  const updatedAccount = await db.account.update({
     where: {
       id: currentSchedule.id,
     },
     data: buildScheduleUpdateData(schedule),
   });
 
-  return requireMapped(mapSchedule(updatedSchedule), "Schedule", "update");
+  return requireMapped(mapSchedule(updatedAccount), "Schedule", "update");
 }
 
 // Function ลบตารางงานอื่นของ worker โดยเก็บ schedule ที่ระบุไว้
@@ -532,12 +518,18 @@ async function deleteOtherWorkSchedulesByAccountId(
 ): Promise<void> {
   const db = client(connection);
 
-  await db.workerWorkSchedule.deleteMany({
+  if (toAccountId(accountId) === Number(keepScheduleId)) {
+    return;
+  }
+
+  await db.account.updateMany({
     where: {
-      accountId: toAccountId(accountId),
-      id: {
-        not: Number(keepScheduleId),
-      },
+      id: toAccountId(accountId),
+    },
+    data: {
+      shiftNo: null,
+      shiftStartTime: null,
+      shiftEndTime: null,
     },
   });
 }
@@ -548,10 +540,14 @@ async function deleteCurrentWorkSchedulesByAccountId(
 ): Promise<void> {
   const db = client(connection);
 
-  await db.workerWorkSchedule.deleteMany({
+  await db.account.updateMany({
     where: {
-      accountId: toAccountId(accountId),
-      isCurrent: true,
+      id: toAccountId(accountId),
+    },
+    data: {
+      shiftNo: null,
+      shiftStartTime: null,
+      shiftEndTime: null,
     },
   });
 }
@@ -563,24 +559,24 @@ async function listWorkSchedulesByAccountId(
   connection?: DbConnection
 ): Promise<WorkScheduleDto[]> {
   const db = client(connection);
-  const schedules = await db.workerWorkSchedule.findMany({
+  const account = await db.account.findFirst({
     where: {
-      accountId: toAccountId(accountId),
-      isCurrent: true,
+      id: toAccountId(accountId),
+      role: WORKER_ROLE,
+      shiftNo: {
+        not: null,
+      },
+      shiftStartTime: {
+        not: null,
+      },
+      shiftEndTime: {
+        not: null,
+      },
     },
-    orderBy: [
-      {
-        shiftNo: "asc",
-      },
-      {
-        id: "asc",
-      },
-    ],
-    skip: filters.offset,
-    take: filters.limit,
   });
+  const schedule = mapSchedule(account);
 
-  return schedules.map((schedule) => mapSchedule(schedule)).filter(isWorkScheduleDto);
+  return schedule && filters.offset === 0 && filters.limit > 0 ? [schedule] : [];
 }
 
 // Function นับจำนวนตารางงานปัจจุบันของ worker
@@ -590,10 +586,19 @@ async function countWorkSchedulesByAccountId(
 ): Promise<number> {
   const db = client(connection);
 
-  return db.workerWorkSchedule.count({
+  return db.account.count({
     where: {
-      accountId: toAccountId(accountId),
-      isCurrent: true,
+      id: toAccountId(accountId),
+      role: WORKER_ROLE,
+      shiftNo: {
+        not: null,
+      },
+      shiftStartTime: {
+        not: null,
+      },
+      shiftEndTime: {
+        not: null,
+      },
     },
   });
 }
