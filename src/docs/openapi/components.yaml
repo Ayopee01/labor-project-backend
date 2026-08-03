@@ -595,32 +595,6 @@
         shirt_number:
           type: string
           example: "12"
-    WorkScheduleInput:
-      type: object
-      required:
-        - shift_start_time
-        - shift_end_time
-      properties:
-        shift_no:
-          type: integer
-          enum:
-            - 1
-            - 2
-          description: Optional. 1 = morning shift, 2 = evening shift.
-          example: 1
-        work_date:
-          type: string
-          format: date
-          description: Optional legacy field. Shift availability is checked by shift_start_time and shift_end_time only.
-          example: 2026-07-01
-        shift_start_time:
-          type: string
-          pattern: "^\\d{2}:\\d{2}$"
-          example: "06:00"
-        shift_end_time:
-          type: string
-          pattern: "^\\d{2}:\\d{2}$"
-          example: "18:00"
     CreateUserRequest:
       type: object
       required:
@@ -793,11 +767,6 @@
           format: date
           description: Optional first working date for the worker profile.
           example: 2026-07-03
-        work_date:
-          type: string
-          format: date
-          description: Optional legacy field. Shift availability is checked by shift_start_time and shift_end_time only.
-          example: 2026-07-03
         shift_start_time:
           type: string
           description: Optional custom time for this worker. Must be sent together with shift_end_time. Time only in HH:mm. Backend derives ShiftNo and ShiftName from this start time.
@@ -818,17 +787,6 @@
             - active
             - inactive
           example: active
-        work_schedule:
-          description: Optional legacy single-shift input. Replaces the current worker schedule rows.
-          allOf:
-            - $ref: "#/components/schemas/WorkScheduleInput"
-        work_schedules:
-          type: array
-          description: Legacy array input. Replaces current schedule rows with one daily shift.
-          minItems: 1
-          maxItems: 1
-          items:
-            $ref: "#/components/schemas/WorkScheduleInput"
     ResetPasswordRequest:
       type: object
       required:
@@ -1578,7 +1536,7 @@
         vendor_line_id:
           type: string
           nullable: true
-          example: line-vendor-a
+          example: Ubd9b17811181e01f8fca0372d2b37088
         reject_reason:
           type: string
           nullable: true
@@ -1653,16 +1611,6 @@
           type: array
           items:
             $ref: "#/components/schemas/TicketProduct"
-        debug_line_postback:
-          type: object
-          description: Present only when LINE_DEBUG_POSTBACK_RESPONSE=true for local/Postman testing. Do not enable in production.
-          properties:
-            confirm:
-              type: string
-              example: action=vendor_confirm_completion&token=debug-confirm-token
-            reject:
-              type: string
-              example: action=vendor_reject_completion&token=debug-reject-token
     LineWebhookRequest:
       type: object
       properties:
@@ -1679,13 +1627,14 @@
                 properties:
                   userId:
                     type: string
-                    example: line-vendor-a
+                    example: Ubd9b17811181e01f8fca0372d2b37088
               postback:
                 type: object
                 properties:
                   data:
                     type: string
-                    example: action=vendor_reject_completion&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...&reject_reason=Quantity%20does%20not%20match%20order
+                    description: Confirm/reject buttons send `token=<signed-token>`. Rating buttons send `token=<signed-token>&score=<1-5>`.
+                    example: token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...&score=5
     LineWebhookResponse:
       type: object
       properties:
@@ -2802,6 +2751,10 @@
           nullable: true
           description: One-based Redis ready queue position. Only set for ready workers.
           example: 1
+        socket_connected:
+          type: boolean
+          description: True when the worker currently has an open Worker WebSocket connection. Ready or assigned workers can remain visible with false after a network disconnect.
+          example: false
         status:
           type: string
           description: The only board status returned by this API. UI maps this value to a column.

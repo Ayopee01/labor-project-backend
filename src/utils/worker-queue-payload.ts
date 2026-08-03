@@ -3,7 +3,7 @@ import { resolveWorkerWorkStatus } from "./worker-status";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้าง payload ของ queue entry สำหรับ WebSocket/SSE โดยใช้ reference แทน id ภายใน
+// Function สร้าง worker queue socket payload สำหรับ helper กลาง
 export function buildWorkerQueueSocketPayload(
   queueEntry: WorkerQueueEntryDto | null | undefined,
   workerCode: string | null,

@@ -1,27 +1,27 @@
-// import Library
+// Import Library
 import { prisma } from "../../db/prisma";
 
-// import Mapper
+// Import Mappers
 import { mapSchedule } from "./mappers";
 import { findActiveWorkSchedule, findNextWorkSchedule } from "../../utils/shift";
 
-// import Types
-import type { DbConnection } from "../../types/common.type";
+// Import Types
+import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkScheduleDto } from "../../types/admin-workers.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เลือก prisma client ปกติหรือ transaction client ที่ส่งเข้ามา
+// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
 function client(connection?: DbConnection): DbConnection {
   return connection ?? prisma;
 }
 
-// Function แปลง account id จาก path/string ให้เป็น number สำหรับ Prisma query
+// Function แปลง id เป็น account id แบบ number สำหรับ query DB
 function toAccountId(id: number | string): number {
   return Number(id);
 }
 
-// Function ค้นหา schedule ปัจจุบันของ account ใช้ร่วมกับ Auth, Admin Workers และ Worker Application
+// Function ค้นหา current ตาม account ID จาก DB
 export async function findCurrentByAccountId(
   accountId: number | string,
   connection?: DbConnection
@@ -31,6 +31,7 @@ export async function findCurrentByAccountId(
   return findActiveWorkSchedule(schedules) ?? findNextWorkSchedule(schedules);
 }
 
+// Function ค้นหา ตาม ID จาก DB
 export async function findById(
   scheduleId: number,
   connection?: DbConnection
@@ -45,6 +46,7 @@ export async function findById(
   return mapSchedule(schedule);
 }
 
+// Function ดึงรายการ current ตาม account ID จาก DB
 export async function listCurrentByAccountId(
   accountId: number | string,
   connection?: DbConnection

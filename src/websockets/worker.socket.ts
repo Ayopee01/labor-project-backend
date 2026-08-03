@@ -1,64 +1,43 @@
-// import Library
+// Import Library
 import type { IncomingMessage } from "http";
 import type { Server } from "http";
 import type { Duplex } from "stream";
 import { WebSocket, WebSocketServer } from "ws";
 
-// import
-import { accountRepository, profileRepository } from "../repositories/worker-application.repository";
+// Import Dependencies
+import { accountRepository, profileRepository } from "../repositories/worker.repository";
 import { findActiveByIdAndAccountId } from "../repositories/shared/session.repository";
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
-import { getWorkerQueueStatus, markWorkerOpenApp, recordWorkerHeartbeat } from "../queues/worker-queue";
+import { getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";
 import { publishNotification } from "../services/notifications.service";
-import { sendWorkerPushNotificationByAccountIds } from "../services/worker-push.service";
+import { sendWorkerPushNotificationByAccountIds } from "../utils/worker-push";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
 
-// import Types
+// Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { WorkerSocketEventType } from "../types/worker.type";
+import type { WorkerSocket, WorkerSocketEventOptions, WorkerSocketEventType, WorkerSocketPayload } from "../types/worker.type";
 
-// import Utils
+// Import Utils
 import ApiError from "../utils/api-error";
 import { verifyAccessToken } from "../utils/jwt";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config path ของ Worker WebSocket endpoint
 const WORKER_SOCKET_PATH = "/ws/workers";
 
-// Config ระยะ grace period หลัง socket หลุดก่อนย้าย worker เป็น open_app
+// Config เวลาผ่อนผันหลัง socket หลุดก่อนแจ้ง Admin ว่า worker disconnected
 const WORKER_SOCKET_DISCONNECT_GRACE_MS = Number(
   process.env.WORKER_SOCKET_DISCONNECT_GRACE_MS || 15000
 );
 
-/* -------------------------------------- Types -------------------------------------- */
-
-// Type ส่วน WebSocket instance ที่ผูก account id และ heartbeat state
-type WorkerSocket = WebSocket & {
-  accountId?: number;
-  isAlive?: boolean;
-};
-
-// Type ส่วน payload ที่ส่งเข้า Worker WebSocket event
-type WorkerSocketPayload = Record<string, unknown>;
-
-// Type options for sending Worker WebSocket events with optional FCM push delivery.
-type WorkerSocketEventOptions = {
-  push?: boolean;
-  pushTitle?: string;
-  pushMessage?: string;
-};
-
 /* -------------------------------------- State -------------------------------------- */
 
-// State เก็บ socket ที่เปิดอยู่ของ worker แต่ละคน
 const workerSockets = new Map<number, Set<WorkerSocket>>();
 
-// State เก็บ timer grace period หลัง socket ของ worker หลุด
 const disconnectTimers = new Map<number, NodeJS.Timeout>();
 
-// Config Worker WebSocket events that should also trigger FCM push notifications.
+// Config event ของ Worker WebSocket ที่ต้องส่ง FCM push เพิ่มด้วย
 const PUSH_WORKER_SOCKET_EVENTS = new Set<WorkerSocketEventType>([
   "WORKER_ASSIGNED",
   "ASSIGNMENT_TIMEOUT",
@@ -74,7 +53,7 @@ const PUSH_WORKER_SOCKET_EVENTS = new Set<WorkerSocketEventType>([
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึง token จาก query, Authorization header หรือ Sec-WebSocket-Protocol
+// Function ดึง socket token ใน Worker WebSocket
 function getSocketToken(request: IncomingMessage): string {
   const url = new URL(request.url || "", "http://localhost");
   const queryToken = url.searchParams.get("token");
@@ -107,7 +86,7 @@ function getSocketToken(request: IncomingMessage): string {
   throw new ApiError(401, "INVALID_TOKEN", "Worker WebSocket token is required.");
 }
 
-// Function ตรวจ access token และ session ก่อนยอมให้ worker เปิด socket
+// Function จัดการ authenticate worker socket ใน Worker WebSocket
 async function authenticateWorkerSocket(
   request: IncomingMessage
 ): Promise<AccessTokenPayload> {
@@ -133,7 +112,7 @@ async function authenticateWorkerSocket(
   return payload;
 }
 
-// Function ส่ง WebSocket HTTP error ตอน upgrade ไม่ผ่าน
+// Function ตีกลับ socket upgrade ใน Worker WebSocket
 function rejectSocketUpgrade(
   socket: Duplex,
   statusCode: number,
@@ -151,7 +130,7 @@ function rejectSocketUpgrade(
   socket.destroy();
 }
 
-// Function เพิ่ม socket เข้า registry ของ worker
+// Function จัดการ register worker socket ใน Worker WebSocket
 function registerWorkerSocket(accountId: number, socket: WorkerSocket): void {
   const sockets = workerSockets.get(accountId) ?? new Set<WorkerSocket>();
   const disconnectTimer = disconnectTimers.get(accountId);
@@ -167,7 +146,7 @@ function registerWorkerSocket(accountId: number, socket: WorkerSocket): void {
   workerSockets.set(accountId, sockets);
 }
 
-// Function ลบ socket ออกจาก registry และตั้ง grace period ก่อนย้ายเป็น open_app
+// Function ลบ socket ออกจาก registry และเริ่ม grace period ก่อนประกาศว่า disconnected
 function unregisterWorkerSocket(socket: WorkerSocket): void {
   const accountId = socket.accountId;
 
@@ -191,7 +170,7 @@ function unregisterWorkerSocket(socket: WorkerSocket): void {
   disconnectTimers.set(accountId, timer);
 }
 
-// Function จัดการ worker หลุดเกิน grace period ตาม policy ready/no assignment -> open_app
+// Function จัดการ socket worker หลุดหลังหมด grace โดยไม่เปลี่ยนสถานะคิวงาน
 async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> {
   disconnectTimers.delete(accountId);
 
@@ -199,36 +178,27 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
     return;
   }
 
-  const [assignment, queueEntry] = await Promise.all([
+  const [assignment, queueEntry, profile] = await Promise.all([
     findCurrentAssignmentByWorker(accountId),
     getWorkerQueueStatus(accountId),
+    profileRepository.findByAccountId(accountId).catch((error) => {
+      console.error("Failed to load worker profile for disconnect event.", error);
+      return null;
+    }),
   ]);
 
-  if (!assignment && queueEntry?.status === "ready") {
-    const [latestQueue, profile] = await Promise.all([
-      markWorkerOpenApp(accountId),
-      profileRepository.findByAccountId(accountId).catch((error) => {
-        console.error("Failed to load worker profile for disconnect event.", error);
-        return null;
-      }),
-    ]);
-    sendWorkerSocketEvent(accountId, "WORKER_STATUS_CHANGED", {
-      queue: buildWorkerQueueSocketPayload(
-        latestQueue,
-        profile?.worker_code ?? null
-      ),
-      reason: "socket_disconnected",
-    });
+  if (assignment || queueEntry) {
+    const workerCode = profile?.worker_code ?? null;
+
     publishNotification({
-      type: "WORKER_STATUS_CHANGED",
-      title: "Worker moved to open_app",
-      message: `Worker ${profile?.worker_code ?? accountId} moved to open_app because WebSocket disconnected.`,
+      type: "WORKER_CONNECTION_CHANGED",
+      title: "Worker socket disconnected",
+      message: `Worker ${workerCode ?? accountId} socket disconnected.`,
       payload: {
-        worker_code: profile?.worker_code ?? null,
-        queue: buildWorkerQueueSocketPayload(
-          latestQueue,
-          profile?.worker_code ?? null
-        ),
+        worker_code: workerCode,
+        socket_connected: false,
+        queue: queueEntry ? buildWorkerQueueSocketPayload(queueEntry, workerCode) : null,
+        assignment_status: assignment?.status ?? null,
         reason: "socket_disconnected",
       },
       audience: {
@@ -238,7 +208,7 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
   }
 }
 
-// Function ส่ง event ไปยัง socket ทั้งหมดของ worker คนนั้น
+// Function ส่ง worker socket event ใน Worker WebSocket
 export function sendWorkerSocketEvent(
   accountId: number,
   type: WorkerSocketEventType,
@@ -280,7 +250,7 @@ export function sendWorkerSocketEvent(
   return true;
 }
 
-// Function builds the FCM notification title that matches a Worker WebSocket event type.
+// Function สร้าง title ของ FCM notification ให้ตรงกับชนิด event จาก Worker WebSocket
 function buildWorkerPushTitle(type: WorkerSocketEventType): string {
   switch (type) {
     case "WORKER_ASSIGNED":
@@ -305,7 +275,7 @@ function buildWorkerPushTitle(type: WorkerSocketEventType): string {
   }
 }
 
-// Function builds the FCM notification body while keeping detailed data in the payload.
+// Function สร้าง body ของ FCM notification โดยเก็บรายละเอียดไว้ใน payload
 function buildWorkerPushMessage(
   type: WorkerSocketEventType,
   payload: WorkerSocketPayload
@@ -339,7 +309,7 @@ function buildWorkerPushMessage(
   }
 }
 
-// Function ตรวจว่า worker ยังมี socket connected อยู่หรือไม่
+// Function ตรวจว่า worker socket connected ใน Worker WebSocket
 export function isWorkerSocketConnected(accountId: number): boolean {
   const sockets = workerSockets.get(accountId);
 
@@ -350,7 +320,7 @@ export function isWorkerSocketConnected(accountId: number): boolean {
   return Array.from(sockets).some((socket) => socket.readyState === WebSocket.OPEN);
 }
 
-// Function ส่ง event แรกหลัง worker ต่อ WebSocket สำเร็จพร้อม worker_code
+// Function ส่ง worker connected event ใน Worker WebSocket
 async function sendWorkerConnectedEvent(accountId: number): Promise<void> {
   const profile = await profileRepository.findByAccountId(accountId).catch((error) => {
     console.error("Failed to load worker profile for WebSocket connection.", error);
@@ -362,7 +332,7 @@ async function sendWorkerConnectedEvent(accountId: number): Promise<void> {
   });
 }
 
-// Function ตั้ง WebSocket server สำหรับ Worker Mobile
+// Function ตั้งค่า worker web socket ใน Worker WebSocket
 export function setupWorkerWebSocket(server: Server): void {
   const webSocketServer = new WebSocketServer({
     noServer: true,

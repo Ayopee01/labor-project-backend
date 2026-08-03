@@ -1,4 +1,6 @@
-// Type ส่วน DTO ของ driver session ใน database
+/* -------------------------------------- Types -------------------------------------- */
+
+// Type session ของ driver ที่สร้างจาก QR/token ของงานรถ
 export interface DriverSessionDto {
   id: number;
   vehicle_job_id: number;
@@ -9,7 +11,7 @@ export interface DriverSessionDto {
   updated_at: string;
 }
 
-// Type ส่วนงานรถที่ส่งให้ Driver Flow
+// Type ข้อมูลงานรถแบบย่อที่ driver เห็น
 export interface DriverVehicleJobResponse {
   ticketNo: string;
   gate_transaction_ref: string;
@@ -24,7 +26,7 @@ export interface DriverVehicleJobResponse {
   updated_at: string;
 }
 
-// Type ส่วนสินค้าใน ticket ที่ส่งให้ Driver Flow
+// Type รายการสินค้าใน ticket สำหรับ driver
 interface DriverTicketProductResponse {
   productCode: string;
   productName: string;
@@ -33,7 +35,7 @@ interface DriverTicketProductResponse {
   quantity: string;
 }
 
-// Type ส่วน ticket/แผงที่ส่งให้ Driver Flow
+// Type ticket/booth ในรายละเอียดงานของ driver
 interface DriverTicketResponse {
   boothCode: string;
   boothName: string | null;
@@ -42,7 +44,7 @@ interface DriverTicketResponse {
   products: DriverTicketProductResponse[];
 }
 
-// Type ส่วนตลาดที่ส่งให้ Driver Flow
+// Type ตลาดที่รวม ticket สำหรับหน้ารายละเอียด driver
 interface DriverMarketJobResponse {
   marketCode: string;
   marketName: string;
@@ -50,12 +52,13 @@ interface DriverMarketJobResponse {
   tickets: DriverTicketResponse[];
 }
 
-// Type ส่วนรายละเอียดงานรถพร้อมตลาดและแผงสำหรับ Driver Flow
+// Type response รายละเอียดงานรถทั้งหมดสำหรับ driver
 export interface DriverVehicleJobDetailResponse {
   vehicle_job: DriverVehicleJobResponse;
   markets: DriverMarketJobResponse[];
 }
 
+// Type response หลัง driver scan ว่าพร้อมลงสินค้า
 export interface DriverJobReadyResponse {
   ticketNo: string;
   license_plate: string;
@@ -63,7 +66,7 @@ export interface DriverJobReadyResponse {
   worker_qr_token: string;
 }
 
-// Type ส่วน response หลังเปิด driver session จาก QR
+// Type response หลังสร้าง driver session สำเร็จ
 export interface DriverSessionResponse {
   driver_session_token: string;
   expires_in: number;

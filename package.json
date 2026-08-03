@@ -15,6 +15,8 @@
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
     "docker:redis": "docker compose up redis",
+    "docker:tunnel:quick": "docker compose --profile tunnel-quick up cloudflared-quick",
+    "docker:tunnel": "docker compose --profile tunnel up cloudflared",
     "test": "npm run test:unit && npm run test:routes",
     "test:unit": "node --import tsx --test test/unit/utilities/utils.test.ts test/unit/permissions/permission-config.test.ts test/unit/admin-workers/worker-code.test.ts",
     "test:routes": "node --import tsx --test test/routes/auth.routes.test.ts test/routes/admin-settings.routes.test.ts test/routes/worker.routes.test.ts",

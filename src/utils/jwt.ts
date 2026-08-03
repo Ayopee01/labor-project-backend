@@ -1,7 +1,7 @@
-// import Library
+// Import Library
 import jwt, { type SignOptions } from "jsonwebtoken";
 import type { ZodType } from "zod";
-// import
+// Import Dependencies
 import { AUTH_DEFAULTS } from "../config/auth.config";
 import type { AccessTokenPayload, LoginChallengeTokenPayload, RefreshTokenPayload, TokenConfig, TokenPayloadByType, TokenSignOptions, TokenType } from "../types/auth.type";
 import { parseWithSchema } from "../validation/parser";
@@ -41,7 +41,7 @@ const TOKEN_PAYLOAD_SCHEMAS: {
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึง config ของ token ตามประเภท และตรวจสอบว่า token มี secret พร้อมใช้งาน
+// Function ดึง token config สำหรับ helper กลาง
 function getTokenConfig(tokenType: TokenType): TokenConfig & { secret: string } {
   const config = TOKEN_CONFIG[tokenType];
 
@@ -56,7 +56,7 @@ function getTokenConfig(tokenType: TokenType): TokenConfig & { secret: string } 
   return config as TokenConfig & { secret: string };
 }
 
-// Function สร้าง token ตามประเภทที่กำหนด เช่น access, refresh, login_challenge
+// Function เซ็น typed token สำหรับ helper กลาง
 function signTypedToken<TTokenType extends TokenType>(
   payload: Omit<TokenPayloadByType[TTokenType], "token_type" | "iat" | "exp">,
   tokenType: TTokenType,
@@ -81,7 +81,7 @@ function signTypedToken<TTokenType extends TokenType>(
   );
 }
 
-// Function ตรวจสอบ token ตามประเภทที่กำหนด เช่น access, refresh, login_challenge
+// Function ตรวจสอบ typed token สำหรับ helper กลาง
 function verifyTypedToken<TTokenType extends TokenType>(
   token: string,
   tokenType: TTokenType
@@ -121,33 +121,33 @@ function verifyTypedToken<TTokenType extends TokenType>(
   }
 }
 
-// Function signature access token อายุสั้น ใช้สำหรับยืนยันการเข้าถึง resource
+// Function เซ็น access token สำหรับ helper กลาง
 export const signAccessToken = (
   payload: Omit<AccessTokenPayload, "token_type" | "iat" | "exp">,
   options: TokenSignOptions = {}
 ): string => signTypedToken(payload, "access", options);
 
-// Function signature refresh token อายุยาว ใช้สำหรับขอ access token ใหม่
+// Function เซ็น refresh token สำหรับ helper กลาง
 export const signRefreshToken = (
   payload: Omit<RefreshTokenPayload, "token_type" | "iat" | "exp">,
   options: TokenSignOptions = {}
 ): string => signTypedToken(payload, "refresh", options);
 
-// Function signature force-login challenge token อายุสั้น ใช้สำหรับยืนยันการเข้าสู่ระบบ
+// Function เซ็น login challenge token สำหรับ helper กลาง
 export const signLoginChallengeToken = (
   payload: Omit<LoginChallengeTokenPayload, "token_type" | "iat" | "exp">,
   options: TokenSignOptions = {}
 ): string => signTypedToken(payload, "login_challenge", options);
 
-// Function ตรวจสอบ access token และคืนค่า payload ที่ decode แล้ว
+// Function ตรวจสอบ access token สำหรับ helper กลาง
 export const verifyAccessToken = (token: string): AccessTokenPayload =>
   verifyTypedToken(token, "access");
 
-// Function ตรวจสอบ refresh token และคืนค่า payload ที่ decode แล้ว
+// Function ตรวจสอบ refresh token สำหรับ helper กลาง
 export const verifyRefreshToken = (token: string): RefreshTokenPayload =>
   verifyTypedToken(token, "refresh");
 
-// Function ตรวจสอบ force-login challenge token และคืนค่า payload ที่ decode แล้ว
+// Function ตรวจสอบ login challenge token สำหรับ helper กลาง
 export const verifyLoginChallengeToken = (
   token: string
 ): LoginChallengeTokenPayload => verifyTypedToken(token, "login_challenge");

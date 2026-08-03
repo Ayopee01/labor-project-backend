@@ -1,4 +1,4 @@
-// Config central assignment statuses used by worker dispatch, QR scan, delivery, and history flows.
+// Config สถานะกลางของ assignment ที่ใช้กับ dispatch, scan QR, ส่งยอด และประวัติ
 export const ASSIGNMENT_STATUS = {
   PENDING: "PENDING",
   ACCEPTED: "ACCEPTED",
@@ -11,7 +11,7 @@ export const ASSIGNMENT_STATUS = {
   TIMEOUT: "TIMEOUT",
 } as const;
 
-// Config central vehicle/market job statuses for persisted job lifecycle.
+// Config สถานะกลางของงานรถ/ตลาดสำหรับ lifecycle ที่บันทึกลง DB
 export const VEHICLE_JOB_STATUS = {
   WAIT: "WAIT",
   WORKING: "WORKING",
@@ -19,7 +19,7 @@ export const VEHICLE_JOB_STATUS = {
   CANCELLED: "CANCELLED",
 } as const;
 
-// Config operational statuses for the Admin vehicle operation board only.
+// Config สถานะ operation สำหรับบอร์ดจัดการรถฝั่ง Admin เท่านั้น
 export const VEHICLE_OPERATION_STATUS = {
   UNLOAD_NOW: "unload_now",
   WAITING_UNLOAD: "waiting_unload",
@@ -27,7 +27,7 @@ export const VEHICLE_OPERATION_STATUS = {
   DRIVER_WAITING_QUEUE: "driver_waiting_queue",
 } as const;
 
-// Config central ticket/booth statuses for delivery and vendor confirmation flows.
+// Config สถานะกลางของ ticket/booth สำหรับ flow ส่งยอดและ vendor ยืนยัน
 export const TICKET_STATUS = {
   WAIT: "WAIT",
   WORKING: "WORKING",
@@ -37,7 +37,7 @@ export const TICKET_STATUS = {
   CANCELLED: "CANCELLED",
 } as const;
 
-// Config assignment statuses that still reserve a worker for a vehicle job.
+// Config สถานะ assignment ที่ยังล็อก worker ไว้กับงานรถ
 export const ACTIVE_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.PENDING,
   ASSIGNMENT_STATUS.ACCEPTED,
@@ -47,7 +47,7 @@ export const ACTIVE_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.REJECT,
 ];
 
-// Config assignment statuses that mean the worker is already doing or waiting on delivery work.
+// Config สถานะ assignment ที่หมายถึง worker กำลังทำงานหรือรอผลส่งยอด
 export const WORKING_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.SCANNED,
   ASSIGNMENT_STATUS.WORKING,
@@ -55,7 +55,7 @@ export const WORKING_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.REJECT,
 ];
 
-// Config assignment statuses that count as QR checked-in for vehicle readiness.
+// Config สถานะ assignment ที่นับว่า scan QR แล้วสำหรับเช็คความพร้อมของรถ
 export const SCANNED_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.SCANNED,
   ASSIGNMENT_STATUS.WORKING,
@@ -64,7 +64,7 @@ export const SCANNED_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.COMPLETED,
 ];
 
-// Config assignment statuses kept in finished/history views after dispatch has ended.
+// Config สถานะ assignment ที่ยังเก็บไว้ในหน้าจบงานและประวัติหลัง dispatch สิ้นสุด
 export const FINISHED_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.PENDING,
   ASSIGNMENT_STATUS.ACCEPTED,
@@ -75,13 +75,13 @@ export const FINISHED_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.COMPLETED,
 ];
 
-// Config ticket statuses that stop the booth from being picked as the current open ticket.
+// Config สถานะ ticket ที่ทำให้ booth ไม่ถูกเลือกเป็นงานเปิดอยู่
 export const TERMINAL_TICKET_STATUSES: string[] = [
   TICKET_STATUS.COMPLETED,
   TICKET_STATUS.CANCELLED,
 ];
 
-// Config vehicle statuses that stop history/operation flows from treating the job as active.
+// Config สถานะรถที่ทำให้ history/operation ไม่มองว่าเป็นงาน active
 export const TERMINAL_JOB_STATUSES: string[] = [
   VEHICLE_JOB_STATUS.COMPLETED,
   VEHICLE_JOB_STATUS.CANCELLED,

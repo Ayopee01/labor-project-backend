@@ -3,13 +3,13 @@
     get:
       tags:
         - Admin Jobs
-      summary: List online current-shift workers sorted by board status and real queue/status order.
+      summary: List current-shift workers on the admin board sorted by real queue/status order.
       operationId: listAdminJobWorkerStatuses
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Online current-shift worker status list for admin job operations. Data is sorted by status column and status_entered_at, with ready workers ordered by Redis queue_position.
+          description: Current-shift worker status list for admin job operations. Workers with an active queue/assignment remain visible even when their WebSocket is disconnected; use SocketConnected to show connection state. Data is sorted by status column and status_entered_at, with ready workers ordered by Redis queue_position.
           content:
             application/json:
               schema:

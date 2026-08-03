@@ -105,6 +105,16 @@ npm run build
 npm test
 ```
 
+Cloudflare Tunnel for LINE OA webhook testing:
+
+```bash
+npm run docker:tunnel:quick
+```
+
+Use the printed `https://*.trycloudflare.com/api/line/webhook` URL in LINE
+Developers. For a stable hostname, set `CLOUDFLARE_TUNNEL_TOKEN` and run
+`npm run docker:tunnel`. See `docs/LINE_CLOUDFLARE_TUNNEL.md`.
+
 Production migration command:
 
 ```bash
@@ -138,13 +148,9 @@ $env:RUN_DB_TESTS="1"; npm test
 
 - `POST /api/admin/users`
 - `GET /api/admin/users`
-- `GET /api/admin/users/:id`
-- `PATCH /api/admin/users/:id`
-- `PATCH /api/admin/users/:id/password`
-- `PATCH /api/admin/users/:id/status`
-- `PATCH /api/admin/users/:id/work-schedule`
-- `GET /api/admin/users/:id/work-schedule`
-- `GET /api/admin/users/:id/work-schedules`
+- `GET /api/admin/users/:workerCode`
+- `PATCH /api/admin/users/:workerCode`
+- `PATCH /api/admin/users/:workerCode/password`
 
 ## File Layout
 

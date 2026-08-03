@@ -1,42 +1,24 @@
-// import Library
+// Import Library
 import { Queue, Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 
-// import Config
+// Import Config
 import { REDIS_CONFIG } from "../config/redis.config";
 import { getRuntimeSettings } from "../services/admin-settings.service";
 import { getDelayUntil } from "../utils/time";
 
-// import Types
-import type { WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
-import { WORKER_WORK_STATUSES, type WorkerWorkStatus } from "../types/worker-status.type";
-
-export type AssignmentTimeoutJobData = {
-  assignmentId?: number;
-  workerAccountId?: number;
-  ticketId?: number;
-  submissionId?: number;
-  kind?: "accept" | "scan" | "scan_warning" | "vendor_confirm";
-};
-
-export type WorkerScheduleJobData = {
-  accountId: number;
-  scheduleId: number;
-  shiftInstanceKey?: string;
-  kind?: "break_return" | "shift_end";
-};
+// Import Types
+import type { AssignmentTimeoutJobData, WorkerPresenceDto, WorkerQueueEntryDto, WorkerScheduleJobData } from "../types/worker.type";
+import { WORKER_WORK_STATUS, WORKER_WORK_STATUSES, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config Redis client สำหรับเก็บ worker queue/status/presence
 const redis = new IORedis(REDIS_CONFIG.url, {
   maxRetriesPerRequest: null,
 });
 
-// Config แปลง REDIS_URL เป็น connection object สำหรับ BullMQ
 const redisUrl = new URL(REDIS_CONFIG.url);
 
-// Config connection object สำหรับ BullMQ queue/worker
 const bullConnection = {
   host: redisUrl.hostname,
   port: Number(redisUrl.port || 6379),
@@ -45,53 +27,37 @@ const bullConnection = {
   maxRetriesPerRequest: null,
 };
 
-// Config queue สำหรับ assignment timeout
 const assignmentTimeoutQueue = new Queue(REDIS_CONFIG.assignmentTimeoutQueueName, {
   connection: bullConnection,
 });
 
-// Config queue สำหรับคืน worker จาก break เมื่อครบเวลา
 const workerBreakReturnQueue = new Queue(REDIS_CONFIG.workerBreakReturnQueueName, {
   connection: bullConnection,
 });
 
-// State เก็บ BullMQ worker เพื่อไม่ให้ start ซ้ำ
 let timeoutWorker: Worker | null = null;
 let breakReturnWorker: Worker | null = null;
 
-// State score ล่าสุดของ Redis FIFO queue เพื่อกัน score ชนกันใน millisecond เดียว
 let lastWorkerQueueScore = 0;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้าง Redis key สำหรับสถานะ worker รายคน
+// Function สร้าง worker status key ใน Redis/BullMQ queue
 function buildWorkerStatusKey(accountId: number): string {
   return `${REDIS_CONFIG.workerStatusKeyPrefix}${accountId}`;
 }
 
-// Function สร้าง Redis key สำหรับ heartbeat/presence ของ worker รายคน
+// Function สร้าง worker presence key ใน Redis/BullMQ queue
 function buildWorkerPresenceKey(accountId: number): string {
   return `${REDIS_CONFIG.workerPresenceKeyPrefix}${accountId}`;
 }
 
-// Function สร้าง Redis key สำหรับนับจำนวนพักของ worker ในแต่ละกะ
+// Function สร้าง worker break count key ใน Redis/BullMQ queue
 function buildWorkerBreakCountKey(accountId: number, shiftInstanceKey: string): string {
   return `${REDIS_CONFIG.workerBreakCountKeyPrefix}${accountId}:${shiftInstanceKey}`;
 }
 
-function buildWorkerShiftOnlineKey(accountId: number, shiftInstanceKey: string): string {
-  return `worker:shift-online:${accountId}:${shiftInstanceKey}`;
-}
-
-function buildWorkerShiftClosedKey(accountId: number, shiftInstanceKey: string): string {
-  return `worker:shift-closed:${accountId}:${shiftInstanceKey}`;
-}
-
-function buildWorkerAcceptTimeoutCountKey(accountId: number, shiftInstanceKey: string): string {
-  return `worker:accept-timeout-count:${accountId}:${shiftInstanceKey}`;
-}
-
-// Function แปลงค่า hash จาก Redis เป็น response สถานะคิว
+// Function แปลง queue status ใน Redis/BullMQ queue
 function mapQueueStatus(
   accountId: number,
   status: Record<string, string>
@@ -111,13 +77,14 @@ function mapQueueStatus(
   };
 }
 
+// Function แปลงให้เป็นรูปแบบกลาง worker queue status ใน Redis/BullMQ queue
 function normalizeWorkerQueueStatus(value: string): WorkerWorkStatus {
   return (WORKER_WORK_STATUSES as readonly string[]).includes(value)
     ? value as WorkerWorkStatus
-    : "open_app";
+    : WORKER_WORK_STATUS.OPEN_APP;
 }
 
-// Function แปลงค่า presence จาก Redis เป็น response
+// Function แปลง worker presence ใน Redis/BullMQ queue
 function mapWorkerPresence(
   presence: Record<string, string>,
   staleAfterSeconds: number
@@ -134,7 +101,7 @@ function mapWorkerPresence(
   };
 }
 
-// Function บันทึกสถานะ worker ลง Redis hash
+// Function จัดการ set worker status ใน Redis/BullMQ queue
 async function setWorkerStatus(
   accountId: number,
   status: WorkerWorkStatus,
@@ -159,7 +126,7 @@ async function setWorkerStatus(
   return mapQueueStatus(accountId, latest) as WorkerQueueEntryDto;
 }
 
-// Function สร้าง score คิวให้เรียงตามลำดับที่เรียก แม้เข้า queue ใน millisecond เดียวกัน
+// Function สร้าง worker queue score ใน Redis/BullMQ queue
 function buildWorkerQueueScore(): number {
   const now = Date.now();
   const nextScore = now <= lastWorkerQueueScore ? lastWorkerQueueScore + 1 : now;
@@ -169,7 +136,7 @@ function buildWorkerQueueScore(): number {
   return nextScore;
 }
 
-// Function เพิ่ม worker เข้าท้ายคิว Redis FIFO
+// Function เพิ่มงานเข้า queue worker ใน Redis/BullMQ queue
 export async function enqueueWorker(accountId: number): Promise<WorkerQueueEntryDto> {
   const readyScore = buildWorkerQueueScore();
   const readyAt = new Date(readyScore);
@@ -179,11 +146,10 @@ export async function enqueueWorker(accountId: number): Promise<WorkerQueueEntry
     String(accountId)
   );
 
-  return setWorkerStatus(accountId, "ready", readyAt, null);
+  return setWorkerStatus(accountId, WORKER_WORK_STATUS.READY, readyAt, null);
 }
 
-// Function เอา worker ออกจากคิวและตั้ง open_app
-// Function เพิ่ม worker กลุ่มหนึ่งไว้หัวคิว โดยรักษาลำดับ accountIds ที่ส่งเข้ามา
+// Function เพิ่มงานเข้า queue workers at front ใน Redis/BullMQ queue
 export async function enqueueWorkersAtFront(
   accountIds: number[]
 ): Promise<WorkerQueueEntryDto[]> {
@@ -216,36 +182,37 @@ export async function enqueueWorkersAtFront(
       firstScore + index,
       String(accountId)
     );
-    entries.push(await setWorkerStatus(accountId, "ready", readyAt, null));
+    entries.push(await setWorkerStatus(accountId, WORKER_WORK_STATUS.READY, readyAt, null));
   }
 
   return entries;
 }
 
+// Function อัปเดตสถานะ worker open app ใน Redis/BullMQ queue
 export async function markWorkerOpenApp(accountId: number): Promise<WorkerQueueEntryDto> {
   await redis.zrem(REDIS_CONFIG.workerQueueKey, String(accountId));
 
-  return setWorkerStatus(accountId, "open_app", null, null);
+  return setWorkerStatus(accountId, WORKER_WORK_STATUS.OPEN_APP, null, null);
 }
 
-// Function ตั้ง worker เป็น assigned และเอาออกจากคิว
+// Function อัปเดตสถานะ worker assigned ใน Redis/BullMQ queue
 export async function markWorkerAssigned(accountId: number): Promise<WorkerQueueEntryDto> {
   await redis.zrem(REDIS_CONFIG.workerQueueKey, String(accountId));
 
-  return setWorkerStatus(accountId, "assigned", null, null);
+  return setWorkerStatus(accountId, WORKER_WORK_STATUS.ASSIGNED, null, null);
 }
 
-// Function ตั้ง worker เป็นพักชั่วคราวและเอาออกจากคิว
+// Function อัปเดตสถานะ worker break ใน Redis/BullMQ queue
 export async function markWorkerBreak(
   accountId: number,
   breakUntil: Date
 ): Promise<WorkerQueueEntryDto> {
   await redis.zrem(REDIS_CONFIG.workerQueueKey, String(accountId));
 
-  return setWorkerStatus(accountId, "break", null, breakUntil);
+  return setWorkerStatus(accountId, WORKER_WORK_STATUS.BREAK, null, breakUntil);
 }
 
-// Function ดึง worker จากหัวคิวตาม FIFO
+// Function จัดการ pop ready workers ใน Redis/BullMQ queue
 export async function popReadyWorkers(limit: number): Promise<WorkerQueueEntryDto[]> {
   if (limit <= 0) {
     return [];
@@ -273,7 +240,7 @@ export async function popReadyWorkers(limit: number): Promise<WorkerQueueEntryDt
   return entries;
 }
 
-// Function ดึงสถานะคิวของ worker จาก Redis
+// Function ดึง worker queue status ใน Redis/BullMQ queue
 export async function getWorkerQueueStatus(
   accountId: number
 ): Promise<WorkerQueueEntryDto | null> {
@@ -282,7 +249,7 @@ export async function getWorkerQueueStatus(
   return mapQueueStatus(accountId, status);
 }
 
-// Function ดึงสถานะ queue ของ worker หลายคนจาก Redis
+// Function ดึง worker queue statuses ใน Redis/BullMQ queue
 export async function getWorkerQueueStatuses(
   accountIds: number[]
 ): Promise<Map<number, WorkerQueueEntryDto | null>> {
@@ -311,7 +278,7 @@ export async function getWorkerQueueStatuses(
   return result;
 }
 
-// Function ดึง rank จริงใน Redis ready queue ของ worker หลายคน เพื่อให้ Admin board เรียงคิวตรงกับ dispatch
+// Function ดึง worker ready queue ranks ใน Redis/BullMQ queue
 export async function getWorkerReadyQueueRanks(
   accountIds: number[]
 ): Promise<Map<number, number | null>> {
@@ -339,6 +306,7 @@ export async function getWorkerReadyQueueRanks(
   return result;
 }
 
+// Function จัดการ record worker heartbeat ใน Redis/BullMQ queue
 export async function recordWorkerHeartbeat(
   accountId: number
 ): Promise<WorkerPresenceDto> {
@@ -360,7 +328,7 @@ export async function recordWorkerHeartbeat(
   }, staleAfterSeconds);
 }
 
-// Function ดึง presence ล่าสุดของ worker รายคน
+// Function ดึง worker presence ใน Redis/BullMQ queue
 export async function getWorkerPresence(
   accountId: number
 ): Promise<WorkerPresenceDto> {
@@ -370,7 +338,7 @@ export async function getWorkerPresence(
   return mapWorkerPresence(presence, settings.worker_presence_stale_seconds);
 }
 
-// Function ดึง presence ล่าสุดของ worker หลายคนจาก Redis
+// Function ดึง worker presences ใน Redis/BullMQ queue
 export async function getWorkerPresences(
   accountIds: number[]
 ): Promise<Map<number, WorkerPresenceDto>> {
@@ -403,7 +371,7 @@ export async function getWorkerPresences(
   return result;
 }
 
-// Function ดึงจำนวนครั้งพักของ worker ในกะนั้น
+// Function ดึง worker break count ใน Redis/BullMQ queue
 export async function getWorkerBreakCount(
   accountId: number,
   shiftInstanceKey: string
@@ -413,7 +381,7 @@ export async function getWorkerBreakCount(
   return value ? Number(value) : 0;
 }
 
-// Function เพิ่มจำนวนครั้งพักของ worker ในกะนั้น
+// Function เพิ่มค่า worker break count ใน Redis/BullMQ queue
 export async function incrementWorkerBreakCount(
   accountId: number,
   shiftInstanceKey: string
@@ -427,72 +395,7 @@ export async function incrementWorkerBreakCount(
   return count;
 }
 
-export async function hasWorkerShiftOnlineUsed(
-  accountId: number,
-  shiftInstanceKey: string
-): Promise<boolean> {
-  return Boolean(await redis.get(buildWorkerShiftOnlineKey(accountId, shiftInstanceKey)));
-}
-
-export async function markWorkerShiftOnlineUsed(
-  accountId: number,
-  shiftInstanceKey: string
-): Promise<void> {
-  const key = buildWorkerShiftOnlineKey(accountId, shiftInstanceKey);
-  const settings = await getRuntimeSettings();
-
-  await redis.incr(key);
-  await redis.expire(key, settings.worker_break_count_ttl_hours * 60 * 60);
-}
-
-export async function isWorkerShiftClosed(
-  accountId: number,
-  shiftInstanceKey: string
-): Promise<boolean> {
-  return Boolean(await redis.get(buildWorkerShiftClosedKey(accountId, shiftInstanceKey)));
-}
-
-export async function markWorkerShiftClosed(
-  accountId: number,
-  shiftInstanceKey: string
-): Promise<void> {
-  const key = buildWorkerShiftClosedKey(accountId, shiftInstanceKey);
-  const settings = await getRuntimeSettings();
-
-  await redis.incr(key);
-  await redis.expire(key, settings.worker_break_count_ttl_hours * 60 * 60);
-}
-
-export async function getWorkerAcceptTimeoutCount(
-  accountId: number,
-  shiftInstanceKey: string
-): Promise<number> {
-  const value = await redis.get(buildWorkerAcceptTimeoutCountKey(accountId, shiftInstanceKey));
-
-  return value ? Number(value) : 0;
-}
-
-export async function incrementWorkerAcceptTimeoutCount(
-  accountId: number,
-  shiftInstanceKey: string
-): Promise<number> {
-  const key = buildWorkerAcceptTimeoutCountKey(accountId, shiftInstanceKey);
-  const settings = await getRuntimeSettings();
-  const count = await redis.incr(key);
-
-  await redis.expire(key, settings.worker_break_count_ttl_hours * 60 * 60);
-
-  return count;
-}
-
-export async function resetWorkerAcceptTimeoutCount(
-  accountId: number,
-  shiftInstanceKey: string
-): Promise<void> {
-  await redis.del(buildWorkerAcceptTimeoutCountKey(accountId, shiftInstanceKey));
-}
-
-// Function ตั้ง BullMQ delayed job สำหรับ assignment timeout
+// Function ตั้งเวลา delayed job assignment timeout ใน Redis/BullMQ queue
 export async function scheduleAssignmentTimeout(
   assignmentId: number,
   workerAccountId: number,
@@ -514,7 +417,7 @@ export async function scheduleAssignmentTimeout(
   );
 }
 
-// Function ยกเลิก BullMQ delayed job เมื่อ worker กดรับงานทันเวลา
+// Function ลบ assignment timeout ใน Redis/BullMQ queue
 export async function removeAssignmentTimeout(assignmentId: number): Promise<void> {
   const job = await assignmentTimeoutQueue.getJob(`assignment-timeout-${assignmentId}`);
 
@@ -523,7 +426,7 @@ export async function removeAssignmentTimeout(assignmentId: number): Promise<voi
   }
 }
 
-// Function schedules delayed job for accepted assignment QR scan timeout.
+// Function ตั้ง delayed job สำหรับ timeout การ scan QR หลัง accept assignment
 export async function scheduleScanTimeout(
   assignmentId: number,
   workerAccountId: number,
@@ -546,6 +449,7 @@ export async function scheduleScanTimeout(
   );
 }
 
+// Function ลบ scan timeout ใน Redis/BullMQ queue
 export async function removeScanTimeout(assignmentId: number): Promise<void> {
   const job = await assignmentTimeoutQueue.getJob(`assignment-scan-timeout-${assignmentId}`);
 
@@ -554,6 +458,7 @@ export async function removeScanTimeout(assignmentId: number): Promise<void> {
   }
 }
 
+// Function ตั้งเวลา delayed job scan warning ใน Redis/BullMQ queue
 export async function scheduleScanWarning(
   assignmentId: number,
   workerAccountId: number,
@@ -586,6 +491,7 @@ export async function scheduleScanWarning(
   );
 }
 
+// Function ลบ scan warning ใน Redis/BullMQ queue
 export async function removeScanWarning(assignmentId: number): Promise<void> {
   const job = await assignmentTimeoutQueue.getJob(`assignment-scan-warning-${assignmentId}`);
 
@@ -594,6 +500,7 @@ export async function removeScanWarning(assignmentId: number): Promise<void> {
   }
 }
 
+// Function ตั้งเวลา delayed job vendor confirmation timeout ใน Redis/BullMQ queue
 export async function scheduleVendorConfirmationTimeout(
   ticketId: number,
   submissionId: number,
@@ -616,6 +523,7 @@ export async function scheduleVendorConfirmationTimeout(
   );
 }
 
+// Function ลบ vendor confirmation timeout ใน Redis/BullMQ queue
 export async function removeVendorConfirmationTimeout(
   ticketId: number,
   submissionId: number
@@ -629,7 +537,7 @@ export async function removeVendorConfirmationTimeout(
   }
 }
 
-// Function schedules delayed job for returning worker from break.
+// Function ตั้ง delayed job สำหรับพา worker กลับจาก break
 export async function scheduleWorkerBreakReturn(
   accountId: number,
   scheduleId: number,
@@ -651,6 +559,7 @@ export async function scheduleWorkerBreakReturn(
   );
 }
 
+// Function ตั้งเวลา delayed job worker shift end ใน Redis/BullMQ queue
 export async function scheduleWorkerShiftEnd(
   accountId: number,
   scheduleId: number,
@@ -675,7 +584,8 @@ export async function scheduleWorkerShiftEnd(
   );
 }
 
-export async function removeWorkerShiftEnd(
+// Function ลบ worker shift end ใน Redis/BullMQ queue
+async function removeWorkerShiftEnd(
   accountId: number,
   scheduleId: number
 ): Promise<void> {
@@ -688,7 +598,7 @@ export async function removeWorkerShiftEnd(
   }
 }
 
-// Function ยกเลิก BullMQ delayed job คืนคิวหลังพักของ worker
+// Function ลบ worker break return ใน Redis/BullMQ queue
 export async function removeWorkerBreakReturn(
   accountId: number,
   scheduleId: number
@@ -702,7 +612,7 @@ export async function removeWorkerBreakReturn(
   }
 }
 
-// Function เริ่ม BullMQ worker สำหรับจัดการ assignment timeout
+// Function เริ่ม assignment timeout worker ใน Redis/BullMQ queue
 export function startAssignmentTimeoutWorker(
   handler: (data: AssignmentTimeoutJobData) => Promise<void>
 ): void {
@@ -725,7 +635,7 @@ export function startAssignmentTimeoutWorker(
   });
 }
 
-// Function เริ่ม BullMQ worker สำหรับพา worker กลับคิวหลังพักครบเวลา
+// Function เริ่ม worker break return worker ใน Redis/BullMQ queue
 export function startWorkerBreakReturnWorker(
   handler: (data: WorkerScheduleJobData) => Promise<void>
 ): void {

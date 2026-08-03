@@ -3,11 +3,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้างเวลา deadline จากเวลาปัจจุบัน
+// Function สร้าง deadline สำหรับ helper กลาง
 export function buildDeadline(durationMs: number, baseTime = Date.now()): Date {
   return new Date(baseTime + durationMs);
 }
 
+// Function ดึง delay until สำหรับ helper กลาง
 export function getDelayUntil(deadlineAt: string | null, baseTime = Date.now()): number {
   if (!deadlineAt) {
     return 0;
@@ -22,7 +23,7 @@ export function getDelayUntil(deadlineAt: string | null, baseTime = Date.now()):
   return Math.max(0, deadlineMs - baseTime);
 }
 
-// Function สร้างช่วงเวลาของวันที่ไทยเพื่อใช้ query ประวัติงานรายวัน
+// Function สร้าง bangkok date range สำหรับ helper กลาง
 export function buildBangkokDateRange(date: string): { startAt: Date; endAt: Date } {
   const startAt = new Date(`${date}T00:00:00.000+07:00`);
   const endAt = new Date(startAt.getTime() + DAY_MS);
@@ -33,7 +34,7 @@ export function buildBangkokDateRange(date: string): { startAt: Date; endAt: Dat
   };
 }
 
-// Function format วันที่ปัจจุบันตามเขตเวลา Bangkok เป็น YYYY-MM-DD
+// Function สร้าง bangkok date span range สำหรับ helper กลาง
 export function buildBangkokDateSpanRange(
   dateFrom?: string,
   dateTo?: string
@@ -50,6 +51,7 @@ export function buildBangkokDateSpanRange(
   };
 }
 
+// Function จัดรูปแบบ bangkok date สำหรับ helper กลาง
 export function formatBangkokDate(value: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: BANGKOK_TIME_ZONE,

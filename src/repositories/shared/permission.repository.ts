@@ -1,26 +1,26 @@
-// import Library
+// Import Library
 import { prisma } from "../../db/prisma";
 
-// import Config
+// Import Config
 import { isAdminPermission } from "../../config/permission.config";
 
-// import Types
+// Import Types
 import type { AdminPermission } from "../../config/permission.config";
-import type { DbConnection } from "../../types/common.type";
+import type { DbConnection } from "../../types/shared/common.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เลือก prisma client ปกติ หรือ transaction client ที่ส่งเข้ามา
+// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
 function client(connection?: DbConnection): DbConnection {
   return connection ?? prisma;
 }
 
-// Function แปลง permission string จาก DB เป็น permission ที่ระบบรองรับ
+// Function จัดการ เป็น admin permission จาก DB
 function toAdminPermission(permission: string): AdminPermission | null {
   return isAdminPermission(permission) ? permission : null;
 }
 
-// Function ดึง permissions ของ account
+// Function ดึงรายการ ตาม account ID จาก DB
 export async function listByAccountId(
   accountId: number,
   connection?: DbConnection
@@ -40,7 +40,7 @@ export async function listByAccountId(
     .filter((permission): permission is AdminPermission => permission !== null);
 }
 
-// Function แทนที่ permissions ของ account ด้วยชุดใหม่
+// Function จัดการ replace account permissions จาก DB
 export async function replaceAccountPermissions(
   accountId: number,
   permissions: AdminPermission[],

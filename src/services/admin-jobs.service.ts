@@ -1,28 +1,32 @@
-﻿import { withTransaction } from "../db/prisma";
+import { withTransaction } from "../db/prisma";
 import { enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning } from "../queues/worker-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as adminJobsRepository from "../repositories/admin-jobs.repository";
 import { publishNotification } from "./notifications.service";
-import { publishRealtimeEvent } from "./realtime.service";
+import { publishRealtimeEvent } from "../utils/realtime-event";
 import { getRuntimeSettings } from "./admin-settings.service";
-// import Types
-import type { VehicleJobOperationRecord } from "../repositories/admin-jobs.repository";
-import type { AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminJobCancelResponse, AdminMarketJobActionResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobListItemResponse, AdminVehicleJobOperationItemResponse, AdminVehicleJobOperationListResponse, AdminVehicleJobOperationMarketResponse, AdminVehicleJobOperationMarketSummaryResponse, AdminVehicleJobOperationSummaryResponse, AdminVehicleJobOperationWorkerSummaryResponse, VehicleOperationStatus } from "../types/admin-jobs.type";
+import { getWorkerCodeMapByAccountIds, getWorkerCodesByAccountIds } from "../utils/worker-identity";
+import {
+  buildVehicleOperationSummary,
+  formatVehicleOperationItem,
+} from "../utils/admin-job-operations.formatter";
+// Import Types
+import type { AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminJobCancelResponse, AdminMarketJobActionResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobListItemResponse, AdminVehicleJobOperationListResponse } from "../types/admin-jobs.type";
 import type { GateTicketDto, MarketJobDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleJobDto } from "../types/worker.type";
-// import Validation
+// Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { adminAssignWorkersBodySchema, adminCancelBodySchema, adminExtendScanDeadlineBodySchema, adminJobCancelBodySchema, adminVehicleJobListQuerySchema, adminVehicleJobOperationsQuerySchema } from "../validation/schemas";
-// import Utils
+// Import Utils
 import ApiError from "../utils/api-error";
-import { ACTIVE_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, VEHICLE_JOB_STATUS, VEHICLE_OPERATION_STATUS } from "../constants/job-status";
+import { ACTIVE_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES } from "../constants/job-status";
 import { buildBangkokDateSpanRange, buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload } from "../utils/worker-assignment-event";
-import { findActiveWorkSchedule, formatScheduleWithShift } from "../utils/shift";
+import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เนเธเธฅเธ path/query param เธ—เธตเนเน€เธเนเธ reference เนเธฅเธฐเนเธขเธ error เธ–เนเธฒเธเนเธฒเธงเนเธฒเธ
+// Function อ่านค่า reference ใน service flow
 function parseReference(value: unknown, code: string, message: string): string {
   const reference = String(value ?? "").trim();
 
@@ -33,7 +37,7 @@ function parseReference(value: unknown, code: string, message: string): string {
   return reference;
 }
 
-// Function เธเธฑเธ”เธฃเธนเธ vehicle job เธชเธณเธซเธฃเธฑเธ response เธเธฑเนเธ Admin เนเธ”เธขเนเธเน reference เนเธ—เธ id เธ เธฒเธขเนเธ
+// Function จัดรูปแบบ public vehicle job list item ใน service flow
 function formatPublicVehicleJobListItem(vehicleJob: VehicleJobDto): AdminVehicleJobListItemResponse {
   return {
     ticketNo: vehicleJob.ticketNo,
@@ -48,6 +52,7 @@ function formatPublicVehicleJobListItem(vehicleJob: VehicleJobDto): AdminVehicle
   };
 }
 
+// Function จัดรูปแบบ vehicle job action response ใน service flow
 function formatVehicleJobActionResponse(
   message: string,
   vehicleJob: VehicleJobDto
@@ -59,7 +64,7 @@ function formatVehicleJobActionResponse(
   };
 }
 
-// Function เธเธฑเธ”เธฃเธนเธเธชเธดเธเธเนเธฒเนเธ ticket เธชเธณเธซเธฃเธฑเธ response เธเธฑเนเธ Admin
+// Function จัดรูปแบบ public product ใน service flow
 function formatPublicProduct(product: TicketProductDto) {
   return {
     productCode: product.productCode,
@@ -71,7 +76,7 @@ function formatPublicProduct(product: TicketProductDto) {
   };
 }
 
-// Function เธเธฑเธ”เธฃเธนเธ ticket/เนเธเธเธชเธณเธซเธฃเธฑเธ response เธเธฑเนเธ Admin
+// Function จัดรูปแบบ public ticket ใน service flow
 function formatPublicTicket(ticket: GateTicketDto & { products?: TicketProductDto[] }) {
   return {
     boothCode: ticket.boothCode,
@@ -88,7 +93,7 @@ function formatPublicTicket(ticket: GateTicketDto & { products?: TicketProductDt
   };
 }
 
-// Function เธเธฑเธ”เธฃเธนเธ market job เธชเธณเธซเธฃเธฑเธ response เธเธฑเนเธ Admin
+// Function จัดรูปแบบ public market ใน service flow
 function formatPublicMarket(market: MarketJobDto) {
   return {
     marketCode: market.marketCode,
@@ -100,6 +105,7 @@ function formatPublicMarket(market: MarketJobDto) {
   };
 }
 
+// Function จัดรูปแบบ market job action response ใน service flow
 function formatMarketJobActionResponse(
   message: string,
   market: MarketJobDto,
@@ -113,6 +119,7 @@ function formatMarketJobActionResponse(
   };
 }
 
+// Function จัดรูปแบบ stall job action response ใน service flow
 function formatStallJobActionResponse(
   message: string,
   ticket: GateTicketDto,
@@ -129,8 +136,7 @@ function formatStallJobActionResponse(
   };
 }
 
-// Function เธเธฑเธ”เธฃเธนเธเธเธฒเธเธฃเธ–เธเธฃเนเธญเธกเธ•เธฅเธฒเธ”เนเธฅเธฐเนเธเธเธชเธณเธซเธฃเธฑเธ response เธเธฑเนเธ Admin
-// Function เธซเธฒ vehicle job เธ”เนเธงเธข ticketNo เนเธฅเธฐเนเธขเธ error เธ–เนเธฒเนเธกเนเธเธ
+// Function จัดรูปแบบ public vehicle job history detail ใน service flow
 function formatPublicVehicleJobHistoryDetail(
   detail: VehicleJobDetailResponse
 ): AdminVehicleJobHistoryItemResponse {
@@ -150,307 +156,7 @@ function formatPublicVehicleJobHistoryDetail(
   };
 }
 
-function toIsoString(value: Date | null): string | null {
-  return value ? value.toISOString() : null;
-}
-
-function toOperationWorkerStatus(assignmentStatus: string): string {
-  if (["PENDING", "ACCEPTED"].includes(assignmentStatus)) {
-    return "assigned";
-  }
-
-  if (["SCANNED", "WORKING", "DELIVERED", "REJECT", "COMPLETED"].includes(assignmentStatus)) {
-    return "working";
-  }
-
-  return "open_app";
-}
-
-function resolveOperationWorkerShiftName(
-  worker: VehicleJobOperationRecord["assignments"][number]["worker"]
-): string | null {
-  if (
-    worker.shiftNo === null ||
-    worker.shiftStartTime === null ||
-    worker.shiftEndTime === null
-  ) {
-    return null;
-  }
-
-  const scheduleDto = {
-    id: worker.id,
-    account_id: worker.id,
-    shift_no: worker.shiftNo,
-    work_date: worker.workStartDate ?? worker.createdAt.toISOString().slice(0, 10),
-    shift_start_time: worker.shiftStartTime,
-    shift_end_time: worker.shiftEndTime,
-    is_current: true,
-    created_by: worker.createdBy,
-    updated_by: null,
-    created_at: worker.createdAt.toISOString(),
-    updated_at: worker.updatedAt.toISOString(),
-  };
-  const activeSchedule = findActiveWorkSchedule([scheduleDto]) ?? scheduleDto;
-
-  return formatScheduleWithShift(activeSchedule)?.shift_name ?? null;
-}
-
-function isTicketRejected(ticket: VehicleJobOperationRecord["marketJobs"][number]["tickets"][number]): boolean {
-  return ticket.status === "REJECT";
-}
-
-function isTicketDelivered(ticket: VehicleJobOperationRecord["marketJobs"][number]["tickets"][number]): boolean {
-  return ticket.status === "DELIVERED";
-}
-
-function isTicketCompleted(ticket: VehicleJobOperationRecord["marketJobs"][number]["tickets"][number]): boolean {
-  return ticket.status === "COMPLETED";
-}
-
-function listOperationTickets(record: VehicleJobOperationRecord): VehicleJobOperationRecord["marketJobs"][number]["tickets"] {
-  return record.marketJobs.flatMap((market) => market.tickets);
-}
-
-function buildOperationWorkerSummary(
-  record: VehicleJobOperationRecord
-): AdminVehicleJobOperationWorkerSummaryResponse {
-  const summary: AdminVehicleJobOperationWorkerSummaryResponse = {
-    required: record.workersRequired,
-    assigned: 0,
-    active: 0,
-    accepted: 0,
-    scanned: 0,
-    working: 0,
-    delivered: 0,
-    rejected: 0,
-    completed: 0,
-    cancelled: 0,
-    timeout: 0,
-    missing: 0,
-  };
-
-  for (const assignment of record.assignments) {
-    if (!["CANCELLED", "TIMEOUT"].includes(assignment.status)) {
-      summary.assigned += 1;
-    }
-
-    if (ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)) {
-      summary.active += 1;
-    }
-
-    if (assignment.status === "ACCEPTED") {
-      summary.accepted += 1;
-    }
-
-    if (
-      assignment.scannedAt ||
-      SCANNED_ASSIGNMENT_STATUSES.includes(assignment.status)
-    ) {
-      summary.scanned += 1;
-    }
-
-    if (assignment.status === "WORKING") {
-      summary.working += 1;
-    } else if (assignment.status === "DELIVERED") {
-      summary.delivered += 1;
-    } else if (assignment.status === "REJECT") {
-      summary.rejected += 1;
-    } else if (assignment.status === "COMPLETED") {
-      summary.completed += 1;
-    } else if (assignment.status === "CANCELLED") {
-      summary.cancelled += 1;
-    } else if (assignment.status === "TIMEOUT") {
-      summary.timeout += 1;
-    }
-  }
-
-  summary.missing = Math.max(
-    0,
-    record.workersRequired - Math.max(summary.active, summary.assigned)
-  );
-
-  return summary;
-}
-
-function buildOperationMarketSummary(
-  record: VehicleJobOperationRecord
-): AdminVehicleJobOperationMarketSummaryResponse {
-  const tickets = listOperationTickets(record);
-
-  return {
-    total: record.marketJobs.length,
-    stalls: tickets.length,
-    products: tickets.reduce((total, ticket) => total + ticket.products.length, 0),
-    delivered: tickets.filter(isTicketDelivered).length,
-    confirmed: tickets.filter(isTicketCompleted).length,
-    rejected: tickets.filter(isTicketRejected).length,
-  };
-}
-
-function resolveVehicleOperationStatus(
-  record: VehicleJobOperationRecord,
-  workerSummary: AdminVehicleJobOperationWorkerSummaryResponse
-): VehicleOperationStatus {
-  const isTerminalJob = TERMINAL_JOB_STATUSES.includes(record.status);
-
-  if (!record.dispatchNow && record.status === VEHICLE_JOB_STATUS.WAIT) {
-    return VEHICLE_OPERATION_STATUS.WAITING_UNLOAD;
-  }
-
-  if (
-    !isTerminalJob &&
-    record.workersRequired > 0 &&
-    workerSummary.active < record.workersRequired
-  ) {
-    if (record.dispatchNow) {
-      return VEHICLE_OPERATION_STATUS.WAITING_QUEUE;
-    }
-
-    return VEHICLE_OPERATION_STATUS.DRIVER_WAITING_QUEUE;
-  }
-
-  return VEHICLE_OPERATION_STATUS.UNLOAD_NOW;
-}
-
-function buildOperationTiming(record: VehicleJobOperationRecord): {
-  gate_elapsed_seconds: number;
-  working_elapsed_seconds: number | null;
-} {
-  const now = Date.now();
-  const endTime =
-    record.status === VEHICLE_JOB_STATUS.COMPLETED ||
-    record.status === VEHICLE_JOB_STATUS.CANCELLED
-      ? record.updatedAt.getTime()
-      : now;
-  const scannedTimes = record.assignments
-    .map((assignment) => assignment.scannedAt?.getTime())
-    .filter((value): value is number => typeof value === "number");
-  const firstScannedAt = scannedTimes.length > 0 ? Math.min(...scannedTimes) : null;
-
-  return {
-    gate_elapsed_seconds: Math.max(
-      0,
-      Math.floor((endTime - record.ticketCreatedAt.getTime()) / 1000)
-    ),
-    working_elapsed_seconds:
-      firstScannedAt === null
-        ? null
-        : Math.max(0, Math.floor((endTime - firstScannedAt) / 1000)),
-  };
-}
-
-function formatOperationMarkets(
-  record: VehicleJobOperationRecord
-): AdminVehicleJobOperationMarketResponse[] {
-  return record.marketJobs.map((market) => {
-    const tickets = market.tickets.map((ticket) => ({
-      boothCode: ticket.boothCode,
-      boothName: ticket.boothName,
-      vendor_line_id: ticket.vendorLineId,
-      reject_reason: ticket.rejectReason,
-      status: ticket.status,
-      confirmation_status: ticket.status,
-      created_at: ticket.createdAt.toISOString(),
-      updated_at: ticket.updatedAt.toISOString(),
-      product_count: ticket.products.length,
-      products: ticket.products.map((product) => ({
-        productCode: product.productCode,
-        productName: product.productName,
-        packageCode: product.packageCode,
-        packageName: product.packageName,
-        quantity: product.quantity.toString(),
-        confirmed_quantity: product.confirmedQuantity?.toString() ?? null,
-      })),
-    }));
-
-    return {
-      marketCode: market.marketCode,
-      marketName: market.marketName,
-      dropoff_point: market.dropoffPoint,
-      status: market.status,
-      created_at: market.createdAt.toISOString(),
-      updated_at: market.updatedAt.toISOString(),
-      summary: {
-        stalls: tickets.length,
-        products: tickets.reduce((total, ticket) => total + ticket.product_count, 0),
-        delivered: market.tickets.filter(isTicketDelivered).length,
-        confirmed: market.tickets.filter(isTicketCompleted).length,
-        rejected: market.tickets.filter(isTicketRejected).length,
-      },
-      tickets,
-    };
-  });
-}
-
-function formatVehicleOperationItem(
-  record: VehicleJobOperationRecord
-): AdminVehicleJobOperationItemResponse {
-  const workerSummary = buildOperationWorkerSummary(record);
-  const marketSummary = buildOperationMarketSummary(record);
-  const operationStatus = resolveVehicleOperationStatus(record, workerSummary);
-
-  return {
-    operation_status: operationStatus,
-    vehicle_job: {
-      ticketNo: record.ticketNo,
-      gate_transaction_ref: record.gateTransactionRef,
-      license_plate: record.licensePlate,
-      vehicle_type: record.vehicleType,
-      ticket_created_at: record.ticketCreatedAt.toISOString(),
-      booth_count: record.boothCount,
-      workers_required: record.workersRequired,
-      dispatch_now: record.dispatchNow,
-      status: record.status,
-      created_at: record.createdAt.toISOString(),
-      updated_at: record.updatedAt.toISOString(),
-    },
-    worker_summary: workerSummary,
-    market_summary: marketSummary,
-    scan_summary: {
-      required: record.workersRequired,
-      scanned: workerSummary.scanned,
-      remaining: Math.max(0, record.workersRequired - workerSummary.scanned),
-    },
-    timing: buildOperationTiming(record),
-    workers: record.assignments.map((assignment) => ({
-      worker_code: assignment.worker.username,
-      full_name: assignment.worker.fullName,
-      shirt_number: assignment.worker.shirtNumber ?? null,
-      image_url: assignment.worker.imageUrl ?? null,
-      shift_name: resolveOperationWorkerShiftName(assignment.worker),
-      assignment_status: assignment.status,
-      worker_status: toOperationWorkerStatus(assignment.status),
-      accept_deadline_at: toIsoString(assignment.acceptDeadlineAt),
-      scan_deadline_at: toIsoString(assignment.scanDeadlineAt),
-      accepted_at: toIsoString(assignment.acceptedAt),
-      scanned_at: toIsoString(assignment.scannedAt),
-      completed_at: toIsoString(assignment.completedAt),
-      created_at: assignment.createdAt.toISOString(),
-      updated_at: assignment.updatedAt.toISOString(),
-    })),
-    markets: formatOperationMarkets(record),
-  };
-}
-
-function buildVehicleOperationSummary(
-  items: AdminVehicleJobOperationItemResponse[]
-): AdminVehicleJobOperationSummaryResponse {
-  return items.reduce(
-    (summary, item) => {
-      summary.total += 1;
-      summary[item.operation_status] += 1;
-      return summary;
-    },
-    {
-      total: 0,
-      unload_now: 0,
-      waiting_unload: 0,
-      waiting_queue: 0,
-      driver_waiting_queue: 0,
-    }
-  );
-}
-
+// Function ตรวจสอบและดึง vehicle job ตาม ref ใน service flow
 async function requireVehicleJobByRef(
   idParam: unknown,
   connection?: Parameters<typeof adminJobsRepository.findVehicleJobByRef>[1]
@@ -469,7 +175,7 @@ async function requireVehicleJobByRef(
   return vehicleJob;
 }
 
-// Function เธซเธฒ market job เธ”เนเธงเธข marketCode เนเธฅเธฐเนเธขเธ error เธ–เนเธฒเนเธกเนเธเธ
+// Function ตรวจสอบและดึง market job ตาม ref ใน service flow
 async function requireMarketJobByRef(
   idParam: unknown,
   connection?: Parameters<typeof adminJobsRepository.findMarketJobByRef>[1]
@@ -488,7 +194,7 @@ async function requireMarketJobByRef(
   return marketJob;
 }
 
-// Function เธซเธฒ stall/ticket เธ”เนเธงเธข boothCode เนเธฅเธฐเนเธขเธ error เธ–เนเธฒเนเธกเนเธเธ
+// Function ตรวจสอบและดึง stall job ตาม ref ใน service flow
 async function requireStallJobByRef(
   idParam: unknown,
   connection?: Parameters<typeof adminJobsRepository.findGateTicketByRef>[1]
@@ -507,8 +213,7 @@ async function requireStallJobByRef(
   return ticket;
 }
 
-// Function เธชเธฃเนเธฒเธเน€เธงเธฅเธฒ deadline เธเธฒเธเน€เธงเธฅเธฒเธเธฑเธเธเธธเธเธฑเธ
-// Function เน€เธฃเธตเธขเธ worker เธ—เธตเนเธ–เธนเธ Admin เธขเธเน€เธฅเธดเธเธเธฒเธเนเธซเนเธเธฅเธฑเธเน€เธเนเธฒเธซเธฑเธงเธเธดเธงเธ•เธฒเธกเน€เธงเธฅเธฒเธฃเธฑเธเธเธฒเธ
+// Function จัดการ assignment queue priority at ใน service flow
 function assignmentQueuePriorityAt(assignment: VehicleJobAssignmentDto): number {
   const value = assignment.accepted_at ?? assignment.created_at;
   const timestamp = value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
@@ -516,6 +221,7 @@ function assignmentQueuePriorityAt(assignment: VehicleJobAssignmentDto): number 
   return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
 }
 
+// Function เรียง assignments สำหรับ admin cancel requeue ใน service flow
 function sortAssignmentsForAdminCancelRequeue(
   assignments: VehicleJobAssignmentDto[]
 ): VehicleJobAssignmentDto[] {
@@ -531,7 +237,7 @@ function sortAssignmentsForAdminCancelRequeue(
   });
 }
 
-// Function เธเธณเธเธงเธ“ scan deadline เนเธซเธกเน เนเธ”เธขเธ•เนเธญเธเธฒเธ deadline เน€เธ”เธดเธกเธ–เนเธฒเธขเธฑเธเนเธกเนเธซเธกเธ”เน€เธงเธฅเธฒ
+// Function ต่อเวลา deadline ใน service flow
 function extendDeadline(currentDeadline: string | null, minutes: number): Date {
   const now = Date.now();
   const currentTime = currentDeadline ? new Date(currentDeadline).getTime() : now;
@@ -540,6 +246,7 @@ function extendDeadline(currentDeadline: string | null, minutes: number): Date {
   return new Date(baseTime + minutes * 60 * 1000);
 }
 
+// Function ตรวจว่า scan deadline active ใน service flow
 function isScanDeadlineActive(scanDeadlineAt: string | null): boolean {
   if (!scanDeadlineAt) {
     return false;
@@ -550,15 +257,7 @@ function isScanDeadlineActive(scanDeadlineAt: string | null): boolean {
   return Number.isFinite(deadlineMs) && deadlineMs > Date.now();
 }
 
-async function getWorkerCodeMapByAccountIds(workerIds: number[]): Promise<Map<number, string | null>> {
-  const profiles = await adminJobsRepository.profileRepository.findByAccountIds(workerIds);
-
-  return new Map(
-    profiles.map((profile) => [profile.account_id, profile.worker_code])
-  );
-}
-
-// Function เธชเธฃเนเธฒเธ response assignment เธซเธฅเธฑเธเธ•เนเธญเน€เธงเธฅเธฒ scan deadline เธเธฃเนเธญเธก worker_code
+// Function สร้าง scan deadline assignment responses ใน service flow
 async function buildScanDeadlineAssignmentResponses(
   assignments: VehicleJobAssignmentDto[]
 ): Promise<AdminScanDeadlineAssignmentResponse[]> {
@@ -573,7 +272,7 @@ async function buildScanDeadlineAssignmentResponses(
   }));
 }
 
-// Function เธชเธฃเนเธฒเธ response assignment เธเธญเธ Admin เนเธ”เธขเนเธเน ticketNo เนเธฅเธฐ worker_code
+// Function สร้าง admin assignment responses ใน service flow
 async function buildAdminAssignmentResponses(
   ticketNo: string,
   assignments: VehicleJobAssignmentDto[]
@@ -593,16 +292,7 @@ async function buildAdminAssignmentResponses(
   }));
 }
 
-// Function เนเธเธฅเธ account id เธเธญเธ worker เน€เธเนเธเธฃเธซเธฑเธชเธเธเธฑเธเธเธฒเธเธชเธณเธซเธฃเธฑเธ response/event
-async function getWorkerCodesByAccountIds(workerIds: number[]): Promise<Array<string | null>> {
-  const workerCodeMap = await getWorkerCodeMapByAccountIds(workerIds);
-
-  return workerIds.map((workerId) => workerCodeMap.get(workerId) ?? null);
-}
-
-// Function เธชเธฃเนเธฒเธเธเนเธงเธเน€เธงเธฅเธฒเธเธญเธเธงเธฑเธเธ—เธตเนเนเธ—เธขเน€เธเธทเนเธญเนเธเน query เธเธฒเธเธฃเธ–เธฃเธฒเธขเธงเธฑเธ
-// Function เธฃเธงเธก receiver เธเธญเธ SSE เธชเธณเธซเธฃเธฑเธเธเธฒเธเนเธเธเธ—เธตเนเน€เธเธตเนเธขเธงเธเนเธญเธ
-// Function เธซเธฒ worker เธ—เธตเนเน€เธเธตเนเธขเธงเธเนเธญเธเธเธฑเธเธเธฒเธเธฃเธ– เน€เธเธทเนเธญเธชเนเธ WebSocket event เนเธซเน Mobile
+// Function ดึงรายการ vehicle job worker IDs ใน service flow
 async function listVehicleJobWorkerIds(vehicleJobId: number): Promise<number[]> {
   const assignments = await adminJobsRepository.listActiveAssignmentsByVehicleJob(
     vehicleJobId
@@ -613,7 +303,7 @@ async function listVehicleJobWorkerIds(vehicleJobId: number): Promise<number[]> 
   ];
 }
 
-// Function เธซเธฒ worker เธ—เธตเนเน€เธเธตเนเธขเธงเธเนเธญเธเธเธฑเธเธเธฒเธเนเธเธ เธ–เนเธฒเธขเธฑเธเนเธกเนเธกเธต ticket workers เนเธซเน fallback เน€เธเนเธ worker เธเธญเธเธฃเธ–
+// Function ดึงรายการ stall job worker IDs ใน service flow
 async function listStallJobWorkerIds(ticket: GateTicketDto): Promise<number[]> {
   const ticketWorkers = await adminJobsRepository.listTicketWorkers(ticket.id);
 
@@ -626,8 +316,7 @@ async function listStallJobWorkerIds(ticket: GateTicketDto): Promise<number[]> {
   return listVehicleJobWorkerIds(ticket.vehicle_job_id);
 }
 
-// Function เธชเธฃเนเธฒเธเธเนเธญเธเธงเธฒเธก LINE เนเธเนเธ vendor เธงเนเธฒเธเธฒเธเนเธเธเธ–เธนเธเน€เธเธดเธ”เนเธซเนเธชเนเธเธขเธญเธ”เนเธซเธกเน
-// Function เธ”เธถเธเธฃเธฒเธขเธเธฒเธฃเธเธฒเธเธฃเธ–เธชเธณเธซเธฃเธฑเธ Admin
+// Function ดึงรายการ vehicle jobs ใน service flow
 export async function listVehicleJobs(query: unknown): Promise<{
   data: AdminVehicleJobHistoryItemResponse[];
   pagination?: {
@@ -669,8 +358,7 @@ export async function listVehicleJobs(query: unknown): Promise<{
   };
 }
 
-// Function เธ”เธถเธเธฃเธฒเธขเธฅเธฐเน€เธญเธตเธขเธ”เธเธฒเธเธฃเธ–เธชเธณเธซเธฃเธฑเธ Admin
-// Function เธขเธเน€เธฅเธดเธเธเธฒเธเธฃเธ–เธ—เธฑเนเธเธซเธกเธ” เนเธฅเธฐเธเธฒ worker เธ—เธตเนเธ–เธทเธญ assignment เธเธฅเธฑเธเนเธเธชเธ–เธฒเธเธฐ open_app
+// Function ดึงรายการ vehicle job operations ใน service flow
 export async function listVehicleJobOperations(
   query: unknown
 ): Promise<AdminVehicleJobOperationListResponse> {
@@ -716,6 +404,7 @@ export async function listVehicleJobOperations(
   };
 }
 
+// Function ยกเลิก vehicle job ใน service flow
 async function cancelVehicleJob(
   idParam: unknown,
   body: unknown
@@ -774,7 +463,7 @@ async function cancelVehicleJob(
   );
 }
 
-// Function เธขเธเน€เธฅเธดเธเธเธฒเธเธฃเธ–เธ—เธฑเนเธเธเธฑเธ เนเธฅเธฐเธเธณ worker เธ—เธตเนเธ–เธทเธญ assignment เธเธฅเธฑเธเน€เธเนเธฒเธซเธฑเธงเธเธดเธงเธ•เธฒเธกเน€เธงเธฅเธฒเธฃเธฑเธเธเธฒเธ
+// Function ยกเลิก vehicle job และ requeue ใน service flow
 async function cancelVehicleJobAndRequeue(
   idParam: unknown,
   body: unknown
@@ -806,7 +495,7 @@ async function cancelVehicleJobAndRequeue(
   await enqueueWorkersAtFront(requeuedWorkerIds);
   for (const workerId of requeuedWorkerIds) {
     sendWorkerSocketEvent(workerId, "WORKER_STATUS_CHANGED", {
-      status: "ready",
+      status: WORKER_WORK_STATUS.READY,
       reason: "vehicle_job_cancelled_requeue",
     });
   }
@@ -850,7 +539,7 @@ async function cancelVehicleJobAndRequeue(
   };
 }
 
-// Function เธขเธเน€เธฅเธดเธเธเธฒเธเธฃเธฐเธ”เธฑเธเธฃเธ–/เธ•เธฅเธฒเธ”/เนเธเธเธเนเธฒเธ endpoint เน€เธ”เธตเธขเธง
+// Function ยกเลิก job ใน service flow
 export async function cancelJob(body: unknown): Promise<AdminJobCancelResponse> {
   const input = parseWithSchema(adminJobCancelBodySchema, body);
   const cancelBody = {
@@ -874,7 +563,7 @@ export async function cancelJob(body: unknown): Promise<AdminJobCancelResponse> 
   return cancelStallJob(input.target_ref, cancelBody);
 }
 
-// Function เนเธซเน Admin assign เธเธฒเธเธฃเธ–เนเธซเน worker เนเธเธเธฃเธฐเธเธธเธฃเธฒเธขเธเธเน€เธญเธ
+// Function จัดการ vehicle job workers ใน service flow
 export async function assignVehicleJobWorkers(
   idParam: unknown,
   body: unknown
@@ -921,7 +610,7 @@ export async function assignVehicleJobWorkers(
 
       const queueEntry = await getWorkerQueueStatus(worker.id);
 
-      if (queueEntry?.status !== "ready") {
+      if (queueEntry?.status !== WORKER_WORK_STATUS.READY) {
         throw new ApiError(
           409,
           "WORKER_NOT_READY",
@@ -979,7 +668,7 @@ export async function assignVehicleJobWorkers(
   };
 }
 
-// Function เธขเธเน€เธฅเธดเธ assignment เธฃเธฒเธขเธเธ เนเธ”เธขเนเธกเนเน€เธ•เธดเธก worker เธเธเนเธซเธกเนเธเธฒเธเธเธดเธงเธญเธฑเธ•เนเธเธกเธฑเธ•เธด
+// Function ยกเลิก assignment ใน service flow
 export async function cancelAssignment(
   idParam: unknown,
   workerCodeParam: unknown,
@@ -1044,7 +733,7 @@ export async function cancelAssignment(
 }
 
 
-// Function เธ•เนเธญเน€เธงเธฅเธฒ scan QR เนเธเธเธ—เธฑเนเธเธฃเธ– เธซเธฃเธทเธญเน€เธฅเธทเธญเธเน€เธเธเธฒเธฐ worker เนเธเธฃเธ–เธเธฑเนเธ
+// Function ต่อเวลา vehicle job scan deadline ใน service flow
 export async function extendVehicleJobScanDeadline(
   idParam: unknown,
   body: unknown
@@ -1127,7 +816,7 @@ export async function extendVehicleJobScanDeadline(
   };
 }
 
-// Function เธขเธเน€เธฅเธดเธเธเธฒเธเธ•เธฅเธฒเธ”เธเธฃเนเธญเธกเนเธเนเธ realtime เนเธเธขเธฑเธ Admin เนเธฅเธฐ worker เธ—เธตเนเน€เธเธตเนเธขเธงเธเนเธญเธ
+// Function ยกเลิก market job ใน service flow
 async function cancelMarketJob(
   idParam: unknown,
   body: unknown
@@ -1167,7 +856,7 @@ async function cancelMarketJob(
   );
 }
 
-// Function เธขเธเน€เธฅเธดเธเธเธฒเธเนเธเธเน€เธ”เธตเธขเธง
+// Function ยกเลิก stall job ใน service flow
 async function cancelStallJob(
   idParam: unknown,
   body: unknown
@@ -1214,6 +903,4 @@ async function cancelStallJob(
     marketJob
   );
 }
-
-// Function เน€เธเธดเธ”เธเธฒเธเนเธเธเธ—เธตเน vendor confirm เธเธดเธ” เนเธซเน worker เธชเนเธเธขเธญเธ”เนเธซเธกเนเธญเธตเธเธเธฃเธฑเนเธ
 

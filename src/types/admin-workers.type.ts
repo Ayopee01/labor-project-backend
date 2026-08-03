@@ -1,17 +1,23 @@
-// Config role account ที่ระบบรองรับ
-import type { WorkerWorkStatus } from "./worker-status.type";
+import type { WorkerWorkStatus } from "./shared/worker-status.type";
 
 export const ACCOUNT_ROLES = ["admin", "worker"] as const;
 export const ACCOUNT_SOURCES = ["internal", "master_sync"] as const;
 
-// Type ส่วน Value ของ role account ที่ระบบรองรับ
 export type AccountRole = (typeof ACCOUNT_ROLES)[number];
 export type AccountSource = (typeof ACCOUNT_SOURCES)[number];
 
-// Type ส่วน Value ของ status account: schema DB เก็บเป็น string
 export type AccountStatus = string;
 
-// Type ส่วน DTO ของ table accounts
+export type WorkerNationality = "Myanmar" | "Cambodia";
+
+export type WorkerShirtType = "Navy" | "Blue" | "Green";
+
+export interface BuildWorkerCodeInput {
+  nationality: string;
+  shirt_type: string;
+  shirt_number: string;
+}
+
 export interface AccountDto {
   id: number;
   username: string;
@@ -40,13 +46,12 @@ export interface AccountDto {
   updated_at: string;
 }
 
-// Type ส่วน DTO ของ account ที่ปลอดภัยสำหรับ response
 export type SafeAccountDto = Omit<
   AccountDto,
   "password_hash" | "source" | "master_worker_id" | "master_updated_at" | "synced_at"
 >;
 
-// Worker profile DTO. Profile fields are stored on accounts after the table merge.
+// Type DTO profile ของ worker โดย field profile ถูกเก็บบน accounts หลังรวมตาราง
 export interface ProfileDto {
   id: number;
   account_id: number;
@@ -59,7 +64,7 @@ export interface ProfileDto {
   shirt_number: string | null;
 }
 
-// Current worker schedule DTO. Schedule fields are stored on accounts after the table merge.
+// Type DTO ตารางกะปัจจุบันของ worker โดย field schedule ถูกเก็บบน accounts หลังรวมตาราง
 export interface WorkScheduleDto {
   id: number;
   account_id: number;
@@ -74,12 +79,19 @@ export interface WorkScheduleDto {
   updated_at: string;
 }
 
-// Type ส่วน DTO ของตารางงานพร้อมชื่อกะ
 export interface WorkScheduleWithShiftDto extends WorkScheduleDto {
   shift_name: string;
 }
 
-// Type ส่วน Repository input สำหรับสร้าง account
+export type ShiftWaitInfo = {
+  shift: {
+    name: string;
+    start_time: string;
+    end_time: string;
+  };
+  remaining_time: string;
+};
+
 export interface AccountCreateInput {
   username: string;
   password_hash: string;
@@ -105,7 +117,6 @@ export interface AccountCreateInput {
   created_by?: number | null;
 }
 
-// Type ส่วน Repository input สำหรับแก้ไข account ของ user
 export interface UserAccountUpdateInput {
   username?: string;
   full_name?: string;
@@ -114,7 +125,6 @@ export interface UserAccountUpdateInput {
   phone?: string | null;
 }
 
-// Type ส่วน Repository input สำหรับสร้าง profile
 export interface ProfileCreateInput {
   account_id: number;
   image_url?: string | null;
@@ -124,13 +134,10 @@ export interface ProfileCreateInput {
   shirt_number?: string | null;
 }
 
-// Type ส่วน Repository input สำหรับแก้ไข profile
 export type ProfileUpdateInput = Partial<Omit<ProfileCreateInput, "account_id">>;
 
-// Type ส่วน input profile ที่ใช้ร่วมกันระหว่าง create และ update
 export type ProfileDataInput = ProfileCreateInput | ProfileUpdateInput;
 
-// Type ส่วน data สำหรับ update profile ผ่าน Prisma
 export type ProfileData = {
   imageUrl?: string | null;
   nationality?: string;
@@ -139,7 +146,6 @@ export type ProfileData = {
   shirtNumber?: string | null;
 };
 
-// Type ส่วน data สำหรับ create profile ผ่าน Prisma
 export type ProfileCreateData = {
   imageUrl?: string | null;
   nationality: string;
@@ -148,7 +154,6 @@ export type ProfileCreateData = {
   shirtNumber?: string | null;
 };
 
-// Type ส่วน Repository input สำหรับสร้างตารางงาน
 export interface WorkScheduleCreateInput {
   account_id: number;
   shift_no?: number;
@@ -160,7 +165,6 @@ export interface WorkScheduleCreateInput {
   updated_by?: number | null;
 }
 
-// Type ส่วน Repository input สำหรับแก้ไขตารางงานปัจจุบัน
 export interface WorkScheduleUpdateInput {
   shift_no?: number;
   work_date: string;
@@ -169,19 +173,16 @@ export interface WorkScheduleUpdateInput {
   updated_by?: number | null;
 }
 
-// Type ส่วน Filter สำหรับ pagination พื้นฐาน
-export interface PaginationFilters {
+interface PaginationFilters {
   offset: number;
   limit: number;
 }
 
-// Type ส่วน Filter สำหรับ API list users
 export interface UserListFilters extends PaginationFilters {
   search?: string;
   status?: AccountStatus;
 }
 
-// Type ส่วน Response pagination
 export interface PaginationMeta {
   page: number;
   limit: number;
@@ -189,7 +190,6 @@ export interface PaginationMeta {
   total_pages: number;
 }
 
-// Type ส่วนตารางงานแบบย่อสำหรับ API list users
 export interface UserListSchedule {
   shift_no: number;
   shift_start_time: string;
@@ -197,7 +197,6 @@ export interface UserListSchedule {
   shift_name: string;
 }
 
-// Type ส่วน Response item ของ API list users
 export interface UserListItem {
   worker_code: string | null;
   shirt_number: string | null;
@@ -208,7 +207,6 @@ export interface UserListItem {
   updated_at: string;
 }
 
-// Type ส่วน Response ของ API user detail
 interface UserDetailInfo {
   phone: string | null;
   position: string | null;
@@ -222,7 +220,6 @@ interface UserDetailInfo {
   shift_name: string | null;
 }
 
-// Type ส่วน Response ของ API user detail
 export interface UserDetailResponse {
   image_url: string | null;
   worker_code: string | null;
@@ -231,10 +228,8 @@ export interface UserDetailResponse {
   details: UserDetailInfo;
 }
 
-// Type ส่วน column status สำหรับบอร์ดติดตาม worker ใน Admin Jobs
 export type AdminWorkerBoardStatus = WorkerWorkStatus;
 
-// Type ส่วน response สถานะ worker สำหรับ Admin Jobs board
 export type AdminWorkerStatusItem = {
   full_name: string;
   worker_code: string | null;
@@ -244,5 +239,6 @@ export type AdminWorkerStatusItem = {
   latest_activity_at: string | null;
   status_entered_at: string | null;
   queue_position: number | null;
+  socket_connected: boolean;
   status: AdminWorkerBoardStatus;
 };

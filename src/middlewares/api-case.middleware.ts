@@ -1,13 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
-
-/* -------------------------------------- Types -------------------------------------- */
-
-// Type plain object used by recursive request/response key conversion.
-type PlainObject = Record<string, unknown>;
+import type { PlainObject } from "../types/shared/common.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config explicit PascalCase -> internal key mapping for API fields that cannot be inferred safely.
+// Config map key แบบ PascalCase เป็น key ภายในสำหรับ field ที่เดาอัตโนมัติแล้วเสี่ยงผิด
 const requestKeyMap: Record<string, string> = {
   AccessToken: "access_token",
   AccountId: "account_id",
@@ -28,7 +24,6 @@ const requestKeyMap: Record<string, string> = {
   CurrentPassword: "current_password",
   DateFrom: "date_from",
   DateTo: "date_to",
-  DebugLinePostback: "debug_line_postback",
   DeviceId: "device_id",
   DeviceName: "device_name",
   DriverQrToken: "driver_qr_token",
@@ -72,6 +67,7 @@ const requestKeyMap: Record<string, string> = {
   ShiftName: "shift_name",
   ShiftNo: "shift_no",
   ShiftStartTime: "shift_start_time",
+  SocketConnected: "socket_connected",
   StartTime: "start_time",
   StatusCode: "statusCode",
   StallCount: "stall_count",
@@ -105,23 +101,22 @@ const requestKeyMap: Record<string, string> = {
   VendorReconfirmTimeoutHours: "vendor_reconfirm_timeout_hours",
   WorkDate: "work_date",
   WorkSchedule: "work_schedule",
-  WorkSchedules: "work_schedules",
   WorkStartDate: "work_start_date",
 };
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function checks for plain JSON objects before recursively transforming keys.
+// Function ตรวจสอบ plain object ก่อนแปลง key แบบ recursive
 function isPlainObject(value: unknown): value is PlainObject {
   return Object.prototype.toString.call(value) === "[object Object]";
 }
 
-// Function lowercases only the first letter for simple PascalCase body keys.
+// Function ลดตัวอักษรแรกเป็นพิมพ์เล็กสำหรับ key PascalCase แบบง่าย
 function lowerFirst(value: string): string {
   return value.charAt(0).toLowerCase() + value.slice(1);
 }
 
-// Function uppercases only the first letter when building PascalCase response keys.
+// Function เพิ่มตัวอักษรแรกเป็นพิมพ์ใหญ่ตอนสร้าง key response แบบ PascalCase
 function capitalize(value: string): string {
   if (!value) {
     return value;
@@ -130,7 +125,7 @@ function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-// Function converts snake_case, kebab-case, spaced, or camelCase keys to PascalCase for API responses.
+// Function แปลง key แบบ snake_case, kebab-case, เว้นวรรค หรือ camelCase เป็น PascalCase สำหรับ response
 export function toPascalCaseKey(key: string): string {
   if (!key.includes("_") && /^[A-Z]/.test(key)) {
     return key;
@@ -144,7 +139,7 @@ export function toPascalCaseKey(key: string): string {
     .join("");
 }
 
-// Function converts public request keys to internal service/repository keys.
+// Function แปลง key จาก public request เป็น key ภายใน service/repository
 function normalizeRequestKey(key: string): string {
   if (requestKeyMap[key]) {
     return requestKeyMap[key];
@@ -157,7 +152,7 @@ function normalizeRequestKey(key: string): string {
   return key;
 }
 
-// Function recursively transforms object keys while preserving arrays, Date, and scalar values.
+// Function แปลง key ของ object แบบ recursive โดยคง array, Date และ scalar value ไว้
 function transformObjectKeys(
   value: unknown,
   keyTransformer: (key: string) => string
@@ -178,22 +173,22 @@ function transformObjectKeys(
   );
 }
 
-// Function converts request bodies from public API casing to internal casing.
+// Function แปลง body จาก casing ของ public API เป็น casing ภายในระบบ
 export function normalizeApiRequestPayload(value: unknown): unknown {
   return transformObjectKeys(value, normalizeRequestKey);
 }
 
-// Function converts service response payloads to public PascalCase API casing.
+// Function แปลง response จาก service เป็น PascalCase สำหรับ public API
 export function toPascalCasePayload(value: unknown): unknown {
   return transformObjectKeys(value, toPascalCaseKey);
 }
 
-// Function skips casing middleware for Swagger/static upload routes.
+// Function ข้าม casing middleware สำหรับ Swagger และ route static upload
 function shouldSkipCaseMiddleware(req: Request): boolean {
   return req.path.startsWith("/api-docs") || req.path.startsWith("/uploads");
 }
 
-// Function normalizes incoming JSON bodies before routes/services parse validation schemas.
+// Function ปรับรูปแบบ JSON body ที่รับเข้ามาก่อน route/service อ่าน schema
 export function normalizeApiRequestBody(
   req: Request,
   _res: Response,
@@ -209,7 +204,7 @@ export function normalizeApiRequestBody(
   next();
 }
 
-// Function wraps res.json so API responses use PascalCase without changing internal DTOs.
+// Function ครอบ res.json เพื่อให้ API response เป็น PascalCase โดยไม่เปลี่ยน DTO ภายใน
 export function pascalCaseApiResponse(
   req: Request,
   res: Response,

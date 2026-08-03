@@ -1,12 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
 
-import * as gateClientsService from "../services/gate-clients.service";
+import { verifyGateClientCredentials } from "../services/admin-settings.service";
 
 import ApiError from "../utils/api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function decodes HTTP Basic credentials as client_id:client_secret for Gate API calls.
+// Function ถอดรหัส HTTP Basic credential เป็น client_id:client_secret สำหรับ API จาก Gate
 function decodeBasicCredentials(authorization: string | undefined): {
   clientId: string;
   clientSecret: string;
@@ -53,7 +53,7 @@ function decodeBasicCredentials(authorization: string | undefined): {
   };
 }
 
-// Function authenticates Gate requests and attaches the public Gate client to req.gateClient.
+// Function ตรวจสอบสิทธิ์ request จาก Gate และแนบข้อมูล Gate client ลง req.gateClient
 export default async function gateClientAuthMiddleware(
   req: Request,
   _res: Response,
@@ -61,7 +61,7 @@ export default async function gateClientAuthMiddleware(
 ): Promise<void> {
   try {
     const credentials = decodeBasicCredentials(req.headers.authorization);
-    const gateClient = await gateClientsService.verifyGateClientCredentials(
+    const gateClient = await verifyGateClientCredentials(
       credentials.clientId,
       credentials.clientSecret
     );

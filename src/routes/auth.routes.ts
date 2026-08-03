@@ -1,16 +1,13 @@
-// import Library
+// Import Library
 import express from "express";
-// import
+// Import Dependencies
 import authMiddleware from "../middlewares/auth.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 import * as authService from "../services/auth.service";
-import * as workerPushService from "../services/worker-push.service";
 
-// Config Express router สำหรับ Auth routes
 const router = express.Router();
 
-// Route login ด้วย username/password และข้อมูล client
 router.post(
   "/login",
   async (req, res, next) => {
@@ -23,7 +20,6 @@ router.post(
   }
 );
 
-// Route ยืนยัน force login เมื่อมี session เดิมบนอุปกรณ์อื่น
 router.post(
   "/login/confirm-force",
   async (req, res, next) => {
@@ -36,7 +32,6 @@ router.post(
   }
 );
 
-// Route ขอ access token และ refresh token ชุดใหม่
 router.post(
   "/refresh",
   async (req, res, next) => {
@@ -49,7 +44,6 @@ router.post(
   }
 );
 
-// Route logout และ revoke session ปัจจุบัน
 router.post(
   "/logout",
   authMiddleware,
@@ -64,7 +58,7 @@ router.post(
   }
 );
 
-// Route register/refresh FCM token for Worker Mobile when login did not include one.
+// Route ลงทะเบียนหรือ refresh FCM token ให้ Worker Mobile เมื่อ login ไม่ได้ส่ง token มา
 router.post(
   "/push-token",
   authMiddleware,
@@ -72,7 +66,7 @@ router.post(
   roleMiddleware(["worker"]),
   async (req, res, next) => {
     try {
-      const result = await workerPushService.registerWorkerPushToken(
+      const result = await authService.registerWorkerPushToken(
         req.auth,
         req.session,
         req.body
@@ -84,7 +78,7 @@ router.post(
   }
 );
 
-// Route get current account profile from the active access token.
+// Route ดึง profile ของ account ปัจจุบันจาก access token ที่ใช้งานอยู่
 router.get(
   "/me",
   authMiddleware,
@@ -99,7 +93,6 @@ router.get(
   }
 );
 
-// Route เปลี่ยน password ของ account ที่ login อยู่ ใช้ได้ทั้ง admin และ worker
 router.patch(
   "/me/password",
   authMiddleware,

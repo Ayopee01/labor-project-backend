@@ -1,46 +1,26 @@
 import { withTransaction } from "../db/prisma";
-import * as workerApplicationRepository from "../repositories/worker-application.repository";
-import { profileRepository, workScheduleRepository } from "../repositories/worker-application.repository";
+import * as workerApplicationRepository from "../repositories/worker.repository";
+import { workScheduleRepository } from "../repositories/worker.repository";
 import { getRuntimeSettings } from "../services/admin-settings.service";
-import { publishNotification } from "../services/notifications.service";
-import { publishRealtimeEvent } from "../services/realtime.service";
-import { enqueueWorker, getWorkerQueueStatus, incrementWorkerAcceptTimeoutCount, markWorkerAssigned, markWorkerOpenApp, markWorkerShiftClosed, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
+import { publishAdminWorkerStatusChanged, publishNotification } from "../services/notifications.service";
+import { publishRealtimeEvent } from "../utils/realtime-event";
+import { applyVendorTicketCompletionResult } from "../utils/ticket-completion-flow";
+import { getWorkerCodeByAccountId, getWorkerCodeMapByAccountIds } from "../utils/worker-identity";
+import { enqueueWorker, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
-import type { DbConnection } from "../types/common.type";
-import type { VehicleJobAssignmentDto } from "../types/worker.type";
+import type { DbConnection } from "../types/shared/common.type";
+import type { AssignmentAcceptTimeoutResult, CompletedWorkerQueueResult, VehicleJobAssignmentDto } from "../types/worker.type";
 import { buildWorkScheduleShiftInstanceKey, isTimeInWorkSchedule } from "../utils/shift";
 import { buildWorkerTicketPayload } from "../utils/ticket-payload";
 import { buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload } from "../utils/worker-assignment-event";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
+import { ASSIGNMENT_STATUS, TICKET_STATUS } from "../constants/job-status";
+import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function loads WorkerCode for one account id so queue notifications avoid exposing internal ids.
-async function getWorkerCode(
-  accountId: number,
-  connection?: DbConnection
-): Promise<string | null> {
-  const profile = await workerApplicationRepository.profileRepository.findByAccountId(
-    accountId,
-    connection
-  );
-
-  return profile?.worker_code ?? null;
-}
-
-// Function builds account id -> WorkerCode map in one query to avoid N+1 lookups during dispatch.
-async function getWorkerCodeMap(accountIds: number[]): Promise<Map<number, string | null>> {
-  const profiles = await workerApplicationRepository.profileRepository.findByAccountIds(
-    accountIds
-  );
-
-  return new Map(
-    profiles.map((profile) => [profile.account_id, profile.worker_code])
-  );
-}
-
-// Function assigns ready workers from Redis FIFO queue to vehicle jobs that still need labor.
+// Function จ่าย worker สถานะ ready จากคิว Redis FIFO ไปยังงานรถที่ยังขาดแรงงาน
 export async function dispatchReadyWorkers(
   connection?: Parameters<typeof workerApplicationRepository.listDispatchableVehicleJobs>[0],
   options: {
@@ -72,30 +52,13 @@ export async function dispatchReadyWorkers(
       if (readyWorkers.length === 0) {
         break;
       }
-      const workerCodeMap = await getWorkerCodeMap(
-        readyWorkers.map((worker) => worker.account_id)
+      const workerCodeMap = await getWorkerCodeMapByAccountIds(
+        readyWorkers.map((worker) => worker.account_id),
+        connection
       );
 
       for (const worker of readyWorkers) {
         const workerCode = workerCodeMap.get(worker.account_id) ?? null;
-
-        if (!isWorkerSocketConnected(worker.account_id)) {
-          const queue = await markWorkerOpenApp(worker.account_id);
-          publishNotification({
-            type: "WORKER_STATUS_CHANGED",
-            title: "Worker moved to open_app",
-            message: `Worker ${workerCode ?? worker.account_id} moved to open_app because WebSocket is not connected.`,
-            payload: {
-              worker_code: workerCode,
-              queue: buildWorkerQueueSocketPayload(queue, workerCode),
-              reason: "socket_not_connected_during_dispatch",
-            },
-            audience: {
-              roles: ["admin"],
-            },
-          });
-          continue;
-        }
 
         const assignment = await workerApplicationRepository.createAssignment(
           vehicleJob.id,
@@ -134,25 +97,9 @@ export async function dispatchReadyWorkers(
   }
 }
 
-/* -------------------------------------- Types -------------------------------------- */
-
-// Type result of accept timeout handling used by the BullMQ timeout worker.
-type AssignmentAcceptTimeoutResult = {
-  queue: Awaited<ReturnType<typeof markWorkerOpenApp>>;
-  reason: string;
-  timeout_count: number;
-  timeout_limit: number;
-  closed_shift: boolean;
-};
-
-// Type result returned when closing a vehicle job after all tickets are completed.
-type CompletedVehicleJobResult = NonNullable<
-  Awaited<ReturnType<typeof workerApplicationRepository.closeCompletedVehicleJobIfReady>>
->;
-
 /* -------------------------------------- Timeout Handlers -------------------------------------- */
 
-// Function handles worker not accepting an assignment before the configured deadline.
+// Function จัดการกรณี worker ไม่ accept assignment ภายในเวลาจาก config
 export async function handleAssignmentAcceptTimeout(input: {
   assignment: VehicleJobAssignmentDto;
   workerAccountId: number;
@@ -177,13 +124,22 @@ export async function handleAssignmentAcceptTimeout(input: {
 
   if (hasActiveSchedule) {
     const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
-    timeoutCount = await incrementWorkerAcceptTimeoutCount(
+    const workerCode = await getWorkerCodeByAccountId(
       input.workerAccountId,
-      shiftInstanceKey
+      input.connection
     );
+    const attendance = await workerApplicationRepository.workerShiftAttendanceRepository.incrementAcceptTimeoutStreak(
+      {
+        account_id: input.workerAccountId,
+        worker_code: workerCode ?? String(input.workerAccountId),
+        schedule: currentSchedule,
+        shift_instance_key: shiftInstanceKey,
+      },
+      input.connection
+    );
+    timeoutCount = attendance.acceptTimeoutStreak;
 
     if (timeoutCount >= settings.worker_accept_timeout_limit) {
-      const workerCode = await getWorkerCode(input.workerAccountId, input.connection);
       await workerApplicationRepository.workerShiftAttendanceRepository.closeWorkerShift(
         {
           account_id: input.workerAccountId,
@@ -194,15 +150,11 @@ export async function handleAssignmentAcceptTimeout(input: {
         },
         input.connection
       );
-      await markWorkerShiftClosed(input.workerAccountId, shiftInstanceKey);
       queue = await markWorkerOpenApp(input.workerAccountId);
       reason = "assignment_timeout_limit_reached";
       closedShift = true;
-    } else if (isWorkerSocketConnected(input.workerAccountId)) {
-      queue = await enqueueWorker(input.workerAccountId);
     } else {
-      queue = await markWorkerOpenApp(input.workerAccountId);
-      reason = "assignment_timeout_socket_disconnected";
+      queue = await enqueueWorker(input.workerAccountId);
     }
   } else {
     queue = await markWorkerOpenApp(input.workerAccountId);
@@ -220,13 +172,13 @@ export async function handleAssignmentAcceptTimeout(input: {
   };
 }
 
-// Function handles worker accepting a job but missing the QR check-in deadline.
+// Function จัดการกรณี worker accept งานแล้วไม่ scan QR ภายในเวลา
 async function handleAssignmentScanTimeout(input: {
   assignment: VehicleJobAssignmentDto;
   workerAccountId: number;
   connection: DbConnection;
 }): Promise<void> {
-  if (input.assignment.status !== "ACCEPTED") {
+  if (input.assignment.status !== ASSIGNMENT_STATUS.ACCEPTED) {
     return;
   }
 
@@ -252,7 +204,7 @@ async function handleAssignmentScanTimeout(input: {
     input.assignment.vehicle_job_id,
     input.connection
   );
-  const workerCode = await getWorkerCode(input.workerAccountId);
+  const workerCode = await getWorkerCodeByAccountId(input.workerAccountId);
 
   await workerApplicationRepository.timeoutAssignment(
     input.assignment.id,
@@ -264,20 +216,14 @@ async function handleAssignmentScanTimeout(input: {
   sendWorkerSocketEvent(input.workerAccountId, "ASSIGNMENT_TIMEOUT", {
     ticketNo: vehicleJob?.ticketNo ?? null,
     reason: "scan_timeout",
-    status: "open_app",
+    status: WORKER_WORK_STATUS.OPEN_APP,
   });
-  publishNotification({
-    type: "WORKER_STATUS_CHANGED",
+  publishAdminWorkerStatusChanged({
     title: "Worker returned to open app",
     message: `Worker ${workerCode ?? input.workerAccountId} missed QR check-in and returned to open app.`,
-    payload: {
-      worker_code: workerCode,
-      queue: buildWorkerQueueSocketPayload(queue, workerCode),
-      reason: "scan_timeout_open_app",
-    },
-    audience: {
-      roles: ["admin"],
-    },
+    workerCode,
+    queue,
+    reason: "scan_timeout_open_app",
   });
   publishNotification({
     type: "ASSIGNMENT_TIMEOUT",
@@ -286,7 +232,7 @@ async function handleAssignmentScanTimeout(input: {
     payload: {
       ticketNo: vehicleJob?.ticketNo ?? null,
       worker_code: workerCode,
-      status: "TIMEOUT",
+      status: ASSIGNMENT_STATUS.TIMEOUT,
       reason: "scan_timeout",
     },
     audience: {
@@ -295,13 +241,13 @@ async function handleAssignmentScanTimeout(input: {
   });
 }
 
-// Function notifies Admin when an accepted assignment is near its QR scan deadline.
+// Function แจ้ง Admin เมื่อ assignment ที่ accept แล้วใกล้หมดเวลา scan QR
 async function handleAssignmentScanWarning(input: {
   assignment: VehicleJobAssignmentDto;
   workerAccountId: number;
   connection: DbConnection;
 }): Promise<void> {
-  if (input.assignment.status !== "ACCEPTED") {
+  if (input.assignment.status !== ASSIGNMENT_STATUS.ACCEPTED) {
     return;
   }
 
@@ -327,7 +273,7 @@ async function handleAssignmentScanWarning(input: {
       input.assignment.vehicle_job_id,
       input.connection
     ),
-    getWorkerCode(input.workerAccountId),
+    getWorkerCodeByAccountId(input.workerAccountId),
   ]);
   const remainingSeconds = Math.ceil(remainingDelayMs / 1000);
 
@@ -339,7 +285,7 @@ async function handleAssignmentScanWarning(input: {
       ticketNo: vehicleJob?.ticketNo ?? null,
       worker_code: workerCode,
       assignment_status: input.assignment.status,
-      worker_status: "assigned",
+      worker_status: WORKER_WORK_STATUS.ASSIGNED,
       scan_deadline_at: input.assignment.scan_deadline_at,
       remaining_seconds: remainingSeconds,
       warning_before_minutes: settings.worker_scan_warning_before_minutes,
@@ -352,19 +298,17 @@ async function handleAssignmentScanWarning(input: {
 
 /* -------------------------------------- Completion Helpers -------------------------------------- */
 
-// Function returns workers to queue after vehicle completion when schedule/socket still allow work.
-async function returnCompletedWorkersToQueue(
-  input: CompletedVehicleJobResult | null
+// Function ส่ง worker ที่จบงานกลับเข้าคิวเมื่อกะยังทำงานต่อได้
+export async function returnCompletedWorkersToQueue(
+  input: CompletedWorkerQueueResult | null
 ): Promise<Array<string | null>> {
   if (!input || input.completed_worker_account_ids.length === 0) {
     return [];
   }
 
   const requeuedWorkerCodes: Array<string | null> = [];
-  const workerCodeMap = new Map(
-    (await profileRepository.findByAccountIds(input.completed_worker_account_ids)).map(
-      (profile) => [profile.account_id, profile.worker_code]
-    )
+  const workerCodeMap = await getWorkerCodeMapByAccountIds(
+    input.completed_worker_account_ids
   );
 
   for (const workerAccountId of input.completed_worker_account_ids) {
@@ -380,8 +324,7 @@ async function returnCompletedWorkersToQueue(
 
     const canReturnToQueue =
       currentSchedule &&
-      isTimeInWorkSchedule(currentSchedule) &&
-      isWorkerSocketConnected(workerAccountId);
+      isTimeInWorkSchedule(currentSchedule);
 
     if (canReturnToQueue) {
       const queue = await enqueueWorker(workerAccountId);
@@ -389,18 +332,14 @@ async function returnCompletedWorkersToQueue(
       sendWorkerSocketEvent(workerAccountId, "WORKER_STATUS_CHANGED", {
         queue: buildWorkerQueueSocketPayload(queue, workerCode),
       });
-      publishNotification({
-        type: "WORKER_STATUS_CHANGED",
+      publishAdminWorkerStatusChanged({
         title: "Worker returned to queue",
         message: `Worker ${workerCode ?? workerAccountId} returned to queue after vehicle job completion.`,
-        payload: {
-          worker_code: workerCode,
+        workerCode,
+        queue,
+        reason: "vehicle_job_completed_requeue",
+        extraPayload: {
           ticketNo: input.vehicle_job.ticketNo,
-          queue: buildWorkerQueueSocketPayload(queue, workerCode),
-          reason: "vehicle_job_completed_requeue",
-        },
-        audience: {
-          roles: ["admin"],
         },
       });
       continue;
@@ -412,18 +351,14 @@ async function returnCompletedWorkersToQueue(
         queue: buildWorkerQueueSocketPayload(queue, workerCode),
       });
     }
-    publishNotification({
-      type: "WORKER_STATUS_CHANGED",
+    publishAdminWorkerStatusChanged({
       title: "Worker moved to open_app",
       message: `Worker ${workerCode ?? workerAccountId} moved to open_app after vehicle job completion.`,
-        payload: {
-          worker_code: workerCode,
-          ticketNo: input.vehicle_job.ticketNo,
-          queue: buildWorkerQueueSocketPayload(queue, workerCode),
-          reason: "vehicle_job_completed_not_available",
-        },
-      audience: {
-        roles: ["admin"],
+      workerCode,
+      queue,
+      reason: "vehicle_job_completed_not_available",
+      extraPayload: {
+        ticketNo: input.vehicle_job.ticketNo,
       },
     });
   }
@@ -435,7 +370,7 @@ async function returnCompletedWorkersToQueue(
   return requeuedWorkerCodes;
 }
 
-// Function auto-confirms delivered tickets when vendor does not confirm within runtime config.
+// Function ยืนยัน ticket อัตโนมัติเมื่อส่งยอดแล้วแต่ vendor ไม่ยืนยันภายในเวลาจาก config
 async function handleVendorConfirmationTimeout(input: {
   ticketId?: number;
   submissionId?: number;
@@ -450,7 +385,7 @@ async function handleVendorConfirmationTimeout(input: {
       transaction
     );
 
-    if (!ticket || ticket.status !== "DELIVERED") {
+    if (!ticket || ticket.status !== TICKET_STATUS.DELIVERED) {
       return null;
     }
 
@@ -463,50 +398,12 @@ async function handleVendorConfirmationTimeout(input: {
       return null;
     }
 
-    const updated = await workerApplicationRepository.confirmTicketCompletion(
-      ticket.id,
-      submission.id,
-      transaction
-    );
-    const completedVehicleJob = await workerApplicationRepository.closeCompletedVehicleJobIfReady(
-      updated.ticket.vehicle_job_id,
-      transaction
-    );
-    const nextTicket = !completedVehicleJob
-      ? await workerApplicationRepository.activateNextTicketIfReady(
-          updated.ticket.vehicle_job_id,
-          transaction
-        )
-      : null;
-
-    if (!completedVehicleJob) {
-      await workerApplicationRepository.markVehicleAssignmentsWorking(
-        updated.ticket.vehicle_job_id,
-        transaction
-      );
-    }
-
-    const [ticketWorkers, admins, products, detail] = await Promise.all([
-      workerApplicationRepository.listTicketWorkers(updated.ticket.id, transaction),
-      workerApplicationRepository.accountRepository.listAdmins(transaction),
-      workerApplicationRepository.listTicketProducts(updated.ticket.id, transaction),
-      workerApplicationRepository.getVehicleJobDetail(
-        updated.ticket.vehicle_job_id,
-        transaction
-      ),
-    ]);
-    const receiverIds = new Set<number>();
-    ticketWorkers.forEach((worker) => receiverIds.add(worker.worker_account_id));
-    admins.forEach((admin) => receiverIds.add(admin.id));
-
-    return {
-      ...updated,
-      products,
-      detail,
-      completedVehicleJob,
-      nextTicket,
-      receiverAccountIds: Array.from(receiverIds),
-    };
+    return applyVendorTicketCompletionResult({
+      ticket,
+      submission,
+      action: "confirm",
+      connection: transaction,
+    });
   });
 
   if (!result) {
@@ -514,18 +411,6 @@ async function handleVendorConfirmationTimeout(input: {
   }
 
   await returnCompletedWorkersToQueue(result.completedVehicleJob);
-
-  const completedWorkerCodes: Array<string | null> = [];
-  if (result.completedVehicleJob) {
-    const workerCodeMap = await getWorkerCodeMap(
-      result.completedVehicleJob.completed_worker_account_ids
-    );
-    completedWorkerCodes.push(
-      ...result.completedVehicleJob.completed_worker_account_ids.map(
-        (accountId) => workerCodeMap.get(accountId) ?? null
-      )
-    );
-  }
 
   publishRealtimeEvent({
     type: "TICKET_COMPLETION_RESULT",
@@ -539,11 +424,11 @@ async function handleVendorConfirmationTimeout(input: {
         {
           submission_status: result.submission.status,
           vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
-          completed_worker_codes: completedWorkerCodes,
+          completed_worker_codes: result.completedWorkerCodes,
           nextMarketCode: result.nextTicket?.marketCode ?? null,
           nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
           next_ticket_status: result.nextTicket?.ticket.status ?? null,
-          assignment_status: result.completedVehicleJob ? "COMPLETED" : "WORKING",
+          assignment_status: result.assignmentStatus,
           reason: "vendor_confirm_timeout",
         }
       ),
@@ -556,11 +441,11 @@ async function handleVendorConfirmationTimeout(input: {
         {
           submission_status: result.submission.status,
           vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
-          completed_worker_codes: completedWorkerCodes,
+          completed_worker_codes: result.completedWorkerCodes,
           nextMarketCode: result.nextTicket?.marketCode ?? null,
           nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
           next_ticket_status: result.nextTicket?.ticket.status ?? null,
-          assignment_status: result.completedVehicleJob ? "COMPLETED" : "WORKING",
+          assignment_status: result.assignmentStatus,
           reason: "vendor_confirm_timeout",
         }
       ),
@@ -586,7 +471,7 @@ async function handleVendorConfirmationTimeout(input: {
 
 /* -------------------------------------- Shift Handlers -------------------------------------- */
 
-// Function closes a worker shift at scheduled end and moves idle workers back to open_app.
+// Function ปิดกะ worker เมื่อถึงเวลาสิ้นสุด และย้าย worker ที่ว่างกลับ open_app
 async function handleWorkerShiftEnd(input: {
   accountId: number;
   scheduleId: number;
@@ -600,7 +485,7 @@ async function handleWorkerShiftEnd(input: {
 
   const shiftInstanceKey =
     input.shiftInstanceKey ?? buildWorkScheduleShiftInstanceKey(schedule);
-  const workerCode = await getWorkerCode(input.accountId);
+  const workerCode = await getWorkerCodeByAccountId(input.accountId);
 
   await workerApplicationRepository.workerShiftAttendanceRepository.closeWorkerShift(
     {
@@ -610,11 +495,6 @@ async function handleWorkerShiftEnd(input: {
       shift_instance_key: shiftInstanceKey,
       reason: "shift_ended",
     }
-  );
-
-  await markWorkerShiftClosed(
-    input.accountId,
-    shiftInstanceKey
   );
 
   const currentAssignment = await workerApplicationRepository.findCurrentAssignmentByWorker(
@@ -633,29 +513,23 @@ async function handleWorkerShiftEnd(input: {
       reason: "shift_ended",
     });
   }
-  publishNotification({
-    type: "WORKER_STATUS_CHANGED",
+  publishAdminWorkerStatusChanged({
     title: "Worker shift closed",
     message: `Worker ${workerCode ?? input.accountId} moved to open_app because the shift ended.`,
-    payload: {
-      worker_code: workerCode,
-      queue: buildWorkerQueueSocketPayload(queue, workerCode),
-      reason: "shift_ended",
-    },
-    audience: {
-      roles: ["admin"],
-    },
+    workerCode,
+    queue,
+    reason: "shift_ended",
   });
 }
 
-// Function returns a worker from break to queue, or open_app if socket/shift/assignment no longer allow it.
+// Function พา worker กลับจาก break เข้าคิว หรือกลับ open_app ถ้า socket/กะ/assignment ไม่พร้อม
 async function handleWorkerBreakReturn(input: {
   accountId: number;
   scheduleId: number;
 }): Promise<void> {
   const queueEntry = await getWorkerQueueStatus(input.accountId);
 
-  if (!queueEntry || queueEntry.status !== "break") {
+  if (!queueEntry || queueEntry.status !== WORKER_WORK_STATUS.BREAK) {
     return;
   }
 
@@ -672,42 +546,30 @@ async function handleWorkerBreakReturn(input: {
     isWorkerSocketConnected(input.accountId)
   ) {
     const queue = await enqueueWorker(input.accountId);
-    const workerCode = await getWorkerCode(input.accountId);
-    publishNotification({
-      type: "WORKER_STATUS_CHANGED",
+    const workerCode = await getWorkerCodeByAccountId(input.accountId);
+    publishAdminWorkerStatusChanged({
       title: "Worker break finished",
       message: `Worker ${workerCode ?? input.accountId} returned to queue after break.`,
-      payload: {
-        worker_code: workerCode,
-        queue: buildWorkerQueueSocketPayload(queue, workerCode),
-        reason: "break_finished_requeue",
-      },
-      audience: {
-        roles: ["admin"],
-      },
+      workerCode,
+      queue,
+      reason: "break_finished_requeue",
     });
     await dispatchReadyWorkers();
     return;
   }
 
   const queue = await markWorkerOpenApp(input.accountId);
-  const workerCode = await getWorkerCode(input.accountId);
-  publishNotification({
-    type: "WORKER_STATUS_CHANGED",
+  const workerCode = await getWorkerCodeByAccountId(input.accountId);
+  publishAdminWorkerStatusChanged({
     title: "Worker moved to open_app",
     message: `Worker ${workerCode ?? input.accountId} moved to open_app after break.`,
-    payload: {
-      worker_code: workerCode,
-      queue: buildWorkerQueueSocketPayload(queue, workerCode),
-      reason: "break_finished_not_available",
-    },
-    audience: {
-      roles: ["admin"],
-    },
+    workerCode,
+    queue,
+    reason: "break_finished_not_available",
   });
 }
 
-// Function starts the shared BullMQ worker for accept, scan, warning, vendor, and shift timeout jobs.
+// Function เริ่ม BullMQ worker กลางสำหรับงาน timeout, accept, scan, warning, vendor และกะงาน
 export function startAssignmentTimeoutProcessing(): void {
   startAssignmentTimeoutWorker(async ({ assignmentId, workerAccountId, ticketId, submissionId, kind }) => {
     if (kind === "vendor_confirm") {
@@ -747,7 +609,7 @@ export function startAssignmentTimeoutProcessing(): void {
         return;
       }
 
-      if (assignment.status !== "PENDING") {
+      if (assignment.status !== ASSIGNMENT_STATUS.PENDING) {
         return;
       }
 
@@ -755,7 +617,7 @@ export function startAssignmentTimeoutProcessing(): void {
         assignment.vehicle_job_id,
         transaction
       );
-      const workerCode = await getWorkerCode(workerAccountId);
+      const workerCode = await getWorkerCodeByAccountId(workerAccountId);
       const timeoutResult = await handleAssignmentAcceptTimeout({
         assignment,
         workerAccountId,
@@ -768,8 +630,7 @@ export function startAssignmentTimeoutProcessing(): void {
         timeout_count: timeoutResult.timeout_count,
         timeout_limit: timeoutResult.timeout_limit,
       });
-      publishNotification({
-        type: "WORKER_STATUS_CHANGED",
+      publishAdminWorkerStatusChanged({
         title: timeoutResult.closed_shift
           ? "Worker shift closed"
           : timeoutResult.reason === "assignment_timeout_requeue"
@@ -780,15 +641,12 @@ export function startAssignmentTimeoutProcessing(): void {
           : timeoutResult.reason === "assignment_timeout_requeue"
             ? `Worker ${workerCode ?? workerAccountId} returned to queue after assignment timeout.`
             : `Worker ${workerCode ?? workerAccountId} moved to open_app after assignment timeout.`,
-        payload: {
-          worker_code: workerCode,
-          queue: buildWorkerQueueSocketPayload(timeoutResult.queue, workerCode),
-          reason: timeoutResult.reason,
+        workerCode,
+        queue: timeoutResult.queue,
+        reason: timeoutResult.reason,
+        extraPayload: {
           timeout_count: timeoutResult.timeout_count,
           timeout_limit: timeoutResult.timeout_limit,
-        },
-        audience: {
-          roles: ["admin"],
         },
       });
       publishNotification({
@@ -798,7 +656,7 @@ export function startAssignmentTimeoutProcessing(): void {
         payload: {
           ticketNo: vehicleJob?.ticketNo ?? null,
           worker_code: workerCode,
-          status: "TIMEOUT",
+          status: ASSIGNMENT_STATUS.TIMEOUT,
           reason: timeoutResult.reason,
           timeout_count: timeoutResult.timeout_count,
           timeout_limit: timeoutResult.timeout_limit,

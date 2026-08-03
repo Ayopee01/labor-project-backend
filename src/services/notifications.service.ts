@@ -1,9 +1,11 @@
-// import Library
+// Import Library
 import type { Response } from "express";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
-// import Types
+import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
+// Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { NotificationAudience, NotificationClient, RealtimeNotificationEvent } from "../types/notifications.type";
+import type { NotificationAudience, NotificationClient, RealtimeNotificationEvent, WorkerStatusChangedInput } from "../types/notifications.type";
+import type { VehicleJobAssignmentDto, WorkerQueueEntryDto } from "../types/worker.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -12,7 +14,7 @@ let clientSequence = 1;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ตรวจว่า event นี้ควรส่งให้ client คนนี้หรือไม่
+// Function ตรวจว่า receive event ใน service flow
 function canReceiveEvent(
   auth: AccessTokenPayload,
   audience?: NotificationAudience
@@ -32,7 +34,7 @@ function canReceiveEvent(
   return false;
 }
 
-// Function เขียน event ลง SSE stream
+// Function บันทึก SSE event ใน service flow
 function writeSseEvent(
   response: Response,
   eventName: string,
@@ -42,7 +44,7 @@ function writeSseEvent(
   response.write(`data: ${JSON.stringify(toPascalCasePayload(data))}\n\n`);
 }
 
-// Function เปิด SSE stream สำหรับ notification ล่าสุดของระบบ
+// Function จัดการ subscribe admin events ใน service flow
 export function subscribeAdminEvents(
   response: Response,
   auth: AccessTokenPayload
@@ -81,7 +83,7 @@ export function subscribeAdminEvents(
   });
 }
 
-// Function ส่ง event สดให้ SSE clients ที่เกี่ยวข้อง โดยไม่บันทึกเป็น notification row
+// Function กระจาย event notification ใน service flow
 export function publishNotification(event: RealtimeNotificationEvent): void {
   const payload = {
     type: event.type,
@@ -98,4 +100,39 @@ export function publishNotification(event: RealtimeNotificationEvent): void {
 
     writeSseEvent(client.response, event.type, payload);
   }
+}
+
+// Function สร้าง worker status changed payload ใน service flow
+function buildWorkerStatusChangedPayload(input: {
+  workerCode: string | null;
+  queue: WorkerQueueEntryDto | null | undefined;
+  reason: string;
+  assignment?: VehicleJobAssignmentDto | null;
+  extraPayload?: Record<string, unknown>;
+}): Record<string, unknown> {
+  return {
+    worker_code: input.workerCode,
+    queue: buildWorkerQueueSocketPayload(
+      input.queue,
+      input.workerCode,
+      input.assignment ?? null
+    ),
+    reason: input.reason,
+    ...(input.extraPayload ?? {}),
+  };
+}
+
+// Function กระจาย event admin worker status changed ใน service flow
+export function publishAdminWorkerStatusChanged(
+  input: WorkerStatusChangedInput
+): void {
+  publishNotification({
+    type: "WORKER_STATUS_CHANGED",
+    title: input.title,
+    message: input.message,
+    payload: buildWorkerStatusChangedPayload(input),
+    audience: {
+      roles: ["admin"],
+    },
+  });
 }

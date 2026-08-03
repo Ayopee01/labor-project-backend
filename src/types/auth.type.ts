@@ -1,10 +1,13 @@
+// Import Types
 import type { AccountRole, AccountStatus } from "./admin-workers.type";
 import type { AdminPermission } from "../config/permission.config";
 
-// Type ส่วน Token: ชนิดของ JWT ที่ระบบ auth รองรับ
+/* -------------------------------------- Types -------------------------------------- */
+
+// Type ประเภท token ที่ระบบ auth ออกให้
 export type TokenType = "access" | "refresh" | "login_challenge";
 
-// Type ส่วน Payload ของ access token
+// Type payload ของ access token ที่ใช้เรียก API หลัง login
 export interface AccessTokenPayload {
   account_id: number;
   role: AccountRole;
@@ -16,7 +19,7 @@ export interface AccessTokenPayload {
   exp?: number;
 }
 
-// Type ส่วน Payload ของ refresh token
+// Type payload ของ refresh token สำหรับขอ access token ชุดใหม่
 export interface RefreshTokenPayload {
   account_id: number;
   session_id: number;
@@ -25,7 +28,7 @@ export interface RefreshTokenPayload {
   exp?: number;
 }
 
-// Type ส่วน Payload ของ token ยืนยัน force login
+// Type payload ชั่วคราวเมื่อ worker ต้อง confirm-force-login จากเครื่องใหม่
 export interface LoginChallengeTokenPayload {
   account_id: number;
   role: AccountRole;
@@ -36,14 +39,14 @@ export interface LoginChallengeTokenPayload {
   exp?: number;
 }
 
-// Type ส่วน Mapping ของ token type กับ payload ที่ต้องได้
+// Type map payload ตามชนิด token เพื่อให้ utility เซ็นและตรวจ token ได้ถูก shape
 export type TokenPayloadByType = {
   access: AccessTokenPayload;
   refresh: RefreshTokenPayload;
   login_challenge: LoginChallengeTokenPayload;
 };
 
-// Type ส่วน DTO ของ table user_sessions
+// Type session ที่บันทึกใน DB และผูกกับ refresh token
 export interface SessionDto {
   id: number;
   account_id: number;
@@ -60,7 +63,7 @@ export interface SessionDto {
   updated_at: string;
 }
 
-// Type ส่วน Repository input สำหรับสร้าง session
+// Type input สำหรับสร้าง session ที่ยังไม่ revoke
 export interface PendingSessionInput {
   account_id: number;
   device_id: string;
@@ -70,21 +73,21 @@ export interface PendingSessionInput {
   expires_at: string | Date;
 }
 
-// Type ส่วน Response ภายใน service สำหรับ token ที่สร้างแล้ว
+// Type token response ภายใน service พร้อม session ที่สร้างแล้ว
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
   session: SessionDto;
 }
 
-// Type ส่วน shift ที่แสดงใน profile/me ของ worker
+// Type ข้อมูลกะที่แสดงใน profile card ของเส้น me
 export interface ProfileCardShift {
   name: string;
   start_time: string;
   end_time: string;
 }
 
-// Type ส่วน response ของ GET /api/auth/me สำหรับ Admin
+// Type response เส้น me สำหรับบัญชี Admin
 interface AdminMeResponse {
   role: "admin";
   full_name: string;
@@ -99,7 +102,7 @@ interface AdminMeResponse {
   latest_active_at: string | null;
 }
 
-// Type ส่วน response ของ GET /api/auth/me สำหรับ Worker
+// Type response เส้น me สำหรับบัญชี Worker
 interface WorkerMeResponse {
   role: "worker";
   full_name: string;
@@ -111,10 +114,10 @@ interface WorkerMeResponse {
   shift: ProfileCardShift | null;
 }
 
-// Type ส่วน response รวมของ GET /api/auth/me แยกตาม role
+// Type response รวมของเส้น me ที่แยกตาม role
 export type MeResponse = AdminMeResponse | WorkerMeResponse;
 
-// Type ส่วน Response ของ API auth login / confirm-force-login
+// Type response สำเร็จของ login, refresh และ confirm-force-login
 export interface AuthSuccessResponse {
   access_token: string;
   refresh_token: string;
@@ -122,12 +125,12 @@ export interface AuthSuccessResponse {
   expires_in: number;
 }
 
-// Type ส่วน Config สำหรับ signing token
+// Type option ตอนเซ็น token
 export interface TokenSignOptions {
   expiresIn?: string | number;
 }
 
-// Type ส่วน Config ของ token แต่ละประเภท
+// Type config สำหรับตรวจ token แต่ละชนิด
 export interface TokenConfig {
   secret?: string;
   expiresIn: string | number;

@@ -1,14 +1,13 @@
-// import Library
+// Import Library
 import express from "express";
-// import Middleware
+// Import Middleware
 import gateClientAuthMiddleware from "../middlewares/gate-client-auth.middleware";
-// import Service
+// Import Services
 import * as gateService from "../services/gate.service";
 
-// Config Express router สำหรับ Gate Flow routes
 const router = express.Router();
 
-// Route receives one Gate ticket print item and creates/replays the matching labor job.
+// Route รับ ticket หนึ่งใบจาก Gate และสร้างหรือ replay งานแรงงานที่ตรงกัน
 router.post(
   "/tickets",
   gateClientAuthMiddleware,

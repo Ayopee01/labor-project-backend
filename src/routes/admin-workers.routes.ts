@@ -1,22 +1,20 @@
-// import Library
+// Import Library
 import express from "express";
 
-// import Middleware
+// Import Middleware
 import authMiddleware from "../middlewares/auth.middleware";
 import permissionMiddleware from "../middlewares/permission.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 import { normalizeCreateUserMultipartBody, uploadWorkerImage } from "../middlewares/upload.middleware";
 
-// import Service
+// Import Services
 import * as adminWorkersService from "../services/admin-workers.service";
 
-// Config Express router สำหรับ Admin Workers routes
 const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 
-// Route สร้าง worker พร้อม profile, schedule และรูปภาพถ้ามี
 router.post(
   "/",
   permissionMiddleware(["workers:create"]),
@@ -35,7 +33,6 @@ router.post(
   }
 );
 
-// Route ดึงรายการ worker สำหรับหน้า Admin Workers
 router.get(
   "/",
   permissionMiddleware(["workers:read"]),
@@ -49,7 +46,6 @@ router.get(
   }
 );
 
-// Route ดึงรายละเอียด worker รายคนด้วย WorkerCode
 router.get(
   "/:workerCode",
   permissionMiddleware(["workers:read"]),
@@ -63,7 +59,6 @@ router.get(
   }
 );
 
-// Route แก้ไขข้อมูล worker จากหน้า Admin Workers
 router.patch(
   "/:workerCode",
   permissionMiddleware(["workers:update"]),
@@ -81,7 +76,6 @@ router.patch(
   }
 );
 
-// Route reset password ของ worker และ revoke session เดิม
 router.patch(
   "/:workerCode/password",
   permissionMiddleware(["workers:reset_password"]),

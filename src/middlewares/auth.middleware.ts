@@ -1,13 +1,13 @@
-// import Library
+// Import Library
 import type { NextFunction, Request, Response } from "express";
 import { verifyAccessToken } from "../utils/jwt";
-// import
+// Import Dependencies
 import ApiError from "../utils/api-error";
 
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึง token จาก Authorization header
+// Function อ่านค่า Bearer token จาก Authorization header
 function getBearerToken(authorization: string | undefined): string {
   if (!authorization || typeof authorization !== "string") {
     throw new ApiError(401, "INVALID_TOKEN", "Authorization token is required.");
@@ -22,7 +22,7 @@ function getBearerToken(authorization: string | undefined): string {
   return token;
 }
 
-// Function ตรวจสอบ access token และเก็บ payload ไว้ใน req.auth
+// Function จัดการ auth middleware สำหรับ Express middleware
 export default function authMiddleware(
   req: Request,
   _res: Response,

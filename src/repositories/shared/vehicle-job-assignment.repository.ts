@@ -1,15 +1,15 @@
-// import
+// Import Dependencies
 import { ACTIVE_ASSIGNMENT_STATUSES } from "../../constants/job-status";
 import { mapVehicleJobAssignment } from "./mappers";
 import { client, requireDto } from "./repository-utils";
 
-// import Types
-import type { DbConnection } from "../../types/common.type";
+// Import Types
+import type { DbConnection } from "../../types/shared/common.type";
 import type { VehicleJobAssignmentDto } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function นับ assignment ที่ยังถือว่า active ของงานรถ
+// Function นับ active assignments จาก DB
 export async function countActiveAssignments(
   vehicleJobId: number,
   connection?: DbConnection
@@ -25,7 +25,7 @@ export async function countActiveAssignments(
   });
 }
 
-// Function สร้าง assignment ให้คนงาน
+// Function สร้าง assignment จาก DB
 export async function createAssignment(
   vehicleJobId: number,
   workerAccountId: number,
@@ -45,7 +45,7 @@ export async function createAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment create");
 }
 
-// Function หา assignment ปัจจุบันของคนงาน
+// Function ค้นหา current assignment ตาม worker จาก DB
 export async function findCurrentAssignmentByWorker(
   workerAccountId: number,
   connection?: DbConnection
@@ -66,7 +66,7 @@ export async function findCurrentAssignmentByWorker(
   return mapVehicleJobAssignment(assignment);
 }
 
-// Function หา assignment จาก id
+// Function ค้นหา assignment ตาม ID จาก DB
 export async function findAssignmentById(
   assignmentId: number,
   connection?: DbConnection

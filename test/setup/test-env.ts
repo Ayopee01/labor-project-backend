@@ -1,13 +1,12 @@
 /* -------------------------------------- Test Env Guard -------------------------------------- */
 
-// Config รายชื่อ environment/database ที่ห้าม integration test แตะเด็ดขาด
 const FORBIDDEN_DATABASE_PATTERNS = [
   "prod",
   "production",
   "staging",
 ];
 
-// Function ตรวจคำต้องห้ามใน DATABASE_URL เพื่อกัน test ยิง production/staging โดยไม่ตั้งใจ
+// Function ตรวจว่า DATABASE_URL ชี้ไป environment ที่ห้ามใช้กับ test หรือไม่
 function includesForbiddenDatabaseName(databaseUrl: string): boolean {
   const normalized = databaseUrl.toLowerCase();
 
@@ -16,7 +15,7 @@ function includesForbiddenDatabaseName(databaseUrl: string): boolean {
   );
 }
 
-// Function ตั้งค่า env ปลอดภัยสำหรับ test ที่ใช้ mock infra และไม่แตะ DB จริง
+// Function ตั้งค่า env แยกสำหรับ test ไม่ให้ชนข้อมูลจริง
 export function applyIsolatedTestEnv(prefix = "test"): void {
   process.env.NODE_ENV = "test";
   process.env.JWT_ACCESS_SECRET ??= `${prefix}-access-secret`;
@@ -33,7 +32,7 @@ export function applyIsolatedTestEnv(prefix = "test"): void {
   process.env.BULLMQ_LINE_MESSAGE_QUEUE = `${prefix}:line-message`;
 }
 
-// Function ตรวจว่า DATABASE_URL เหมาะสำหรับ integration test จริงก่อนแตะ DB
+// Function ตรวจสอบ DATABASE_URL ของ test ก่อนรัน integration
 export function assertSafeTestDatabaseUrl(databaseUrl = process.env.DATABASE_URL): void {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required for DB integration tests.");

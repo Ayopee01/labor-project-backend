@@ -1,8 +1,13 @@
-﻿// import Library
+// Import Library
 import { Prisma } from "@prisma/client";
 
-// import
-import { ACTIVE_ASSIGNMENT_STATUSES } from "../constants/job-status";
+// Import Dependencies
+import {
+  ACTIVE_ASSIGNMENT_STATUSES,
+  ASSIGNMENT_STATUS,
+  TICKET_STATUS,
+  VEHICLE_JOB_STATUS,
+} from "../constants/job-status";
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import { mapAccount, mapGateTicket, mapMarketJob, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
@@ -12,36 +17,17 @@ export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail } from "./
 export { countActiveAssignments, createAssignment, findAssignmentById, findCurrentAssignmentByWorker } from "./shared/vehicle-job-assignment.repository";
 export { listTicketWorkers } from "./shared/ticket-worker.repository";
 
-// import Types
-import type { DbConnection } from "../types/common.type";
+// Import Types
+import type { DbConnection } from "../types/shared/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import type { GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
-import type { VehicleJobListFilters, VehicleJobListResult, VehicleJobOperationFilters } from "../types/admin-jobs.type";
+import type { VehicleJobListFilters, VehicleJobListResult, VehicleJobOperationFilters, VehicleJobOperationRecord } from "../types/admin-jobs.type";
 
 export { accountRepository, profileRepository };
 
-export type VehicleJobOperationRecord = Prisma.VehicleJobGetPayload<{
-  include: {
-    marketJobs: {
-      include: {
-        tickets: {
-          include: {
-            products: true;
-          };
-        };
-      };
-    };
-    assignments: {
-      include: {
-        worker: true;
-      };
-    };
-  };
-}>;
-
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เธ”เธถเธเธฃเธฒเธขเธเธฒเธฃเธเธฒเธเธฃเธ–เธชเธณเธซเธฃเธฑเธ Admin เธเธฃเนเธญเธก filter เน€เธเธทเนเธญเธเธ•เนเธ
+// Function ดึงรายการ vehicle jobs จาก DB
 export async function listVehicleJobs(
   filters: VehicleJobListFilters = {},
   connection?: DbConnection
@@ -249,6 +235,7 @@ export async function listVehicleJobs(
   };
 }
 
+// Function ดึงรายการ vehicle job operations จาก DB
 export async function listVehicleJobOperations(
   filters: VehicleJobOperationFilters = {},
   connection?: DbConnection
@@ -411,7 +398,7 @@ export async function listVehicleJobOperations(
   });
 }
 
-// Function เธซเธฒ market job เธเธฒเธ id
+// Function ค้นหา market job ตาม ID จาก DB
 export async function findMarketJobById(
   id: number,
   connection?: DbConnection
@@ -426,7 +413,7 @@ export async function findMarketJobById(
   return mapMarketJob(marketJob);
 }
 
-// Function เธซเธฒ market job เธเธฒเธเน€เธฅเธเธญเนเธฒเธเธญเธดเธเธ•เธฅเธฒเธ”
+// Function ค้นหา market job ตาม ref จาก DB
 export async function findMarketJobByRef(
   marketCode: string,
   connection?: DbConnection
@@ -444,8 +431,7 @@ export async function findMarketJobByRef(
   return mapMarketJob(marketJob);
 }
 
-// Function เธซเธฒ gate ticket เธซเธฃเธทเธญ stall job เธเธฒเธ id
-// Function เธซเธฒ gate ticket/stall job เธเธฒเธเน€เธฅเธเธญเนเธฒเธเธญเธดเธเนเธเธ
+// Function ค้นหา Gate ticket ตาม ref จาก DB
 export async function findGateTicketByRef(
   boothCode: string,
   connection?: DbConnection
@@ -463,7 +449,7 @@ export async function findGateTicketByRef(
   return mapGateTicket(ticket);
 }
 
-// Function เธซเธฒ worker เธเธฒเธเธฃเธซเธฑเธชเธเธเธฑเธเธเธฒเธเธชเธณเธซเธฃเธฑเธ Admin Jobs flow
+// Function ค้นหา worker ตาม code จาก DB
 export async function findWorkerByCode(
   workerCode: string,
   connection?: DbConnection
@@ -479,7 +465,7 @@ export async function findWorkerByCode(
   return mapAccount(account);
 }
 
-// Function เธซเธฒ assignment เธเธฑเธเธเธธเธเธฑเธเธเธญเธ worker เนเธเธเธฒเธเธฃเธ–เธเธฒเธ ticketNo + worker_code
+// Function ค้นหา active assignment ตาม vehicle job ref และ WorkerCode จาก DB
 export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
   ticketNo: string,
   workerCode: string,
@@ -506,7 +492,7 @@ export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
   return mapVehicleJobAssignment(assignment);
 }
 
-// Function เธขเธเน€เธฅเธดเธเธเธฒเธเธฃเธ– เธเธฃเนเธญเธกเธเธฒเธเธ•เธฅเธฒเธ” เนเธเธ เนเธฅเธฐ active assignment เนเธ•เนเธฃเธ–
+// Function ยกเลิก vehicle job จาก DB
 export async function cancelVehicleJob(
   vehicleJobId: number,
   connection?: DbConnection
@@ -521,7 +507,7 @@ export async function cancelVehicleJob(
       },
     },
     data: {
-      status: "CANCELLED",
+      status: ASSIGNMENT_STATUS.CANCELLED,
     },
   });
 
@@ -530,12 +516,12 @@ export async function cancelVehicleJob(
       id: vehicleJobId,
     },
     data: {
-      status: "CANCELLED",
+      status: VEHICLE_JOB_STATUS.CANCELLED,
       marketJobs: {
         updateMany: {
           where: {},
           data: {
-            status: "CANCELLED",
+            status: VEHICLE_JOB_STATUS.CANCELLED,
           },
         },
       },
@@ -543,7 +529,7 @@ export async function cancelVehicleJob(
         updateMany: {
           where: {},
           data: {
-            status: "CANCELLED",
+            status: TICKET_STATUS.CANCELLED,
           },
         },
       },
@@ -553,7 +539,7 @@ export async function cancelVehicleJob(
   return requireDto(mapVehicleJob(vehicleJob), "vehicle job cancel");
 }
 
-// Function เธขเธเน€เธฅเธดเธเธเธฒเธเธ•เธฅเธฒเธ” เธเธฃเนเธญเธกเนเธเธเนเธ•เนเธ•เธฅเธฒเธ”
+// Function ยกเลิก market job จาก DB
 export async function cancelMarketJob(
   marketJobId: number,
   connection?: DbConnection
@@ -564,12 +550,12 @@ export async function cancelMarketJob(
       id: marketJobId,
     },
     data: {
-      status: "CANCELLED",
+      status: VEHICLE_JOB_STATUS.CANCELLED,
       tickets: {
         updateMany: {
           where: {},
           data: {
-            status: "CANCELLED",
+            status: TICKET_STATUS.CANCELLED,
           },
         },
       },
@@ -579,7 +565,7 @@ export async function cancelMarketJob(
   return requireDto(mapMarketJob(marketJob), "market job cancel");
 }
 
-// Function เธขเธเน€เธฅเธดเธเธเธฒเธเนเธเธเน€เธ”เธตเธขเธง
+// Function ยกเลิก Gate ticket จาก DB
 export async function cancelGateTicket(
   ticketId: number,
   connection?: DbConnection
@@ -590,18 +576,15 @@ export async function cancelGateTicket(
       id: ticketId,
     },
     data: {
-      status: "CANCELLED",
+      status: TICKET_STATUS.CANCELLED,
     },
   });
 
   return requireDto(mapGateTicket(ticket), "gate ticket cancel");
 }
 
-// Function เธชเธฃเนเธฒเธเธเธฒเธเธฃเธ–เธเธฃเนเธญเธกเธ•เธฅเธฒเธ” เธ•เธฑเนเธง เธชเธดเธเธเนเธฒ เนเธฅเธฐเธเธฑเธเธ—เธถเธ Gate request log
 
-// Function เน€เธเธดเธ”เธเธฒเธเนเธเธเธเธฅเธฑเธเธกเธฒเนเธซเน worker เธชเนเธเธขเธญเธ”เนเธซเธกเน เธซเธฅเธฑเธ vendor confirm เธเธดเธ”
-// Function เธเธฑเธเธ—เธถเธเธเธฃเธฐเธงเธฑเธ•เธดเธเธฒเธฃเน€เธเธฅเธตเนเธขเธเธชเธ–เธฒเธเธฐเธเธญเธเธเธฒเธเนเธเธ
-// Function เธ”เธถเธ active assignment เธเธญเธเธเธฒเธเธฃเธ–
+// Function ดึงรายการ active assignments ตาม vehicle job จาก DB
 export async function listActiveAssignmentsByVehicleJob(
   vehicleJobId: number,
   connection?: DbConnection
@@ -624,7 +607,7 @@ export async function listActiveAssignmentsByVehicleJob(
     .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
 }
 
-// Function เน€เธเธฅเธตเนเธขเธ assignment เน€เธเนเธเธฃเธฑเธเธเธฒเธเนเธฅเนเธง
+// Function ดึงรายการ accepted assignments ตาม vehicle job จาก DB
 export async function listAcceptedAssignmentsByVehicleJob(
   vehicleJobId: number,
   workerCodes?: string[],
@@ -654,7 +637,7 @@ export async function listAcceptedAssignmentsByVehicleJob(
   const assignments = await db.vehicleJobAssignment.findMany({
     where: {
       vehicleJobId,
-      status: "ACCEPTED",
+      status: ASSIGNMENT_STATUS.ACCEPTED,
       ...(workerAccountIds &&
         workerAccountIds.length > 0 && {
           workerAccountId: {
@@ -672,7 +655,7 @@ export async function listAcceptedAssignmentsByVehicleJob(
     .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
 }
 
-// Function เน€เธเธฅเธตเนเธขเธ assignment เน€เธเนเธเธซเธกเธ”เน€เธงเธฅเธฒเธฃเธฑเธเธเธฒเธ
+// Function ยกเลิก assignment จาก DB
 export async function cancelAssignment(
   assignmentId: number,
   connection?: DbConnection
@@ -683,14 +666,14 @@ export async function cancelAssignment(
       id: assignmentId,
     },
     data: {
-      status: "CANCELLED",
+      status: ASSIGNMENT_STATUS.CANCELLED,
     },
   });
 
   return requireDto(mapVehicleJobAssignment(assignment), "assignment cancel");
 }
 
-// Function เธ•เนเธญเน€เธงเธฅเธฒ scan deadline เธเธญเธ assignment
+// Function ต่อเวลา assignment scan deadline จาก DB
 export async function extendAssignmentScanDeadline(
   assignmentId: number,
   scanDeadlineAt: Date,

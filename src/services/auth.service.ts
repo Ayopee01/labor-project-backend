@@ -1,10 +1,14 @@
 import { accountRepository, profileRepository, sessionRepository, workScheduleRepository } from "../repositories/auth.repository";
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
 import { getAccountPermissions } from "./admin-settings.service";
-import { registerWorkerPushTokenForAccount, revokeWorkerPushTokensBySession } from "./worker-push.service";
+import {
+  registerWorkerPushToken as registerWorkerPushTokenForSession,
+  registerWorkerPushTokenForAccount,
+  revokeWorkerPushTokensBySession,
+} from "../utils/worker-push";
 import { withTransaction } from "../db/prisma";
 import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto } from "../types/auth.type";
-import type { DbConnection } from "../types/common.type";
+import type { DbConnection } from "../types/shared/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import { parseWithSchema } from "../validation/parser";
 import { changeOwnPasswordBodySchema, confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema } from "../validation/schemas";
@@ -16,32 +20,30 @@ import { formatScheduleWithShift } from "../utils/shift";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config role ที่ต้องบังคับส่ง device id/name ตอน login
 const WORKER_ROLE = "worker";
 
-// Config device name default สำหรับ session ฝั่ง Admin Web
 const ADMIN_SESSION_DEVICE_NAME = "Admin Web";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้าง device id สำหรับ session ของ admin หรือ worker
+// Function ดึง default session device ID ใน service flow
 function getDefaultSessionDeviceId(account: AccountDto): string {
   return account.role === "admin"
     ? `admin:${account.id}`
     : `${account.role}:${account.id}`;
 }
 
-// Function สร้าง device name สำหรับ session ของ admin หรือ worker
+// Function ดึง default session device name ใน service flow
 function getDefaultSessionDeviceName(account: AccountDto): string {
   return account.role === "admin" ? ADMIN_SESSION_DEVICE_NAME : `${account.role} Web`;
 }
 
-// Function สร้างรหัสพนักงาน admin จาก account id เป็นรูปแบบ ADM0001
+// Function สร้าง admin employee code ใน service flow
 function buildAdminEmployeeCode(accountId: number): string {
   return `ADM${String(accountId).padStart(4, "0")}`;
 }
 
-// Function แปลง schedule เป็น shift สั้นๆ สำหรับ response auth/me
+// Function จัดรูปแบบ profile card shift ใน service flow
 function formatProfileCardShift(
   schedule: ReturnType<typeof formatScheduleWithShift>
 ): ProfileCardShift | null {
@@ -56,7 +58,7 @@ function formatProfileCardShift(
   };
 }
 
-// Function หา session ล่าสุดของ account โดยใช้ current session ถ้ามี
+// Function ค้นหาหรือตัดสิน latest session ใน service flow
 async function resolveLatestSession(
   account: AccountDto,
   currentSession?: SessionDto | null,
@@ -69,7 +71,7 @@ async function resolveLatestSession(
   return sessionRepository.findActiveByAccountId(account.id, connection);
 }
 
-// Function สร้าง response ของ GET /api/auth/me โดยแยก shape ตาม role
+// Function สร้าง me response ใน service flow
 async function buildMeResponse(
   account: AccountDto,
   currentSession?: SessionDto | null
@@ -114,7 +116,7 @@ async function buildMeResponse(
   };
 }
 
-// Function ตรวจสอบว่า worker ต้องมี device id และ device name ตอน login หรือไม่
+// Function ตรวจสอบและดึง worker device ใน service flow
 function requireWorkerDevice(
   deviceId?: string,
   deviceName?: string
@@ -152,7 +154,7 @@ function requireWorkerDevice(
   };
 }
 
-// Function ระบุ device สำหรับ login ของ account
+// Function ค้นหาหรือตัดสิน login device ใน service flow
 function resolveLoginDevice(
   account: AccountDto,
   deviceId?: string,
@@ -168,7 +170,7 @@ function resolveLoginDevice(
   };
 }
 
-// Function สร้าง session และออก access token กับ refresh token
+// Function สร้าง session ใน service flow
 async function createSession(
   account: AccountDto,
   deviceId: string,
@@ -213,7 +215,7 @@ async function createSession(
   };
 }
 
-// Function รวม token เป็น response สำหรับ auth
+// Function สร้าง auth success response ใน service flow
 async function buildAuthSuccessResponse(
   tokens: AuthTokens
 ): Promise<AuthSuccessResponse> {
@@ -225,7 +227,7 @@ async function buildAuthSuccessResponse(
   };
 }
 
-// Function ตรวจสอบ username/password และเข้าสู่ระบบ
+// Function จัดการ login ใน service flow
 export async function login(body: unknown) {
   const {
     username,
@@ -309,7 +311,7 @@ export async function login(body: unknown) {
   });
 }
 
-// Function ยืนยันการบังคับ login เมื่อมี session อื่นใช้งานอยู่
+// Function ยืนยัน force login ใน service flow
 export async function confirmForceLogin(body: unknown) {
   const {
     login_challenge_token: loginChallengeToken,
@@ -376,7 +378,7 @@ export async function confirmForceLogin(body: unknown) {
   });
 }
 
-// Function ตรวจสอบ refresh token และออก token ชุดใหม่
+// Function refresh refresh ใน service flow
 export async function refresh(body: unknown) {
   const { refresh_token: refreshToken } = parseWithSchema(refreshBodySchema, body);
   const payload = verifyRefreshToken(refreshToken);
@@ -432,7 +434,7 @@ export async function refresh(body: unknown) {
   };
 }
 
-// Function ออกจากระบบโดยยกเลิก session ปัจจุบัน
+// Function จัดการ logout ใน service flow
 export async function logout(auth?: AccessTokenPayload) {
   if (!auth || !auth.session_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -448,7 +450,16 @@ export async function logout(auth?: AccessTokenPayload) {
   };
 }
 
-// Function ดึงข้อมูลผู้ใช้จาก access token ปัจจุบัน
+// Function จัดการ register worker push token ใน service flow
+export async function registerWorkerPushToken(
+  auth: AccessTokenPayload | undefined,
+  session: SessionDto | undefined,
+  body: unknown
+) {
+  return registerWorkerPushTokenForSession(auth, session, body);
+}
+
+// Function จัดการ me ใน service flow
 export async function me(
   auth?: AccessTokenPayload,
   currentSession?: SessionDto | null
@@ -466,7 +477,7 @@ export async function me(
   return buildMeResponse(account, currentSession);
 }
 
-// Function เปลี่ยน password ของ account ที่ login อยู่ ใช้ร่วมกันได้ทั้ง admin และ worker
+// Function จัดการ change own password ใน service flow
 export async function changeOwnPassword(
   auth: AccessTokenPayload | undefined,
   body: unknown

@@ -1,22 +1,22 @@
-﻿// import
+// Import Dependencies
 import { withTransaction } from "../db/prisma";
 import { VEHICLE_JOB_STATUS } from "../constants/job-status";
 import * as driverRepository from "../repositories/driver.repository";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { getRuntimeSettings } from "./admin-settings.service";
 import { publishNotification } from "./notifications.service";
-// import Types
+// Import Types
 import type { DriverJobReadyResponse, DriverSessionDto, DriverSessionResponse, DriverVehicleJobDetailResponse, DriverVehicleJobResponse } from "../types/driver.type";
 import type { VehicleJobDetailResponse, VehicleJobDto } from "../types/worker.type";
-// import Validation
+// Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { driverQrSessionBodySchema } from "../validation/schemas";
-// import Utils
+// Import Utils
 import ApiError from "../utils/api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เธญเนเธฒเธ ticketNo เธเธฒเธ path param เนเธฅเธฐเนเธขเธ error เธ–เนเธฒเธเนเธฒเธงเนเธฒเธ
+// Function อ่านค่า reference ใน service flow
 function parseReference(value: unknown): string {
   const reference = String(value ?? "").trim();
 
@@ -27,7 +27,7 @@ function parseReference(value: unknown): string {
   return reference;
 }
 
-// Function เธเธฑเธ”เธฃเธนเธเธเธฒเธเธฃเธ–เธชเธณเธซเธฃเธฑเธ Driver Flow เนเธ”เธขเนเธกเนเธชเนเธ id เธ เธฒเธขเนเธ
+// Function จัดรูปแบบ driver vehicle job ใน service flow
 function formatDriverVehicleJob(vehicleJob: VehicleJobDto): DriverVehicleJobResponse {
   return {
     ticketNo: vehicleJob.ticketNo,
@@ -44,7 +44,7 @@ function formatDriverVehicleJob(vehicleJob: VehicleJobDto): DriverVehicleJobResp
   };
 }
 
-// Function เธเธฑเธ”เธฃเธนเธเธเธฒเธเธฃเธ–เธเธฃเนเธญเธกเธ•เธฅเธฒเธ” เนเธเธ เนเธฅเธฐเธชเธดเธเธเนเธฒ เธชเธณเธซเธฃเธฑเธ Driver Flow
+// Function จัดรูปแบบ driver vehicle job detail ใน service flow
 function formatDriverVehicleJobDetail(
   detail: VehicleJobDetailResponse
 ): DriverVehicleJobDetailResponse {
@@ -71,7 +71,7 @@ function formatDriverVehicleJobDetail(
   };
 }
 
-// Function เน€เธเธดเธ” driver session เธเธฒเธ QR token
+// Function สร้าง driver session จาก QR ใน service flow
 export async function createDriverSessionFromQr(
   body: unknown
 ): Promise<DriverSessionResponse> {
@@ -82,7 +82,10 @@ export async function createDriverSessionFromQr(
     throw new ApiError(404, "INVALID_DRIVER_QR", "Driver QR token is invalid.");
   }
 
-  if (vehicleJob.status === "COMPLETED" || vehicleJob.status === "CANCELLED") {
+  if (
+    vehicleJob.status === VEHICLE_JOB_STATUS.COMPLETED ||
+    vehicleJob.status === VEHICLE_JOB_STATUS.CANCELLED
+  ) {
     throw new ApiError(409, "VEHICLE_JOB_CLOSED", "Vehicle job is already closed.");
   }
 
@@ -99,7 +102,7 @@ export async function createDriverSessionFromQr(
   };
 }
 
-// Function เธ”เธถเธเธเธฒเธเธเธฑเธเธเธธเธเธฑเธเธเธญเธ driver session
+// Function ดึง driver current job ใน service flow
 export async function getDriverCurrentJob(
   session?: DriverSessionDto
 ): Promise<DriverVehicleJobDetailResponse> {
@@ -116,7 +119,7 @@ export async function getDriverCurrentJob(
   return formatDriverVehicleJobDetail(detail);
 }
 
-// Function เนเธซเน driver เธเธ”เธเธฃเนเธญเธกเธฅเธเน€เธเธทเนเธญเน€เธเธฅเธตเนเธขเธเธชเธ–เธฒเธเธฐเนเธฅเธฐเน€เธฃเธตเธขเธ worker เธเธฒเธ queue
+// Function อัปเดตสถานะ driver job ready ใน service flow
 export async function markDriverJobReady(
   idParam: unknown,
   session?: DriverSessionDto

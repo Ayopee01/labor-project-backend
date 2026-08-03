@@ -1,15 +1,15 @@
-// import Library
+// Import Library
 import type { NextFunction, Request, Response } from "express";
 
-// import Repository
+// Import Repositories
 import * as driverRepository from "../repositories/driver.repository";
 
-// import Utils
+// Import Utils
 import ApiError from "../utils/api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึง Bearer token จาก header Authorization
+// Function อ่านค่า Bearer token จาก Authorization header
 function getBearerToken(req: Request): string {
   const authorization = req.header("authorization");
 
@@ -26,7 +26,7 @@ function getBearerToken(req: Request): string {
   return token;
 }
 
-// Function ตรวจ driver session token และผูกข้อมูลไว้ใน request
+// Function จัดการ driver session middleware สำหรับ Express middleware
 export default async function driverSessionMiddleware(
   req: Request,
   _res: Response,

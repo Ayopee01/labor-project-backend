@@ -62,6 +62,8 @@ model WorkerShiftAttendance {
   offlineAt        DateTime? @map("offline_at") @db.Timestamp(3)
   closedAt         DateTime? @map("closed_at") @db.Timestamp(3)
   closeReason      String?   @map("close_reason") @db.VarChar(100)
+  acceptTimeoutStreak Int      @default(0) @map("accept_timeout_streak")
+  lastAcceptTimeoutAt DateTime? @map("last_accept_timeout_at") @db.Timestamp(3)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
@@ -189,6 +191,8 @@ model GateTicket {
   products TicketProduct[]
   workers TicketWorker[]
   completionSubmissions TicketCompletionSubmission[]
+  ratings TicketRating[]
+  lineActionTokens LineActionToken[]
 
   @@unique([marketJobId, boothCode])
   @@index([marketJobId, status])
@@ -248,6 +252,45 @@ model MasterMemberStall {
   @@map("master_member_stalls")
 }
 
+model MasterProduct {
+  id              Int      @id
+  productCode     String   @map("product_code") @db.VarChar(50)
+  productFullCode String   @map("product_full_code") @db.VarChar(50)
+  productName     String   @map("product_name") @db.VarChar(255)
+  packageCode     String   @map("package_code") @db.VarChar(50)
+  packageName     String   @map("package_name") @db.VarChar(100)
+  packageWeight   Float    @map("package_weight")
+  range           Json
+  status          String   @default("ACTIVE") @db.VarChar(20)
+  updateDate      DateTime @map("update_date") @db.Timestamp(3)
+  createDate      DateTime @default(now()) @map("create_date") @db.Timestamp(3)
+
+  @@unique([productFullCode, packageCode])
+  @@index([productCode])
+  @@map("master_product")
+}
+
+model MasterRate {
+  id              Int      @id @default(autoincrement())
+  sourceRateId    Int      @unique @map("source_rate_id")
+  marketCode      String   @map("market_code") @db.VarChar(20)
+  weightRangeName String   @map("weight_range_name") @db.VarChar(100)
+  weightMin       Decimal  @map("weight_min") @db.Decimal(10, 2)
+  weightMax       Decimal  @map("weight_max") @db.Decimal(10, 2)
+  stallRate       Decimal  @map("stall_rate") @db.Decimal(10, 2)
+  laborRate       Decimal  @map("labor_rate") @db.Decimal(10, 2)
+  status          Int
+  sourceCreatedAt DateTime? @map("source_created_at") @db.Timestamp(3)
+  sourceUpdatedAt DateTime? @map("source_updated_at") @db.Timestamp(3)
+  syncedAt        DateTime @default(now()) @map("synced_at") @db.Timestamp(3)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  @@index([marketCode, status])
+  @@index([marketCode, weightMin, weightMax, status])
+  @@map("master_rate")
+}
+
 model TicketWorker {
   id              Int      @id @default(autoincrement())
   ticketId        Int      @map("ticket_id")
@@ -271,14 +314,59 @@ model TicketCompletionSubmission {
   status                     String    @default("DELIVERED") @db.VarChar(30)
   confirmedAt                DateTime? @map("confirmed_at") @db.Timestamp(3)
   rejectedAt                 DateTime? @map("rejected_at") @db.Timestamp(3)
+  resolvedByLineUserId       String?   @map("resolved_by_line_user_id") @db.VarChar(255)
   createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt                  DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
   ticket GateTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   submittedByWorker Account @relation("TicketCompletionSubmitter", fields: [submittedByWorkerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ratings TicketRating[]
+  lineActionTokens LineActionToken[]
 
   @@index([ticketId, status])
+  @@index([resolvedByLineUserId])
   @@map("ticket_completion_submissions")
+}
+
+model LineActionToken {
+  id           Int       @id @default(autoincrement())
+  token        String    @unique @db.VarChar(80)
+  action       String    @db.VarChar(50)
+  ticketId     Int       @map("ticket_id")
+  submissionId Int       @map("submission_id")
+  boothCode    String    @map("booth_code") @db.VarChar(100)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamp(3)
+  usedAt       DateTime? @map("used_at") @db.Timestamp(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  ticket GateTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  submission TicketCompletionSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([ticketId])
+  @@index([submissionId])
+  @@index([action, expiresAt])
+  @@map("line_action_tokens")
+}
+
+model TicketRating {
+  id           Int      @id @default(autoincrement())
+  ticketId     Int      @map("ticket_id")
+  submissionId Int      @map("submission_id")
+  lineUserId   String   @map("line_user_id") @db.VarChar(255)
+  targetType   String?  @map("target_type") @db.VarChar(20)
+  score        Int
+  ratedAt      DateTime @default(now()) @map("rated_at") @db.Timestamp(3)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  ticket GateTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  submission TicketCompletionSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([ticketId, lineUserId])
+  @@index([submissionId])
+  @@index([score])
+  @@map("ticket_ratings")
 }
 
 model MessageDeliveryLog {

@@ -43,7 +43,7 @@
         Worker Mobile must have an active `/ws/workers` WebSocket connection before going online.
         From open_app, a worker can enter the queue only once per configured shift/day.
         If the worker returns early from break, this endpoint can put the worker back into queue before the break timer ends.
-        After `/api/workers/me/offline` or a shift-end auto-offline, the worker cannot go online again until the next shift.
+        After `/api/workers/me/offline` or a shift-end auto close, the worker cannot go online again until the next shift.
       operationId: workerOnline
       security:
         - bearerAuth: []
@@ -160,7 +160,7 @@
       tags:
         - Worker Application
       summary: Accept a pending worker assignment within the configured accept deadline.
-      description: If the worker misses the accept deadline, the assignment becomes TIMEOUT and the worker is moved to the queue tail. After worker_accept_timeout_limit consecutive accept timeouts, the worker is taken offline for the shift.
+      description: If the worker misses the accept deadline, the assignment becomes TIMEOUT and the worker is moved to the queue tail even when the Worker WebSocket is disconnected. The accept-timeout streak resets after a successful accept. After worker_accept_timeout_limit consecutive accept timeouts, the worker is moved to open_app and cannot re-enter the queue in the same shift.
       operationId: acceptWorkerAssignment
       security:
         - bearerAuth: []
@@ -226,7 +226,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/workers/me/tickets/{boothCode}/complete:
+  /api/workers/me/assignments/{ticketNo}/tickets/{boothCode}/complete:
     post:
       tags:
         - Worker Application
@@ -234,19 +234,26 @@
       description: |
         After worker submits quantities, the ticket and assignment status become DELIVERED.
         Workers can submit any stall/market in the same vehicle job once the assigned team has checked in; the API no longer requires waiting for the previous stall to close first.
-        If vendor confirms through LINE, the ticket closes. If vendor rejects, the assignment status becomes REJECT and the same endpoint can be used to resubmit.
+        Vendor receives a LINE Flex card with Confirm/Reject buttons. If vendor confirms through LINE, the ticket closes and backend sends an optional 1-5 satisfaction rating Flex prompt to the confirming LINE user. If vendor rejects, the assignment status becomes REJECT and the same endpoint can be used to resubmit.
         If vendor does not respond, the timeout is controlled by vendor_confirm_timeout_hours for the first submission and vendor_reconfirm_timeout_hours after a rejected resubmission.
-      operationId: completeWorkerTicket
+      operationId: completeWorkerAssignmentTicket
       security:
         - bearerAuth: []
       parameters:
+        - in: path
+          name: ticketNo
+          required: true
+          schema:
+            type: string
+            example: TKT-20260723-000125
+          description: TicketNo from the accepted/check-in assignment.
         - in: path
           name: boothCode
           required: true
           schema:
             type: string
             example: B-018
-          description: boothCode from the accepted job payload.
+          description: BoothCode from the accepted job payload. Backend resolves the ticket using TicketNo + BoothCode so the same booth can appear under another TicketNo.
       requestBody:
         required: true
         content:

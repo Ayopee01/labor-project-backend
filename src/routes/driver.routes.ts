@@ -1,14 +1,12 @@
-// import Library
+// Import Library
 import express from "express";
-// import Middleware
+// Import Middleware
 import driverSessionMiddleware from "../middlewares/driver-session.middleware";
-// import Service
+// Import Services
 import * as driverService from "../services/driver.service";
 
-// Config Express router สำหรับ Driver Flow routes
 const router = express.Router();
 
-// Route เปิด driver session จาก QR token
 router.post(
   "/qr-sessions",
   async (req, res, next) => {
@@ -21,7 +19,6 @@ router.post(
   }
 );
 
-// Route ดึงงานรถปัจจุบันของ driver session
 router.get(
   "/jobs/current",
   driverSessionMiddleware,
@@ -35,7 +32,6 @@ router.get(
   }
 );
 
-// Route ให้ driver แจ้งว่างานรถพร้อมเรียก worker
 router.post(
   "/jobs/:ticketNo/ready",
   driverSessionMiddleware,

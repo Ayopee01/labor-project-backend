@@ -1,4 +1,4 @@
-// import
+// Import Dependencies
 import cors from "cors";
 import express from "express";
 
@@ -19,7 +19,6 @@ import notificationRoutes from "./routes/notifications.routes";
 import systemRoutes from "./routes/system.routes";
 import workerRoutes from "./routes/worker.routes";
 
-// Config Express app หลักของ API
 const app = express();
 
 // Middleware
@@ -51,10 +50,10 @@ app.use("/api/line", lineRoutes);
 app.use("/api/admin/events", notificationRoutes);
 app.use("/api/workers", workerRoutes);
 
-// Swagger setup
+// Swagger Setup
 setupSwagger(app);
 
-// Error handling
+// Error Handling
 app.use(notFoundHandler);
 app.use(errorHandler);
 

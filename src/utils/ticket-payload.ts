@@ -2,8 +2,8 @@ import type { GateTicketDto, TicketProductDto, VehicleJobDetailResponse } from "
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function แปลงรายการสินค้าใน ticket เป็น payload สำหรับ Worker/Admin realtime
-export function formatWorkerTicketItems(products: TicketProductDto[]) {
+// Function จัดรูปแบบ worker ticket items สำหรับ helper กลาง
+function formatWorkerTicketItems(products: TicketProductDto[]) {
   return products.map((product) => ({
     productCode: product.productCode,
     productName: product.productName,
@@ -14,7 +14,7 @@ export function formatWorkerTicketItems(products: TicketProductDto[]) {
   }));
 }
 
-// Function หา market ของ ticket จากรายละเอียดงานรถเพื่อเติมข้อมูลใน realtime payload
+// Function ค้นหา ticket market สำหรับ helper กลาง
 export function findTicketMarket(
   detail: VehicleJobDetailResponse | null,
   ticket: GateTicketDto
@@ -24,7 +24,7 @@ export function findTicketMarket(
   ) ?? null;
 }
 
-// Function สร้าง payload ticket สำหรับ WebSocket/SSE โดยใช้ reference แทน id ภายใน
+// Function สร้าง worker ticket payload สำหรับ helper กลาง
 export function buildWorkerTicketPayload(
   ticket: GateTicketDto,
   detail: VehicleJobDetailResponse | null,

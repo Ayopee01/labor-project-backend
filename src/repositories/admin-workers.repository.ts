@@ -1,4 +1,3 @@
-// Repository facade สำหรับ Swagger tag: Admin Workers
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import * as sessionRepository from "./shared/session.repository";
@@ -8,38 +7,35 @@ import { mapAccount, mapProfile, mapSchedule } from "./shared/mappers";
 import { requireMapped, toId } from "./shared/repository-utils";
 
 import type { Prisma } from "@prisma/client";
-import type { DbConnection } from "../types/common.type";
-import type { AccountCreateInput, AccountDto, ProfileCreateInput, ProfileCreateData, ProfileData, ProfileDataInput, ProfileDto, ProfileUpdateInput, PaginationFilters, UserAccountUpdateInput, UserListFilters, WorkScheduleCreateInput, WorkScheduleDto, WorkScheduleUpdateInput } from "../types/admin-workers.type";
+import type { DbConnection } from "../types/shared/common.type";
+import type { AccountCreateInput, AccountDto, ProfileCreateInput, ProfileCreateData, ProfileData, ProfileDataInput, ProfileDto, ProfileUpdateInput, UserAccountUpdateInput, UserListFilters, WorkScheduleCreateInput, WorkScheduleDto, WorkScheduleUpdateInput } from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config role หลักของ repository นี้
 const WORKER_ROLE = "worker";
 
-// Config status default เมื่อสร้าง account worker ใหม่
 const DEFAULT_ACCOUNT_STATUS = "active";
 
-// Config search mode สำหรับ Prisma contains filter
 const SEARCH_MODE = "insensitive" as const;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เลือก prisma client ปกติ หรือ transaction client ที่ส่งเข้ามา
+// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
 function client(connection?: DbConnection): DbConnection {
   return connection ?? prisma;
 }
 
-// Function แปลง account id จาก path/string ให้เป็น number สำหรับ Prisma query
+// Function แปลง id เป็น account id แบบ number สำหรับ query DB
 function toAccountId(id: number | string): number {
   return toId(id);
 }
 
-// Function ตรวจว่า mapper คืน account DTO ที่ไม่ใช่ null
+// Function ตรวจว่า account DTO จาก DB
 function isAccountDto(account: AccountDto | null): account is AccountDto {
   return account !== null;
 }
 
-// Function สร้าง OR filter สำหรับค้นหา worker จากหลาย field
+// Function สร้าง user search where จาก DB
 function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
   return [
     {
@@ -75,7 +71,7 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
   ];
 }
 
-// Function สร้าง where condition สำหรับ list worker
+// Function สร้าง user where จาก DB
 function buildUserWhere(filters: Partial<UserListFilters> = {}): Prisma.AccountWhereInput {
   const where: Prisma.AccountWhereInput = {
     role: WORKER_ROLE,
@@ -92,7 +88,7 @@ function buildUserWhere(filters: Partial<UserListFilters> = {}): Prisma.AccountW
   return where;
 }
 
-// Function สร้างเงื่อนไขค้นหา worker จาก username หรือ worker_code
+// Function สร้าง user identifier where จาก DB
 function buildUserIdentifierWhere(identifier: string): Prisma.AccountWhereInput {
   return {
     role: WORKER_ROLE,
@@ -100,7 +96,7 @@ function buildUserIdentifierWhere(identifier: string): Prisma.AccountWhereInput 
   };
 }
 
-// Function สร้างเงื่อนไขตรวจ username ซ้ำโดยยกเว้น account ปัจจุบันได้
+// Function สร้าง username exists where จาก DB
 function buildUsernameExistsWhere(
   username: string,
   exceptAccountId?: number | string | null
@@ -116,7 +112,7 @@ function buildUsernameExistsWhere(
   };
 }
 
-// Function แปลง input สร้าง account เป็น Prisma create data
+// Function สร้าง account create data จาก DB
 function buildAccountCreateData(account: AccountCreateInput): Prisma.AccountUncheckedCreateInput {
   return {
     username: account.username,
@@ -144,7 +140,7 @@ function buildAccountCreateData(account: AccountCreateInput): Prisma.AccountUnch
   };
 }
 
-// Function แปลง field แก้ไข worker account เป็น Prisma update data
+// Function สร้าง user account update data จาก DB
 function buildUserAccountUpdateData(fields: UserAccountUpdateInput): Prisma.AccountUpdateInput {
   const data: Prisma.AccountUpdateInput = {};
 
@@ -171,7 +167,7 @@ function buildUserAccountUpdateData(fields: UserAccountUpdateInput): Prisma.Acco
   return data;
 }
 
-// Function แปลง input profile เป็น data เฉพาะ field ที่ส่งมา
+// Function สร้าง profile data จาก DB
 function buildProfileData(profile: ProfileDataInput): ProfileData {
   const data: ProfileData = {};
 
@@ -198,7 +194,7 @@ function buildProfileData(profile: ProfileDataInput): ProfileData {
   return data;
 }
 
-// Function แปลง input สร้าง profile เป็น Prisma create data
+// Function สร้าง profile create data จาก DB
 function buildProfileCreateData(profile: ProfileCreateInput): ProfileCreateData {
   return {
     imageUrl: profile.image_url,
@@ -209,12 +205,7 @@ function buildProfileCreateData(profile: ProfileCreateInput): ProfileCreateData 
   };
 }
 
-// Function ตรวจว่า mapper คืน work schedule DTO ที่ไม่ใช่ null
-function isWorkScheduleDto(schedule: WorkScheduleDto | null): schedule is WorkScheduleDto {
-  return schedule !== null;
-}
-
-// Function แปลง input สร้างตารางงานเป็น Prisma create data
+// Function สร้าง schedule create data จาก DB
 function buildScheduleCreateData(
   schedule: WorkScheduleCreateInput
 ): Prisma.AccountUncheckedUpdateInput {
@@ -226,7 +217,7 @@ function buildScheduleCreateData(
   };
 }
 
-// Function แปลง input แก้ไขตารางงานปัจจุบันเป็น Prisma update data
+// Function สร้าง schedule update data จาก DB
 function buildScheduleUpdateData(
   schedule: WorkScheduleUpdateInput
 ): Prisma.AccountUncheckedUpdateInput {
@@ -238,7 +229,7 @@ function buildScheduleUpdateData(
   };
 }
 
-// Function ตรวจว่า username ถูกใช้แล้วหรือไม่
+// Function จัดการ username exists จาก DB
 async function usernameExists(
   username: string,
   exceptAccountId?: number | string | null,
@@ -255,7 +246,7 @@ async function usernameExists(
   return Boolean(account);
 }
 
-// Function สร้าง account worker/admin ผ่าน repository facade
+// Function สร้าง create จาก DB
 async function create(
   account: AccountCreateInput,
   connection?: DbConnection
@@ -268,7 +259,7 @@ async function create(
   return requireMapped(mapAccount(createdAccount), "Account", "create");
 }
 
-// Function ดึงรายการ worker ตาม filter และ pagination
+// Function ดึงรายการ users จาก DB
 async function listUsers(
   filters: UserListFilters,
   connection?: DbConnection
@@ -291,7 +282,7 @@ async function listUsers(
   return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
 }
 
-// Function นับจำนวน worker ตาม filter
+// Function นับ users จาก DB
 async function countUsers(
   filters: UserListFilters,
   connection?: DbConnection
@@ -303,7 +294,7 @@ async function countUsers(
   });
 }
 
-// Function ค้นหา worker จาก username หรือ worker_code
+// Function ค้นหา user ตาม identifier จาก DB
 async function findUserByIdentifier(
   identifier: string,
   connection?: DbConnection
@@ -316,7 +307,7 @@ async function findUserByIdentifier(
   return mapAccount(account);
 }
 
-// Function อัปเดตข้อมูล account ของ worker
+// Function อัปเดต user account จาก DB
 async function updateUserAccount(
   id: number | string,
   fields: UserAccountUpdateInput,
@@ -333,7 +324,7 @@ async function updateUserAccount(
   return requireMapped(mapAccount(updatedAccount), "Account", "update");
 }
 
-// Function อัปเดต password hash ของ account
+// Function อัปเดต password จาก DB
 async function updatePassword(
   id: number | string,
   passwordHash: string,
@@ -352,7 +343,7 @@ async function updatePassword(
   return requireMapped(mapAccount(updatedAccount), "Account", "password update");
 }
 
-// Function อัปเดตสถานะ account
+// Function อัปเดต status จาก DB
 async function updateStatus(
   id: number | string,
   status: string,
@@ -371,7 +362,7 @@ async function updateStatus(
   return requireMapped(mapAccount(updatedAccount), "Account", "status update");
 }
 
-// Function ตรวจว่า worker code ถูกใช้แล้วหรือไม่
+// Function จัดการ WorkerCode exists จาก DB
 async function workerCodeExists(
   workerCode: string,
   exceptAccountId?: number | string | null,
@@ -397,6 +388,7 @@ async function workerCodeExists(
   return Boolean(account);
 }
 
+// Function จัดการ shirt number exists จาก DB
 async function shirtNumberExists(
   shirtNumber: string,
   exceptAccountId?: number | string | null,
@@ -422,7 +414,7 @@ async function shirtNumberExists(
   return Boolean(account);
 }
 
-// Function สร้าง profile ของ worker
+// Function สร้าง profile จาก DB
 async function createProfile(
   profile: ProfileCreateInput,
   connection?: DbConnection
@@ -440,7 +432,7 @@ async function createProfile(
   return requireMapped(mapProfile(updatedAccount), "Profile", "create");
 }
 
-// Function อัปเดต profile จาก account id
+// Function อัปเดต profile ตาม account ID จาก DB
 async function updateProfileByAccountId(
   accountId: number | string,
   profile: ProfileUpdateInput,
@@ -457,7 +449,7 @@ async function updateProfileByAccountId(
   return requireMapped(mapProfile(updatedAccount), "Profile", "update");
 }
 
-// Function สร้างตารางงานของ worker
+// Function สร้าง work schedule จาก DB
 async function createWorkSchedule(
   schedule: WorkScheduleCreateInput,
   connection?: DbConnection
@@ -473,7 +465,7 @@ async function createWorkSchedule(
   return requireMapped(mapSchedule(updatedAccount), "Schedule", "create");
 }
 
-// Function อัปเดตตารางงานปัจจุบันของ worker
+// Function อัปเดต current work schedule ตาม account ID จาก DB
 async function updateCurrentWorkScheduleByAccountId(
   accountId: number | string,
   schedule: WorkScheduleUpdateInput,
@@ -510,7 +502,7 @@ async function updateCurrentWorkScheduleByAccountId(
   return requireMapped(mapSchedule(updatedAccount), "Schedule", "update");
 }
 
-// Function ลบตารางงานอื่นของ worker โดยเก็บ schedule ที่ระบุไว้
+// Function ลบ other work schedules ตาม account ID จาก DB
 async function deleteOtherWorkSchedulesByAccountId(
   accountId: number | string,
   keepScheduleId: number | string,
@@ -534,6 +526,7 @@ async function deleteOtherWorkSchedulesByAccountId(
   });
 }
 
+// Function ลบ current work schedules ตาม account ID จาก DB
 async function deleteCurrentWorkSchedulesByAccountId(
   accountId: number | string,
   connection?: DbConnection
@@ -552,58 +545,6 @@ async function deleteCurrentWorkSchedulesByAccountId(
   });
 }
 
-// Function ดึงรายการตารางงานปัจจุบันของ worker ตาม pagination
-async function listWorkSchedulesByAccountId(
-  accountId: number | string,
-  filters: PaginationFilters,
-  connection?: DbConnection
-): Promise<WorkScheduleDto[]> {
-  const db = client(connection);
-  const account = await db.account.findFirst({
-    where: {
-      id: toAccountId(accountId),
-      role: WORKER_ROLE,
-      shiftNo: {
-        not: null,
-      },
-      shiftStartTime: {
-        not: null,
-      },
-      shiftEndTime: {
-        not: null,
-      },
-    },
-  });
-  const schedule = mapSchedule(account);
-
-  return schedule && filters.offset === 0 && filters.limit > 0 ? [schedule] : [];
-}
-
-// Function นับจำนวนตารางงานปัจจุบันของ worker
-async function countWorkSchedulesByAccountId(
-  accountId: number | string,
-  connection?: DbConnection
-): Promise<number> {
-  const db = client(connection);
-
-  return db.account.count({
-    where: {
-      id: toAccountId(accountId),
-      role: WORKER_ROLE,
-      shiftNo: {
-        not: null,
-      },
-      shiftStartTime: {
-        not: null,
-      },
-      shiftEndTime: {
-        not: null,
-      },
-    },
-  });
-}
-
-// Function รวม account repository ของ Admin Workers พร้อม method เฉพาะ worker
 const adminWorkersAccountRepository = {
   ...accountRepository,
   usernameExists,
@@ -616,7 +557,6 @@ const adminWorkersAccountRepository = {
   updateStatus,
 };
 
-// Function รวม profile repository ของ Admin Workers พร้อม method เฉพาะ worker profile
 const adminWorkersProfileRepository = {
   ...profileRepository,
   workerCodeExists,
@@ -625,15 +565,12 @@ const adminWorkersProfileRepository = {
   updateByAccountId: updateProfileByAccountId,
 };
 
-// Function รวม work schedule repository ของ Admin Workers พร้อม method จัดการ schedule
 const adminWorkersWorkScheduleRepository = {
   ...workScheduleRepository,
   create: createWorkSchedule,
   updateCurrentByAccountId: updateCurrentWorkScheduleByAccountId,
   deleteOtherByAccountId: deleteOtherWorkSchedulesByAccountId,
   deleteCurrentByAccountId: deleteCurrentWorkSchedulesByAccountId,
-  listByAccountId: listWorkSchedulesByAccountId,
-  countByAccountId: countWorkSchedulesByAccountId,
 };
 
 export {

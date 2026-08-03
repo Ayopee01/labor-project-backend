@@ -1,4 +1,6 @@
-// Config หน่วยเวลาเทียบเป็นวินาทีสำหรับแปลง duration ของ token
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config หน่วยเวลาที่รองรับสำหรับแปลงค่าอายุ token จาก env
 const TIME_UNIT_SECONDS = {
   s: 1,
   m: 60,
@@ -6,13 +8,13 @@ const TIME_UNIT_SECONDS = {
   d: 24 * 60 * 60,
 } as const;
 
-// Type ส่วนหน่วยเวลา duration ที่ auth config รองรับ
+// Type หน่วยเวลาที่ระบบ auth รองรับ
 type DurationUnit = keyof typeof TIME_UNIT_SECONDS;
 
-// Format ตัวเลขตามด้วยหน่วยเวลา ถ้าไม่ใส่หน่วยจะถือว่าเป็นวินาที
+// Config รูปแบบ duration เช่น 15m, 7d หรือเลขวินาที
 const DURATION_PATTERN = /^(\d+)([smhd])?$/;
 
-// Config ค่า default ของ token และ session ในระบบ auth
+// Config ค่า default ของ token และ session เมื่อไม่ได้กำหนดผ่าน env
 export const AUTH_DEFAULTS = {
   accessTokenExpiresIn: "15m",
   accessTokenExpiresInSeconds: 15 * TIME_UNIT_SECONDS.m,
@@ -21,7 +23,9 @@ export const AUTH_DEFAULTS = {
   sessionExpiresInMilliseconds: 7 * TIME_UNIT_SECONDS.d * 1000,
 } as const;
 
-// Function แปลงค่าเวลาเป็นวินาทีสำหรับ config ของ auth
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function แปลงค่า duration เป็นวินาที และใช้ fallback เมื่อรูปแบบไม่ถูกต้อง
 function parseDurationSeconds(
   value: string | number | undefined,
   fallbackSeconds: number
@@ -46,7 +50,7 @@ function parseDurationSeconds(
   return durationAmount * TIME_UNIT_SECONDS[durationUnit];
 }
 
-// Function อ่านอายุ access token จาก env และ fallback เป็นค่า default
+// Function อ่านอายุ access token จาก env เป็นวินาทีสำหรับ response และ logic auth
 export function getAccessTokenExpiresInSeconds(): number {
   return parseDurationSeconds(
     process.env.JWT_ACCESS_EXPIRES_IN,

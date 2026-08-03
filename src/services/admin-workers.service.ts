@@ -1,14 +1,14 @@
 import { withTransaction } from "../db/prisma";
 import { enqueueWorker, getWorkerBreakCount, getWorkerPresence, getWorkerPresences, getWorkerQueueStatus, getWorkerQueueStatuses, getWorkerReadyQueueRanks, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, removeWorkerBreakReturn, scheduleWorkerBreakReturn } from "../queues/worker-queue";
 import { accountRepository, profileRepository, sessionRepository, workScheduleRepository } from "../repositories/admin-workers.repository";
-import * as workerApplicationRepository from "../repositories/worker-application.repository";
+import * as workerApplicationRepository from "../repositories/worker.repository";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import { getRuntimeSettings } from "./admin-settings.service";
-import { publishNotification } from "./notifications.service";
+import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { DbConnection } from "../types/common.type";
-import type { AccountDto, AdminWorkerBoardStatus, AdminWorkerStatusItem, PaginationFilters, PaginationMeta, ProfileDto, ProfileUpdateInput, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
+import type { DbConnection } from "../types/shared/common.type";
+import type { AccountDto, AdminWorkerBoardStatus, AdminWorkerStatusItem, PaginationMeta, ProfileDto, ProfileUpdateInput, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import type { VehicleJobAssignmentDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
 import { parseWithSchema } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
@@ -19,10 +19,12 @@ import { buildDeadline, formatBangkokDate } from "../utils/time";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 import { buildWorkerCode } from "../utils/worker-code";
 import { resolveWorkerWorkStatus } from "../utils/worker-status";
+import { ASSIGNMENT_STATUS } from "../constants/job-status";
+import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้าง payload assignment ปัจจุบันสำหรับ Admin worker status
+// Function สร้าง worker assignment socket payload ใน service flow
 async function buildWorkerAssignmentSocketPayload(
   assignment: VehicleJobAssignmentDto | null
 ) {
@@ -45,7 +47,7 @@ async function buildWorkerAssignmentSocketPayload(
   };
 }
 
-// Function ค้นหา account ประเภท user และโยน error หากไม่พบ
+// Function ตรวจสอบและดึง user account ใน service flow
 async function requireUserAccount(
   id: number | string,
   connection?: DbConnection
@@ -62,12 +64,12 @@ async function requireUserAccount(
   return account;
 }
 
-// Function ดึง id ของผู้ใช้งานที่เป็นผู้ทำรายการ
+// Function ดึง actor ID ใน service flow
 function getActorId(auth?: AccessTokenPayload): number | null {
   return auth?.account_id ?? null;
 }
 
-// Function สร้างข้อมูล pagination สำหรับ response แบบ list
+// Function สร้าง pagination meta ใน service flow
 function buildPaginationMeta(
   page: number,
   limit: number,
@@ -81,7 +83,7 @@ function buildPaginationMeta(
   };
 }
 
-// Function จัดรูปแบบตารางงานแบบย่อสำหรับหน้า list ให้ไม่ส่ง field ภายในที่ UI ไม่ต้องใช้
+// Function จัดรูปแบบ user list schedule ใน service flow
 function formatUserListSchedule(
   schedule: WorkScheduleWithShiftDto | null
 ): UserListSchedule | null {
@@ -97,7 +99,7 @@ function formatUserListSchedule(
   };
 }
 
-// Function จัดรูปแบบข้อมูล user สำหรับหน้า list
+// Function จัดรูปแบบ user list item ใน service flow
 async function formatUserListItem(
   account: AccountDto,
   connection?: DbConnection
@@ -120,7 +122,7 @@ async function formatUserListItem(
   };
 }
 
-// Function จัดรูปแบบข้อมูล user แบบละเอียด
+// Function จัดรูปแบบ user detail ใน service flow
 async function formatUserDetail(
   account: AccountDto,
   connection?: DbConnection
@@ -153,7 +155,7 @@ async function formatUserDetail(
   };
 }
 
-// Function ตรวจสอบ username ว่ายังไม่ถูกใช้งาน
+// Function ตรวจสอบเงื่อนไข username available ใน service flow
 async function assertUsernameAvailable(
   username: string,
   exceptAccountId?: number | null,
@@ -174,7 +176,7 @@ async function assertUsernameAvailable(
   }
 }
 
-// Function ตรวจสอบ worker code ว่ายังไม่ถูกใช้งาน
+// Function ตรวจสอบเงื่อนไข WorkerCode available ใน service flow
 async function assertWorkerCodeAvailable(
   workerCode: string,
   exceptAccountId?: number | null,
@@ -195,6 +197,7 @@ async function assertWorkerCodeAvailable(
   }
 }
 
+// Function ตรวจสอบเงื่อนไข shirt number available ใน service flow
 async function assertShirtNumberAvailable(
   shirtNumber: string,
   exceptAccountId?: number | null,
@@ -215,7 +218,7 @@ async function assertShirtNumberAvailable(
   }
 }
 
-// Function ยกเลิก session ที่ยัง active ของ user
+// Function เพิกถอน user sessions ใน service flow
 async function revokeUserSessions(
   accountId: number,
   connection?: DbConnection
@@ -223,12 +226,12 @@ async function revokeUserSessions(
   await sessionRepository.revokeActiveByAccountId(accountId, connection);
 }
 
-// Function ตรวจสอบว่า profile body มี field ที่ต้อง update หรือไม่
+// Function ตรวจว่า profile updates ใน service flow
 function hasProfileUpdates(profile: object): boolean {
   return Object.keys(profile).length > 0;
 }
 
-// Function สร้าง user พร้อม profile และ schedule เริ่มต้น
+// Function สร้าง user ใน service flow
 export async function createUser(body: unknown, auth?: AccessTokenPayload) {
   const {
     username: requestedUsername,
@@ -310,7 +313,7 @@ export async function createUser(body: unknown, auth?: AccessTokenPayload) {
   });
 }
 
-// Function ดึงรายการ user พร้อม pagination และ filter
+// Function ดึงรายการ users ใน service flow
 export async function listUsers(
   query: Record<string, unknown> = {},
   _auth?: AccessTokenPayload
@@ -337,14 +340,14 @@ export async function listUsers(
   };
 }
 
-// Function ดึงข้อมูล user รายคน
+// Function ดึง user ใน service flow
 export async function getUser(id: number | string, _auth?: AccessTokenPayload) {
   const account = await requireUserAccount(id);
 
   return formatUserDetail(account);
 }
 
-// Function update ข้อมูล user รวมถึง profile และ schedule
+// Function อัปเดต user ใน service flow
 export async function updateUser(
   id: number | string,
   body: unknown,
@@ -537,7 +540,7 @@ export async function updateUser(
   });
 }
 
-// Function reset password และบังคับ logout session เดิม
+// Function รีเซ็ต password ใน service flow
 export async function resetPassword(
   id: number | string,
   body: unknown,
@@ -564,9 +567,7 @@ export async function resetPassword(
   });
 }
 
-// Function สร้างเวลา deadline จากเวลาปัจจุบัน
-// Function สรุปจำนวน worker ตามสถานะ queue และ heartbeat
-// Function เลือกเวลาล่าสุดจาก timestamp ใน flow การทำงานของ worker
+// Function จัดการ latest timestamp ใน service flow
 function latestTimestamp(values: Array<string | null | undefined>): string | null {
   const timestamps = values
     .filter((value): value is string => Boolean(value))
@@ -580,16 +581,15 @@ function latestTimestamp(values: Array<string | null | undefined>): string | nul
   return new Date(Math.max(...timestamps)).toISOString();
 }
 
-// Function แปลง queue/assignment status เป็น column สำหรับหน้าเข้าคิวแรงงาน
-// Function หาเวลาล่าสุดของขั้นตอนปัจจุบัน เช่น เข้าแอป เข้าคิว รับงาน สแกน QR หรือพัก
-const ADMIN_WORKER_STATUS_ORDER = {
-  open_app: 0,
-  ready: 1,
-  assigned: 2,
-  working: 3,
-  break: 4,
-} as const;
+const ADMIN_WORKER_STATUS_ORDER: Record<AdminWorkerBoardStatus, number> = {
+  [WORKER_WORK_STATUS.OPEN_APP]: 0,
+  [WORKER_WORK_STATUS.READY]: 1,
+  [WORKER_WORK_STATUS.ASSIGNED]: 2,
+  [WORKER_WORK_STATUS.WORKING]: 3,
+  [WORKER_WORK_STATUS.BREAK]: 4,
+};
 
+// Function จัดการ timestamp เป็น sort value ใน service flow
 function timestampToSortValue(value: string | null): number {
   if (!value) {
     return Number.POSITIVE_INFINITY;
@@ -600,31 +600,33 @@ function timestampToSortValue(value: string | null): number {
   return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
 }
 
+// Function ค้นหาหรือตัดสิน status entered at ใน service flow
 function resolveStatusEnteredAt(
   status: AdminWorkerBoardStatus,
   queue: WorkerQueueEntryDto | null,
   assignment: VehicleJobAssignmentDto | null,
   presence: WorkerPresenceDto
 ): string | null {
-  if (status === "ready") {
+  if (status === WORKER_WORK_STATUS.READY) {
     return queue?.ready_at ?? queue?.updated_at ?? presence.last_seen_at;
   }
 
-  if (status === "assigned") {
+  if (status === WORKER_WORK_STATUS.ASSIGNED) {
     return assignment?.accepted_at ?? assignment?.created_at ?? queue?.updated_at ?? presence.last_seen_at;
   }
 
-  if (status === "working") {
+  if (status === WORKER_WORK_STATUS.WORKING) {
     return assignment?.scanned_at ?? assignment?.updated_at ?? assignment?.accepted_at ?? queue?.updated_at ?? presence.last_seen_at;
   }
 
-  if (status === "break") {
+  if (status === WORKER_WORK_STATUS.BREAK) {
     return queue?.updated_at ?? presence.last_seen_at;
   }
 
   return queue?.updated_at ?? presence.last_seen_at;
 }
 
+// Function จัดการ compare admin worker status items ใน service flow
 function compareAdminWorkerStatusItems(
   left: AdminWorkerStatusItem,
   right: AdminWorkerStatusItem
@@ -636,7 +638,7 @@ function compareAdminWorkerStatusItems(
     return statusOrderDiff;
   }
 
-  if (left.status === "ready" && right.status === "ready") {
+  if (left.status === WORKER_WORK_STATUS.READY && right.status === WORKER_WORK_STATUS.READY) {
     const leftQueuePosition = left.queue_position ?? Number.POSITIVE_INFINITY;
     const rightQueuePosition = right.queue_position ?? Number.POSITIVE_INFINITY;
 
@@ -656,6 +658,7 @@ function compareAdminWorkerStatusItems(
   return String(left.worker_code ?? "").localeCompare(String(right.worker_code ?? ""));
 }
 
+// Function ค้นหาหรือตัดสิน latest activity at ใน service flow
 function resolveLatestActivityAt(
   queue: WorkerQueueEntryDto | null,
   assignment: VehicleJobAssignmentDto | null,
@@ -673,14 +676,14 @@ function resolveLatestActivityAt(
     ]);
   }
 
-  if (queue?.status === "ready") {
+  if (queue?.status === WORKER_WORK_STATUS.READY) {
     return latestTimestamp([queue.ready_at, queue.updated_at, presence.last_seen_at]);
   }
 
   return latestTimestamp([queue?.updated_at, presence.last_seen_at]);
 }
 
-// Function จัดรูปแบบ worker status item สำหรับ board โดยไม่ส่ง account/profile ดิบ
+// Function จัดรูปแบบ admin worker status item ใน service flow
 function formatAdminWorkerStatusItem(
   account: AccountDto,
   profile: ProfileDto | null,
@@ -688,7 +691,8 @@ function formatAdminWorkerStatusItem(
   queue: WorkerQueueEntryDto | null,
   assignment: VehicleJobAssignmentDto | null,
   presence: WorkerPresenceDto,
-  queueRank: number | null = null
+  queueRank: number | null = null,
+  socketConnected = isWorkerSocketConnected(account.id)
 ): AdminWorkerStatusItem {
   const scheduleWithShift = formatScheduleWithShift(schedule);
   const status = resolveWorkerWorkStatus(queue, assignment);
@@ -701,12 +705,13 @@ function formatAdminWorkerStatusItem(
     shift_name: scheduleWithShift?.shift_name ?? null,
     latest_activity_at: resolveLatestActivityAt(queue, assignment, presence),
     status_entered_at: resolveStatusEnteredAt(status, queue, assignment, presence),
-    queue_position: status === "ready" && queueRank !== null ? queueRank + 1 : null,
+    queue_position: status === WORKER_WORK_STATUS.READY && queueRank !== null ? queueRank + 1 : null,
+    socket_connected: socketConnected,
     status,
   };
 }
 
-// Function สรุปจำนวน worker ในแต่ละสถานะสำหรับหน้า Admin worker board
+// Function สร้าง admin worker status summary ใน service flow
 function buildAdminWorkerStatusSummary(items: AdminWorkerStatusItem[]): {
   total: number;
   open_app: number;
@@ -718,15 +723,15 @@ function buildAdminWorkerStatusSummary(items: AdminWorkerStatusItem[]): {
   return items.reduce(
     (summary, item) => {
       summary.total += 1;
-      if (item.status === "open_app") {
+      if (item.status === WORKER_WORK_STATUS.OPEN_APP) {
         summary.open_app += 1;
-      } else if (item.status === "ready") {
+      } else if (item.status === WORKER_WORK_STATUS.READY) {
         summary.ready += 1;
-      } else if (item.status === "assigned") {
+      } else if (item.status === WORKER_WORK_STATUS.ASSIGNED) {
         summary.assigned += 1;
-      } else if (item.status === "working") {
+      } else if (item.status === WORKER_WORK_STATUS.WORKING) {
         summary.working += 1;
-      } else if (item.status === "break") {
+      } else if (item.status === WORKER_WORK_STATUS.BREAK) {
         summary.break += 1;
       }
 
@@ -743,8 +748,8 @@ function buildAdminWorkerStatusSummary(items: AdminWorkerStatusItem[]): {
   );
 }
 
-// Function ให้ Admin ดูสถานะ worker รายคน
-export async function getAdminWorkerStatus(idParam: unknown): Promise<AdminWorkerStatusItem> {
+// Function ดึง admin worker status ใน service flow
+async function getAdminWorkerStatus(idParam: unknown): Promise<AdminWorkerStatusItem> {
   const account = await requireUserAccount(
     typeof idParam === "number" ? idParam : String(idParam)
   );
@@ -765,11 +770,12 @@ export async function getAdminWorkerStatus(idParam: unknown): Promise<AdminWorke
     queueEntry,
     assignment,
     presence,
-    queueRanks.get(account.id) ?? null
+    queueRanks.get(account.id) ?? null,
+    isWorkerSocketConnected(account.id)
   );
 }
 
-// Function ให้ Admin ดูสถานะ worker ทั้งหมด
+// Function ดึงรายการ admin worker statuses ใน service flow
 export async function listAdminWorkerStatuses(): Promise<{
   summary: ReturnType<typeof buildAdminWorkerStatusSummary>;
   data: AdminWorkerStatusItem[];
@@ -815,27 +821,41 @@ export async function listAdminWorkerStatuses(): Promise<{
           stale_after_seconds: settings.worker_presence_stale_seconds,
         };
 
+      const queue = queueStatuses.get(account.id) ?? null;
+      const assignment = assignmentMap.get(account.id) ?? null;
+      const socketConnected = isWorkerSocketConnected(account.id);
+
       return {
         account,
+        assignment,
         presence,
+        queue,
         schedule,
         item: formatAdminWorkerStatusItem(
           account,
           profileMap.get(account.id) ?? null,
           schedule,
-          queueStatuses.get(account.id) ?? null,
-          assignmentMap.get(account.id) ?? null,
+          queue,
+          assignment,
           presence,
-          queueRanks.get(account.id) ?? null
+          queueRanks.get(account.id) ?? null,
+          socketConnected
         ),
       };
     })
-    .filter(({ account, presence, schedule }) =>
-      account.status === "active" &&
-      presence.is_online &&
-      schedule !== null &&
-      isTimeInWorkSchedule(schedule)
-    )
+    .filter(({ account, assignment, presence, queue, schedule }) => {
+      const hasVisibleWorkerFlow =
+        presence.is_online ||
+        assignment !== null ||
+        (queue !== null && queue.status !== WORKER_WORK_STATUS.OPEN_APP);
+
+      return (
+        account.status === "active" &&
+        hasVisibleWorkerFlow &&
+        schedule !== null &&
+        isTimeInWorkSchedule(schedule)
+      );
+    })
     .map(({ item }) => item)
     .sort(compareAdminWorkerStatusItems);
 
@@ -845,7 +865,7 @@ export async function listAdminWorkerStatuses(): Promise<{
   };
 }
 
-// Function ให้ Admin บังคับสถานะ worker เมื่อ worker ติดต่อให้ช่วยจัดการ
+// Function จัดการ force admin worker status ใน service flow
 export async function forceAdminWorkerStatus(
   idParam: unknown,
   body: unknown
@@ -881,7 +901,7 @@ export async function forceAdminWorkerStatus(
 
   if (
     currentAssignment &&
-    !(input.status === "ready" && currentAssignment.status === "DELIVERED")
+    !(input.status === WORKER_WORK_STATUS.READY && currentAssignment.status === ASSIGNMENT_STATUS.DELIVERED)
   ) {
     throw new ApiError(
       409,
@@ -890,20 +910,20 @@ export async function forceAdminWorkerStatus(
     );
   }
 
-  if (queueEntry?.status === "break" && currentSchedule) {
+  if (queueEntry?.status === WORKER_WORK_STATUS.BREAK && currentSchedule) {
     await removeWorkerBreakReturn(account.id, currentSchedule.id);
   }
 
-  if (input.status === "ready") {
+  if (input.status === WORKER_WORK_STATUS.READY) {
     await enqueueWorker(account.id);
     await dispatchReadyWorkers();
   }
 
-  if (input.status === "open_app") {
+  if (input.status === WORKER_WORK_STATUS.OPEN_APP) {
     await markWorkerOpenApp(account.id);
   }
 
-  if (input.status === "break") {
+  if (input.status === WORKER_WORK_STATUS.BREAK) {
     if (!currentSchedule) {
       throw new ApiError(
         403,
@@ -912,7 +932,7 @@ export async function forceAdminWorkerStatus(
       );
     }
 
-    if (queueEntry?.status !== "break") {
+    if (queueEntry?.status !== WORKER_WORK_STATUS.BREAK) {
       const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
       const currentBreakCount = await getWorkerBreakCount(
         account.id,
@@ -957,22 +977,15 @@ export async function forceAdminWorkerStatus(
     current_assignment: latestAssignmentPayload,
     reason: "admin_force_status",
   });
-  publishNotification({
-    type: "WORKER_STATUS_CHANGED",
+  publishAdminWorkerStatusChanged({
     title: "Worker status forced",
     message: `Worker ${account.full_name} status was forced by admin.`,
-    payload: {
-      worker_code: latest.worker_code,
-      queue: buildWorkerQueueSocketPayload(
-        latestQueue,
-        latest.worker_code,
-        latestAssignment
-      ),
+    workerCode: latest.worker_code,
+    queue: latestQueue,
+    assignment: latestAssignment,
+    reason: "admin_force_status",
+    extraPayload: {
       current_assignment: latestAssignmentPayload,
-      reason: "admin_force_status",
-    },
-    audience: {
-      roles: ["admin"],
     },
   });
 

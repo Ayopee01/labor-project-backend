@@ -1,25 +1,25 @@
-// import Library
+// Import Library
 import { randomBytes } from "crypto";
 
-// import
+// Import Dependencies
 import { prisma } from "../../db/prisma";
 
-// import Types
-import type { DbConnection } from "../../types/common.type";
+// Import Types
+import type { DbConnection } from "../../types/shared/common.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เลือก prisma client ปกติ หรือ transaction client ที่ส่งเข้ามา
+// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
 export function client(connection?: DbConnection): DbConnection {
   return connection ?? prisma;
 }
 
-// Function แปลง id จาก path/body ให้เป็น number ก่อนส่งเข้า Prisma
+// Function แปลง id เป็น number สำหรับ query DB
 export function toId(id: number | string): number {
   return Number(id);
 }
 
-// Function ตรวจผลลัพธ์หลัง map DTO เพื่อให้ error pattern ของ repository เหมือนกัน
+// Function ตรวจสอบและดึง mapped จาก DB
 export function requireMapped<T>(
   record: T | null | undefined,
   subject: string,
@@ -32,12 +32,12 @@ export function requireMapped<T>(
   return record;
 }
 
-// Function สร้าง token แบบสุ่มสำหรับ QR และ session
+// Function สร้าง random token จาก DB
 export function createRandomToken(prefix: string): string {
   return `${prefix}_${randomBytes(24).toString("hex")}`;
 }
 
-// Function ตรวจว่า mapper คืนค่า DTO หลังอ่านข้อมูลที่ต้องมี
+// Function ตรวจสอบและดึง DTO จาก DB
 export function requireDto<TDto>(value: TDto | null, name: string): TDto {
   if (!value) {
     throw new Error(`${name} did not return a record.`);
@@ -46,7 +46,7 @@ export function requireDto<TDto>(value: TDto | null, name: string): TDto {
   return value;
 }
 
-// Function สร้างข้อมูลสำหรับ revoke session ให้ใช้ logic เดียวกันทุก repository
+// Function สร้าง revoke data จาก DB
 export function buildRevokeData(): {
   isActive: false;
   revokedAt: Date;

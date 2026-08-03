@@ -1,40 +1,38 @@
-// import Library
+// Import Library
 import { prisma } from "../../db/prisma";
 
-// import Mapper
+// Import Mappers
 import { mapAccount, sanitizeAccount } from "./mappers";
 import { requireMapped } from "./repository-utils";
 
-// import Types
-import type { DbConnection } from "../../types/common.type";
+// Import Types
+import type { DbConnection } from "../../types/shared/common.type";
 import type { AccountDto } from "../../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config role worker สำหรับ query account ฝั่ง worker
 const WORKER_ROLE = "worker";
 
-// Config role admin สำหรับ query account ฝั่ง admin
 const ADMIN_ROLE = "admin";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เลือก prisma client ปกติหรือ transaction client ที่ส่งเข้ามา
+// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
 function client(connection?: DbConnection): DbConnection {
   return connection ?? prisma;
 }
 
-// Function แปลง account id จาก path/string ให้เป็น number สำหรับ Prisma query
+// Function แปลง id เป็น account id แบบ number สำหรับ query DB
 function toAccountId(id: number | string): number {
   return Number(id);
 }
 
-// Function ตรวจว่า account DTO ไม่ใช่ null เพื่อใช้ filter list response
+// Function ตรวจว่า account DTO จาก DB
 function isAccountDto(account: AccountDto | null): account is AccountDto {
   return account !== null;
 }
 
-// Function ค้นหา account จาก id โดยไม่จำกัด role ใช้ร่วมกับ Auth และ flow ที่ต้องอ่าน account ตรง ๆ
+// Function ค้นหา ตาม ID จาก DB
 export async function findById(
   id: number | string,
   connection?: DbConnection
@@ -49,7 +47,7 @@ export async function findById(
   return mapAccount(account);
 }
 
-// Function ค้นหา account role worker ใช้ร่วมกับ Admin Jobs และ Worker Application
+// Function ค้นหา user ตาม ID จาก DB
 export async function findUserById(
   id: number | string,
   connection?: DbConnection
@@ -65,7 +63,7 @@ export async function findUserById(
   return mapAccount(account);
 }
 
-// Function ดึง admin ทั้งหมด ใช้กับ audience ของ Admin Jobs และ Worker Application
+// Function ดึงรายการ admins จาก DB
 export async function listAdmins(connection?: DbConnection): Promise<AccountDto[]> {
   const db = client(connection);
   const accounts = await db.account.findMany({
@@ -80,7 +78,7 @@ export async function listAdmins(connection?: DbConnection): Promise<AccountDto[
   return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
 }
 
-// Function ดึง worker ทั้งหมด ใช้กับ Admin/Worker status summary
+// Function อัปเดต password จาก DB
 export async function updatePassword(
   id: number | string,
   passwordHash: string,
@@ -99,6 +97,7 @@ export async function updatePassword(
   return requireMapped(mapAccount(updatedAccount), "Account", "password update");
 }
 
+// Function อัปเดต status จาก DB
 export async function updateStatus(
   id: number | string,
   status: string,
@@ -117,6 +116,7 @@ export async function updateStatus(
   return requireMapped(mapAccount(updatedAccount), "Account", "status update");
 }
 
+// Function ดึงรายการ all users จาก DB
 export async function listAllUsers(connection?: DbConnection): Promise<AccountDto[]> {
   const db = client(connection);
   const accounts = await db.account.findMany({

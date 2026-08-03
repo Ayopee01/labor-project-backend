@@ -1,6 +1,6 @@
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เช็คค่า env ว่ามีหรือไม่ ถ้าไม่มีให้ throw error
+// Function จัดการ required env จาก config/env
 function requiredEnv(name: string): string {
   const value = process.env[name];
 
@@ -11,7 +11,7 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-// Function ดึงค่า env แบบ number และตรวจว่าเป็นตัวเลขถูกต้อง
+// Function จัดการ required number env จาก config/env
 function requiredNumberEnv(name: string): number {
   const value = requiredEnv(name);
   const numberValue = Number(value);
@@ -25,7 +25,6 @@ function requiredNumberEnv(name: string): number {
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config การเชื่อมต่อ Redis สำหรับ queue ชั่วคราวและ BullMQ
 export const REDIS_CONFIG = {
   url: requiredEnv("REDIS_URL"),
   workerQueueKey: requiredEnv("REDIS_WORKER_QUEUE_KEY"),

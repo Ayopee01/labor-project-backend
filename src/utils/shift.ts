@@ -1,13 +1,11 @@
-// import
-import type { WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
+// Import Dependencies
+import type { ShiftWaitInfo, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import ApiError from "./api-error";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config ชื่อกะสำหรับช่วงเช้า
 const MORNING_SHIFT = "Morning shift";
 
-// Config ชื่อกะสำหรับช่วงกลางคืน
 const NIGHT_SHIFT = "Evening shift";
 
 const SHIFT_PRESETS = {
@@ -25,10 +23,8 @@ const SHIFT_PRESETS = {
   },
 } as const;
 
-// Config timezone กลางที่ใช้คำนวณกะงานและเวลา server
 const BANGKOK_TIME_ZONE = "Asia/Bangkok";
 
-// Config formatter เวลา Bangkok แบบ HH:mm
 const bangkokTimeFormatter = new Intl.DateTimeFormat("en-GB", {
   timeZone: BANGKOK_TIME_ZONE,
   hour: "2-digit",
@@ -36,7 +32,6 @@ const bangkokTimeFormatter = new Intl.DateTimeFormat("en-GB", {
   hourCycle: "h23",
 });
 
-// Config formatter วันที่ Bangkok แบบ YYYY-MM-DD
 const bangkokDateFormatter = new Intl.DateTimeFormat("en-GB", {
   timeZone: BANGKOK_TIME_ZONE,
   year: "numeric",
@@ -44,19 +39,9 @@ const bangkokDateFormatter = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
 });
 
-// Type ส่วนข้อมูลที่ส่งกลับเมื่อ worker ยังไม่ถึงเวลาเข้ากะ
-export type ShiftWaitInfo = {
-  shift: {
-    name: string;
-    start_time: string;
-    end_time: string;
-  };
-  remaining_time: string;
-};
-
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function แปลงเวลา HH:mm เป็นจำนวนนาทีตั้งแต่ 00:00 และคืน null ถ้าเวลาไม่ถูกต้อง
+// Function อ่านค่า time เป็น minutes สำหรับ helper กลาง
 function parseTimeToMinutes(value: unknown): number | null {
   if (typeof value !== "string") {
     return null;
@@ -74,7 +59,7 @@ function parseTimeToMinutes(value: unknown): number | null {
   return hours * 60 + minutes;
 }
 
-// Function แปลงเวลา Date เป็นจำนวนนาทีตั้งแต่ 00:00 ของเวลาในเขตเวลา Bangkok
+// Function ดึง bangkok time เป็น minutes สำหรับ helper กลาง
 function getBangkokTimeToMinutes(value: Date): number {
   const parts = bangkokTimeFormatter.formatToParts(value);
   const hour = Number(parts.find((part) => part.type === "hour")?.value);
@@ -83,7 +68,7 @@ function getBangkokTimeToMinutes(value: Date): number {
   return hour * 60 + minute;
 }
 
-// Function format วันที่ตามเขตเวลา Bangkok เป็น YYYY-MM-DD
+// Function ดึง bangkok date string สำหรับ helper กลาง
 function getBangkokDateString(value: Date): string {
   const parts = bangkokDateFormatter.formatToParts(value);
   const year = parts.find((part) => part.type === "year")?.value;
@@ -93,7 +78,7 @@ function getBangkokDateString(value: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// Function บวก/ลบวันจาก date string แบบ YYYY-MM-DD
+// Function จัดการ add days เป็น date string สำหรับ helper กลาง
 function addDaysToDateString(date: string, days: number): string {
   const [year, month, day] = date.split("-").map(Number);
   const next = new Date(Date.UTC(year, month - 1, day + days));
@@ -105,7 +90,7 @@ function addDaysToDateString(date: string, days: number): string {
   ].join("-");
 }
 
-// Function สร้าง key ของกะงานเพื่อใช้ reset counter ตามกะจริงแม้กะข้ามวัน
+// Function สร้าง work schedule shift instance key สำหรับ helper กลาง
 export function buildWorkScheduleShiftInstanceKey(
   schedule: WorkScheduleDto,
   value: Date = new Date()
@@ -121,7 +106,8 @@ export function buildWorkScheduleShiftInstanceKey(
   return `${shiftStartDate}:${schedule.shift_start_time}-${schedule.shift_end_time}`;
 }
 
-export function getWorkScheduleShiftEndAt(
+// Function ดึง work schedule shift end at สำหรับ helper กลาง
+function getWorkScheduleShiftEndAt(
   schedule: WorkScheduleDto,
   value: Date = new Date()
 ): Date {
@@ -140,6 +126,7 @@ export function getWorkScheduleShiftEndAt(
   return new Date(`${shiftEndDate}T${schedule.shift_end_time}:00.000+07:00`);
 }
 
+// Function ดึง work schedule shift end delay ms สำหรับ helper กลาง
 export function getWorkScheduleShiftEndDelayMs(
   schedule: WorkScheduleDto,
   value: Date = new Date()
@@ -147,7 +134,7 @@ export function getWorkScheduleShiftEndDelayMs(
   return Math.max(0, getWorkScheduleShiftEndAt(schedule, value).getTime() - value.getTime());
 }
 
-// Function แปลงจำนวนนาทีที่เหลือเป็นข้อความภาษาไทย
+// Function จัดรูปแบบ remaining time สำหรับ helper กลาง
 function formatRemainingTime(totalMinutes: number): string {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
@@ -164,7 +151,7 @@ function formatRemainingTime(totalMinutes: number): string {
   return textParts.join(" ");
 }
 
-// Function แปลง WorkScheduleDto เป็น object ที่มี startMinutes และ endMinutes
+// Function อ่านค่า schedule time range สำหรับ helper กลาง
 function parseScheduleTimeRange(schedule: WorkScheduleDto): {
   startMinutes: number;
   endMinutes: number;
@@ -186,7 +173,7 @@ function parseScheduleTimeRange(schedule: WorkScheduleDto): {
   };
 }
 
-// Function คำนวณชื่อกะจากเวลาเริ่มงาน
+// Function จัดการ calculate shift name สำหรับ helper กลาง
 export function calculateShiftName(
   shiftStartTime: string,
   shiftEndTime?: string
@@ -221,6 +208,7 @@ export function calculateShiftName(
   return MORNING_SHIFT;
 }
 
+// Function ค้นหาหรือตัดสิน shift no จาก start time สำหรับ helper กลาง
 export function resolveShiftNoFromStartTime(shiftStartTime: string): 1 | 2 {
   const startMinutes = parseTimeToMinutes(shiftStartTime);
 
@@ -235,6 +223,7 @@ export function resolveShiftNoFromStartTime(shiftStartTime: string): 1 | 2 {
   return startMinutes >= 18 * 60 ? 2 : 1;
 }
 
+// Function ค้นหาหรือตัดสิน shift preset สำหรับ helper กลาง
 export function resolveShiftPreset(shiftNo: number): {
   shift_no: 1 | 2;
   shift_start_time: string;
@@ -252,15 +241,7 @@ export function resolveShiftPreset(shiftNo: number): {
   return SHIFT_PRESETS[shiftNo];
 }
 
-export function calculateShiftNameByNo(
-  shiftNo: number,
-  shiftStartTime: string,
-  shiftEndTime?: string
-): string {
-  return calculateShiftName(shiftStartTime, shiftEndTime);
-}
-
-// Function จัดรูป work schedule พร้อมชื่อกะจากเวลาเริ่มและจบงาน
+// Function จัดรูปแบบ schedule พร้อม shift สำหรับ helper กลาง
 export function formatScheduleWithShift(
   schedule: WorkScheduleDto | null
 ): WorkScheduleWithShiftDto | null {
@@ -270,23 +251,14 @@ export function formatScheduleWithShift(
 
   return {
     ...schedule,
-    shift_name: calculateShiftNameByNo(
-      schedule.shift_no,
+    shift_name: calculateShiftName(
       schedule.shift_start_time,
       schedule.shift_end_time
     ),
   };
 }
 
-export function formatSchedulesWithShift(
-  schedules: WorkScheduleDto[]
-): WorkScheduleWithShiftDto[] {
-  return schedules
-    .map((schedule) => formatScheduleWithShift(schedule))
-    .filter((schedule): schedule is WorkScheduleWithShiftDto => schedule !== null);
-}
-
-// Function ตรวจว่าเวลาที่ส่งมาอยู่ในช่วงกะของ schedule หรือไม่ รองรับกะข้ามวัน
+// Function ตรวจว่า time ใน work schedule สำหรับ helper กลาง
 export function isTimeInWorkSchedule(
   schedule: WorkScheduleDto,
   value: Date = new Date()
@@ -301,6 +273,7 @@ export function isTimeInWorkSchedule(
   return currentMinutes >= startMinutes && currentMinutes < endMinutes;
 }
 
+// Function ค้นหา active work schedule สำหรับ helper กลาง
 export function findActiveWorkSchedule(
   schedules: WorkScheduleDto[],
   value: Date = new Date()
@@ -308,6 +281,7 @@ export function findActiveWorkSchedule(
   return schedules.find((schedule) => isTimeInWorkSchedule(schedule, value)) ?? null;
 }
 
+// Function ค้นหา next work schedule สำหรับ helper กลาง
 export function findNextWorkSchedule(
   schedules: WorkScheduleDto[],
   value: Date = new Date()
@@ -328,10 +302,7 @@ export function findNextWorkSchedule(
   })[0];
 }
 
-// Function alias เดิมสำหรับตรวจวันที่ใน schedule โดยใช้ logic เดียวกับเวลากะ
-export const isDateInWorkSchedule = isTimeInWorkSchedule;
-
-// Function สร้าง response ย่อเมื่อ worker online นอกเวลางาน พร้อมชื่อกะและเวลาที่เหลือ
+// Function สร้าง shift wait info สำหรับ helper กลาง
 export function buildShiftWaitInfo(
   schedule: WorkScheduleDto,
   value: Date = new Date()

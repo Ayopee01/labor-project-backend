@@ -1,7 +1,7 @@
-// import Library
+// Import Library
 import type { Account, DriverSession, GateTicket, MarketJob, TicketCompletionSubmission, TicketProduct, TicketWorker, UserSession, VehicleJob, VehicleJobAssignment } from "@prisma/client";
 
-// import Types
+// Import Types
 import type { SessionDto } from "../../../types/auth.type";
 import type { DriverSessionDto } from "../../../types/driver.type";
 import type { GateTicketDto, MarketJobDto, TicketCompletionSubmissionDto, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto } from "../../../types/worker.type";
@@ -9,13 +9,10 @@ import { ACCOUNT_ROLES, ACCOUNT_SOURCES, type AccountDto, type AccountRole, type
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function แปลงค่า Date จาก Prisma เป็น ISO string สำหรับ DTO
 function toIsoString(value: Date): string;
-// Function overload รองรับ string ที่เป็น ISO อยู่แล้ว
 function toIsoString(value: string): string;
-// Function overload รองรับ Date ที่อาจเป็น null
 function toIsoString(value: Date | null): string | null;
-// Function แปลง Date/string/null เป็น ISO string หรือ null
+// Function จัดการ เป็น ISO string จาก DB
 function toIsoString(value: Date | string | null): string | null {
   if (value instanceof Date) {
     return value.toISOString();
@@ -24,7 +21,7 @@ function toIsoString(value: Date | string | null): string | null {
   return value;
 }
 
-// Function แปลงค่า Date หรือ string เป็นวันที่รูปแบบ YYYY-MM-DD
+// Function จัดการ เป็น date string จาก DB
 function toDateString(value: Date | string): string {
   if (value instanceof Date) {
     return value.toISOString().slice(0, 10);
@@ -33,11 +30,9 @@ function toDateString(value: Date | string): string {
   return value.trim().slice(0, 10);
 }
 
-// Function ลบ password_hash ออกจาก account ก่อนส่งเป็น response
 export function sanitizeAccount(account: AccountDto): SafeAccountDto;
-// Function overload คืน null เมื่อไม่มี account
 export function sanitizeAccount(account: null): null;
-// Function ลบ password_hash ออกจาก account หรือคืน null
+// Function จัดการ sanitize account จาก DB
 export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | null {
   if (!account) {
     return null;
@@ -55,7 +50,7 @@ export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | nu
   return safeAccount;
 }
 
-// Function แปลง record จาก table accounts เป็น AccountDto
+// Function จัดการ เป็น account role จาก DB
 function toAccountRole(role: string): AccountRole {
   if ((ACCOUNT_ROLES as readonly string[]).includes(role)) {
     return role as AccountRole;
@@ -64,6 +59,7 @@ function toAccountRole(role: string): AccountRole {
   throw new Error(`Unsupported account role: ${role}`);
 }
 
+// Function จัดการ เป็น account source จาก DB
 function toAccountSource(source: string): AccountSource {
   if ((ACCOUNT_SOURCES as readonly string[]).includes(source)) {
     return source as AccountSource;
@@ -72,7 +68,7 @@ function toAccountSource(source: string): AccountSource {
   return "internal";
 }
 
-// Function แปลง record จาก table accounts เป็น AccountDto
+// Function แปลง account จาก DB
 export function mapAccount(record: Account | null): AccountDto | null {
   if (!record) {
     return null;
@@ -111,7 +107,7 @@ type WorkerProfileWithAccount = Account & {
   account?: Pick<Account, "username" | "phone"> | null;
 };
 
-// Map worker profile fields stored on accounts into the existing profile DTO.
+// Function แปลง field profile ของ worker บน accounts เป็น profile DTO เดิม
 export function mapProfile(record: WorkerProfileWithAccount | null): ProfileDto | null {
   if (!record) {
     return null;
@@ -130,7 +126,7 @@ export function mapProfile(record: WorkerProfileWithAccount | null): ProfileDto 
   };
 }
 
-// Map current worker schedule fields stored on accounts into the existing schedule DTO.
+// Function แปลง field schedule ปัจจุบันบน accounts เป็น schedule DTO เดิม
 export function mapSchedule(record: Account | null): WorkScheduleDto | null {
   if (
     !record ||
@@ -156,7 +152,7 @@ export function mapSchedule(record: Account | null): WorkScheduleDto | null {
   };
 }
 
-// Function แปลง record จาก table user_sessions เป็น SessionDto
+// Function แปลง session จาก DB
 export function mapSession(record: UserSession | null): SessionDto | null {
   if (!record) {
     return null;
@@ -179,7 +175,7 @@ export function mapSession(record: UserSession | null): SessionDto | null {
   };
 }
 
-// Function แปลง record จาก table vehicle_jobs เป็น VehicleJobDto
+// Function แปลง vehicle job จาก DB
 export function mapVehicleJob(record: VehicleJob | null): VehicleJobDto | null {
   if (!record) {
     return null;
@@ -203,7 +199,7 @@ export function mapVehicleJob(record: VehicleJob | null): VehicleJobDto | null {
   };
 }
 
-// Function แปลง record จาก table market_jobs เป็น MarketJobDto
+// Function แปลง market job จาก DB
 export function mapMarketJob(record: MarketJob | null): MarketJobDto | null {
   if (!record) {
     return null;
@@ -221,7 +217,7 @@ export function mapMarketJob(record: MarketJob | null): MarketJobDto | null {
   };
 }
 
-// Function แปลง record จาก table gate_tickets เป็น GateTicketDto
+// Function แปลง Gate ticket จาก DB
 export function mapGateTicket(record: GateTicket | null): GateTicketDto | null {
   if (!record) {
     return null;
@@ -242,7 +238,7 @@ export function mapGateTicket(record: GateTicket | null): GateTicketDto | null {
   };
 }
 
-// Function แปลง record จาก table ticket_products เป็น TicketProductDto
+// Function แปลง ticket product จาก DB
 export function mapTicketProduct(record: TicketProduct | null): TicketProductDto | null {
   if (!record) {
     return null;
@@ -262,7 +258,7 @@ export function mapTicketProduct(record: TicketProduct | null): TicketProductDto
   };
 }
 
-// Function แปลง record จาก table ticket_workers เป็น TicketWorkerDto
+// Function แปลง ticket worker จาก DB
 export function mapTicketWorker(record: TicketWorker | null): TicketWorkerDto | null {
   if (!record) {
     return null;
@@ -278,7 +274,7 @@ export function mapTicketWorker(record: TicketWorker | null): TicketWorkerDto | 
   };
 }
 
-// Function แปลง record จาก table ticket_completion_submissions เป็น TicketCompletionSubmissionDto
+// Function แปลง ticket completion submission จาก DB
 export function mapTicketCompletionSubmission(
   record: TicketCompletionSubmission | null
 ): TicketCompletionSubmissionDto | null {
@@ -293,13 +289,14 @@ export function mapTicketCompletionSubmission(
     status: record.status,
     confirmed_at: toIsoString(record.confirmedAt),
     rejected_at: toIsoString(record.rejectedAt),
+    resolved_by_line_user_id: record.resolvedByLineUserId,
     created_at: toIsoString(record.createdAt),
     updated_at: toIsoString(record.updatedAt),
   };
 }
 
 
-// Function แปลง record จาก table driver_sessions เป็น DriverSessionDto
+// Function แปลง driver session จาก DB
 export function mapDriverSession(record: DriverSession | null): DriverSessionDto | null {
   if (!record) {
     return null;
@@ -316,7 +313,7 @@ export function mapDriverSession(record: DriverSession | null): DriverSessionDto
   };
 }
 
-// Function แปลง record จาก table vehicle_job_assignments เป็น VehicleJobAssignmentDto
+// Function แปลง vehicle job assignment จาก DB
 export function mapVehicleJobAssignment(
   record: VehicleJobAssignment | null
 ): VehicleJobAssignmentDto | null {

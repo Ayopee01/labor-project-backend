@@ -1,24 +1,200 @@
-﻿// import
+// Import Dependencies
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import * as workScheduleRepository from "./shared/work-schedule.repository";
-import * as workerShiftAttendanceRepository from "./worker-shift-attendance.repository";
-import { ACTIVE_ASSIGNMENT_STATUSES, FINISHED_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
+import type { Prisma, WorkerShiftAttendance } from "@prisma/client";
+import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct, mapTicketWorker, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
 export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail } from "./shared/vehicle-job.repository";
 export { countActiveAssignments, createAssignment, findAssignmentById, findCurrentAssignmentByWorker } from "./shared/vehicle-job-assignment.repository";
 export { listTicketWorkers } from "./shared/ticket-worker.repository";
 
-// import Types
-import type { DbConnection } from "../types/common.type";
-import type { CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VendorLineTargetDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto } from "../types/worker.type";
+// Import Types
+import type { DbConnection } from "../types/shared/common.type";
+import type { CompletedVehicleJobResult, CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VendorLineTargetDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto, WorkerShiftAttendanceKeyInput, WorkerShiftAttendanceWriteInput, WorkerShiftCloseReason } from "../types/worker.type";
+
+// Function สร้าง shift snapshot จาก DB
+function buildShiftSnapshot(input: WorkerShiftAttendanceWriteInput) {
+  return {
+    workerCode: input.worker_code,
+    shiftNo: input.schedule.shift_no,
+    shiftStartTime: input.schedule.shift_start_time,
+    shiftEndTime: input.schedule.shift_end_time,
+  };
+}
+
+// Function ค้นหา worker shift attendance ตาม worker และ shift จาก DB
+async function findWorkerShiftAttendanceByWorkerAndShift(
+  input: WorkerShiftAttendanceKeyInput,
+  connection?: DbConnection
+): Promise<WorkerShiftAttendance | null> {
+  const db = client(connection);
+
+  return db.workerShiftAttendance.findUnique({
+    where: {
+      accountId_shiftInstanceKey: {
+        accountId: input.account_id,
+        shiftInstanceKey: input.shift_instance_key,
+      },
+    },
+  });
+}
+
+// Function อัปเดตสถานะ worker shift online จาก DB
+async function markWorkerShiftOnline(
+  input: WorkerShiftAttendanceWriteInput,
+  connection?: DbConnection
+): Promise<WorkerShiftAttendance> {
+  const db = client(connection);
+  const now = new Date();
+  const shiftSnapshot = buildShiftSnapshot(input);
+
+  return db.workerShiftAttendance.upsert({
+    where: {
+      accountId_shiftInstanceKey: {
+        accountId: input.account_id,
+        shiftInstanceKey: input.shift_instance_key,
+      },
+    },
+    create: {
+      accountId: input.account_id,
+      shiftInstanceKey: input.shift_instance_key,
+      ...shiftSnapshot,
+      firstOnlineAt: now,
+      lastOnlineAt: now,
+    },
+    update: {
+      ...shiftSnapshot,
+      lastOnlineAt: now,
+    },
+  });
+}
+
+// Function เพิ่มค่า accept timeout streak จาก DB
+async function incrementAcceptTimeoutStreak(
+  input: WorkerShiftAttendanceWriteInput,
+  connection?: DbConnection
+): Promise<WorkerShiftAttendance> {
+  const db = client(connection);
+  const now = new Date();
+  const shiftSnapshot = buildShiftSnapshot(input);
+
+  return db.workerShiftAttendance.upsert({
+    where: {
+      accountId_shiftInstanceKey: {
+        accountId: input.account_id,
+        shiftInstanceKey: input.shift_instance_key,
+      },
+    },
+    create: {
+      accountId: input.account_id,
+      shiftInstanceKey: input.shift_instance_key,
+      ...shiftSnapshot,
+      firstOnlineAt: now,
+      lastOnlineAt: now,
+      acceptTimeoutStreak: 1,
+      lastAcceptTimeoutAt: now,
+    },
+    update: {
+      ...shiftSnapshot,
+      acceptTimeoutStreak: {
+        increment: 1,
+      },
+      lastAcceptTimeoutAt: now,
+    },
+  });
+}
+
+// Function รีเซ็ต accept timeout streak จาก DB
+async function resetAcceptTimeoutStreak(
+  input: WorkerShiftAttendanceWriteInput,
+  connection?: DbConnection
+): Promise<WorkerShiftAttendance> {
+  const db = client(connection);
+  const now = new Date();
+  const shiftSnapshot = buildShiftSnapshot(input);
+
+  return db.workerShiftAttendance.upsert({
+    where: {
+      accountId_shiftInstanceKey: {
+        accountId: input.account_id,
+        shiftInstanceKey: input.shift_instance_key,
+      },
+    },
+    create: {
+      accountId: input.account_id,
+      shiftInstanceKey: input.shift_instance_key,
+      ...shiftSnapshot,
+      firstOnlineAt: now,
+      lastOnlineAt: now,
+      acceptTimeoutStreak: 0,
+      lastAcceptTimeoutAt: null,
+    },
+    update: {
+      ...shiftSnapshot,
+      acceptTimeoutStreak: 0,
+      lastAcceptTimeoutAt: null,
+    },
+  });
+}
+
+// Function ปิด worker shift จาก DB
+async function closeWorkerShift(
+  input: WorkerShiftAttendanceWriteInput & {
+    reason: WorkerShiftCloseReason;
+  },
+  connection?: DbConnection
+): Promise<WorkerShiftAttendance> {
+  const db = client(connection);
+  const existing = await findWorkerShiftAttendanceByWorkerAndShift(input, connection);
+  const now = new Date();
+  const shiftSnapshot = buildShiftSnapshot(input);
+  const closeData: Prisma.WorkerShiftAttendanceUncheckedUpdateInput = {
+    ...shiftSnapshot,
+    closedAt: now,
+    closeReason: input.reason,
+    offlineAt: now,
+  };
+
+  if (existing?.closedAt) {
+    return existing;
+  }
+
+  if (existing) {
+    return db.workerShiftAttendance.update({
+      where: {
+        id: existing.id,
+      },
+      data: closeData,
+    });
+  }
+
+  return db.workerShiftAttendance.create({
+    data: {
+      accountId: input.account_id,
+      shiftInstanceKey: input.shift_instance_key,
+      ...shiftSnapshot,
+      closedAt: now,
+      closeReason: input.reason,
+      offlineAt: now,
+    },
+  });
+}
+
+const workerShiftAttendanceRepository = {
+  findByWorkerAndShift: findWorkerShiftAttendanceByWorkerAndShift,
+  markWorkerShiftOnline,
+  incrementAcceptTimeoutStreak,
+  resetAcceptTimeoutStreak,
+  closeWorkerShift,
+};
 
 export { accountRepository, profileRepository, workScheduleRepository, workerShiftAttendanceRepository };
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เน€เธเธฅเธตเนเธขเธเธเธฒเธเธฃเธ–เน€เธเนเธเน€เธฃเธดเนเธกเธ—เธณเธเธฒเธเธซเธฅเธฑเธเธเธเธเธฒเธ scan เธเธฃเธ
+// Function อัปเดตสถานะ vehicle job ใน progress จาก DB
 export async function markVehicleJobInProgress(
   vehicleJobId: number,
   connection?: DbConnection
@@ -38,7 +214,7 @@ export async function markVehicleJobInProgress(
   return requireDto(mapVehicleJob(vehicleJob), "vehicle job progress");
 }
 
-// Find the first non-terminal ticket by gate creation order.
+// Function หา ticket แรกที่ยังไม่จบตามลำดับเวลาที่ Gate สร้าง
 export async function findCurrentOpenTicketByVehicleJob(
   vehicleJobId: number,
   connection?: DbConnection
@@ -87,7 +263,7 @@ export async function findCurrentOpenTicketByVehicleJob(
   return null;
 }
 
-// Function calculates whether all required workers have scanned QR for a vehicle job.
+// Function คำนวณว่า worker ที่ต้องใช้กับงานรถ scan QR ครบแล้วหรือยัง
 export async function getVehicleWorkReadiness(
   vehicleJobId: number,
   connection?: DbConnection
@@ -113,7 +289,7 @@ export async function getVehicleWorkReadiness(
   };
 }
 
-// Function moves the next non-terminal market/ticket to WORKING once the vehicle is ready.
+// Function ย้าย market/ticket ถัดไปที่ยังไม่จบเป็น WORKING เมื่อรถพร้อมทำงาน
 export async function activateNextTicketIfReady(
   vehicleJobId: number,
   connection?: DbConnection
@@ -155,7 +331,7 @@ export async function activateNextTicketIfReady(
   };
 }
 
-// Function lists active vehicle jobs that still may receive workers from the ready queue.
+// Function ดึงงานรถ active ที่ยังรับ worker จากคิว ready ได้
 export async function listDispatchableVehicleJobs(
   connection?: DbConnection
 ): Promise<VehicleJobDto[]> {
@@ -174,7 +350,7 @@ export async function listDispatchableVehicleJobs(
     .filter((vehicleJob): vehicleJob is VehicleJobDto => vehicleJob !== null);
 }
 
-// Function เธเธฑเธ assignment เธ—เธตเน scan เนเธฅเนเธงเธเธญเธเธเธฒเธเธฃเธ–
+// Function นับ scanned assignments จาก DB
 export async function countScannedAssignments(
   vehicleJobId: number,
   connection?: DbConnection
@@ -190,9 +366,9 @@ export async function countScannedAssignments(
   });
 }
 
-// Function เนเธเธฅเธเธชเธ–เธฒเธเธฐ scan เธเธญเธ assignment เน€เธเนเธเธเนเธฒเธ—เธตเน UI เนเธเนเนเธชเธ”เธเธ—เธตเธกเนเธเธเธฒเธเธฃเธ–
+// Function สร้าง assignment scan status จาก DB
 function buildAssignmentScanStatus(assignment: VehicleJobAssignmentDto): string {
-  if (assignment.status === "COMPLETED" || assignment.completed_at) {
+  if (assignment.status === ASSIGNMENT_STATUS.COMPLETED || assignment.completed_at) {
     return "completed";
   }
 
@@ -200,14 +376,14 @@ function buildAssignmentScanStatus(assignment: VehicleJobAssignmentDto): string 
     return "scanned";
   }
 
-  if (assignment.status === "ACCEPTED" || assignment.accepted_at) {
+  if (assignment.status === ASSIGNMENT_STATUS.ACCEPTED || assignment.accepted_at) {
     return "accepted";
   }
 
   return "pending";
 }
 
-// Function เธ”เธถเธเธฃเธฒเธขเธเธทเนเธญเธ—เธตเธก worker เนเธเธเธฒเธเธฃเธ–เธเธฃเนเธญเธกเธชเธ–เธฒเธเธฐ scan
+// Function ดึงรายการ vehicle job assignment team จาก DB
 export async function listVehicleJobAssignmentTeam(
   vehicleJobId: number,
   connection?: DbConnection
@@ -243,7 +419,7 @@ export async function listVehicleJobAssignmentTeam(
   });
 }
 
-// Function เธ”เธถเธเธเธฃเธฐเธงเธฑเธ•เธดเธเธฒเธเธเธญเธ worker เธ•เธฒเธกเธเนเธงเธเธงเธฑเธเธ—เธตเนเธ—เธตเนเธฃเธฐเธเธธ
+// Function ดึงรายการ worker assignment history ตาม date จาก DB
 export async function listWorkerAssignmentHistoryByDate(
   workerAccountId: number,
   startAt: Date,
@@ -273,7 +449,7 @@ export async function listWorkerAssignmentHistoryByDate(
   }));
 }
 
-// Function เธซเธฒ assignment เธเธฒเธ id เนเธฅเธฐ worker
+// Function ค้นหา assignment ตาม ID และ worker จาก DB
 export async function findAssignmentByIdAndWorker(
   assignmentId: number,
   workerAccountId: number,
@@ -290,7 +466,7 @@ export async function findAssignmentByIdAndWorker(
   return mapVehicleJobAssignment(assignment);
 }
 
-// Function เธซเธฒ assignment เธเธฑเธเธเธธเธเธฑเธเธเธญเธ worker เธ”เนเธงเธข ticketNo
+// Function ค้นหา current assignment ตาม vehicle job ref และ worker จาก DB
 export async function findCurrentAssignmentByVehicleJobRefAndWorker(
   ticketNo: string,
   workerAccountId: number,
@@ -315,7 +491,7 @@ export async function findCurrentAssignmentByVehicleJobRefAndWorker(
   return mapVehicleJobAssignment(assignment);
 }
 
-// Function เน€เธเธฅเธตเนเธขเธ assignment เน€เธเนเธเธฃเธฑเธเธเธฒเธเนเธฅเนเธงเนเธฅเธฐเธเธณเธซเธเธ”เน€เธงเธฅเธฒ scan QR
+// Function รับ assignment จาก DB
 export async function acceptAssignment(
   assignmentId: number,
   scanDeadlineAt: Date,
@@ -327,7 +503,7 @@ export async function acceptAssignment(
       id: assignmentId,
     },
     data: {
-      status: "ACCEPTED",
+      status: ASSIGNMENT_STATUS.ACCEPTED,
       acceptedAt: new Date(),
       scanDeadlineAt,
     },
@@ -336,7 +512,7 @@ export async function acceptAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment accept");
 }
 
-// Function เน€เธเธฅเธตเนเธขเธ assignment เน€เธเนเธเธซเธกเธ”เน€เธงเธฅเธฒเธฃเธฑเธเธเธฒเธ
+// Function ดึงรายการ accepted assignments ตาม vehicle job จาก DB
 export async function listAcceptedAssignmentsByVehicleJob(
   vehicleJobId: number,
   excludedAssignmentId?: number,
@@ -346,7 +522,7 @@ export async function listAcceptedAssignmentsByVehicleJob(
   const assignments = await db.vehicleJobAssignment.findMany({
     where: {
       vehicleJobId,
-      status: "ACCEPTED",
+      status: ASSIGNMENT_STATUS.ACCEPTED,
       ...(excludedAssignmentId
         ? {
             id: {
@@ -365,6 +541,7 @@ export async function listAcceptedAssignmentsByVehicleJob(
     .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
 }
 
+// Function อัปเดต assignment scan deadline จาก DB
 export async function updateAssignmentScanDeadline(
   assignmentId: number,
   scanDeadlineAt: Date,
@@ -383,6 +560,7 @@ export async function updateAssignmentScanDeadline(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment scan deadline");
 }
 
+// Function จัดการ timeout assignment จาก DB
 export async function timeoutAssignment(
   assignmentId: number,
   connection?: DbConnection
@@ -393,14 +571,14 @@ export async function timeoutAssignment(
       id: assignmentId,
     },
     data: {
-      status: "TIMEOUT",
+      status: ASSIGNMENT_STATUS.TIMEOUT,
     },
   });
 
   return requireDto(mapVehicleJobAssignment(assignment), "assignment timeout");
 }
 
-// Function เน€เธเธฅเธตเนเธขเธ assignment เน€เธเนเธ scan เธชเธณเน€เธฃเนเธ
+// Function บันทึกการสแกน assignment จาก DB
 export async function scanAssignment(
   assignmentId: number,
   connection?: DbConnection
@@ -411,7 +589,7 @@ export async function scanAssignment(
       id: assignmentId,
     },
     data: {
-      status: "SCANNED",
+      status: ASSIGNMENT_STATUS.SCANNED,
       scannedAt: new Date(),
     },
   });
@@ -419,7 +597,7 @@ export async function scanAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment scan");
 }
 
-// Function เธ”เธถเธ gate ticket เธเธฃเนเธญเธกเธเนเธญเธกเธนเธฅ vendor เธชเธณเธซเธฃเธฑเธ flow เธเธดเธ”เธเธฒเธ
+// Function ค้นหา Gate ticket สำหรับ completion จาก DB
 export async function findGateTicketForCompletion(
   ticketId: number,
   connection?: DbConnection
@@ -506,25 +684,30 @@ export async function listActiveVendorLineTargetsForTicket(
   return targets;
 }
 
-// Function เธซเธฒ gate ticket เธ”เนเธงเธข boothCode เธซเธฃเธทเธญ ticketNo เธชเธณเธซเธฃเธฑเธ worker เธเธดเธ”เธเธฒเธ
-export async function findGateTicketForCompletionByReference(
-  reference: string,
+// Function หา ticket ของ booth ภายใต้ TicketNo ที่ระบุ เพื่อไม่ให้เลือก booth จาก ticket อื่น
+
+export async function findGateTicketForCompletionByTicketNoAndBoothCode(
+  ticketNo: string,
+  boothCode: string,
   connection?: DbConnection
 ): Promise<GateTicketDto | null> {
   const db = client(connection);
   const ticket = await db.gateTicket.findFirst({
     where: {
-      boothCode: reference,
+      boothCode,
+      vehicleJob: {
+        ticketNo,
+      },
     },
     orderBy: {
-      id: "desc",
+      id: "asc",
     },
   });
 
   return mapGateTicket(ticket);
 }
 
-// Function เธ”เธถเธเธฃเธฒเธขเธเธฒเธฃเธชเธดเธเธเนเธฒเนเธ ticket เธ•เธฒเธกเธฅเธณเธ”เธฑเธเธ—เธตเนเธชเธฃเนเธฒเธ
+// Function ดึงรายการ ticket products จาก DB
 export async function listTicketProducts(
   ticketId: number,
   connection?: DbConnection
@@ -544,7 +727,7 @@ export async function listTicketProducts(
     .filter((product): product is TicketProductDto => product !== null);
 }
 
-// Function updates confirmed quantities for every product the worker submits on ticket completion.
+// Function อัปเดตจำนวนยืนยันของทุกสินค้าที่ worker ส่งยอดตอนจบ ticket
 export async function updateTicketProductConfirmations(
   ticketId: number,
   items: TicketProductConfirmationInput[],
@@ -571,7 +754,7 @@ export async function updateTicketProductConfirmations(
   return listTicketProducts(ticketId, connection);
 }
 
-// Function เธชเธฃเนเธฒเธ ticket worker เธเธฒเธ assignment เธเธญเธเธเธฒเธเธฃเธ–เน€เธกเธทเนเธญเธขเธฑเธเนเธกเนเธกเธต mapping เธฃเธฐเธ”เธฑเธ ticket
+// Function จัดการ ensure ticket workers จาก vehicle assignments จาก DB
 export async function ensureTicketWorkersFromVehicleAssignments(
   ticketId: number,
   vehicleJobId: number,
@@ -613,7 +796,7 @@ export async function ensureTicketWorkersFromVehicleAssignments(
     data: assignments.map((assignment) => ({
       ticketId,
       workerAccountId: assignment.workerAccountId,
-      status: "WORKING",
+      status: ASSIGNMENT_STATUS.WORKING,
     })),
     skipDuplicates: true,
   });
@@ -632,7 +815,7 @@ export async function ensureTicketWorkersFromVehicleAssignments(
     .filter((worker): worker is TicketWorkerDto => worker !== null);
 }
 
-// Function เน€เธเธฅเธตเนเธขเธ ticket เน€เธเนเธเธฃเธญ vendor เธ•เธฃเธงเธ เนเธ”เธขเธเธฑเธเธเธฒเธฃเธชเนเธเธขเธญเธ”เธเนเธณเธเธฒเธเธซเธฅเธฒเธข worker
+// Function อัปเดตสถานะ ticket delivered จาก DB
 export async function markTicketDelivered(
   ticketId: number,
   connection?: DbConnection
@@ -646,7 +829,7 @@ export async function markTicketDelivered(
       },
     },
     data: {
-      status: "DELIVERED",
+      status: TICKET_STATUS.DELIVERED,
       rejectReason: null,
     },
   });
@@ -654,7 +837,7 @@ export async function markTicketDelivered(
   return result.count === 1;
 }
 
-// Function เธชเธฃเนเธฒเธ submission เธเธฒเธฃเธชเนเธเธขเธญเธ”เธเธดเธ”เธเธฒเธเธเธญเธ ticket
+// Function สร้าง ticket completion submission จาก DB
 export async function createTicketCompletionSubmission(
   ticketId: number,
   workerAccountId: number,
@@ -665,7 +848,7 @@ export async function createTicketCompletionSubmission(
     data: {
       ticketId,
       submittedByWorkerAccountId: workerAccountId,
-      status: "DELIVERED",
+      status: TICKET_STATUS.DELIVERED,
     },
   });
 
@@ -675,7 +858,7 @@ export async function createTicketCompletionSubmission(
   );
 }
 
-// Function เธ”เธถเธ submission เธฅเนเธฒเธชเธธเธ”เธ—เธตเนเธฃเธญ vendor confirm/reject
+// Function อัปเดตสถานะ vehicle assignments delivered จาก DB
 export async function markVehicleAssignmentsDelivered(
   vehicleJobId: number,
   connection?: DbConnection
@@ -689,13 +872,14 @@ export async function markVehicleAssignmentsDelivered(
       },
     },
     data: {
-      status: "DELIVERED",
+      status: ASSIGNMENT_STATUS.DELIVERED,
     },
   });
 
   return result.count;
 }
 
+// Function อัปเดตสถานะ vehicle assignments rejected จาก DB
 export async function markVehicleAssignmentsRejected(
   vehicleJobId: number,
   connection?: DbConnection
@@ -709,13 +893,14 @@ export async function markVehicleAssignmentsRejected(
       },
     },
     data: {
-      status: "REJECT",
+      status: ASSIGNMENT_STATUS.REJECT,
     },
   });
 
   return result.count;
 }
 
+// Function อัปเดตสถานะ vehicle assignments working จาก DB
 export async function markVehicleAssignmentsWorking(
   vehicleJobId: number,
   connection?: DbConnection
@@ -729,13 +914,14 @@ export async function markVehicleAssignmentsWorking(
       },
     },
     data: {
-      status: "WORKING",
+      status: ASSIGNMENT_STATUS.WORKING,
     },
   });
 
   return result.count;
 }
 
+// Function ค้นหา waiting ticket completion submission จาก DB
 export async function findWaitingTicketCompletionSubmission(
   ticketId: number,
   connection?: DbConnection
@@ -744,7 +930,7 @@ export async function findWaitingTicketCompletionSubmission(
   const submission = await db.ticketCompletionSubmission.findFirst({
     where: {
       ticketId,
-      status: "DELIVERED",
+      status: TICKET_STATUS.DELIVERED,
     },
     orderBy: {
       id: "desc",
@@ -754,11 +940,27 @@ export async function findWaitingTicketCompletionSubmission(
   return mapTicketCompletionSubmission(submission);
 }
 
-// Function เธขเธทเธเธขเธฑเธเธเธฒเธฃเธเธดเธ” ticket เธเธฒเธ vendor
+// Function ค้นหา ticket completion submission ตาม ID จาก DB
+export async function findTicketCompletionSubmissionById(
+  submissionId: number,
+  connection?: DbConnection
+): Promise<TicketCompletionSubmissionDto | null> {
+  const db = client(connection);
+  const submission = await db.ticketCompletionSubmission.findUnique({
+    where: {
+      id: submissionId,
+    },
+  });
+
+  return mapTicketCompletionSubmission(submission);
+}
+
+// Function ยืนยัน ticket completion จาก DB
 export async function confirmTicketCompletion(
   ticketId: number,
   submissionId: number,
-  connection?: DbConnection
+  connection?: DbConnection,
+  resolvedByLineUserId?: string | null
 ): Promise<{
   ticket: GateTicketDto;
   submission: TicketCompletionSubmissionDto;
@@ -767,10 +969,10 @@ export async function confirmTicketCompletion(
   const updateResult = await db.gateTicket.updateMany({
     where: {
       id: ticketId,
-      status: "DELIVERED",
+      status: TICKET_STATUS.DELIVERED,
     },
     data: {
-      status: "COMPLETED",
+      status: TICKET_STATUS.COMPLETED,
     },
   });
 
@@ -783,7 +985,7 @@ export async function confirmTicketCompletion(
       ticketId,
     },
     data: {
-      status: "COMPLETED",
+      status: TICKET_STATUS.COMPLETED,
     },
   });
 
@@ -798,8 +1000,9 @@ export async function confirmTicketCompletion(
         id: submissionId,
       },
       data: {
-        status: "COMPLETED",
+        status: TICKET_STATUS.COMPLETED,
         confirmedAt: new Date(),
+        resolvedByLineUserId: resolvedByLineUserId ?? null,
       },
     }),
   ]);
@@ -813,15 +1016,11 @@ export async function confirmTicketCompletion(
   };
 }
 
-// Function reject เธเธฒเธฃเธเธดเธ” ticket เธเธฒเธ vendor เน€เธเธทเนเธญเนเธซเน worker เธชเนเธเธขเธญเธ”เนเธซเธกเนเนเธ”เน
+// Function ปิด completed vehicle job if ready จาก DB
 export async function closeCompletedVehicleJobIfReady(
   vehicleJobId: number,
   connection?: DbConnection
-): Promise<{
-  vehicle_job: VehicleJobDto;
-  completed_assignment_ids: number[];
-  completed_worker_account_ids: number[];
-} | null> {
+): Promise<CompletedVehicleJobResult | null> {
   const db = client(connection);
   const vehicleJob = await db.vehicleJob.findUnique({
     where: {
@@ -849,10 +1048,10 @@ export async function closeCompletedVehicleJobIfReady(
 
     if (allTicketsTerminal && !TERMINAL_JOB_STATUSES.includes(market.status)) {
       const marketStatus = market.tickets.every(
-        (ticket) => ticket.status === "CANCELLED"
+        (ticket) => ticket.status === TICKET_STATUS.CANCELLED
       )
-        ? "CANCELLED"
-        : "COMPLETED";
+        ? VEHICLE_JOB_STATUS.CANCELLED
+        : VEHICLE_JOB_STATUS.COMPLETED;
 
       await db.marketJob.update({
         where: {
@@ -899,10 +1098,10 @@ export async function closeCompletedVehicleJobIfReady(
   }
 
   const vehicleStatus = refreshedVehicleJob.marketJobs.every(
-    (market) => market.status === "CANCELLED"
+    (market) => market.status === VEHICLE_JOB_STATUS.CANCELLED
   )
-    ? "CANCELLED"
-    : "COMPLETED";
+    ? VEHICLE_JOB_STATUS.CANCELLED
+    : VEHICLE_JOB_STATUS.COMPLETED;
 
   const updatedVehicleJob = TERMINAL_JOB_STATUSES.includes(refreshedVehicleJob.status)
     ? refreshedVehicleJob
@@ -930,7 +1129,7 @@ export async function closeCompletedVehicleJobIfReady(
         },
       },
       data: {
-        status: "COMPLETED",
+        status: ASSIGNMENT_STATUS.COMPLETED,
         completedAt: new Date(),
       },
     });
@@ -943,12 +1142,13 @@ export async function closeCompletedVehicleJobIfReady(
   };
 }
 
-// Function reject เธขเธญเธ”เธเธดเธ”เธเธฒเธเธเธฒเธ vendor เนเธฅเธฐเน€เธเธดเธ” ticket เนเธซเน worker เธชเนเธเธขเธญเธ”เนเธซเธกเน
+// Function ตีกลับ ticket completion จาก DB
 export async function rejectTicketCompletion(
   ticketId: number,
   submissionId: number,
   rejectReason?: string | null,
-  connection?: DbConnection
+  connection?: DbConnection,
+  resolvedByLineUserId?: string | null
 ): Promise<{
   ticket: GateTicketDto;
   submission: TicketCompletionSubmissionDto;
@@ -957,10 +1157,10 @@ export async function rejectTicketCompletion(
   const updateResult = await db.gateTicket.updateMany({
     where: {
       id: ticketId,
-      status: "DELIVERED",
+      status: TICKET_STATUS.DELIVERED,
     },
     data: {
-      status: "REJECT",
+      status: TICKET_STATUS.REJECT,
       rejectReason: rejectReason ?? null,
     },
   });
@@ -974,7 +1174,7 @@ export async function rejectTicketCompletion(
       ticketId,
     },
     data: {
-      status: "REJECT",
+      status: TICKET_STATUS.REJECT,
     },
   });
 
@@ -989,8 +1189,9 @@ export async function rejectTicketCompletion(
         id: submissionId,
       },
       data: {
-        status: "REJECT",
+        status: TICKET_STATUS.REJECT,
         rejectedAt: new Date(),
+        resolvedByLineUserId: resolvedByLineUserId ?? null,
       },
     }),
   ]);

@@ -1,20 +1,15 @@
+import type { BuildWorkerCodeInput, WorkerNationality, WorkerShirtType } from "../types/admin-workers.type";
 import ApiError from "./api-error";
 
 /* -------------------------------------- Constants -------------------------------------- */
 
-// Config nationality values that can generate worker code prefixes.
+// Config สัญชาติที่นำไปสร้าง prefix ของรหัส worker ได้
 export const WORKER_NATIONALITIES = ["Myanmar", "Cambodia"] as const;
 
-// Config shirt colors that can generate worker code prefixes.
+// Config สีเสื้อที่นำไปสร้าง prefix ของรหัส worker ได้
 export const WORKER_SHIRT_TYPES = ["Navy", "Blue", "Green"] as const;
 
-// Type value of supported worker nationality for worker code generation.
-type WorkerNationality = (typeof WORKER_NATIONALITIES)[number];
-
-// Type value of supported shirt color for worker code generation.
-type WorkerShirtType = (typeof WORKER_SHIRT_TYPES)[number];
-
-// Config prefix map for worker id pattern: nationality + shirt color + 6-digit shirt number.
+// Config map prefix ของรหัส worker จากสัญชาติ สีเสื้อ และเลขเสื้อ 6 หลัก
 const WORKER_CODE_PREFIXES: Record<
   WorkerNationality,
   Record<WorkerShirtType, string>
@@ -31,16 +26,9 @@ const WORKER_CODE_PREFIXES: Record<
   },
 };
 
-// Type input for worker code generation.
-interface BuildWorkerCodeInput {
-  nationality: string;
-  shirt_type: string;
-  shirt_number: string;
-}
-
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้างรหัสแรงงานจากสัญชาติ สีเสื้อ และเบอร์เสื้อ เช่น Myanmar + Navy + 4 -> MN000004
+// Function สร้าง WorkerCode สำหรับ helper กลาง
 export function buildWorkerCode(input: BuildWorkerCodeInput): string {
   const nationality = input.nationality as WorkerNationality;
   const shirtType = input.shirt_type as WorkerShirtType;

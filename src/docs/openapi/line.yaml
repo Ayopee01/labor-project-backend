@@ -3,8 +3,8 @@
     post:
       tags:
         - LINE
-      summary: Receive LINE webhook postback for vendor ticket completion confirm/reject.
-      description: Vendor confirm/reject uses the signed `token` generated in the LINE message after a worker completes a stall job. Confirm closes the waiting ticket. When all tickets under the vehicle job are terminal, the backend closes related market jobs, vehicle job, and active worker assignments so workers can go online for the next job.
+      summary: Receive LINE webhook postback for vendor completion actions and rating.
+      description: Vendor confirm/reject uses the short `token` generated in the LINE Flex confirmation card after a worker completes a stall job. Real LINE buttons send postback data as `token=<short-token>`. Confirm closes the waiting ticket and then sends a 1-5 optional rating Flex card to the confirming LINE user. Rating buttons send `token=<short-token>&score=<1-5>` and are stored once per ticket and LINE user; after rating, backend sends a thank-you Flex card and a temporary service-charge summary card with 0.00 baht until pricing is added. Reject keeps the ticket open for worker resubmission. If the same confirm/reject button is pressed after the ticket was already handled, backend sends `รายการนี้ได้รับการดำเนินการเรียบร้อยแล้ว` to the pressing LINE user instead of changing the ticket again. When all tickets under the vehicle job are terminal, the backend closes related market jobs, vehicle job, and active worker assignments so workers can go online for the next job.
       operationId: handleLineWebhook
       parameters:
         - in: header

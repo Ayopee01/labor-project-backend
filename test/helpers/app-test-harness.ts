@@ -5,27 +5,23 @@ import { applyIsolatedTestEnv } from "../setup/test-env";
 
 /* -------------------------------------- Test Env -------------------------------------- */
 
-// Config เนเธขเธ env เธเธญเธ route test เธญเธญเธเธเธฒเธ infra เธเธฃเธดเธ เน€เธเนเธ Redis key, BullMQ queue เนเธฅเธฐ JWT secret
 applyIsolatedTestEnv("route-test");
 process.env.WORKER_PRESENCE_STALE_SECONDS = "90";
 
-/* -------------------------------------- Module Loader Types -------------------------------------- */
+/* -------------------------------------- Test Module Loader Types -------------------------------------- */
 
-// Type function _load เธเธญเธ Node module loader เธ—เธตเนเนเธเน patch dependency เน€เธเธเธฒเธฐเธ•เธญเธ test
 type ModuleLoad = (
   request: string,
   parent: NodeModule | null | undefined,
   isMain: boolean
 ) => unknown;
 
-// Type Module เธ—เธตเนเน€เธเธดเนเธก _load เน€เธเธทเนเธญเนเธซเน TypeScript เธฃเธนเนเธเธฑเธ field private เธ—เธตเนเธ•เนเธญเธ patch เนเธ test
 type ModuleWithLoad = typeof Module & {
   _load: ModuleLoad;
 };
 
 /* -------------------------------------- Test Record Types -------------------------------------- */
 
-// Type record account เธเธณเธฅเธญเธเธ—เธตเน repository mock เธชเนเธเนเธซเน service เน€เธซเธกเธทเธญเธเธเนเธญเธกเธนเธฅเธเธฒเธ database
 export type AccountRecord = {
   id: number;
   username: string;
@@ -52,7 +48,6 @@ export type GateClientRecord = {
   updated_at: string;
 };
 
-// Type record assignment เธเธณเธฅเธญเธเธชเธณเธซเธฃเธฑเธ worker dispatch, accept, timeout เนเธฅเธฐ scan QR flow
 export type AssignmentRecord = {
   id: number;
   vehicle_job_id: number;
@@ -67,7 +62,6 @@ export type AssignmentRecord = {
   updated_at?: string;
 };
 
-// Type record vehicle job เธเธณเธฅเธญเธเธชเธณเธซเธฃเธฑเธเธเธฒเธเธ—เธตเนเธเธฃเนเธญเธก dispatch เนเธซเน worker
 type VehicleJobRecord = {
   id: number;
   ticketNo: string;
@@ -85,7 +79,6 @@ type VehicleJobRecord = {
   updated_at: string;
 };
 
-// Type record gate ticket เธเธณเธฅเธญเธเธชเธณเธซเธฃเธฑเธ flow complete เธเธฒเธเนเธฅเธฐเธฃเธญ vendor confirm
 type GateTicketRecord = {
   id: number;
   vehicle_job_id: number;
@@ -103,7 +96,6 @@ type GateTicketRecord = {
   updated_at?: string;
 };
 
-// Type record product เนเธ ticket เน€เธเธทเนเธญเธ—เธ”เธชเธญเธเธเธฒเธฃเธเธฃเธญเธเธเธณเธเธงเธเธชเธดเธเธเนเธฒเนเธซเนเธเธฃเธ
 type WorkerShiftAttendanceRecord = {
   id: number;
   accountId: number;
@@ -117,6 +109,8 @@ type WorkerShiftAttendanceRecord = {
   offlineAt: string | null;
   closedAt: string | null;
   closeReason: string | null;
+  acceptTimeoutStreak: number;
+  lastAcceptTimeoutAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -134,7 +128,6 @@ type TicketProductRecord = {
   updated_at?: string;
 };
 
-// Type record เธเธงเธฒเธกเธชเธฑเธกเธเธฑเธเธเน ticket เธเธฑเธ worker เธ—เธตเนเธฃเธฑเธเธเธฒเธเนเธ flow complete ticket
 type TicketWorkerRecord = {
   id: number;
   ticket_id: number;
@@ -149,6 +142,32 @@ type TicketCompletionSubmissionRecord = {
   status: string;
   confirmed_at: string | null;
   rejected_at: string | null;
+  resolved_by_line_user_id: string | null;
+};
+
+type TicketRatingRecord = {
+  id: number;
+  ticket_id: number;
+  submission_id: number;
+  line_user_id: string;
+  target_type: string | null;
+  score: number;
+  rated_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type LineActionTokenRecord = {
+  id: number;
+  token: string;
+  action: string;
+  ticket_id: number;
+  submission_id: number;
+  boothCode: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type GateRequestLogRecord = {
@@ -194,7 +213,6 @@ let workerQueueModule: typeof import("../../src/queues/worker-queue") | null = n
 let workerDispatchModule: typeof import("../../src/queues/worker-dispatch") | null = null;
 let passwordModule: typeof import("../../src/utils/password") | null = null;
 
-// State เธเธฅเธฒเธเธเธญเธ route test เนเธเนเนเธ—เธ DB/Redis/BullMQ/WebSocket เน€เธเธทเนเธญเนเธซเน test เธ•เธฃเธงเธ flow เธเธฃเธดเธเนเธ”เธขเนเธกเนเนเธ•เธฐ infra เธเธฃเธดเธ
 export const state = {
   connectedWorkers: new Set<number>(),
   socketEvents: [] as Array<{ accountId: number; event: string; payload: unknown }>,
@@ -218,6 +236,8 @@ export const state = {
   ticketProducts: [] as TicketProductRecord[],
   ticketWorkers: [] as TicketWorkerRecord[],
   completionSubmissions: [] as TicketCompletionSubmissionRecord[],
+  ticketRatings: [] as TicketRatingRecord[],
+  lineActionTokens: [] as LineActionTokenRecord[],
   gateRequestLogs: [] as GateRequestLogRecord[],
   gateClients: new Map<string, GateClientRecord>(),
   shiftAttendances: [] as WorkerShiftAttendanceRecord[],
@@ -233,13 +253,14 @@ export const state = {
   nextSessionId: 1,
   nextTicketWorkerId: 1,
   nextSubmissionId: 1,
+  nextRatingId: 1,
+  nextLineActionTokenId: 1,
   nextGateClientId: 1,
   nextShiftAttendanceId: 1,
 };
 
 /* -------------------------------------- Fake Infra -------------------------------------- */
 
-// Class เธเธณเธฅเธญเธ Redis เน€เธเธเธฒเธฐ command เธ—เธตเน worker queue เนเธฅเธฐ dispatch เนเธเนเนเธ test
 class FakeRedis {
   static hashes = new Map<string, Record<string, string>>();
   static zsets = new Map<string, Map<string, number>>();
@@ -339,7 +360,6 @@ class FakeRedis {
   }
 }
 
-// Class เธเธณเธฅเธญเธ BullMQ Queue เน€เธเธทเนเธญเน€เธเนเธ delayed job เน€เธเนเธ assignment timeout เนเธงเนเนเธ memory
 class FakeQueue {
   name: string;
 
@@ -371,7 +391,6 @@ class FakeQueue {
   }
 }
 
-// Class เธเธณเธฅเธญเธ BullMQ Worker เน€เธเธทเนเธญเน€เธเนเธ processor เนเธงเนเนเธซเน test เน€เธฃเธตเธขเธเธ•เธฃเธงเธ behavior เนเธ”เน
 class FakeWorker {
   constructor(
     name: string,
@@ -385,7 +404,7 @@ class FakeWorker {
 
 /* -------------------------------------- Test Data Builders -------------------------------------- */
 
-// Function เธชเธฃเนเธฒเธ work schedule เธงเธฑเธเธเธตเนเนเธซเน worker เธกเธตเธชเธดเธ—เธเธดเน online เนเธฅเธฐเธฃเธฑเธเธเธฒเธเนเธ route test
+// Function สร้าง schedule ของวันนี้สำหรับ test data
 function todaySchedule(accountId: number) {
   const now = new Date();
   const year = now.getFullYear();
@@ -407,7 +426,7 @@ function todaySchedule(accountId: number) {
   };
 }
 
-// Function reset state เธ—เธธเธเธชเนเธงเธเธเนเธญเธเนเธ•เนเธฅเธฐ test เน€เธเธทเนเธญเนเธกเนเนเธซเน session/queue/job เธเธฒเธ test เธเนเธญเธเธซเธเนเธฒเธเธเธเธฑเธ
+// Function รีเซ็ต route test state สำหรับ test
 export function resetRouteTestState(): void {
   FakeRedis.hashes.clear();
   FakeRedis.zsets.clear();
@@ -426,6 +445,8 @@ export function resetRouteTestState(): void {
   state.ticketProducts.length = 0;
   state.ticketWorkers.length = 0;
   state.completionSubmissions.length = 0;
+  state.ticketRatings.length = 0;
+  state.lineActionTokens.length = 0;
   state.gateRequestLogs.length = 0;
   state.gateClients.clear();
   state.shiftAttendances.length = 0;
@@ -443,11 +464,13 @@ export function resetRouteTestState(): void {
   state.nextSessionId = 1;
   state.nextTicketWorkerId = 1;
   state.nextSubmissionId = 1;
+  state.nextRatingId = 1;
+  state.nextLineActionTokenId = 1;
   state.nextGateClientId = 1;
   state.nextShiftAttendanceId = 1;
 }
 
-// Function เน€เธเธดเนเธก worker account เธเธฃเนเธญเธก profile/schedule เธฅเธ mock repository state
+// Function จัดการ add worker สำหรับ test
 export function addWorker(accountId: number, passwordHash = "hash"): AccountRecord {
   const workerCode = `W${accountId}`;
   const worker: AccountRecord = {
@@ -483,7 +506,7 @@ export function addWorker(accountId: number, passwordHash = "hash"): AccountReco
   return worker;
 }
 
-// Function เน€เธเธดเนเธก admin account เธฅเธ mock repository state เธชเธณเธซเธฃเธฑเธเธ—เธ”เธชเธญเธ auth/admin route
+// Function จัดการ add admin สำหรับ test
 export function addAdmin(accountId: number, passwordHash = "hash"): AccountRecord {
   const admin: AccountRecord = {
     id: accountId,
@@ -515,7 +538,7 @@ export function addAdmin(accountId: number, passwordHash = "hash"): AccountRecor
   return admin;
 }
 
-// Function เน€เธเธดเนเธก vehicle job เธ—เธตเนเธเธฃเนเธญเธก dispatch เนเธซเน worker เธ•เธฒเธกเธเธณเธเธงเธเนเธฃเธเธเธฒเธเธ—เธตเนเธ•เนเธญเธเธเธฒเธฃ
+// Function จัดการ add Gate client สำหรับ test
 export function addGateClient(
   clientId: string,
   secretHash = "hash",
@@ -540,6 +563,7 @@ export function addGateClient(
   return gateClient;
 }
 
+// Function จัดการ add dispatchable job สำหรับ test
 export function addDispatchableJob(id: number, workersRequired: number): VehicleJobRecord {
   const now = new Date().toISOString();
   const job = {
@@ -564,7 +588,7 @@ export function addDispatchableJob(id: number, workersRequired: number): Vehicle
   return job;
 }
 
-// Function เน€เธเธดเนเธก assignment เธเนเธฒเธเธฃเธฑเธเธเธฒเธ เน€เธเธทเนเธญเธ—เธ”เธชเธญเธ accept, timeout เนเธฅเธฐ requeue flow
+// Function จัดการ add pending assignment สำหรับ test
 export function addPendingAssignment(
   id: number,
   vehicleJobId: number,
@@ -591,7 +615,7 @@ export function addPendingAssignment(
   return assignment;
 }
 
-// Function เน€เธเธดเนเธก ticket เนเธฅเธฐเธชเธดเธเธเนเธฒเนเธ ticket เน€เธเธทเนเธญเธ—เธ”เธชเธญเธ worker complete เธเธฒเธ
+// Function จัดการ add ticket สำหรับ vehicle job สำหรับ test
 export function addTicketForVehicleJob(
   vehicleJobId: number,
   ticketId = vehicleJobId + 1000
@@ -645,6 +669,7 @@ export function addTicketForVehicleJob(
   return ticket;
 }
 
+// Function ค้นหา current open ticket สำหรับ vehicle job สำหรับ test
 function findCurrentOpenTicketForVehicleJob(vehicleJobId: number): {
   ticket: GateTicketRecord;
   marketCode: string;
@@ -675,6 +700,7 @@ function findCurrentOpenTicketForVehicleJob(vehicleJobId: number): {
   };
 }
 
+// Function จัดการ activate next ticket สำหรับ vehicle job สำหรับ test
 function activateNextTicketForVehicleJob(vehicleJobId: number): {
   ticket: GateTicketRecord;
   marketCode: string;
@@ -697,7 +723,6 @@ function activateNextTicketForVehicleJob(vehicleJobId: number): {
 
 /* -------------------------------------- Repository Mocks -------------------------------------- */
 
-// Mock repository เธเธฑเนเธ worker service เนเธ”เธขเน€เธเนเธเธเนเธญเธกเธนเธฅเนเธ memory เนเธ•เนเธขเธฑเธเนเธซเน service เธเธฃเธดเธเน€เธเนเธเธเธเธ•เธฑเธ”เธชเธดเธ business rule
 const workerApplicationRepositoryMock = {
   accountRepository: {
     findUserById: async (accountId: number) => state.workers.get(accountId) ?? null,
@@ -760,6 +785,8 @@ const workerApplicationRepositoryMock = {
           offlineAt: null,
           closedAt: null,
           closeReason: null,
+          acceptTimeoutStreak: 0,
+          lastAcceptTimeoutAt: null,
           createdAt: now,
           updatedAt: now,
         };
@@ -772,6 +799,108 @@ const workerApplicationRepositoryMock = {
         attendance.lastOnlineAt = now;
         attendance.updatedAt = now;
       }
+
+      return attendance;
+    },
+    incrementAcceptTimeoutStreak: async (input: {
+      account_id: number;
+      worker_code: string;
+      shift_instance_key: string;
+      schedule: {
+        shift_no: number;
+        shift_start_time: string;
+        shift_end_time: string;
+      };
+    }) => {
+      const now = new Date().toISOString();
+      let attendance = state.shiftAttendances.find(
+        (item) =>
+          item.accountId === input.account_id &&
+          item.shiftInstanceKey === input.shift_instance_key
+      );
+
+      if (!attendance) {
+        attendance = {
+          id: state.nextShiftAttendanceId++,
+          accountId: input.account_id,
+          workerCode: input.worker_code,
+          shiftInstanceKey: input.shift_instance_key,
+          shiftNo: input.schedule.shift_no,
+          shiftStartTime: input.schedule.shift_start_time,
+          shiftEndTime: input.schedule.shift_end_time,
+          firstOnlineAt: now,
+          lastOnlineAt: now,
+          offlineAt: null,
+          closedAt: null,
+          closeReason: null,
+          acceptTimeoutStreak: 1,
+          lastAcceptTimeoutAt: now,
+          createdAt: now,
+          updatedAt: now,
+        };
+        state.shiftAttendances.push(attendance);
+
+        return attendance;
+      }
+
+      attendance.workerCode = input.worker_code;
+      attendance.shiftNo = input.schedule.shift_no;
+      attendance.shiftStartTime = input.schedule.shift_start_time;
+      attendance.shiftEndTime = input.schedule.shift_end_time;
+      attendance.acceptTimeoutStreak += 1;
+      attendance.lastAcceptTimeoutAt = now;
+      attendance.updatedAt = now;
+
+      return attendance;
+    },
+    resetAcceptTimeoutStreak: async (input: {
+      account_id: number;
+      worker_code: string;
+      shift_instance_key: string;
+      schedule: {
+        shift_no: number;
+        shift_start_time: string;
+        shift_end_time: string;
+      };
+    }) => {
+      const now = new Date().toISOString();
+      let attendance = state.shiftAttendances.find(
+        (item) =>
+          item.accountId === input.account_id &&
+          item.shiftInstanceKey === input.shift_instance_key
+      );
+
+      if (!attendance) {
+        attendance = {
+          id: state.nextShiftAttendanceId++,
+          accountId: input.account_id,
+          workerCode: input.worker_code,
+          shiftInstanceKey: input.shift_instance_key,
+          shiftNo: input.schedule.shift_no,
+          shiftStartTime: input.schedule.shift_start_time,
+          shiftEndTime: input.schedule.shift_end_time,
+          firstOnlineAt: now,
+          lastOnlineAt: now,
+          offlineAt: null,
+          closedAt: null,
+          closeReason: null,
+          acceptTimeoutStreak: 0,
+          lastAcceptTimeoutAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        state.shiftAttendances.push(attendance);
+
+        return attendance;
+      }
+
+      attendance.workerCode = input.worker_code;
+      attendance.shiftNo = input.schedule.shift_no;
+      attendance.shiftStartTime = input.schedule.shift_start_time;
+      attendance.shiftEndTime = input.schedule.shift_end_time;
+      attendance.acceptTimeoutStreak = 0;
+      attendance.lastAcceptTimeoutAt = null;
+      attendance.updatedAt = now;
 
       return attendance;
     },
@@ -811,6 +940,8 @@ const workerApplicationRepositoryMock = {
           offlineAt: now,
           closedAt: now,
           closeReason: input.reason,
+          acceptTimeoutStreak: 0,
+          lastAcceptTimeoutAt: null,
           createdAt: now,
           updatedAt: now,
         };
@@ -1081,10 +1212,22 @@ const workerApplicationRepositoryMock = {
       },
     ];
   },
-  findGateTicketForCompletionByReference: async (reference: string) =>
-    state.gateTickets.find(
-      (ticket) => ticket.boothCode === reference
-    ) ?? null,
+  findGateTicketForCompletionByTicketNoAndBoothCode: async (
+    ticketNo: string,
+    boothCode: string
+  ) => {
+    const vehicleJob = state.vehicleJobs.find((job) => job.ticketNo === ticketNo);
+
+    if (!vehicleJob) {
+      return null;
+    }
+
+    return state.gateTickets.find(
+      (ticket) =>
+        ticket.vehicle_job_id === vehicleJob.id &&
+        ticket.boothCode === boothCode
+    ) ?? null;
+  },
   ensureTicketWorkersFromVehicleAssignments: async (
     ticketId: number,
     vehicleJobId: number
@@ -1143,6 +1286,7 @@ const workerApplicationRepositoryMock = {
       status: "DELIVERED",
       confirmed_at: null,
       rejected_at: null,
+      resolved_by_line_user_id: null,
     };
 
     state.completionSubmissions.push(submission);
@@ -1207,7 +1351,16 @@ const workerApplicationRepositoryMock = {
           submission.status === "DELIVERED"
       )
       .at(-1) ?? null,
-  confirmTicketCompletion: async (ticketId: number, submissionId: number) => {
+  findTicketCompletionSubmissionById: async (submissionId: number) =>
+    state.completionSubmissions.find(
+      (submission) => submission.id === submissionId
+    ) ?? null,
+  confirmTicketCompletion: async (
+    ticketId: number,
+    submissionId: number,
+    _connection?: unknown,
+    resolvedByLineUserId?: string | null
+  ) => {
     const ticket = state.gateTickets.find((item) => item.id === ticketId);
     const submission = state.completionSubmissions.find(
       (item) => item.id === submissionId
@@ -1221,6 +1374,7 @@ const workerApplicationRepositoryMock = {
     ticket.confirmation_status = "COMPLETED";
     submission.status = "COMPLETED";
     submission.confirmed_at = new Date().toISOString();
+    submission.resolved_by_line_user_id = resolvedByLineUserId ?? null;
     state.ticketWorkers
       .filter((worker) => worker.ticket_id === ticketId)
       .forEach((worker) => {
@@ -1232,7 +1386,13 @@ const workerApplicationRepositoryMock = {
       submission,
     };
   },
-  rejectTicketCompletion: async (ticketId: number, submissionId: number, rejectReason?: string | null) => {
+  rejectTicketCompletion: async (
+    ticketId: number,
+    submissionId: number,
+    rejectReason?: string | null,
+    _connection?: unknown,
+    resolvedByLineUserId?: string | null
+  ) => {
     const ticket = state.gateTickets.find((item) => item.id === ticketId);
     const submission = state.completionSubmissions.find(
       (item) => item.id === submissionId
@@ -1247,6 +1407,7 @@ const workerApplicationRepositoryMock = {
     ticket.reject_reason = rejectReason ?? null;
     submission.status = "REJECT";
     submission.rejected_at = new Date().toISOString();
+    submission.resolved_by_line_user_id = resolvedByLineUserId ?? null;
     state.ticketWorkers
       .filter((worker) => worker.ticket_id === ticketId)
       .forEach((worker) => {
@@ -1363,7 +1524,6 @@ const workerApplicationRepositoryMock = {
   },
 };
 
-// Mock repository เธเธฑเนเธ auth service เธชเธณเธซเธฃเธฑเธ login, session, refresh เนเธฅเธฐ current user route
 const gateRepositoryMock = {
   findGateRequestResponseByRef: async (gateTransactionRef: string) => {
     const requestLog = state.gateRequestLogs.find(
@@ -1695,7 +1855,6 @@ const authRepositoryMock = {
   },
 };
 
-// Mock repository เธเธฑเนเธ admin settings เธชเธณเธซเธฃเธฑเธเธชเธฃเนเธฒเธ admin เนเธฅเธฐเธเธฑเธ”เธเธฒเธฃ permission เธเนเธฒเธ service เธเธฃเธดเธ
 const workerPushTokenRepositoryMock = {
   upsertWorkerPushToken: async (input: {
     worker_code: string;
@@ -1773,6 +1932,7 @@ const workerPushTokenRepositoryMock = {
   },
 };
 
+// Function ค้นหา worker account ตาม identifier สำหรับ test
 function findWorkerAccountByIdentifier(identifier: string): AccountRecord | null {
   const directAccount = state.authAccountsByUsername.get(identifier);
 
@@ -2007,7 +2167,7 @@ const gateClientRepositoryMock = {
 
 /* -------------------------------------- Module Loader Patch -------------------------------------- */
 
-// Function patch import เธเธญเธ dependency เธ เธฒเธขเธเธญเธเนเธซเน route test เนเธเน fake infra เนเธฅเธฐ mock repository
+// Function ตั้งค่า module loader จำลองสำหรับ route test
 function patchModuleLoader(): void {
   if (patched) {
     return;
@@ -2037,7 +2197,7 @@ function patchModuleLoader(): void {
       };
     }
 
-    if (request === "../repositories/worker-application.repository") {
+    if (request === "../repositories/worker.repository") {
       return workerApplicationRepositoryMock;
     }
 
@@ -2046,11 +2206,10 @@ function patchModuleLoader(): void {
     }
 
     if (request === "../repositories/auth.repository") {
-      return authRepositoryMock;
-    }
-
-    if (request === "../repositories/worker-push-token.repository") {
-      return workerPushTokenRepositoryMock;
+      return {
+        ...authRepositoryMock,
+        workerPushTokenRepository: workerPushTokenRepositoryMock,
+      };
     }
 
     if (request === "../repositories/admin-workers.repository") {
@@ -2058,17 +2217,19 @@ function patchModuleLoader(): void {
     }
 
     if (request === "../repositories/admin-settings.repository") {
-      return adminSettingsRepositoryMock;
-    }
-
-    if (request === "../repositories/gate-client.repository") {
-      return gateClientRepositoryMock;
+      return {
+        ...adminSettingsRepositoryMock,
+        gateClientRepository: gateClientRepositoryMock,
+      };
     }
 
     if (request === "../services/admin-settings.service" || request === "./admin-settings.service") {
       const parentFilename = (parent?.filename ?? "").replaceAll("\\", "/");
 
-      if (parentFilename.endsWith("routes/admin-settings.routes.ts")) {
+      if (
+        parentFilename.endsWith("routes/admin-settings.routes.ts") ||
+        parentFilename.endsWith("middlewares/gate-client-auth.middleware.ts")
+      ) {
         return originalLoad.apply(this, [request, parent, isMain]);
       }
 
@@ -2099,10 +2260,31 @@ function patchModuleLoader(): void {
     if (request === "../services/notifications.service" || request === "./notifications.service") {
       return {
         publishNotification: (event: unknown) => state.notifications.push(event),
+        publishAdminWorkerStatusChanged: (event: {
+          title: string;
+          message: string;
+          workerCode: string | null;
+          queue: unknown;
+          reason: string;
+          extraPayload?: Record<string, unknown>;
+        }) => state.notifications.push({
+          type: "WORKER_STATUS_CHANGED",
+          title: event.title,
+          message: event.message,
+          payload: {
+            worker_code: event.workerCode,
+            queue: event.queue,
+            reason: event.reason,
+            ...(event.extraPayload ?? {}),
+          },
+          audience: {
+            roles: ["admin"],
+          },
+        }),
       };
     }
 
-    if (request === "./realtime.service") {
+    if (request === "../utils/realtime-event") {
       return {
         publishRealtimeEvent: (event: unknown) => state.realtimeEvents.push(event),
       };
@@ -2129,12 +2311,93 @@ function patchModuleLoader(): void {
             data,
           });
         },
+        enqueueLoggedLineMessage: async (input: {
+          jobName: string;
+          targetLineUserId: string;
+          messages: unknown;
+        }) => {
+          state.lineMessages.push({
+            name: input.jobName,
+            data: {
+              log_id: 1,
+              to: input.targetLineUserId,
+              messages: input.messages,
+            },
+          });
+          return 1;
+        },
       };
     }
 
     if (request === "../repositories/line.repository") {
       return {
         createMessageDeliveryLog: async () => 1,
+        createLineActionToken: async (input: {
+          action: string;
+          ticket_id: number;
+          submission_id: number;
+          boothCode: string;
+          expires_at?: Date;
+        }) => {
+          const now = new Date();
+          const id = state.nextLineActionTokenId++;
+          const record = {
+            id,
+            token: `line-action-token-${id}`,
+            action: input.action,
+            ticket_id: input.ticket_id,
+            submission_id: input.submission_id,
+            boothCode: input.boothCode,
+            expires_at:
+              input.expires_at?.toISOString() ??
+              new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            used_at: null,
+            created_at: now.toISOString(),
+            updated_at: now.toISOString(),
+          };
+
+          state.lineActionTokens.push(record);
+          return record;
+        },
+        findLineActionToken: async (token: string) =>
+          state.lineActionTokens.find((record) => record.token === token) ?? null,
+        upsertTicketRating: async (input: {
+          ticket_id: number;
+          submission_id: number;
+          line_user_id: string;
+          target_type?: string | null;
+          score: number;
+        }) => {
+          const now = new Date().toISOString();
+          let rating = state.ticketRatings.find(
+            (item) =>
+              item.ticket_id === input.ticket_id &&
+              item.line_user_id === input.line_user_id
+          );
+
+          if (!rating) {
+            rating = {
+              id: state.nextRatingId++,
+              ticket_id: input.ticket_id,
+              submission_id: input.submission_id,
+              line_user_id: input.line_user_id,
+              target_type: input.target_type ?? null,
+              score: input.score,
+              rated_at: now,
+              created_at: now,
+              updated_at: now,
+            };
+            state.ticketRatings.push(rating);
+            return rating;
+          }
+
+          rating.submission_id = input.submission_id;
+          rating.target_type = input.target_type ?? null;
+          rating.score = input.score;
+          rating.rated_at = now;
+          rating.updated_at = now;
+          return rating;
+        },
       };
     }
 
@@ -2144,21 +2407,21 @@ function patchModuleLoader(): void {
 
 /* -------------------------------------- Module Getters -------------------------------------- */
 
-// Function เนเธซเธฅเธ” password utility เธซเธฅเธฑเธ patch loader เนเธฅเนเธง เน€เธเธทเนเธญเนเธซเน env/config test เธเธฃเนเธญเธกเธเนเธญเธ import
+// Function ดึง password สำหรับ test
 export async function getPassword() {
   patchModuleLoader();
   passwordModule ??= await import("../../src/utils/password");
   return passwordModule;
 }
 
-// Function เนเธซเธฅเธ” worker queue เธเธฃเธดเธเธเธญเธ project เนเธ•เนเธเธนเธเธเธฑเธ FakeRedis เนเธ test
+// Function ดึง worker queue สำหรับ test
 export async function getWorkerQueue() {
   patchModuleLoader();
   workerQueueModule ??= await import("../../src/queues/worker-queue");
   return workerQueueModule;
 }
 
-// Function เนเธซเธฅเธ” worker dispatch เธเธฃเธดเธเธเธญเธ project เนเธ•เนเธเธนเธเธเธฑเธ mock repository เนเธฅเธฐ FakeRedis เนเธ test
+// Function ดึง worker dispatch สำหรับ test
 export async function getWorkerDispatch() {
   patchModuleLoader();
   workerDispatchModule ??= await import("../../src/queues/worker-dispatch");
@@ -2167,7 +2430,6 @@ export async function getWorkerDispatch() {
 
 /* -------------------------------------- Test Server -------------------------------------- */
 
-// Type server helper เธชเธณเธซเธฃเธฑเธเน€เธฃเธตเธขเธ endpoint เธเธฃเธดเธเธเนเธฒเธ HTTP เนเธ”เธขเนเธกเนเธ•เนเธญเธเธ•เธดเธ”เธ•เธฑเนเธ supertest เน€เธเธดเนเธก
 export type TestServer = {
   request: (
     method: string,
@@ -2182,6 +2444,7 @@ export type TestServer = {
   close: () => Promise<void>;
 };
 
+// Function ตรวจว่า return external body สำหรับ test
 function shouldReturnExternalBody(body: unknown, forceExternal?: boolean): boolean {
   return Boolean(
     forceExternal ||
@@ -2191,7 +2454,7 @@ function shouldReturnExternalBody(body: unknown, forceExternal?: boolean): boole
   );
 }
 
-// Function start Express app เธเธฃเธดเธเธเธ random port เนเธฅเนเธงเธเธทเธ helper เธชเธณเธซเธฃเธฑเธเธขเธดเธ request เนเธ route test
+// Function เริ่ม server จำลองสำหรับ test route API
 export async function startRouteTestServer(): Promise<TestServer> {
   patchModuleLoader();
   appModule ??= await import("../../src/app");
@@ -2242,7 +2505,7 @@ export async function startRouteTestServer(): Promise<TestServer> {
   };
 }
 
-// Function restore Node module loader เธซเธฅเธฑเธเธเธ route test เน€เธเธทเนเธญเนเธกเนเนเธซเน patch เธเธฃเธฐเธ—เธ test เธเธธเธ”เธญเธทเนเธ
+// Function คืน module loader กลับสู่สภาพเดิมหลัง test
 export function restoreRouteTestLoader(): void {
   if (!patched) {
     return;

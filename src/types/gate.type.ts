@@ -1,4 +1,3 @@
-// Type ส่วน input สินค้าที่ Gate ส่งมาในแต่ละตั๋ว/แผง
 interface GateProductCreateInput {
   productCode: string;
   productName: string;
@@ -7,7 +6,6 @@ interface GateProductCreateInput {
   quantity: number;
 }
 
-// Type ส่วน input ตั๋วระดับแผงที่ Gate ส่งมา
 interface GateTicketCreateInput {
   boothCode: string;
   boothName?: string;
@@ -16,7 +14,6 @@ interface GateTicketCreateInput {
   products: GateProductCreateInput[];
 }
 
-// Type ส่วน input งานระดับตลาดที่ Gate ส่งมา
 interface GateMarketCreateInput {
   marketCode: string;
   marketName: string;
@@ -24,7 +21,6 @@ interface GateMarketCreateInput {
   tickets: GateTicketCreateInput[];
 }
 
-// Type ส่วน input งานระดับรถที่ Gate ส่งมา
 export interface GateVehicleJobCreateInput {
   gate_transaction_ref: string;
   ticketNo: string;
@@ -36,7 +32,6 @@ export interface GateVehicleJobCreateInput {
   markets: GateMarketCreateInput[];
 }
 
-// Type ส่วน body ใหม่จาก Gate: 1 request ต่อ 1 ใบ/1 แผง/1 รายการสินค้า
 export interface GateVehicleJobBody {
   TicketNo: string;
   TicketCreatedAt: string;
@@ -56,7 +51,7 @@ export interface GateVehicleJobBody {
   Dispatch: boolean;
 }
 
-// Type Ticket object returned to Gate after create/replay.
+// Type object Ticket ที่ส่งกลับให้ Gate หลังสร้างหรือ replay
 interface GateVehicleJobResponseTicket {
   TicketNo: string;
   TicketCreatedAt: string;
@@ -68,19 +63,19 @@ interface GateVehicleJobResponseTicket {
   Status: GateVehicleJobResponseStatus;
 }
 
-// Type Market object returned to Gate after create/replay.
+// Type object Market ที่ส่งกลับให้ Gate หลังสร้างหรือ replay
 interface GateVehicleJobResponseMarket {
   MarketCode: string;
   MarketName: string;
 }
 
-// Type Booth object returned to Gate after create/replay.
+// Type object Booth ที่ส่งกลับให้ Gate หลังสร้างหรือ replay
 interface GateVehicleJobResponseBooth {
   BoothCode: string;
   BoothName: string | null;
 }
 
-// Type Product object returned to Gate after create/replay.
+// Type object Product ที่ส่งกลับให้ Gate หลังสร้างหรือ replay
 interface GateVehicleJobResponseProduct {
   ProductCode: string;
   ProductName: string;
@@ -89,11 +84,9 @@ interface GateVehicleJobResponseProduct {
   Quantity: number;
 }
 
-// Type ส่วนผลลัพธ์ของ Gate create/replay
 export type GateVehicleJobResult = "CREATED" | "REPLAYED";
 export type GateVehicleJobResponseStatus = "unload_now" | "waiting_unload";
 
-// Type ส่วน response แบบย่อหลัง Gate สร้างหรือ replay งานรถ
 export interface GateVehicleJobResponse {
   Result: GateVehicleJobResult;
   Ticket: GateVehicleJobResponseTicket;
@@ -106,9 +99,23 @@ export interface GateVehicleJobResponse {
   };
 }
 
-// Type ส่วน record สำหรับตรวจ replay/idempotency ของ Gate request
 export interface GateRequestReplayRecord {
   gate_transaction_ref: string;
   payload_snapshot: unknown;
   response_snapshot: GateVehicleJobResponse | null;
+}
+
+export interface GateVendorLineTargetDto {
+  line_user_id: string;
+  target_type: "owner" | "member";
+}
+
+export interface GateTicketAppendStateDto {
+  vehicle_job_id: number;
+  booth_count: number;
+  existing_booth_count: number;
+  duplicate_booth: {
+    boothCode: string;
+    marketCode: string;
+  } | null;
 }

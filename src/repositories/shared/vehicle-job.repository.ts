@@ -1,17 +1,17 @@
-// import Library
+// Import Library
 import { Prisma } from "@prisma/client";
 
-// import
+// Import Dependencies
 import { mapGateTicket, mapMarketJob, mapTicketProduct, mapVehicleJob } from "./mappers";
 import { client, requireDto } from "./repository-utils";
 
-// import Types
-import type { DbConnection } from "../../types/common.type";
+// Import Types
+import type { DbConnection } from "../../types/shared/common.type";
 import type { VehicleJobDetailResponse, VehicleJobDto } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function แปลงรายละเอียดงานรถแบบ nested เป็น response
+// Function แปลง vehicle job detail จาก DB
 export function mapVehicleJobDetail(record: Prisma.VehicleJobGetPayload<{
   include: {
     marketJobs: {
@@ -39,7 +39,7 @@ export function mapVehicleJobDetail(record: Prisma.VehicleJobGetPayload<{
   };
 }
 
-// Function หา VehicleJob จาก id
+// Function ค้นหา vehicle job ตาม ID จาก DB
 export async function findVehicleJobById(
   id: number,
   connection?: DbConnection
@@ -54,7 +54,7 @@ export async function findVehicleJobById(
   return mapVehicleJob(vehicleJob);
 }
 
-// Function หา VehicleJob จากเลขอ้างอิงงานรถสำหรับ public/admin API
+// Function ค้นหา vehicle job ตาม ref จาก DB
 export async function findVehicleJobByRef(
   ticketNo: string,
   connection?: DbConnection
@@ -69,7 +69,7 @@ export async function findVehicleJobByRef(
   return mapVehicleJob(vehicleJob);
 }
 
-// Function ดึงรายละเอียดงานรถพร้อมตลาด ตั๋ว และสินค้า
+// Function ดึง vehicle job detail จาก DB
 export async function getVehicleJobDetail(
   id: number,
   connection?: DbConnection
@@ -78,42 +78,6 @@ export async function getVehicleJobDetail(
   const vehicleJob = await db.vehicleJob.findUnique({
     where: {
       id,
-    },
-    include: {
-      marketJobs: {
-        orderBy: {
-          id: "asc",
-        },
-        include: {
-          tickets: {
-            orderBy: {
-              id: "asc",
-            },
-            include: {
-              products: {
-                orderBy: {
-                  id: "asc",
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-
-  return vehicleJob ? mapVehicleJobDetail(vehicleJob) : null;
-}
-
-// Function ดึงรายละเอียดงานรถจากเลขอ้างอิงงานรถสำหรับ public/admin API
-export async function getVehicleJobDetailByRef(
-  ticketNo: string,
-  connection?: DbConnection
-): Promise<VehicleJobDetailResponse | null> {
-  const db = client(connection);
-  const vehicleJob = await db.vehicleJob.findUnique({
-    where: {
-      ticketNo,
     },
     include: {
       marketJobs: {

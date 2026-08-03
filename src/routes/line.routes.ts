@@ -1,12 +1,10 @@
-// import Library
+// Import Library
 import express from "express";
-// import Service
+// Import Services
 import * as lineService from "../services/line.service";
 
-// Config Express router สำหรับ LINE webhook routes
 const router = express.Router();
 
-// Route รับ LINE webhook จาก vendor สำหรับ confirm/reject งาน
 router.post(
   "/webhook",
   async (req, res, next) => {

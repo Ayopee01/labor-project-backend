@@ -1,37 +1,43 @@
-import { WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
+import { ASSIGNMENT_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
 import type { VehicleJobAssignmentDto, WorkerQueueEntryDto } from "../types/worker.type";
-import type { WorkerWorkStatus } from "../types/worker-status.type";
+import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Map internal queue/assignment states to the 5 UI worker statuses.
+// Function แปลง state ภายในของคิว/assignment เป็น 5 สถานะ worker สำหรับ UI
 export function resolveWorkerWorkStatus(
   queue: WorkerQueueEntryDto | null,
   assignment: VehicleJobAssignmentDto | null
 ): WorkerWorkStatus {
-  if (queue?.status === "break") {
-    return "break";
+  if (queue?.status === WORKER_WORK_STATUS.BREAK) {
+    return WORKER_WORK_STATUS.BREAK;
   }
 
-  if (queue?.status === "ready" && assignment?.status === "DELIVERED") {
-    return "ready";
+  if (
+    queue?.status === WORKER_WORK_STATUS.READY &&
+    assignment?.status === ASSIGNMENT_STATUS.DELIVERED
+  ) {
+    return WORKER_WORK_STATUS.READY;
   }
 
   if (assignment) {
     if (WORKING_ASSIGNMENT_STATUSES.includes(assignment.status)) {
-      return "working";
+      return WORKER_WORK_STATUS.WORKING;
     }
 
-    return "assigned";
+    return WORKER_WORK_STATUS.ASSIGNED;
   }
 
-  if (queue?.status === "ready") {
-    return "ready";
+  if (queue?.status === WORKER_WORK_STATUS.READY) {
+    return WORKER_WORK_STATUS.READY;
   }
 
-  if (queue?.status === "assigned" || queue?.status === "working") {
+  if (
+    queue?.status === WORKER_WORK_STATUS.ASSIGNED ||
+    queue?.status === WORKER_WORK_STATUS.WORKING
+  ) {
     return queue.status;
   }
 
-  return "open_app";
+  return WORKER_WORK_STATUS.OPEN_APP;
 }

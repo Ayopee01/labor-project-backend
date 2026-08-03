@@ -1,11 +1,11 @@
-// import Library
+// Import Library
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-// import
+// Import Dependencies
 import ApiError from "../utils/api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ตรวจสอบว่า role ใน token มีสิทธิ์เข้าใช้งาน route นี้หรือไม่
+// Function จัดการ role middleware สำหรับ Express middleware
 export default function roleMiddleware(allowedRoles: string[]): RequestHandler {
   const allowedRoleSet = new Set(allowedRoles);
 

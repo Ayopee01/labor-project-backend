@@ -1,34 +1,19 @@
-// import Library
+// Import Library
 import { Prisma } from "@prisma/client";
 
-// import
+// Import Dependencies
 import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
 import { mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
 
-// import Types
-import type { DbConnection } from "../types/common.type";
-import type { GateRequestReplayRecord, GateVehicleJobCreateInput, GateVehicleJobResponse } from "../types/gate.type";
+// Import Types
+import type { DbConnection } from "../types/shared/common.type";
+import type { GateRequestReplayRecord, GateTicketAppendStateDto, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVendorLineTargetDto } from "../types/gate.type";
 import type { VehicleJobDto } from "../types/worker.type";
-
-export interface VendorLineTargetDto {
-  line_user_id: string;
-  target_type: "owner" | "member";
-}
-
-export interface GateTicketAppendStateDto {
-  vehicle_job_id: number;
-  booth_count: number;
-  existing_booth_count: number;
-  duplicate_booth: {
-    boothCode: string;
-    marketCode: string;
-  } | null;
-}
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function หา log request จาก Gate ด้วย idempotency key
+// Function ค้นหา gate request response ตาม ref จาก DB
 export async function findGateRequestResponseByRef(
   gateTransactionRef: string,
   connection?: DbConnection
@@ -47,7 +32,7 @@ export async function findGateRequestResponseByRef(
   return requestLog.responseSnapshot as unknown as GateVehicleJobResponse;
 }
 
-// Function หา request log สำหรับตรวจ replay/idempotency ของ gate_transaction_ref
+// Function ค้นหา gate request replay ตาม ref จาก DB
 export async function findGateRequestReplayByRef(
   gateTransactionRef: string,
   connection?: DbConnection
@@ -70,7 +55,7 @@ export async function findGateRequestReplayByRef(
   };
 }
 
-// Function หา VehicleJob จากเลขอ้างอิงงานรถ
+// Function ค้นหา vehicle job ตาม ref จาก DB
 export async function findVehicleJobByRef(
   ticketNo: string,
   connection?: DbConnection
@@ -85,7 +70,7 @@ export async function findVehicleJobByRef(
   return mapVehicleJob(vehicleJob);
 }
 
-// Function สร้างงานรถจาก Gate พร้อมตลาด ตั๋ว สินค้า QR token และ request log
+// Function ดึง Gate ticket append state จาก DB
 export async function getGateTicketAppendState(
   ticketNo: string,
   boothCode: string,
@@ -134,11 +119,12 @@ export async function getGateTicketAppendState(
   };
 }
 
+// Function ค้นหา active vendor LINE targets ตาม stall จาก DB
 export async function findActiveVendorLineTargetsByStall(
   marketCode: string,
   boothCode: string,
   connection?: DbConnection
-): Promise<VendorLineTargetDto[]> {
+): Promise<GateVendorLineTargetDto[]> {
   const db = client(connection);
   const ownerStall = await db.masterOwnerStall.findUnique({
     where: {
@@ -171,8 +157,8 @@ export async function findActiveVendorLineTargetsByStall(
     },
   });
   const seen = new Set<string>();
-  const targets: VendorLineTargetDto[] = [];
-  const addTarget = (lineUserId: string, targetType: VendorLineTargetDto["target_type"]) => {
+  const targets: GateVendorLineTargetDto[] = [];
+  const addTarget = (lineUserId: string, targetType: GateVendorLineTargetDto["target_type"]) => {
     if (seen.has(lineUserId)) {
       return;
     }
@@ -193,6 +179,7 @@ export async function findActiveVendorLineTargetsByStall(
   return targets;
 }
 
+// Function สร้าง vehicle job จาก gate จาก DB
 export async function createVehicleJobFromGate(
   input: GateVehicleJobCreateInput,
   payloadSnapshot: Prisma.InputJsonValue,
@@ -342,7 +329,7 @@ export async function createVehicleJobFromGate(
   return requireDto(mapVehicleJob(savedVehicleJob), "vehicle job create");
 }
 
-// Function บันทึก response snapshot ให้ Gate request log
+// Function อัปเดต gate request response จาก DB
 export async function updateGateRequestResponse(
   gateTransactionRef: string,
   responseSnapshot: Prisma.InputJsonValue,

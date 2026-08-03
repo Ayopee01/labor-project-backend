@@ -1,14 +1,15 @@
-// import Library
+// Import Library
 import { createHash } from "crypto";
 import type { Prisma } from "@prisma/client";
-// import
+// Import Dependencies
 import { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 import { withTransaction } from "../db/prisma";
+import { enqueueLoggedLineMessage } from "../queues/notification-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import * as gateRepository from "../repositories/gate.repository";
-import * as workerApplicationRepository from "../repositories/worker-application.repository";
+import * as workerApplicationRepository from "../repositories/worker.repository";
 import { publishNotification } from "./notifications.service";
-// import Types
+// Import Types
 import type {
   GateVehicleJobBody,
   GateVehicleJobResponse,
@@ -16,27 +17,32 @@ import type {
   GateVehicleJobResult,
 } from "../types/gate.type";
 import type { GateVehicleJobCreateInput } from "../types/gate.type";
-import type { DbConnection } from "../types/common.type";
+import type { DbConnection } from "../types/shared/common.type";
+import type { LineMessage } from "../types/line.type";
 import type { VehicleJobDetailResponse } from "../types/worker.type";
-// import Validation
+// Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { gateVehicleJobBodySchema } from "../validation/schemas";
-// import Utils
+// Import Utils
 import ApiError from "../utils/api-error";
+import { buildGateTicketCreatedFlexMessage } from "../utils/line-flex-message";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
+// Function สร้าง Gate ticket response status ใน service flow
 function buildGateTicketResponseStatus(dispatch: boolean): GateVehicleJobResponseStatus {
   return dispatch
     ? VEHICLE_OPERATION_STATUS.UNLOAD_NOW
     : VEHICLE_OPERATION_STATUS.WAITING_UNLOAD;
 }
 
+// Function ตรวจว่า Gate ticket response status ใน service flow
 function isGateTicketResponseStatus(value: unknown): value is GateVehicleJobResponseStatus {
   return value === VEHICLE_OPERATION_STATUS.UNLOAD_NOW ||
     value === VEHICLE_OPERATION_STATUS.WAITING_UNLOAD;
 }
 
+// Function ค้นหา gate response product ใน service flow
 function findGateResponseProduct(
   detail: VehicleJobDetailResponse,
   input: GateVehicleJobBody
@@ -72,6 +78,7 @@ function findGateResponseProduct(
   };
 }
 
+// Function ตรวจว่า gate vehicle job body ใน service flow
 function isGateVehicleJobBody(value: unknown): value is GateVehicleJobBody {
   if (!value || typeof value !== "object") {
     return false;
@@ -98,7 +105,7 @@ function isGateVehicleJobBody(value: unknown): value is GateVehicleJobBody {
   );
 }
 
-// Function สร้าง response แบบย่อให้ Gate หลังสร้างหรือ replay งานรถ
+// Function สร้าง public gate vehicle job response ใน service flow
 function buildPublicGateVehicleJobResponse(
   detail: VehicleJobDetailResponse,
   input: GateVehicleJobBody,
@@ -140,7 +147,48 @@ function buildPublicGateVehicleJobResponse(
   };
 }
 
-// Function normalize JSON payload เพื่อเทียบ idempotency โดยไม่สนลำดับ key
+// Function สร้าง Gate ticket created messages ใน service flow
+function buildGateTicketCreatedMessages(
+  response: GateVehicleJobResponse
+): LineMessage[] {
+  return [buildGateTicketCreatedFlexMessage(response)];
+}
+
+// Function จัดการ notify vendor Gate ticket created ใน service flow
+async function notifyVendorGateTicketCreated(
+  response: GateVehicleJobResponse
+): Promise<void> {
+  const vendorLineTargets = await gateRepository.findActiveVendorLineTargetsByStall(
+    response.Market.MarketCode,
+    response.Booth.BoothCode
+  );
+
+  if (vendorLineTargets.length === 0) {
+    return;
+  }
+
+  const messages = buildGateTicketCreatedMessages(response);
+
+  for (const target of vendorLineTargets) {
+    await enqueueLoggedLineMessage({
+      jobName: "send-gate-ticket-created",
+      action: "send_gate_ticket_created",
+      targetLineUserId: target.line_user_id,
+      payload: {
+        ticketNo: response.Ticket.TicketNo,
+        marketCode: response.Market.MarketCode,
+        boothCode: response.Booth.BoothCode,
+        productCode: response.Product.ProductCode,
+        vendor_line_id: target.line_user_id,
+        vendor_line_target_type: target.target_type,
+        status: response.Ticket.Status,
+      },
+      messages,
+    });
+  }
+}
+
+// Function แปลงให้เป็นรูปแบบกลาง json ใน service flow
 function normalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => normalizeJson(item));
@@ -158,11 +206,12 @@ function normalizeJson(value: unknown): unknown {
   );
 }
 
-// Function เทียบ payload เดิมกับ payload ใหม่ของ gate_transaction_ref
+// Function จัดการ are payloads equal ใน service flow
 function arePayloadsEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(normalizeJson(left)) === JSON.stringify(normalizeJson(right));
 }
 
+// Function สร้าง gate transaction ref ใน service flow
 function buildGateTransactionRef(input: GateVehicleJobBody): string {
   const idempotencyParts = {
     ticketNo: input.TicketNo,
@@ -177,21 +226,7 @@ function buildGateTransactionRef(input: GateVehicleJobBody): string {
   return `GATE-${hash}`;
 }
 
-function buildLegacyGateTransactionRef(input: GateVehicleJobBody): string {
-  const idempotencyParts = {
-    ticketNo: input.TicketNo,
-    marketCode: input.MarketCode,
-    boothCode: input.BoothCode,
-    productCode: input.ProductCode,
-  };
-  const hash = createHash("sha256")
-    .update(JSON.stringify(normalizeJson(idempotencyParts)))
-    .digest("hex")
-    .slice(0, 24);
-
-  return `GATE-${hash}`;
-}
-
+// Function สร้าง gate create input ใน service flow
 function buildGateCreateInput(input: GateVehicleJobBody): GateVehicleJobCreateInput {
   return {
     gate_transaction_ref: buildGateTransactionRef(input),
@@ -225,7 +260,7 @@ function buildGateCreateInput(input: GateVehicleJobBody): GateVehicleJobCreateIn
   };
 }
 
-// Function สร้าง replay response แบบย่อจาก snapshot เดิมที่อาจเคยเก็บ response เต็มไว้
+// Function ตรวจสอบ Gate ticket append rules ใน service flow
 async function validateGateTicketAppendRules(
   input: GateVehicleJobCreateInput,
   connection?: DbConnection
@@ -289,6 +324,7 @@ async function validateGateTicketAppendRules(
   }
 }
 
+// Function สร้าง gate create input พร้อม vendor LINE IDs ใน service flow
 async function buildGateCreateInputWithVendorLineIds(
   input: GateVehicleJobCreateInput,
   connection?: DbConnection
@@ -331,32 +367,19 @@ async function buildGateCreateInputWithVendorLineIds(
   };
 }
 
+// Function สร้าง gate replay response ใน service flow
 function buildGateReplayResponse(
   response: GateVehicleJobResponse,
   payloadSnapshot: unknown
 ): GateVehicleJobResponse {
   const responseRecord = response as unknown as Record<string, unknown>;
 
-  if ("Ticket" in responseRecord && "Market" in responseRecord && "Booth" in responseRecord && "Product" in responseRecord) {
-    const pascalResponse = response as GateVehicleJobResponse;
-    const status = isGateVehicleJobBody(payloadSnapshot)
-      ? buildGateTicketResponseStatus(payloadSnapshot.Dispatch)
-      : isGateTicketResponseStatus(pascalResponse.Ticket.Status)
-        ? pascalResponse.Ticket.Status
-        : VEHICLE_OPERATION_STATUS.WAITING_UNLOAD;
-
-    return {
-      ...pascalResponse,
-      Result: "REPLAYED",
-      Ticket: {
-        ...pascalResponse.Ticket,
-        WorkersRequired: 1,
-        Status: status,
-      },
-    };
-  }
-
-  if (!isGateVehicleJobBody(payloadSnapshot)) {
+  if (
+    !("Ticket" in responseRecord) ||
+    !("Market" in responseRecord) ||
+    !("Booth" in responseRecord) ||
+    !("Product" in responseRecord)
+  ) {
     throw new ApiError(
       409,
       "GATE_REQUEST_RESPONSE_NOT_READY",
@@ -364,81 +387,25 @@ function buildGateReplayResponse(
     );
   }
 
-  const legacyResponse = response as unknown as {
-    ticket?: {
-      ticketNo?: string;
-      ticketCreatedAt?: string;
-      boothCount?: number;
-      licensePlate?: string;
-      vehicleTypeCode?: string | null;
-      vehicleTypeName?: string | null;
-      workers_required?: number;
-      status?: string;
-    };
-    market?: {
-      marketCode?: string;
-      marketName?: string;
-    };
-    booth?: {
-      boothCode?: string;
-      boothName?: string | null;
-    };
-    product?: {
-      productCode?: string;
-      productName?: string;
-      packageCode?: string;
-      packageName?: string;
-      quantity?: number;
-    };
-    qr?: {
-      driver_qr_token?: string;
-      worker_qr_token?: string;
-    };
-    vehicle_job?: {
-      ticketNo?: string;
-      license_plate?: string;
-      vehicleTypeName?: string | null;
-      status?: string;
-    };
-  };
-  const ticketCreatedAt =
-    legacyResponse.ticket?.ticketCreatedAt ?? payloadSnapshot.TicketCreatedAt;
+  const pascalResponse = response as GateVehicleJobResponse;
+  const status = isGateVehicleJobBody(payloadSnapshot)
+    ? buildGateTicketResponseStatus(payloadSnapshot.Dispatch)
+    : isGateTicketResponseStatus(pascalResponse.Ticket.Status)
+      ? pascalResponse.Ticket.Status
+      : VEHICLE_OPERATION_STATUS.WAITING_UNLOAD;
 
   return {
+    ...pascalResponse,
     Result: "REPLAYED",
     Ticket: {
-      TicketNo: legacyResponse.ticket?.ticketNo ?? legacyResponse.vehicle_job?.ticketNo ?? payloadSnapshot.TicketNo,
-      TicketCreatedAt: ticketCreatedAt,
-      BoothCount: legacyResponse.ticket?.boothCount ?? payloadSnapshot.BoothCount,
-      LicensePlate: legacyResponse.ticket?.licensePlate ?? legacyResponse.vehicle_job?.license_plate ?? payloadSnapshot.LicensePlate,
-      VehicleTypeCode: legacyResponse.ticket?.vehicleTypeCode ?? payloadSnapshot.VehicleTypeCode,
-      VehicleTypeName: legacyResponse.ticket?.vehicleTypeName ?? legacyResponse.vehicle_job?.vehicleTypeName ?? payloadSnapshot.VehicleTypeName,
+      ...pascalResponse.Ticket,
       WorkersRequired: 1,
-      Status: buildGateTicketResponseStatus(payloadSnapshot.Dispatch),
-    },
-    Market: {
-      MarketCode: legacyResponse.market?.marketCode ?? payloadSnapshot.MarketCode,
-      MarketName: legacyResponse.market?.marketName ?? payloadSnapshot.MarketName,
-    },
-    Booth: {
-      BoothCode: legacyResponse.booth?.boothCode ?? payloadSnapshot.BoothCode,
-      BoothName: legacyResponse.booth?.boothName ?? payloadSnapshot.BoothName,
-    },
-    Product: {
-      ProductCode: legacyResponse.product?.productCode ?? payloadSnapshot.ProductCode,
-      ProductName: legacyResponse.product?.productName ?? payloadSnapshot.ProductName,
-      PackageCode: legacyResponse.product?.packageCode ?? payloadSnapshot.PackageCode,
-      PackageName: legacyResponse.product?.packageName ?? payloadSnapshot.PackageName,
-      Quantity: legacyResponse.product?.quantity ?? payloadSnapshot.Quantity,
-    },
-    Qr: {
-      DriverQrToken: legacyResponse.qr?.driver_qr_token ?? "",
-      WorkerQrToken: legacyResponse.qr?.worker_qr_token ?? payloadSnapshot.TicketNo,
+      Status: status,
     },
   };
 }
 
-// Function สร้าง response งานรถสำหรับ Gate พร้อม QR token
+// Function สร้าง gate vehicle job response ใน service flow
 async function buildGateVehicleJobResponse(
   vehicleJobId: number,
   input: GateVehicleJobBody,
@@ -454,13 +421,13 @@ async function buildGateVehicleJobResponse(
   return buildPublicGateVehicleJobResponse(detail, input, result);
 }
 
-// Function สร้างงานรถจาก Gate mock payload
+// Function สร้าง vehicle job จาก gate ใน service flow
 export async function createVehicleJobFromGate(body: unknown): Promise<GateVehicleJobResponse> {
   const input = parseWithSchema<GateVehicleJobBody>(gateVehicleJobBodySchema, body);
   const gateInput = buildGateCreateInput(input);
-  const existingGateRequest =
-    await gateRepository.findGateRequestReplayByRef(gateInput.gate_transaction_ref) ??
-    await gateRepository.findGateRequestReplayByRef(buildLegacyGateTransactionRef(input));
+  const existingGateRequest = await gateRepository.findGateRequestReplayByRef(
+    gateInput.gate_transaction_ref
+  );
 
   if (existingGateRequest) {
     if (!arePayloadsEqual(existingGateRequest.payload_snapshot, input)) {
@@ -547,6 +514,8 @@ export async function createVehicleJobFromGate(body: unknown): Promise<GateVehic
       roles: ["admin"],
     },
   });
+
+  await notifyVendorGateTicketCreated(response);
 
   return response;
 }

@@ -13,6 +13,8 @@
         idempotency key from TicketNo + MarketCode + BoothCode,
         maps MarketCode + BoothCode to owner/member LINE targets from the
         internal master_owner_stalls and master_member_stalls tables,
+        sends a LINE Flex notification to those owner/member targets when a
+        new Gate ticket is created,
         returns the saved Ticket/Market/Booth/Product objects, returns
         Qr.WorkerQrToken as the same value as TicketNo for worker check-in, and
         returns Ticket.WorkersRequired as 1 for the current Gate flow;

@@ -1,7 +1,25 @@
-import type { VehicleJobDetailResponse, VehicleJobDto } from "./worker.type";
+import type { VehicleJobDetailResponse } from "./worker.type";
 import type { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 
-// Type ส่วน filter สำหรับรายการงานรถฝั่ง Admin
+export type VehicleJobOperationRecord = import("@prisma/client").Prisma.VehicleJobGetPayload<{
+  include: {
+    marketJobs: {
+      include: {
+        tickets: {
+          include: {
+            products: true;
+          };
+        };
+      };
+    };
+    assignments: {
+      include: {
+        worker: true;
+      };
+    };
+  };
+}>;
+
 export interface VehicleJobListFilters {
   search?: string;
   status?: string;
@@ -11,11 +29,11 @@ export interface VehicleJobListFilters {
   limit?: number;
 }
 
-// Type value of operation_status filter for Admin vehicle operation board.
+// Type ค่า operation_status สำหรับ filter บอร์ด operation ของ Admin
 export type VehicleOperationStatus =
   (typeof VEHICLE_OPERATION_STATUS)[keyof typeof VEHICLE_OPERATION_STATUS];
 
-// Type filter for Admin vehicle operation board, separated from history filters.
+// Type filter สำหรับบอร์ด operation ของ Admin แยกจาก filter ของ history
 export interface VehicleJobOperationFilters {
   search?: string;
   operation_status?: VehicleOperationStatus;
@@ -25,13 +43,11 @@ export interface VehicleJobOperationFilters {
   limit?: number;
 }
 
-// Type ส่วนผลลัพธ์รายการงานรถพร้อมจำนวนทั้งหมด
 export interface VehicleJobListResult {
   data: VehicleJobDetailResponse[];
   total?: number;
 }
 
-// Type ส่วน response งานรถแบบ public สำหรับ Admin Jobs
 export interface AdminVehicleJobListItemResponse {
   ticketNo: string;
   gate_transaction_ref: string;
@@ -44,20 +60,13 @@ export interface AdminVehicleJobListItemResponse {
   status: string;
 }
 
-export interface AdminVehicleJobResponse extends AdminVehicleJobListItemResponse {
-  driver_qr_token: string;
-  worker_qr_token: string;
+interface AdminVehicleJobHistoryVehicleResponse extends AdminVehicleJobListItemResponse {
   created_at: string;
   updated_at: string;
 }
 
-export interface AdminVehicleJobHistoryVehicleResponse extends AdminVehicleJobListItemResponse {
-  created_at: string;
-  updated_at: string;
-}
-
-// Type product row shown inside Admin vehicle job history and operation responses.
-export interface AdminVehicleJobHistoryProductResponse {
+// Type แถวสินค้าใน response history และ operation ของ Admin
+interface AdminVehicleJobHistoryProductResponse {
   productCode: string;
   productName: string;
   packageCode: string;
@@ -66,8 +75,8 @@ export interface AdminVehicleJobHistoryProductResponse {
   confirmed_quantity: string | null;
 }
 
-// Type booth/ticket row shown inside Admin vehicle job history and operation responses.
-export interface AdminVehicleJobHistoryTicketResponse {
+// Type แถว booth/ticket ที่แสดงใน response history และ operation ของ Admin
+interface AdminVehicleJobHistoryTicketResponse {
   boothCode: string;
   boothName: string | null;
   vendor_line_id: string | null;
@@ -79,8 +88,8 @@ export interface AdminVehicleJobHistoryTicketResponse {
   products: AdminVehicleJobHistoryProductResponse[];
 }
 
-// Type market row that groups booth/ticket rows in Admin vehicle job history.
-export interface AdminVehicleJobHistoryMarketResponse {
+// Type แถว market ที่รวม booth/ticket ใน history งานรถของ Admin
+interface AdminVehicleJobHistoryMarketResponse {
   marketCode: string;
   marketName: string;
   dropoff_point: string | null;
@@ -90,13 +99,13 @@ export interface AdminVehicleJobHistoryMarketResponse {
   tickets: AdminVehicleJobHistoryTicketResponse[];
 }
 
-// Type response item for Admin vehicle job history.
+// Type item ใน response history งานรถของ Admin
 export interface AdminVehicleJobHistoryItemResponse {
   vehicle_job: AdminVehicleJobHistoryVehicleResponse;
   markets: AdminVehicleJobHistoryMarketResponse[];
 }
 
-// Type status counts for the left list of Admin vehicle operation board.
+// Type จำนวนสถานะสำหรับ list ด้านซ้ายของบอร์ด operation ฝั่ง Admin
 export interface AdminVehicleJobOperationSummaryResponse {
   total: number;
   unload_now: number;
@@ -105,7 +114,7 @@ export interface AdminVehicleJobOperationSummaryResponse {
   driver_waiting_queue: number;
 }
 
-// Type worker assignment counts for one vehicle job in Admin operation board.
+// Type จำนวน assignment ของ worker ในงานรถหนึ่งงานบนบอร์ด operation ของ Admin
 export interface AdminVehicleJobOperationWorkerSummaryResponse {
   required: number;
   assigned: number;
@@ -121,7 +130,7 @@ export interface AdminVehicleJobOperationWorkerSummaryResponse {
   missing: number;
 }
 
-// Type market/booth/product counts for one vehicle job in Admin operation board.
+// Type จำนวน market/booth/product ของงานรถหนึ่งงานบนบอร์ด operation ของ Admin
 export interface AdminVehicleJobOperationMarketSummaryResponse {
   total: number;
   stalls: number;
@@ -131,8 +140,8 @@ export interface AdminVehicleJobOperationMarketSummaryResponse {
   rejected: number;
 }
 
-// Type worker row shown in one vehicle operation detail.
-export interface AdminVehicleJobOperationWorkerResponse {
+// Type แถว worker ที่แสดงในรายละเอียด operation ของรถหนึ่งงาน
+interface AdminVehicleJobOperationWorkerResponse {
   worker_code: string | null;
   full_name: string;
   shirt_number: string | null;
@@ -149,13 +158,13 @@ export interface AdminVehicleJobOperationWorkerResponse {
   updated_at: string;
 }
 
-// Type booth/ticket row with product count for Admin operation detail.
-export interface AdminVehicleJobOperationTicketResponse
+// Type แถว booth/ticket พร้อมจำนวนสินค้าในรายละเอียด operation ของ Admin
+interface AdminVehicleJobOperationTicketResponse
   extends AdminVehicleJobHistoryTicketResponse {
   product_count: number;
 }
 
-// Type market row with summary for Admin operation detail.
+// Type แถว market พร้อม summary ในรายละเอียด operation ของ Admin
 export interface AdminVehicleJobOperationMarketResponse
   extends AdminVehicleJobHistoryMarketResponse {
   summary: {
@@ -168,7 +177,7 @@ export interface AdminVehicleJobOperationMarketResponse
   tickets: AdminVehicleJobOperationTicketResponse[];
 }
 
-// Type full operation board item for one vehicle job.
+// Type ข้อมูลเต็มของงานรถหนึ่งงานบนบอร์ด operation
 export interface AdminVehicleJobOperationItemResponse {
   operation_status: VehicleOperationStatus;
   vehicle_job: AdminVehicleJobHistoryVehicleResponse & {
@@ -189,7 +198,7 @@ export interface AdminVehicleJobOperationItemResponse {
   markets: AdminVehicleJobOperationMarketResponse[];
 }
 
-// Type list response for Admin operation board.
+// Type response แบบ list สำหรับบอร์ด operation ของ Admin
 export interface AdminVehicleJobOperationListResponse {
   server_time: string;
   summary: AdminVehicleJobOperationSummaryResponse;
@@ -202,28 +211,25 @@ export interface AdminVehicleJobOperationListResponse {
   };
 }
 
-// Type simple action response shared by Admin job mutations.
+// Type response กลางแบบสั้นสำหรับ action ที่แก้งานฝั่ง Admin
 export interface AdminVehicleJobActionResponse {
   message: string;
   ticketNo: string;
   status: string;
 }
 
-// Type response สำหรับ endpoint ยกเลิกงานระดับรถ/ตลาด/แผงผ่าน endpoint เดียว
 export type AdminJobCancelResponse =
   | AdminVehicleJobActionResponse
   | AdminCancelVehicleJobAndRequeueResponse
   | AdminMarketJobActionResponse
   | AdminStallJobActionResponse;
 
-// Type ส่วน assignment หลังต่อเวลา scan deadline
 export interface AdminScanDeadlineAssignmentResponse {
   worker_code: string | null;
   status: string;
   scan_deadline_at: string | null;
 }
 
-// Type ส่วน response ของ API ต่อเวลา scan deadline
 export interface AdminExtendScanDeadlineResponse {
   message: string;
   ticketNo: string;
@@ -231,7 +237,6 @@ export interface AdminExtendScanDeadlineResponse {
   assignments: AdminScanDeadlineAssignmentResponse[];
 }
 
-// Type ส่วน assignment ที่แสดงใน response ของ Admin assign workers
 export interface AdminAssignmentResponse {
   ticketNo: string;
   worker_code: string | null;
@@ -242,14 +247,12 @@ export interface AdminAssignmentResponse {
   updated_at: string;
 }
 
-// Type ส่วน response ของ API assign worker เข้างานรถ
 export interface AdminAssignWorkersResponse {
   message: string;
   ticketNo: string;
   assignments: AdminAssignmentResponse[];
 }
 
-// Type ส่วน response ของ API ยกเลิก assignment ราย worker
 export interface AdminCancelAssignmentResponse {
   message: string;
   ticketNo: string | null;
@@ -257,7 +260,6 @@ export interface AdminCancelAssignmentResponse {
   status: string;
 }
 
-// Type ส่วน response ของ API ยกเลิกงานรถและคืน worker เข้า queue
 export interface AdminCancelVehicleJobAndRequeueResponse {
   message: string;
   ticketNo: string;
@@ -265,7 +267,7 @@ export interface AdminCancelVehicleJobAndRequeueResponse {
   requeued_worker_codes: Array<string | null>;
 }
 
-// Type response after cancelling one market job.
+// Type response หลังยกเลิกงาน market หนึ่งรายการ
 export interface AdminMarketJobActionResponse {
   message: string;
   ticketNo: string | null;
@@ -273,7 +275,7 @@ export interface AdminMarketJobActionResponse {
   status: string;
 }
 
-// Type response after cancelling one booth/ticket job.
+// Type response หลังยกเลิกงาน booth/ticket หนึ่งรายการ
 export interface AdminStallJobActionResponse {
   message: string;
   ticketNo: string | null;

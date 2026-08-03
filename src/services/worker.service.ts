@@ -1,73 +1,47 @@
-﻿// import Library
-import type { Prisma } from "@prisma/client";
-// import
+// Import Library
+// Import Dependencies
 import { withTransaction } from "../db/prisma";
-import { enqueueLineMessage } from "../queues/notification-queue";
-import { enqueueWorker, getWorkerBreakCount, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, markWorkerShiftClosed, markWorkerShiftOnlineUsed, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, removeWorkerBreakReturn, resetWorkerAcceptTimeoutCount, scheduleScanTimeout, scheduleScanWarning, scheduleVendorConfirmationTimeout, scheduleWorkerBreakReturn, scheduleWorkerShiftEnd } from "../queues/worker-queue";
+import { enqueueLoggedLineMessage } from "../queues/notification-queue";
+import { enqueueWorker, getWorkerBreakCount, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, removeWorkerBreakReturn, scheduleScanTimeout, scheduleScanWarning, scheduleVendorConfirmationTimeout, scheduleWorkerBreakReturn } from "../queues/worker-queue";
 import { dispatchReadyWorkers, handleAssignmentAcceptTimeout } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as lineRepository from "../repositories/line.repository";
-import * as workerApplicationRepository from "../repositories/worker-application.repository";
-import { accountRepository, workScheduleRepository } from "../repositories/worker-application.repository";
+import * as workerApplicationRepository from "../repositories/worker.repository";
+import { accountRepository, workScheduleRepository } from "../repositories/worker.repository";
 import { publishNotification } from "./notifications.service";
-import { publishRealtimeEvent } from "./realtime.service";
+import { publishRealtimeEvent } from "../utils/realtime-event";
 import { getRuntimeSettings } from "./admin-settings.service";
-// import Types
+import { publishAdminWorkerStatusChanged } from "./notifications.service";
+import { buildTicketResultAudience } from "../utils/ticket-audience";
+import {
+  buildRemainingBreakTime,
+  buildWorkerDailySummary,
+  closeWorkerAttendanceShift,
+  markWorkerAttendanceOnline,
+  scheduleWorkerShiftEndIfNeeded,
+} from "../utils/worker-attendance";
+// Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
+import type { LineMessage } from "../types/line.type";
 import type { GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
-import type { AccountDto, WorkScheduleDto } from "../types/admin-workers.type";
-import type { DbConnection } from "../types/common.type";
-import type { WorkerShiftCloseReason } from "../repositories/worker-shift-attendance.repository";
-// import Validation
+import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
+import type { DbConnection } from "../types/shared/common.type";
+import { ASSIGNMENT_STATUS, TICKET_STATUS } from "../constants/job-status";
+// Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { workerAssignmentHistoryQuerySchema, workerScanBodySchema, workerTicketCompleteBodySchema } from "../validation/schemas";
-// import Utils
+// Import Utils
 import ApiError from "../utils/api-error";
-import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, getWorkScheduleShiftEndDelayMs, isTimeInWorkSchedule } from "../utils/shift";
-import { buildBangkokDateRange, buildDeadline, formatBangkokDate, getDelayUntil } from "../utils/time";
+import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
+import { buildBangkokDateRange, buildDeadline, getDelayUntil } from "../utils/time";
+import { buildVendorCompletionReviewFlexMessage } from "../utils/line-flex-message";
 import { buildWorkerTicketPayload } from "../utils/ticket-payload";
-import { signVendorTicketActionToken } from "../utils/vendor-action-token";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
 import { resolveWorkerWorkStatus } from "../utils/worker-status";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เธชเธฃเนเธฒเธเธเนเธญเธกเธนเธฅเน€เธงเธฅเธฒเธเธฑเธเธ—เธตเนเน€เธซเธฅเธทเธญเธชเธณเธซเธฃเธฑเธ response เน€เธกเธทเนเธญ worker เธญเธขเธนเนเธชเธ–เธฒเธเธฐ break
-function buildRemainingBreakTime(
-  breakUntil: string | null | undefined
-): WorkerStatusResponse["remaining_break_time"] | null {
-  if (!breakUntil) {
-    return null;
-  }
-
-  const breakUntilMs = new Date(breakUntil).getTime();
-
-  if (Number.isNaN(breakUntilMs)) {
-    return null;
-  }
-
-  const totalSeconds = Math.max(
-    0,
-    Math.ceil((breakUntilMs - Date.now()) / 1000)
-  );
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  const textParts = [
-    minutes > 0 ? `${minutes} ${minutes === 1 ? "minute" : "minutes"}` : null,
-    seconds > 0 || minutes === 0
-      ? `${seconds} ${seconds === 1 ? "second" : "seconds"}`
-      : null,
-  ].filter((part): part is string => Boolean(part));
-
-  return {
-    total_seconds: totalSeconds,
-    minutes,
-    seconds,
-    text: textParts.join(" "),
-  };
-}
-
-// Function เน€เธ•เธดเธกเธเธณเธเธงเธเธเธฃเธฑเนเธเธเธฑเธเนเธ response เธชเธ–เธฒเธเธฐเธเธดเธง
+// Function จัดการ พร้อม break usage ใน service flow
 function withBreakUsage(
   queueEntry: WorkerQueueEntryDto,
   breakCountUsed: number,
@@ -80,38 +54,7 @@ function withBreakUsage(
   };
 }
 
-async function buildWorkerDailySummary(
-  accountId: number,
-  schedule: WorkScheduleDto | null,
-  connection?: Parameters<typeof workerApplicationRepository.listWorkerAssignmentHistoryByDate>[3]
-): Promise<Pick<WorkerStatusResponse, "today_job_count" | "break_count_used" | "completed_job_count">> {
-  const today = formatBangkokDate();
-  const { startAt, endAt } = buildBangkokDateRange(today);
-  const shiftInstanceKey = schedule ? buildWorkScheduleShiftInstanceKey(schedule) : null;
-  const [assignmentHistory, breakCountUsed] = await Promise.all([
-    workerApplicationRepository.listWorkerAssignmentHistoryByDate(
-      accountId,
-      startAt,
-      endAt,
-      connection
-    ),
-    shiftInstanceKey ? getWorkerBreakCount(accountId, shiftInstanceKey) : 0,
-  ]);
-  const completedJobCount = assignmentHistory.filter(({ assignment }) =>
-    assignment.status === "COMPLETED" || Boolean(assignment.completed_at)
-  ).length;
-  const todayJobCount = assignmentHistory.filter(
-    ({ assignment }) => assignment.status !== "TIMEOUT"
-  ).length;
-
-  return {
-    today_job_count: todayJobCount,
-    break_count_used: breakCountUsed,
-    completed_job_count: completedJobCount,
-  };
-}
-
-// Function เธชเธฃเนเธฒเธ response เธซเธฅเธฑเธ worker online/open_app
+// Function สร้าง worker queue action response ใน service flow
 function buildWorkerQueueActionResponse(code: string, message: string): WorkerOnlineResponse {
   return {
     statusCode: 200,
@@ -120,7 +63,7 @@ function buildWorkerQueueActionResponse(code: string, message: string): WorkerOn
   };
 }
 
-// Function เธชเธฃเนเธฒเธเธฃเธฒเธขเธฅเธฐเน€เธญเธตเธขเธ”เธเธฒเธเธซเธฅเธฑเธ worker เธเธ”เธฃเธฑเธ assignment
+// Function สร้าง worker assignment accept response ใน service flow
 function buildWorkerAssignmentAcceptResponse(
   detail: VehicleJobDetailResponse,
   team: WorkerAssignmentTeamMemberDto[]
@@ -146,11 +89,11 @@ function buildWorkerAssignmentAcceptResponse(
   };
 }
 
-// Function เธชเธฃเนเธฒเธ item เธเธฃเธฐเธงเธฑเธ•เธดเธเธฒเธ worker เนเธ”เธขเธเนเธญเธ id เธ เธฒเธขเนเธเนเธฅเธฐเนเธเน reference เธ—เธตเน UI/API เนเธเนเธเธฒเธ
+// Function สร้าง worker assignment history item response ใน service flow
 function buildWorkerAssignmentHistoryItemResponse(
   item: WorkerAssignmentHistoryItemDto
 ): WorkerAssignmentHistoryItemResponse {
-  const timeoutReason = item.assignment.status !== "TIMEOUT"
+  const timeoutReason = item.assignment.status !== ASSIGNMENT_STATUS.TIMEOUT
     ? null
     : item.assignment.accepted_at
       ? "scan_timeout"
@@ -172,7 +115,7 @@ function buildWorkerAssignmentHistoryItemResponse(
   };
 }
 
-// Function เธชเธฃเนเธฒเธ payload เนเธเนเธ worker เธงเนเธฒเธฃเธฑเธเธเธฒเธเธชเธณเน€เธฃเนเธเนเธฅเนเธง
+// Function สร้าง assignment accepted socket payload ใน service flow
 function buildAssignmentAcceptedSocketPayload(
   assignment: VehicleJobAssignmentDto,
   detail: VehicleJobDetailResponse,
@@ -188,7 +131,7 @@ function buildAssignmentAcceptedSocketPayload(
   };
 }
 
-// Function เธ•เธฃเธงเธเธงเนเธฒ scan deadline เธซเธกเธ”เธญเธฒเธขเธธเนเธฅเนเธงเธซเธฃเธทเธญเธขเธฑเธ
+// Function ตรวจว่า scan deadline expired ใน service flow
 function isScanDeadlineExpired(scanDeadlineAt: string | null): boolean {
   if (!scanDeadlineAt) {
     return true;
@@ -199,79 +142,20 @@ function isScanDeadlineExpired(scanDeadlineAt: string | null): boolean {
   return !Number.isFinite(deadlineMs) || deadlineMs <= Date.now();
 }
 
-// Function schedules the automatic shift-end job when the active schedule still has time left.
-async function scheduleWorkerShiftEndIfNeeded(
-  accountId: number,
-  schedule: WorkScheduleDto
-): Promise<void> {
-  const delayMs = getWorkScheduleShiftEndDelayMs(schedule);
-
-  if (delayMs > 0) {
-    await scheduleWorkerShiftEnd(
-      accountId,
-      schedule.id,
-      delayMs,
-      buildWorkScheduleShiftInstanceKey(schedule)
-    );
-  }
-}
-
-// Function records DB attendance and Redis marker when worker enters the queue for this shift.
-async function markWorkerAttendanceOnline(
-  account: AccountDto,
-  schedule: WorkScheduleDto,
-  shiftInstanceKey: string,
-  connection?: DbConnection
-): Promise<void> {
-  await workerApplicationRepository.workerShiftAttendanceRepository.markWorkerShiftOnline(
-    {
-      account_id: account.id,
-      worker_code: account.username,
-      schedule,
-      shift_instance_key: shiftInstanceKey,
-    },
-    connection
-  );
-
-  await markWorkerShiftOnlineUsed(account.id, shiftInstanceKey);
-}
-
-// Function closes DB attendance and Redis marker so the worker cannot re-enter that shift.
-async function closeWorkerAttendanceShift(
-  account: AccountDto,
-  schedule: WorkScheduleDto,
-  shiftInstanceKey: string,
-  reason: WorkerShiftCloseReason,
-  connection?: DbConnection
-): Promise<void> {
-  await workerApplicationRepository.workerShiftAttendanceRepository.closeWorkerShift(
-    {
-      account_id: account.id,
-      worker_code: account.username,
-      schedule,
-      shift_instance_key: shiftInstanceKey,
-      reason,
-    },
-    connection
-  );
-
-  await markWorkerShiftClosed(account.id, shiftInstanceKey);
-}
-
-// Function chooses the vendor confirmation timeout by first delivery or reject resubmission flow.
+// Function เลือก timeout การยืนยัน vendor ตาม flow ส่งครั้งแรกหรือส่งใหม่หลัง reject
 function getVendorConfirmationTimeoutMs(
   ticket: GateTicketDto,
   settings: Awaited<ReturnType<typeof getRuntimeSettings>>
 ): number {
   const timeoutHours =
-    ticket.status === "REJECT"
+    ticket.status === TICKET_STATUS.REJECT
       ? settings.vendor_reconfirm_timeout_hours
       : settings.vendor_confirm_timeout_hours;
 
   return timeoutHours * 60 * 60 * 1000;
 }
 
-// Function verifies the current auth payload belongs to an active worker account.
+// Function ตรวจสอบว่า auth payload ปัจจุบันเป็นบัญชี worker ที่ active
 async function requireWorker(auth?: AccessTokenPayload) {
   if (!auth) {
     throw new ApiError(401, "UNAUTHORIZED", "Authentication is required.");
@@ -290,7 +174,7 @@ async function requireWorker(auth?: AccessTokenPayload) {
   return account;
 }
 
-// Function เธญเนเธฒเธ reference เธเธญเธ assignment เธเธฒเธ path param
+// Function อ่านค่า assignment reference ใน service flow
 function parseAssignmentReference(value: unknown): string {
   const reference = String(value ?? "").trim();
 
@@ -305,7 +189,7 @@ function parseAssignmentReference(value: unknown): string {
   return reference;
 }
 
-// Function เธซเธฒ assignment เธเธฑเธเธเธธเธเธฑเธเธเธญเธ worker เธ”เนเธงเธข ticketNo เธ—เธตเนเธชเนเธเธกเธฒเธเธฒเธ API
+// Function ค้นหา worker assignment ตาม reference ใน service flow
 async function findWorkerAssignmentByReference(
   value: unknown,
   workerAccountId: number,
@@ -320,40 +204,42 @@ async function findWorkerAssignmentByReference(
   );
 }
 
-// Function เธซเธฒ ticket เธ—เธตเน worker เธเธฐเธชเนเธเธขเธญเธ”เธเธดเธ”เธเธฒเธเธ”เนเธงเธข boothCode เธซเธฃเธทเธญ ticket reference
-async function findGateTicketForCompletionByReference(
-  value: unknown,
+// Function ค้นหา Gate ticket สำหรับ completion ตาม ticket และ booth ใน service flow
+async function findGateTicketForCompletionByTicketAndBooth(
+  ticketNoParam: unknown,
+  boothCodeParam: unknown,
   connection?: Parameters<typeof workerApplicationRepository.findGateTicketForCompletion>[1]
 ): Promise<GateTicketDto | null> {
-  const reference = String(value ?? "").trim();
+  const ticketNo = String(ticketNoParam ?? "").trim();
+  const boothCode = String(boothCodeParam ?? "").trim();
 
-  if (!reference) {
-    throw new ApiError(400, "INVALID_TICKET_REF", "Ticket ref is invalid.");
+  if (!ticketNo) {
+    throw new ApiError(400, "INVALID_TICKET_NO", "TicketNo is invalid.");
   }
 
-  return workerApplicationRepository.findGateTicketForCompletionByReference(
-    reference,
+  if (!boothCode) {
+    throw new ApiError(400, "INVALID_BOOTH_CODE", "BoothCode is invalid.");
+  }
+
+  return workerApplicationRepository.findGateTicketForCompletionByTicketNoAndBoothCode(
+    ticketNo,
+    boothCode,
     connection
   );
 }
 
-// Function เธ•เธฃเธงเธ flag เธชเธณเธซเธฃเธฑเธเธชเนเธ LINE postback token เธเธฅเธฑเธเนเธ response เธ•เธญเธ debug
-function shouldIncludeDebugLinePostback(): boolean {
-  return process.env.LINE_DEBUG_POSTBACK_RESPONSE === "true";
-}
-
-// Function เธชเธฃเนเธฒเธ postback data เธ—เธตเนเธกเธต signed token เธชเธณเธซเธฃเธฑเธ vendor confirm/reject เธเนเธฒเธ LINE
-function buildVendorCompletionPostbackData(
+// Function สร้าง vendor completion postback data ใน service flow
+async function buildVendorCompletionPostbackData(
   ticket: GateTicketDto,
   submission: TicketCompletionSubmissionDto
-): { confirm: string; reject: string } {
-  const confirmToken = signVendorTicketActionToken({
+): Promise<{ confirm: string; reject: string }> {
+  const confirmToken = await lineRepository.createLineActionToken({
     action: "vendor_confirm_completion",
     ticket_id: ticket.id,
     submission_id: submission.id,
     boothCode: ticket.boothCode,
   });
-  const rejectToken = signVendorTicketActionToken({
+  const rejectToken = await lineRepository.createLineActionToken({
     action: "vendor_reject_completion",
     ticket_id: ticket.id,
     submission_id: submission.id,
@@ -361,56 +247,29 @@ function buildVendorCompletionPostbackData(
   });
 
   return {
-    confirm: `action=vendor_confirm_completion&token=${confirmToken}`,
-    reject: `action=vendor_reject_completion&token=${rejectToken}`,
+    confirm: `token=${confirmToken.token}`,
+    reject: `token=${rejectToken.token}`,
   };
 }
 
-// Function เธชเธฃเนเธฒเธเธเนเธญเธเธงเธฒเธก LINE เธชเนเธเนเธซเน vendor เธ•เธฃเธงเธเธขเธญเธ”เธเธดเธ”เธเธฒเธเธเธญเธ ticket
-function buildVendorCompletionMessage(
+// Function สร้าง vendor completion messages ใน service flow
+function buildVendorCompletionMessages(
   ticket: GateTicketDto,
   postbackData: { confirm: string; reject: string },
   detail: VehicleJobDetailResponse | null,
   products: TicketProductDto[]
-): string {
-  const market = detail?.markets.find((item) =>
-    item.tickets.some((marketTicket) => marketTicket.id === ticket.id)
-  );
-  const productLines = products.map((product) => {
-    const expectedQuantity = Number(product.quantity);
-    const confirmedQuantity = Number(product.confirmed_quantity ?? 0);
-    const diff = confirmedQuantity - expectedQuantity;
-    const diffText = diff === 0
-      ? "matched"
-      : diff > 0
-        ? `over ${diff}`
-        : `short ${Math.abs(diff)}`;
-
-    return [
-      `- ${product.packageCode} / ${product.productName}`,
-      `  Gate: ${product.quantity} ${product.packageName}`,
-      `  Worker: ${product.confirmed_quantity ?? "-"} ${product.packageName}`,
-      `  Diff: ${diffText} ${product.packageName}`,
-    ].join("\n");
-  });
-
+): LineMessage[] {
   return [
-    "Worker submitted ticket completion.",
-    `License plate: ${detail?.vehicle_job.license_plate ?? "-"}`,
-    `Vehicle type: ${detail?.vehicle_job.vehicle_type ?? "-"}`,
-    `Ticket: ${detail?.vehicle_job.ticketNo ?? "-"}`,
-    `Market: ${market?.marketName ?? "-"}`,
-    `Booth code: ${ticket.boothCode}`,
-    `Booth: ${ticket.boothName ?? "-"}`,
-    "Products:",
-    ...productLines,
-    `Confirm: ${postbackData.confirm}`,
-    `Reject: ${postbackData.reject}`,
-  ]
-    .join("\n");
+    buildVendorCompletionReviewFlexMessage({
+      ticket,
+      postbackData,
+      detail,
+      products,
+    }),
+  ];
 }
 
-// Function เธ•เธฃเธงเธเธฃเธฒเธขเธเธฒเธฃเธชเธดเธเธเนเธฒเธ—เธตเน worker เธชเนเธเธงเนเธฒเธเธฃเธ เธ•เธฃเธ ticket เนเธฅเธฐเนเธกเนเธเนเธณ
+// Function ตรวจสอบ ticket completion items ใน service flow
 function validateTicketCompletionItems(
   products: TicketProductDto[],
   items: Array<{ productCode: string; confirmed_quantity: number }>
@@ -447,24 +306,7 @@ function validateTicketCompletionItems(
   }
 }
 
-// Function เธซเธฒ receiver เธเธญเธ event เธเธดเธ”เธเธฒเธ เน€เธเธทเนเธญเธชเนเธ SSE เนเธซเน worker เนเธ ticket เนเธฅเธฐ admin เธ—เธธเธเธเธ
-async function buildTicketResultAudience(
-  ticket: GateTicketDto,
-  connection?: Parameters<typeof workerApplicationRepository.listTicketWorkers>[1]
-): Promise<number[]> {
-  const [ticketWorkers, admins] = await Promise.all([
-    workerApplicationRepository.listTicketWorkers(ticket.id, connection),
-    accountRepository.listAdmins(connection),
-  ]);
-  const receiverIds = new Set<number>();
-
-  ticketWorkers.forEach((worker) => receiverIds.add(worker.worker_account_id));
-  admins.forEach((admin) => receiverIds.add(admin.id));
-
-  return Array.from(receiverIds);
-}
-
-// Function เนเธซเน worker เน€เธเนเธฒ queue เนเธฅเธฐ dispatch เธ–เนเธฒเธกเธตเธเธฒเธเธฃเธญเธญเธขเธนเน
+// Function จัดการ worker online ใน service flow
 export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnlineResponse> {
   const account = await requireWorker(auth);
 
@@ -524,7 +366,7 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
     }
 
     const currentQueueEntry = await getWorkerQueueStatus(account.id);
-    const isReturningFromBreak = currentQueueEntry?.status === "break";
+    const isReturningFromBreak = currentQueueEntry?.status === WORKER_WORK_STATUS.BREAK;
     const attendance = await workerApplicationRepository.workerShiftAttendanceRepository.findByWorkerAndShift(
       {
         account_id: account.id,
@@ -544,7 +386,7 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
         );
       }
 
-      if (attendance?.firstOnlineAt && currentQueueEntry?.status !== "ready") {
+      if (attendance?.firstOnlineAt && currentQueueEntry?.status !== WORKER_WORK_STATUS.READY) {
         throw new ApiError(
           409,
           "WORKER_SHIFT_ONLINE_ALREADY_USED",
@@ -555,7 +397,9 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
     await markWorkerAttendanceOnline(account, currentSchedule, shiftInstanceKey, transaction);
     await scheduleWorkerShiftEndIfNeeded(account.id, currentSchedule);
 
-    await enqueueWorker(account.id);
+    if (currentQueueEntry?.status !== WORKER_WORK_STATUS.READY) {
+      await enqueueWorker(account.id);
+    }
 
     await dispatchReadyWorkers(transaction);
 
@@ -582,29 +426,20 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
         latestAssignment
       ),
     });
-    publishNotification({
-      type: "WORKER_STATUS_CHANGED",
+    publishAdminWorkerStatusChanged({
       title: "Worker online",
       message: `Worker ${account.full_name} is ready for work.`,
-      payload: {
-        worker_code: workerCode,
-        queue: buildWorkerQueueSocketPayload(
-          latestQueueEntry,
-          workerCode,
-          latestAssignment
-        ),
-        reason: "worker_online",
-      },
-      audience: {
-        roles: ["admin"],
-      },
+      workerCode,
+      queue: latestQueueEntry,
+      assignment: latestAssignment,
+      reason: "worker_online",
     });
 
     return response;
   });
 }
 
-// Function เนเธซเน worker เธญเธญเธเธเธฒเธ queue
+// Function จัดการ worker offline ใน service flow
 export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOnlineResponse> {
   const account = await requireWorker(auth);
   const [currentSchedule, currentQueueEntry, currentAssignment] = await Promise.all([
@@ -613,7 +448,7 @@ export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOn
     workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
   ]);
 
-  if (currentQueueEntry?.status === "break" && currentSchedule) {
+  if (currentQueueEntry?.status === WORKER_WORK_STATUS.BREAK && currentSchedule) {
     await removeWorkerBreakReturn(account.id, currentSchedule.id);
   }
 
@@ -642,28 +477,19 @@ export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOn
       currentAssignment
     ),
   });
-  publishNotification({
-    type: "WORKER_STATUS_CHANGED",
+  publishAdminWorkerStatusChanged({
     title: "Worker moved to open_app",
     message: `Worker ${account.full_name} moved to open_app.`,
-    payload: {
-      worker_code: workerCode,
-      queue: buildWorkerQueueSocketPayload(
-        queueEntry,
-        workerCode,
-        currentAssignment
-      ),
-      reason: "worker_open_app",
-    },
-    audience: {
-      roles: ["admin"],
-    },
+    workerCode,
+    queue: queueEntry,
+    assignment: currentAssignment,
+    reason: "worker_open_app",
   });
 
   return response;
 }
 
-// Function เนเธซเน worker เธเธฑเธเธเธฑเนเธงเธเธฃเธฒเธง 15 เธเธฒเธ—เธต เนเธฅเธฐเธเธฅเธฑเธเธ—เนเธฒเธขเธเธดเธงเธญเธฑเธ•เนเธเธกเธฑเธ•เธด
+// Function จัดการ worker break ใน service flow
 export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBreakResponse> {
   const account = await requireWorker(auth);
   const settings = await getRuntimeSettings();
@@ -703,7 +529,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
     );
   }
 
-  if (!queueEntry || queueEntry.status !== "ready") {
+  if (!queueEntry || queueEntry.status !== WORKER_WORK_STATUS.READY) {
     throw new ApiError(
       409,
       "WORKER_NOT_READY",
@@ -746,18 +572,12 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
       workerCode
     ),
   });
-  publishNotification({
-    type: "WORKER_STATUS_CHANGED",
+  publishAdminWorkerStatusChanged({
     title: "Worker on break",
     message: `Worker ${account.full_name} is on break.`,
-    payload: {
-      worker_code: workerCode,
-      queue: buildWorkerQueueSocketPayload(breakQueueEntry, workerCode),
-      reason: "worker_break",
-    },
-    audience: {
-      roles: ["admin"],
-    },
+    workerCode,
+    queue: breakQueueEntry,
+    reason: "worker_break",
   });
 
   return {
@@ -769,7 +589,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
   };
 }
 
-// Function เธ”เธถเธเธชเธ–เธฒเธเธฐ queue เนเธฅเธฐ assignment เธเธฑเธเธเธธเธเธฑเธเธเธญเธ worker
+// Function ดึง worker status ใน service flow
 export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<WorkerStatusResponse> {
   const account = await requireWorker(auth);
 
@@ -799,11 +619,11 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
         }
       : null,
   };
-  const remainingBreakTime = status === "break"
+  const remainingBreakTime = status === WORKER_WORK_STATUS.BREAK
     ? buildRemainingBreakTime(queueEntry?.break_until)
     : null;
 
-  if (status === "break" && queueEntry?.break_until && remainingBreakTime) {
+  if (status === WORKER_WORK_STATUS.BREAK && queueEntry?.break_until && remainingBreakTime) {
     response.break_until = queueEntry.break_until;
     response.remaining_break_time = remainingBreakTime;
   }
@@ -811,7 +631,7 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
   return response;
 }
 
-// Function เธ”เธถเธเธเธฃเธฐเธงเธฑเธ•เธดเธเธฒเธเธเธญเธ worker เธ•เธฒเธกเธงเธฑเธเธ—เธตเนเธ—เธตเนเธฃเธฐเธเธธ
+// Function ดึงรายการ worker assignment history ใน service flow
 export async function listWorkerAssignmentHistory(
   query: unknown,
   auth?: AccessTokenPayload
@@ -834,7 +654,7 @@ export async function listWorkerAssignmentHistory(
   };
 }
 
-// Function เนเธซเน worker เธฃเธฑเธเธเธฒเธ
+// Function รับ worker assignment ใน service flow
 export async function acceptWorkerAssignment(
   assignmentIdParam: unknown,
   auth?: AccessTokenPayload
@@ -846,7 +666,7 @@ export async function acceptWorkerAssignment(
     throw new ApiError(404, "ASSIGNMENT_NOT_FOUND", "Assignment not found.");
   }
 
-  if (assignment.status !== "PENDING") {
+  if (assignment.status !== ASSIGNMENT_STATUS.PENDING) {
     throw new ApiError(409, "ASSIGNMENT_NOT_PENDING", "Assignment is not pending.");
   }
 
@@ -879,7 +699,7 @@ export async function acceptWorkerAssignment(
       payload: {
         ticketNo: vehicleJob?.ticketNo ?? null,
         worker_code: workerCode,
-        status: "TIMEOUT",
+        status: ASSIGNMENT_STATUS.TIMEOUT,
         queue: buildWorkerQueueSocketPayload(timeoutResult.queue, workerCode),
         reason: timeoutResult.reason,
         timeout_count: timeoutResult.timeout_count,
@@ -897,10 +717,14 @@ export async function acceptWorkerAssignment(
   const currentSchedule = await workScheduleRepository.findCurrentByAccountId(account.id);
 
   if (currentSchedule) {
-    await resetWorkerAcceptTimeoutCount(
-      account.id,
-      buildWorkScheduleShiftInstanceKey(currentSchedule)
-    );
+    const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
+
+    await workerApplicationRepository.workerShiftAttendanceRepository.resetAcceptTimeoutStreak({
+      account_id: account.id,
+      worker_code: account.username,
+      schedule: currentSchedule,
+      shift_instance_key: shiftInstanceKey,
+    });
   }
   const settings = await getRuntimeSettings();
 
@@ -960,7 +784,7 @@ export async function acceptWorkerAssignment(
   return response;
 }
 
-// Function เนเธซเน worker scan QR เน€เธเธทเนเธญ check-in เน€เธเนเธฒเธเธฒเธ
+// Function บันทึกการสแกน worker assignment ใน service flow
 export async function scanWorkerAssignment(
   assignmentIdParam: unknown,
   body: unknown,
@@ -982,7 +806,7 @@ export async function scanWorkerAssignment(
       throw new ApiError(404, "ASSIGNMENT_NOT_FOUND", "Assignment not found.");
     }
 
-    if (assignment.status !== "ACCEPTED") {
+    if (assignment.status !== ASSIGNMENT_STATUS.ACCEPTED) {
       throw new ApiError(409, "ASSIGNMENT_NOT_ACCEPTED", "Assignment is not accepted.");
     }
 
@@ -1066,7 +890,7 @@ export async function scanWorkerAssignment(
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
       ticketNo: result.vehicleJob?.ticketNo ?? null,
       reason: "scan_timeout",
-      status: "open_app",
+      status: WORKER_WORK_STATUS.OPEN_APP,
     });
     publishNotification({
       type: "ASSIGNMENT_TIMEOUT",
@@ -1156,9 +980,27 @@ export async function scanWorkerAssignment(
   };
 }
 
-// Function เนเธซเน worker เธชเนเธเธขเธญเธ”เธเธดเธ”เธเธฒเธเธฃเธฐเธ”เธฑเธ ticket เน€เธเธทเนเธญเธฃเธญ vendor เธ•เธฃเธงเธเธเนเธฒเธ LINE
-export async function completeWorkerTicket(
-  ticketIdParam: unknown,
+// Function จบงาน worker assignment ticket ใน service flow
+export async function completeWorkerAssignmentTicket(
+  ticketNoParam: unknown,
+  boothCodeParam: unknown,
+  body: unknown,
+  auth?: AccessTokenPayload
+): Promise<TicketCompletionResponse> {
+  return completeResolvedWorkerTicket(
+    (connection) => findGateTicketForCompletionByTicketAndBooth(
+      ticketNoParam,
+      boothCodeParam,
+      connection
+    ),
+    body,
+    auth
+  );
+}
+
+// Function จบงาน resolved worker ticket ใน service flow
+async function completeResolvedWorkerTicket(
+  findTicket: (connection: DbConnection) => Promise<GateTicketDto | null>,
   body: unknown,
   auth?: AccessTokenPayload
 ): Promise<TicketCompletionResponse> {
@@ -1166,10 +1008,7 @@ export async function completeWorkerTicket(
   const input = parseWithSchema(workerTicketCompleteBodySchema, body);
   const settings = await getRuntimeSettings();
   const result = await withTransaction(async (transaction) => {
-    const ticket = await findGateTicketForCompletionByReference(
-      ticketIdParam,
-      transaction
-    );
+    const ticket = await findTicket(transaction);
 
     if (!ticket) {
       throw new ApiError(404, "TICKET_NOT_FOUND", "Ticket not found.");
@@ -1188,7 +1027,7 @@ export async function completeWorkerTicket(
       );
     }
 
-    if (ticket.status === "COMPLETED") {
+    if (ticket.status === TICKET_STATUS.COMPLETED) {
       throw new ApiError(409, "TICKET_ALREADY_CLOSED", "Ticket is already closed.");
     }
 
@@ -1232,7 +1071,7 @@ export async function completeWorkerTicket(
     );
 
     if (!canSubmit) {
-      if (ticket.status === "DELIVERED") {
+      if (ticket.status === TICKET_STATUS.DELIVERED) {
         throw new ApiError(
           409,
           "TICKET_ALREADY_SUBMITTED",
@@ -1273,8 +1112,8 @@ export async function completeWorkerTicket(
     return {
       ticket: waitingTicket ?? {
         ...ticket,
-        status: "DELIVERED",
-        confirmation_status: "DELIVERED",
+        status: TICKET_STATUS.DELIVERED,
+        confirmation_status: TICKET_STATUS.DELIVERED,
       },
       submission,
       products: confirmedProducts,
@@ -1314,26 +1153,20 @@ export async function completeWorkerTicket(
         reason: "ticket_delivered_after_shift_end",
       });
     }
-    publishNotification({
-      type: "WORKER_STATUS_CHANGED",
+    publishAdminWorkerStatusChanged({
       title: "Worker moved to open_app",
       message: `Worker ${account.full_name} moved to open_app after submitting ticket completion outside the shift.`,
-      payload: {
-        worker_code: account.username,
-        queue: buildWorkerQueueSocketPayload(queue, account.username),
-        reason: "ticket_delivered_after_shift_end",
-      },
-      audience: {
-        roles: ["admin"],
-      },
+      workerCode: account.username,
+      queue,
+      reason: "ticket_delivered_after_shift_end",
     });
   }
   const detail = await workerApplicationRepository.getVehicleJobDetail(result.ticket.vehicle_job_id);
-  const linePostbackData = buildVendorCompletionPostbackData(
+  const linePostbackData = await buildVendorCompletionPostbackData(
     result.ticket,
     result.submission
   );
-  const lineMessage = buildVendorCompletionMessage(
+  const lineMessages = buildVendorCompletionMessages(
     result.ticket,
     linePostbackData,
     detail,
@@ -1341,28 +1174,18 @@ export async function completeWorkerTicket(
   );
 
   for (const target of result.vendorLineTargets) {
-    const lineLogId = await lineRepository.createMessageDeliveryLog(
-      "LINE",
-      "send_vendor_ticket_completion",
-      {
+    await enqueueLoggedLineMessage({
+      jobName: "send-vendor-ticket-completion",
+      action: "send_vendor_ticket_completion",
+      targetLineUserId: target.line_user_id,
+      payload: {
         ticket_id: result.ticket.id,
         submission_id: result.submission.id,
         vendor_line_id: target.line_user_id,
         vendor_line_target_type: target.target_type,
         items: result.products,
-      } as unknown as Prisma.InputJsonValue,
-      target.line_user_id
-    );
-
-    await enqueueLineMessage("send-vendor-ticket-completion", {
-      log_id: lineLogId,
-      to: target.line_user_id,
-      messages: [
-        {
-          type: "text",
-          text: lineMessage,
-        },
-      ],
+      },
+      messages: lineMessages,
     });
   }
   publishRealtimeEvent({
@@ -1376,7 +1199,7 @@ export async function completeWorkerTicket(
         result.products,
         {
           submission_status: result.submission.status,
-          assignment_status: "DELIVERED",
+          assignment_status: ASSIGNMENT_STATUS.DELIVERED,
         }
       ),
     },
@@ -1387,7 +1210,7 @@ export async function completeWorkerTicket(
         result.products,
         {
           submission_status: result.submission.status,
-          assignment_status: "DELIVERED",
+          assignment_status: ASSIGNMENT_STATUS.DELIVERED,
         }
       ),
     },
@@ -1401,16 +1224,13 @@ export async function completeWorkerTicket(
     result.products,
     {
       submission_status: result.submission.status,
-      assignment_status: "DELIVERED",
+      assignment_status: ASSIGNMENT_STATUS.DELIVERED,
     }
   ) as Omit<TicketCompletionResponse, "message">;
 
   return {
     message: "Ticket completion submitted and waiting for vendor confirmation.",
     ...responsePayload,
-    ...(shouldIncludeDebugLinePostback()
-      ? { debug_line_postback: linePostbackData }
-      : {}),
   };
 }
 

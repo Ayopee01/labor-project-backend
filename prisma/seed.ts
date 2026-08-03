@@ -3,6 +3,8 @@ import { closePrisma, getPrisma } from "../src/db/prisma";
 import { ADMIN_PERMISSIONS } from "../src/config/permission.config";
 import type { AdminPermission, AdminPermissionLevel } from "../src/config/permission.config";
 import { hashPassword } from "../src/utils/password";
+import { seedMasterProducts } from "./master-product.seed";
+import { seedMasterRates } from "./master-rate.seed";
 
 dotenv.config({ quiet: true });
 
@@ -12,6 +14,12 @@ const SEED_ADMIN = {
   password: "Admin@123456",
   email: "admin@simmummuang.local",
   phone: "081-000-0001",
+};
+const SEED_TEST_LINE_USER_ID = "Ubd9b17811181e01f8fca0372d2b37088";
+const SEED_GATE_CLIENT = {
+  clientId: "gate-main",
+  name: "Main Gate Demo Client",
+  secret: "gate_live_RnqzqVz1OCeLiEMMQRrddGDjaWxfDt2a7779bKJomTc",
 };
 
 const SEED_RUNTIME_SETTINGS = {
@@ -50,7 +58,7 @@ const SEED_MASTER_OWNER_STALLS = [
     FirstName: "Orange",
     LastName: "Owner",
     Status: "Normal",
-    LineUserID: "Umockvendororange0001",
+    LineUserID: SEED_TEST_LINE_USER_ID,
   },
   {
     MarketCode: "1123",
@@ -61,7 +69,7 @@ const SEED_MASTER_OWNER_STALLS = [
     FirstName: "Orange",
     LastName: "Owner",
     Status: "Normal",
-    LineUserID: "Umockvendororange0001",
+    LineUserID: SEED_TEST_LINE_USER_ID,
   },
   {
     MarketCode: "1124",
@@ -89,14 +97,14 @@ const SEED_MASTER_OWNER_STALLS = [
 
 const SEED_MASTER_MEMBER_STALLS = [
   {
-    OwnerLineUserID: "Umockvendororange0001",
+    OwnerLineUserID: SEED_TEST_LINE_USER_ID,
     OwnerIDCard: "1234567890123",
     OwnerTelephone: "0812220001",
     OwnerCode: "CRS0001",
     OwnerName: "Orange Owner",
     MarketCode: "1123",
     MarketName: "Orange Market",
-    MemberStallLineUserID: "Umockmemberorange0001",
+    MemberStallLineUserID: SEED_TEST_LINE_USER_ID,
     MemberStallIDCard: "2234567890123",
     MemberStallTelephone: "0813330001",
     MemberStallUserGroup: "member",
@@ -105,7 +113,7 @@ const SEED_MASTER_MEMBER_STALLS = [
     MemberStallStatusOnStall: "1",
   },
   {
-    OwnerLineUserID: "Umockvendororange0001",
+    OwnerLineUserID: SEED_TEST_LINE_USER_ID,
     OwnerIDCard: "1234567890123",
     OwnerTelephone: "0812220001",
     OwnerCode: "CRS0001",
@@ -194,6 +202,26 @@ async function main(): Promise<void> {
       },
     });
   }
+
+  await prisma.gateClient.upsert({
+    where: {
+      clientId: SEED_GATE_CLIENT.clientId,
+    },
+    update: {
+      name: SEED_GATE_CLIENT.name,
+      secretHash: await hashPassword(SEED_GATE_CLIENT.secret),
+      status: "active",
+      updatedBy: admin.id,
+    },
+    create: {
+      clientId: SEED_GATE_CLIENT.clientId,
+      name: SEED_GATE_CLIENT.name,
+      secretHash: await hashPassword(SEED_GATE_CLIENT.secret),
+      status: "active",
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    },
+  });
 
   for (const account of [admin]) {
     const permissions =
@@ -312,6 +340,9 @@ async function main(): Promise<void> {
       },
     });
   }
+
+  await seedMasterProducts(prisma);
+  await seedMasterRates(prisma);
 
   console.log(`Seed admin account ready: ${SEED_ADMIN.username}`);
   console.log(`Seed master owner stalls ready: ${SEED_MASTER_OWNER_STALLS.length}`);

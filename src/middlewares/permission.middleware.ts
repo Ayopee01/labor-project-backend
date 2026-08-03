@@ -1,15 +1,15 @@
-// import Library
+// Import Library
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
-// import Config
+// Import Config
 import type { AdminPermission } from "../config/permission.config";
 
-// import Utils
+// Import Utils
 import ApiError from "../utils/api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ตรวจสอบว่า access token มี permission ที่ route ต้องการหรือไม่
+// Function จัดการ permission middleware สำหรับ Express middleware
 export default function permissionMiddleware(
   requiredPermissions: AdminPermission[]
 ): RequestHandler {

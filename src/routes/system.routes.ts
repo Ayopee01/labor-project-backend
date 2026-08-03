@@ -1,10 +1,8 @@
-// import Library
+// Import Library
 import express from "express";
 
-// Config Express router สำหรับ System routes
 const router = express.Router();
 
-// Route แสดงสถานะพื้นฐานและ path เอกสาร API
 router.get("/", (_req, res) => {
   res.json({
     message: "Backend is running",
@@ -13,7 +11,6 @@ router.get("/", (_req, res) => {
   });
 });
 
-// Route health check สำหรับตรวจว่า backend ยังทำงานอยู่
 router.get("/health", (_req, res) => {
   res.json({
     status: "ok",

@@ -1,18 +1,16 @@
-// import Library
+// Import Library
 import express from "express";
-// import Middleware
+// Import Middleware
 import authMiddleware from "../middlewares/auth.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
-// import Service
+// Import Services
 import * as workerService from "../services/worker.service";
 
-// Config Express router สำหรับ Worker Application routes
 const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["worker"]));
 
-// Route ให้ worker เข้า queue และพร้อมรับงาน
 router.post(
   "/me/online",
   async (req, res, next) => {
@@ -25,7 +23,6 @@ router.post(
   }
 );
 
-// Route ให้ worker ออกจาก queue
 router.post(
   "/me/offline",
   async (req, res, next) => {
@@ -38,7 +35,6 @@ router.post(
   }
 );
 
-// Route ให้ worker พักชั่วคราวตาม runtime settings
 router.post(
   "/me/break",
   async (req, res, next) => {
@@ -51,7 +47,6 @@ router.post(
   }
 );
 
-// Route ดึงสถานะ queue และ assignment ปัจจุบันของ worker
 router.get(
   "/me/status",
   async (req, res, next) => {
@@ -64,7 +59,6 @@ router.get(
   }
 );
 
-// Route ดึงประวัติงานของ worker ตามวันที่
 router.get(
   "/me/assignments/history",
   async (req, res, next) => {
@@ -80,7 +74,6 @@ router.get(
   }
 );
 
-// Route ให้ worker รับ assignment
 router.post(
   "/me/assignments/:ticketNo/accept",
   async (req, res, next) => {
@@ -96,7 +89,6 @@ router.post(
   }
 );
 
-// Route ให้ worker scan QR เพื่อ check-in เข้างาน
 router.post(
   "/me/assignments/:ticketNo/check-in-qr",
   async (req, res, next) => {
@@ -113,12 +105,12 @@ router.post(
   }
 );
 
-// Route ให้ worker ส่งยอดปิดงานระดับ ticket
 router.post(
-  "/me/tickets/:boothCode/complete",
+  "/me/assignments/:ticketNo/tickets/:boothCode/complete",
   async (req, res, next) => {
     try {
-      const result = await workerService.completeWorkerTicket(
+      const result = await workerService.completeWorkerAssignmentTicket(
+        req.params.ticketNo,
         req.params.boothCode,
         req.body,
         req.auth

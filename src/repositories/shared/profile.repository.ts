@@ -1,26 +1,26 @@
-// import Library
+// Import Library
 import { prisma } from "../../db/prisma";
 
-// import Mapper
+// Import Mappers
 import { mapProfile } from "./mappers";
 
-// import Types
-import type { DbConnection } from "../../types/common.type";
+// Import Types
+import type { DbConnection } from "../../types/shared/common.type";
 import type { ProfileDto } from "../../types/admin-workers.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เลือก prisma client ปกติหรือ transaction client ที่ส่งเข้ามา
+// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
 function client(connection?: DbConnection): DbConnection {
   return connection ?? prisma;
 }
 
-// Function แปลง account id จาก path/string ให้เป็น number สำหรับ Prisma query
+// Function แปลง id เป็น account id แบบ number สำหรับ query DB
 function toAccountId(id: number | string): number {
   return Number(id);
 }
 
-// Function ค้นหา profile จาก account id ใช้ร่วมกับ Auth/me และ Admin Workers
+// Function ค้นหา ตาม account ID จาก DB
 export async function findByAccountId(
   accountId: number | string,
   connection?: DbConnection
@@ -35,7 +35,7 @@ export async function findByAccountId(
   return mapProfile(profile);
 }
 
-// Function ค้นหา profile หลาย account id ใน query เดียวเพื่อลด N+1 query
+// Function ค้นหา ตาม account IDs จาก DB
 export async function findByAccountIds(
   accountIds: Array<number | string>,
   connection?: DbConnection

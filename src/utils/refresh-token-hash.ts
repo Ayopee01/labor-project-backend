@@ -1,4 +1,4 @@
-// import Library
+// Import Library
 import crypto from "node:crypto";
 
 /* -------------------------------------- Config -------------------------------------- */
@@ -14,7 +14,7 @@ const REFRESH_TOKEN_HASH_CONFIG = {
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึง config สำหรับ hash refresh token และตรวจสอบว่า secret พร้อมใช้งาน
+// Function ดึง refresh token hash config สำหรับ helper กลาง
 function getRefreshTokenHashConfig(): typeof REFRESH_TOKEN_HASH_CONFIG & {
   secret: string;
 } {
@@ -27,7 +27,7 @@ function getRefreshTokenHashConfig(): typeof REFRESH_TOKEN_HASH_CONFIG & {
   };
 }
 
-// Function hash refresh token ก่อนเก็บลง database โดยใช้ HMAC-SHA256
+// Function hash refresh token สำหรับ helper กลาง
 export function hashRefreshToken(refreshToken: string): string {
   if (typeof refreshToken !== "string" || refreshToken.length === 0) {
     throw new TypeError("Refresh token must be a non-empty string.");
@@ -43,7 +43,7 @@ export function hashRefreshToken(refreshToken: string): string {
   return `${config.prefix}$${digest}`;
 }
 
-// Function เปรียบเทียบ hash ของ refresh token แบบ timing-safe
+// Function refresh token hashes match สำหรับ helper กลาง
 export function refreshTokenHashesMatch(
   candidateHash: string | null | undefined,
   storedHash: string | null | undefined

@@ -1,12 +1,12 @@
-// import Library
+// Import Library
 import type { NextFunction, Request, Response } from "express";
-// import
-import type { ErrorLike, ErrorResponse } from "../types/common.type";
+// Import Dependencies
+import type { ErrorLike, ErrorResponse } from "../types/shared/common.type";
 import ApiError from "../utils/api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ส่ง error เมื่อ route ที่เรียกไม่มีอยู่ในระบบ
+// Function จัดการ not found handler สำหรับ Express middleware
 export function notFoundHandler(
   _req: Request,
   _res: Response,
@@ -15,17 +15,17 @@ export function notFoundHandler(
   next(new ApiError(404, "NOT_FOUND", "Route not found."));
 }
 
-// Function ตรวจสอบว่า value เป็น object ธรรมดาหรือไม่
+// Function ตรวจว่า value เป็น plain object ก่อนแปลง key
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-// Function ตรวจสอบว่า error มีรูปแบบคล้าย ApiError หรือไม่
+// Function ตรวจว่า error like สำหรับ Express middleware
 function isErrorLike(error: unknown): error is ErrorLike {
   return Boolean(error && typeof error === "object");
 }
 
-// Function แปลง error ทุกแบบให้เป็น ApiError
+// Function แปลงให้เป็นรูปแบบกลาง error สำหรับ Express middleware
 function normalizeError(error: unknown): ApiError {
   if (error instanceof ApiError) {
     return error;
@@ -59,7 +59,7 @@ function normalizeError(error: unknown): ApiError {
   );
 }
 
-// Function สร้าง response body จาก ApiError
+// Function สร้าง error response สำหรับ Express middleware
 function buildErrorResponse(error: ApiError): ErrorResponse {
   const response: ErrorResponse = {
     statusCode: error.statusCode,
@@ -80,7 +80,7 @@ function buildErrorResponse(error: ApiError): ErrorResponse {
   return response;
 }
 
-// Function ส่ง error response กลับไปหา client
+// Function จัดการ error handler สำหรับ Express middleware
 export function errorHandler(
   error: unknown,
   _req: Request,

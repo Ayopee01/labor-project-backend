@@ -1,11 +1,16 @@
+// Import Library
 import dotenv from "dotenv";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import type { TransactionCallback } from "../types/common.type";
+
+// Import Types
+import type { TransactionCallback } from "../types/shared/common.type";
 
 dotenv.config({ quiet: true });
 
-// Function เช็ค DATABASE_URL จาก .env
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function อ่าน DATABASE_URL และโยน error ทันทีถ้ายังไม่ได้ตั้งค่า
 function getDatabaseUrl(): string {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL must be configured before using Prisma.");
@@ -14,7 +19,7 @@ function getDatabaseUrl(): string {
   return process.env.DATABASE_URL;
 }
 
-// Function สร้าง PrismaClient ใหม่
+// Function สร้าง Prisma client พร้อม adapter ของ PostgreSQL
 function createPrismaClient(): PrismaClient {
   const adapter = new PrismaPg({ connectionString: getDatabaseUrl() });
 
@@ -27,7 +32,7 @@ function createPrismaClient(): PrismaClient {
   });
 }
 
-// Function ดึง PrismaClient จาก global หรือสร้างใหม่ถ้าไม่มี
+// Function คืน Prisma client ตัวเดียวของ process เพื่อใช้ซ้ำทั้งระบบ
 export function getPrisma(): PrismaClient {
   if (!global.prismaClient) {
     global.prismaClient = createPrismaClient();
@@ -36,21 +41,21 @@ export function getPrisma(): PrismaClient {
   return global.prismaClient;
 }
 
-// Config proxy สำหรับ PrismaClient เพื่อให้เรียกใช้ได้เหมือน PrismaClient ปกติ
+// Function proxy ให้ import prisma ได้ทันที แต่สร้าง client จริงแบบ lazy
 export const prisma = new Proxy({} as PrismaClient, {
   get(target, property, receiver) {
     return Reflect.get(getPrisma(), property, receiver ?? target);
   },
 });
 
-// Function สำหรับทำ Transaction โดยใช้ PrismaClient
+// Function ครอบ workflow ที่ต้องเขียนหลาย table ให้อยู่ใน transaction เดียว
 export async function withTransaction<T>(
   callback: TransactionCallback<T>
 ): Promise<T> {
   return getPrisma().$transaction(callback);
 }
 
-// Function สำหรับปิด PrismaClient และตัดการเชื่อมต่อกับฐานข้อมูล
+// Function ปิด Prisma client สำหรับ test หรือ graceful shutdown
 export async function closePrisma(): Promise<void> {
   if (!global.prismaClient) {
     return;

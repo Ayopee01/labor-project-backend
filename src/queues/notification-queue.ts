@@ -1,18 +1,17 @@
-// import Library
+// Import Library
 import { Queue, Worker, type Job } from "bullmq";
-// import Config
+import type { Prisma } from "@prisma/client";
+// Import Config
 import { REDIS_CONFIG } from "../config/redis.config";
-// import Repository
+// Import Repositories
 import * as lineRepository from "../repositories/line.repository";
-// import Types
-import type { LineMessageJobData } from "../types/line.type";
+// Import Types
+import type { LineMessage, LineMessageJobData } from "../types/line.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config แปลง REDIS_URL เป็น connection object สำหรับ BullMQ
 const redisUrl = new URL(REDIS_CONFIG.url);
 
-// Config connection object สำหรับ BullMQ queue/worker
 const bullConnection = {
   host: redisUrl.hostname,
   port: Number(redisUrl.port || 6379),
@@ -21,22 +20,22 @@ const bullConnection = {
   maxRetriesPerRequest: null,
 };
 
-// Config queue สำหรับส่ง LINE message แบบ background
 const lineMessageQueue = new Queue(REDIS_CONFIG.lineMessageQueueName, {
   connection: bullConnection,
 });
 
-// State เก็บ BullMQ worker เพื่อไม่ให้ start ซ้ำ
 let lineWorker: Worker | null = null;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ส่ง LINE push message ถ้ามี token จริง ถ้าไม่มีจะถือว่าเป็น mock delivery
+// Function ส่ง LINE push message ผ่าน LINE Messaging API จริง
 async function sendLinePushMessage(data: LineMessageJobData): Promise<void> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
   if (!token) {
-    return;
+    throw new Error(
+      "LINE_CHANNEL_ACCESS_TOKEN is required for LINE push delivery."
+    );
   }
 
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
@@ -57,7 +56,7 @@ async function sendLinePushMessage(data: LineMessageJobData): Promise<void> {
   }
 }
 
-// Function ใส่ job ส่งข้อความ LINE ให้ vendor
+// Function เพิ่มงานเข้า queue LINE message ใน Redis/BullMQ queue
 export async function enqueueLineMessage(
   jobName: string,
   data: LineMessageJobData
@@ -68,7 +67,31 @@ export async function enqueueLineMessage(
   });
 }
 
-// Function เริ่ม worker สำหรับส่ง LINE
+// Function สร้าง log การส่ง LINE และนำข้อความเข้า queue
+export async function enqueueLoggedLineMessage(input: {
+  jobName: string;
+  action: string;
+  targetLineUserId: string;
+  payload: unknown;
+  messages: LineMessage[];
+}): Promise<number> {
+  const logId = await lineRepository.createMessageDeliveryLog(
+    "LINE",
+    input.action,
+    input.payload as Prisma.InputJsonValue,
+    input.targetLineUserId
+  );
+
+  await enqueueLineMessage(input.jobName, {
+    log_id: logId,
+    to: input.targetLineUserId,
+    messages: input.messages,
+  });
+
+  return logId;
+}
+
+// Function เริ่ม notification workers ใน Redis/BullMQ queue
 export function startNotificationWorkers(): void {
   if (lineWorker) {
     return;

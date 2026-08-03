@@ -1,17 +1,17 @@
-// import
+// Import Dependencies
 import { VEHICLE_JOB_STATUS } from "../constants/job-status";
 import { mapDriverSession, mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
 export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail } from "./shared/vehicle-job.repository";
 
-// import Types
-import type { DbConnection } from "../types/common.type";
+// Import Types
+import type { DbConnection } from "../types/shared/common.type";
 import type { DriverSessionDto } from "../types/driver.type";
 import type { VehicleJobDto } from "../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function หา VehicleJob จาก driver QR token
+// Function ค้นหา vehicle job ตาม driver QR token จาก DB
 export async function findVehicleJobByDriverQrToken(
   qrToken: string,
   connection?: DbConnection
@@ -26,7 +26,7 @@ export async function findVehicleJobByDriverQrToken(
   return mapVehicleJob(vehicleJob);
 }
 
-// Function สร้าง driver session สำหรับงานรถ
+// Function สร้าง driver session จาก DB
 export async function createDriverSession(
   vehicleJobId: number,
   expiresAt: Date,
@@ -44,7 +44,7 @@ export async function createDriverSession(
   return requireDto(mapDriverSession(session), "driver session create");
 }
 
-// Function หา driver session ที่ยังใช้งานได้จาก token
+// Function ค้นหา active driver session ตาม token จาก DB
 export async function findActiveDriverSessionByToken(
   sessionToken: string,
   now = new Date(),
@@ -64,7 +64,7 @@ export async function findActiveDriverSessionByToken(
   return mapDriverSession(session);
 }
 
-// Function เปลี่ยนงานรถเป็นพร้อมเรียกแรงงาน
+// Function อัปเดตสถานะ vehicle job ready จาก DB
 export async function markVehicleJobReady(
   vehicleJobId: number,
   connection?: DbConnection

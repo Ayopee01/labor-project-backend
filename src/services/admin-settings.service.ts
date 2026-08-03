@@ -1,26 +1,31 @@
-// import Config
+// Import Config
+import { randomBytes } from "crypto";
 import { ADMIN_PERMISSION_LEVELS, canManagePermissionLevel } from "../config/permission.config";
 import { RUNTIME_SETTING_KEYS } from "../config/runtime.config";
 import type { RuntimeSettingKey } from "../config/runtime.config";
-// import
+// Import Dependencies
 import { withTransaction } from "../db/prisma";
-import { accountRepository, listSettings, permissionRepository, sessionRepository, upsertSettings } from "../repositories/admin-settings.repository";
-// import Types
+import { accountRepository, gateClientRepository, listSettings, permissionRepository, sessionRepository, upsertSettings } from "../repositories/admin-settings.repository";
+// Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { DbConnection } from "../types/common.type";
+import type { DbConnection } from "../types/shared/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import type { AccountPermissionsResponse, AdminRoleListResponse, RuntimeSettingsResponse } from "../types/admin-settings.type";
-// import Validation
+import type { GateClientDto, GateClientListResponse, GateClientMutationResponse, GateClientSecretResponse, PublicGateClient } from "../types/admin-settings.type";
+// Import Validation
 import { parseId, parseWithSchema } from "../validation/parser";
-import { createAdminAccountBodySchema, runtimeSettingsSchema, updateAccountPermissionsBodySchema, updateSystemSettingsBodySchema } from "../validation/schemas";
-// import Utils
+import { createAdminAccountBodySchema, createGateClientBodySchema, runtimeSettingsSchema, updateAccountPermissionsBodySchema, updateGateClientBodySchema, updateSystemSettingsBodySchema } from "../validation/schemas";
+// Import Utils
 import ApiError from "../utils/api-error";
-import { hashPassword } from "../utils/password";
+import { hashPassword, verifyPassword } from "../utils/password";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config ระยะเวลา cache runtime settings เพื่อลดการ query DB ซ้ำ
 const SETTINGS_CACHE_TTL_MS = 30 * 1000;
+const GATE_SECRET_PREFIX = "gate_live_";
+const GENERATED_CLIENT_ID_PREFIX = "gate_";
+const GENERATED_CLIENT_ID_BYTES = 8;
+const GENERATED_SECRET_BYTES = 32;
 
 let cachedSettings:
   | {
@@ -31,12 +36,69 @@ let cachedSettings:
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึง id ของ admin ที่แก้ไขข้อมูล
+// Function ดึง actor ID ใน service flow
 function getActorId(auth?: AccessTokenPayload): number | null {
   return auth?.account_id ?? null;
 }
 
-// Function ตรวจว่า admin ผู้แก้มีลำดับยศสูงกว่า target และระดับใหม่ที่จะกำหนด
+// Function จัดการ generate Gate client ID ใน service flow
+function generateGateClientId(): string {
+  return `${GENERATED_CLIENT_ID_PREFIX}${randomBytes(GENERATED_CLIENT_ID_BYTES).toString("hex")}`;
+}
+
+// Function จัดการ generate Gate client secret ใน service flow
+function generateGateClientSecret(): string {
+  return `${GATE_SECRET_PREFIX}${randomBytes(GENERATED_SECRET_BYTES).toString("base64url")}`;
+}
+
+// Function อ่านค่า client ID ใน service flow
+function parseClientId(value: unknown): string {
+  const clientId = String(value ?? "").trim();
+
+  if (!clientId) {
+    throw new ApiError(400, "INVALID_GATE_CLIENT_ID", "Gate client id is required.");
+  }
+
+  return clientId;
+}
+
+// Function จัดการ เป็น public Gate client ใน service flow
+function toPublicGateClient(client: GateClientDto): PublicGateClient {
+  const { secret_hash: _secretHash, ...publicClient } = client;
+
+  return publicClient;
+}
+
+// Function จัดการ generate unique client ID ใน service flow
+async function generateUniqueClientId(): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const clientId = generateGateClientId();
+
+    if (!(await gateClientRepository.clientIdExists(clientId))) {
+      return clientId;
+    }
+  }
+
+  throw new ApiError(
+    500,
+    "GATE_CLIENT_ID_GENERATION_FAILED",
+    "Unable to generate a unique Gate client id."
+  );
+}
+
+// Function ตรวจสอบและดึง Gate client ใน service flow
+async function requireGateClient(clientIdParam: unknown): Promise<GateClientDto> {
+  const clientId = parseClientId(clientIdParam);
+  const client = await gateClientRepository.findByClientId(clientId);
+
+  if (!client) {
+    throw new ApiError(404, "GATE_CLIENT_NOT_FOUND", "Gate client not found.");
+  }
+
+  return client;
+}
+
+// Function ตรวจสอบเงื่อนไข can manage admin permissions ใน service flow
 async function assertCanManageAdminPermissions(
   targetAccount: AccountDto,
   nextPermissionLevel: string,
@@ -79,7 +141,7 @@ async function assertCanManageAdminPermissions(
   }
 }
 
-// Function ตรวจว่า admin ผู้สร้างมี permission level สูงกว่า admin level ที่จะสร้าง
+// Function ตรวจสอบเงื่อนไข can create admin level ใน service flow
 async function assertCanCreateAdminLevel(
   nextPermissionLevel: string,
   auth?: AccessTokenPayload
@@ -105,7 +167,7 @@ async function assertCanCreateAdminLevel(
   }
 }
 
-// Function ตรวจว่า username admin ยังไม่ถูกใช้ก่อนสร้าง account ใหม่
+// Function ตรวจสอบเงื่อนไข admin username available ใน service flow
 async function assertAdminUsernameAvailable(username: string): Promise<void> {
   const exists = await accountRepository.usernameExists(username);
 
@@ -118,7 +180,7 @@ async function assertAdminUsernameAvailable(username: string): Promise<void> {
   }
 }
 
-// Function ตรวจว่า admin ผู้อ่านมีลำดับยศสูงกว่า target ที่ต้องการดู permission
+// Function ตรวจสอบเงื่อนไข can read admin permissions ใน service flow
 async function assertCanReadAdminPermissions(
   targetAccount: AccountDto,
   auth?: AccessTokenPayload
@@ -152,7 +214,7 @@ async function assertCanReadAdminPermissions(
   }
 }
 
-// Function แปลง settings จาก DB แล้ว validate เป็น number โดยไม่ใช้ค่า fallback
+// Function จัดการ merge runtime settings ใน service flow
 function mergeRuntimeSettings(
   storedSettings: { key: string; value: string }[]
 ): RuntimeSettingsResponse {
@@ -182,12 +244,12 @@ function mergeRuntimeSettings(
   return parseWithSchema(runtimeSettingsSchema, rawSettings);
 }
 
-// Function ล้าง cache settings หลัง admin แก้ค่า
-export function clearRuntimeSettingsCache(): void {
+// Function จัดการ clear runtime settings cache ใน service flow
+function clearRuntimeSettingsCache(): void {
   cachedSettings = null;
 }
 
-// Function ดึง runtime settings สำหรับ business flow
+// Function ดึง runtime settings ใน service flow
 export async function getRuntimeSettings(): Promise<RuntimeSettingsResponse> {
   if (cachedSettings && cachedSettings.expiresAt > Date.now()) {
     return cachedSettings.value;
@@ -203,12 +265,12 @@ export async function getRuntimeSettings(): Promise<RuntimeSettingsResponse> {
   return settings;
 }
 
-// Function ดึง settings ทั้งหมดสำหรับ Admin
+// Function ดึงรายการ system settings ใน service flow
 export async function listSystemSettings(): Promise<RuntimeSettingsResponse> {
   return getRuntimeSettings();
 }
 
-// Function แก้ settings ของระบบและ refresh cache
+// Function อัปเดต system settings ใน service flow
 export async function updateSystemSettings(
   body: unknown,
   auth?: AccessTokenPayload
@@ -224,7 +286,115 @@ export async function updateSystemSettings(
   return getRuntimeSettings();
 }
 
-// Function ดึงรายการ role template สำหรับ Admin Web
+// Function ดึงรายการ Gate clients ใน service flow
+export async function listGateClients(): Promise<GateClientListResponse> {
+  const clients = await gateClientRepository.listGateClients();
+
+  return {
+    data: clients.map(toPublicGateClient),
+  };
+}
+
+// Function สร้าง Gate client ใน service flow
+export async function createGateClient(
+  body: unknown,
+  auth?: AccessTokenPayload
+): Promise<GateClientSecretResponse> {
+  const input = parseWithSchema(createGateClientBodySchema, body);
+  const clientId = input.client_id ?? (await generateUniqueClientId());
+
+  if (await gateClientRepository.clientIdExists(clientId)) {
+    throw new ApiError(
+      409,
+      "GATE_CLIENT_ID_ALREADY_EXISTS",
+      "Gate client id already exists."
+    );
+  }
+
+  const clientSecret = generateGateClientSecret();
+  const client = await gateClientRepository.createGateClient({
+    client_id: clientId,
+    name: input.name,
+    secret_hash: await hashPassword(clientSecret),
+    status: input.status,
+    created_by: getActorId(auth),
+    updated_by: getActorId(auth),
+  });
+
+  return {
+    message: "Gate client created successfully. Save client_secret now because it will not be shown again.",
+    ...toPublicGateClient(client),
+    client_secret: clientSecret,
+  };
+}
+
+// Function อัปเดต Gate client ใน service flow
+export async function updateGateClient(
+  clientIdParam: unknown,
+  body: unknown,
+  auth?: AccessTokenPayload
+): Promise<GateClientMutationResponse> {
+  const existingClient = await requireGateClient(clientIdParam);
+  const input = parseWithSchema(updateGateClientBodySchema, body);
+  const client = await gateClientRepository.updateGateClient(
+    existingClient.client_id,
+    {
+      name: input.name,
+      status: input.status,
+      updated_by: getActorId(auth),
+    }
+  );
+
+  return {
+    message: "Gate client updated successfully.",
+    ...toPublicGateClient(client),
+  };
+}
+
+// Function จัดการ rotate Gate client secret ใน service flow
+export async function rotateGateClientSecret(
+  clientIdParam: unknown,
+  auth?: AccessTokenPayload
+): Promise<GateClientSecretResponse> {
+  const existingClient = await requireGateClient(clientIdParam);
+  const clientSecret = generateGateClientSecret();
+  const client = await gateClientRepository.updateGateClientSecret(
+    existingClient.client_id,
+    await hashPassword(clientSecret),
+    getActorId(auth)
+  );
+
+  return {
+    message: "Gate client secret rotated successfully. Save client_secret now because it will not be shown again.",
+    ...toPublicGateClient(client),
+    client_secret: clientSecret,
+  };
+}
+
+// Function ตรวจสอบ Gate client credentials ใน service flow
+export async function verifyGateClientCredentials(
+  clientId: string,
+  clientSecret: string
+): Promise<PublicGateClient | null> {
+  const client = await gateClientRepository.findByClientId(clientId);
+
+  if (!client || client.status !== "active") {
+    return null;
+  }
+
+  if (!(await verifyPassword(clientSecret, client.secret_hash))) {
+    return null;
+  }
+
+  await gateClientRepository.updateLastUsedAt(client.client_id);
+
+  return toPublicGateClient({
+    ...client,
+    last_used_at: new Date().toISOString(),
+  });
+}
+
+// Function ดึงรายการ roles ใน service flow
 export async function listRoles(): Promise<AdminRoleListResponse> {
   const admins = await accountRepository.listAdmins();
 
@@ -253,7 +423,7 @@ export async function listRoles(): Promise<AdminRoleListResponse> {
   };
 }
 
-// Function สร้าง admin account ใหม่ผ่าน Settings/Permissions พร้อม permission level และ permissions เริ่มต้น
+// Function สร้าง admin account ใน service flow
 export async function createAdminAccount(
   body: unknown,
   auth?: AccessTokenPayload
@@ -295,7 +465,7 @@ export async function createAdminAccount(
   });
 }
 
-// Function ดึง permissions จาก DB ของ account เท่านั้น
+// Function ดึง account permissions ใน service flow
 export async function getAccountPermissions(
   account: AccountDto,
   connection?: DbConnection
@@ -309,7 +479,7 @@ export async function getAccountPermissions(
   };
 }
 
-// Function ดึง permissions ของ admin account รายคน
+// Function ดึง admin user permissions ใน service flow
 export async function getAdminUserPermissions(
   accountIdParam: unknown,
   auth?: AccessTokenPayload
@@ -326,7 +496,7 @@ export async function getAdminUserPermissions(
   return getAccountPermissions(account);
 }
 
-// Function แก้ permissions ของ admin account และ revoke sessions เดิม
+// Function อัปเดต admin user permissions ใน service flow
 export async function updateAdminUserPermissions(
   accountIdParam: unknown,
   body: unknown,

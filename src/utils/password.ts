@@ -1,4 +1,4 @@
-// import Library
+// Import Library
 import argon2 from "argon2";
 
 /* -------------------------------------- Config -------------------------------------- */
@@ -9,21 +9,21 @@ const ARGON2_OPTIONS = {
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ตรวจสอบ password ก่อนนำไป hash หรือ verify
+// Function ตรวจสอบเงื่อนไข password สำหรับ helper กลาง
 function assertPassword(password: string): void {
   if (typeof password !== "string" || password.length === 0) {
     throw new TypeError("Password must be a non-empty string.");
   }
 }
 
-// Function ตรวจสอบ password กับ hash ที่เก็บใน database
+// Function hash password สำหรับ helper กลาง
 export async function hashPassword(password: string): Promise<string> {
   assertPassword(password);
 
   return argon2.hash(password, ARGON2_OPTIONS);
 }
 
-// Function ตรวจสอบ password กับ hash ที่เก็บใน database
+// Function ตรวจสอบ password สำหรับ helper กลาง
 export async function verifyPassword(
   password: string,
   passwordHash: string | null | undefined

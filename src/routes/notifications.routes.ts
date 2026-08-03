@@ -1,16 +1,14 @@
-// import Library
+// Import Library
 import express from "express";
-// import Middleware
+// Import Middleware
 import authMiddleware from "../middlewares/auth.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
-// import Service
+// Import Services
 import * as notificationsService from "../services/notifications.service";
 
-// Config Express router สำหรับ Admin Realtime routes
 const router = express.Router();
 
-// Route เปิด SSE stream สำหรับ notification ฝั่ง Admin
 router.get(
   "/",
   authMiddleware,

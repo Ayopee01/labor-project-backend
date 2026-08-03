@@ -1,9 +1,10 @@
-import jwt, { type SignOptions } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import ApiError from "./api-error";
 import type { VendorTicketAction, VendorTicketActionTokenPayload } from "../types/line.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
+// Function ดึง vendor action token secret สำหรับ helper กลาง
 function getVendorActionTokenSecret(): string {
   const secret =
     process.env.VENDOR_ACTION_TOKEN_SECRET ||
@@ -17,17 +18,16 @@ function getVendorActionTokenSecret(): string {
   return secret;
 }
 
-function getVendorActionTokenExpiresIn(): string {
-  return process.env.VENDOR_ACTION_TOKEN_EXPIRES_IN || "7d";
-}
-
+// Function ตรวจว่า vendor ticket action สำหรับ helper กลาง
 function isVendorTicketAction(value: unknown): value is VendorTicketAction {
   return (
     value === "vendor_confirm_completion" ||
-    value === "vendor_reject_completion"
+    value === "vendor_reject_completion" ||
+    value === "vendor_rate_ticket"
   );
 }
 
+// Function อ่านค่า vendor action payload สำหรับ helper กลาง
 function parseVendorActionPayload(
   payload: unknown,
   expectedAction?: VendorTicketAction
@@ -54,28 +54,7 @@ function parseVendorActionPayload(
   return record as unknown as VendorTicketActionTokenPayload;
 }
 
-export function signVendorTicketActionToken(input: {
-  action: VendorTicketAction;
-  ticket_id: number;
-  submission_id: number;
-  boothCode: string;
-}): string {
-  return jwt.sign(
-    {
-      token_type: "vendor_ticket_action",
-      action: input.action,
-      ticket_id: input.ticket_id,
-      submission_id: input.submission_id,
-      boothCode: input.boothCode,
-    },
-    getVendorActionTokenSecret(),
-    {
-      algorithm: "HS256",
-      expiresIn: getVendorActionTokenExpiresIn() as SignOptions["expiresIn"],
-    }
-  );
-}
-
+// Function ตรวจสอบ vendor ticket action token สำหรับ helper กลาง
 export function verifyVendorTicketActionToken(
   token: string,
   expectedAction?: VendorTicketAction

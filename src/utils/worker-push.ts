@@ -1,21 +1,20 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
-import { accountRepository } from "../repositories/auth.repository";
-import * as profileRepository from "../repositories/shared/profile.repository";
-import * as workerPushTokenRepository from "../repositories/worker-push-token.repository";
+import { accountRepository, workerPushTokenRepository } from "../repositories/auth.repository";
+import { getWorkerCodesByAccountIds } from "./worker-identity";
 import type { AccessTokenPayload, SessionDto } from "../types/auth.type";
-import type { DbConnection } from "../types/common.type";
-import type { WorkerPushEventInput, WorkerPushRegistrationResponse } from "../types/push-notification.type";
+import type { DbConnection } from "../types/shared/common.type";
+import type { WorkerPushEventInput, WorkerPushRegistrationResponse } from "../types/notifications.type";
 import { parseWithSchema } from "../validation/parser";
 import { workerPushTokenBodySchema } from "../validation/schemas";
-import ApiError from "../utils/api-error";
+import ApiError from "./api-error";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config Firebase multicast batch limit per Admin SDK request.
+// Config จำนวน token สูงสุดต่อ batch ของ Firebase Admin SDK
 const FCM_MULTICAST_LIMIT = 500;
 
-// Config Firebase errors that mean the stored token should be revoked.
+// Config error ของ Firebase ที่หมายถึง token ใน DB ควรถูกเพิกถอน
 const INVALID_FCM_ERROR_CODES = new Set([
   "messaging/invalid-argument",
   "messaging/registration-token-not-registered",
@@ -24,17 +23,17 @@ const INVALID_FCM_ERROR_CODES = new Set([
 
 /* -------------------------------------- State -------------------------------------- */
 
-// State caches Firebase env readiness so every notification does not re-check env parsing.
+// State เก็บ cache ความพร้อมของ Firebase env เพื่อลดการอ่าน env ซ้ำทุก notification
 let firebaseConfigured: boolean | null = null;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function normalizes multiline private key values stored in .env.
+// Function ปรับรูปแบบ private key หลายบรรทัดที่เก็บใน .env
 function getFirebasePrivateKey(): string | undefined {
   return process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 }
 
-// Function checks whether Firebase Admin SDK can be initialized in this environment.
+// Function ตรวจสอบว่า environment นี้พร้อม init Firebase Admin SDK หรือไม่
 function isFirebaseConfigured(): boolean {
   if (firebaseConfigured !== null) {
     return firebaseConfigured;
@@ -49,7 +48,7 @@ function isFirebaseConfigured(): boolean {
   return firebaseConfigured;
 }
 
-// Function initializes Firebase Admin SDK lazily before sending the first push.
+// Function เริ่มต้น Firebase Admin SDK แบบ lazy ก่อนส่ง push ครั้งแรก
 function ensureFirebaseApp(): boolean {
   if (!isFirebaseConfigured()) {
     return false;
@@ -68,7 +67,7 @@ function ensureFirebaseApp(): boolean {
   return true;
 }
 
-// Function converts WebSocket-style payload objects to string-only FCM data payloads.
+// Function แปลง payload แบบ WebSocket เป็น FCM data payload ที่ทุกค่าเป็น string
 function toFcmData(payload?: Record<string, unknown>): Record<string, string> {
   const data: Record<string, string> = {};
 
@@ -83,7 +82,7 @@ function toFcmData(payload?: Record<string, unknown>): Record<string, string> {
   return data;
 }
 
-// Function splits token arrays into Firebase-compatible multicast chunks.
+// Function แบ่ง token array เป็น batch ที่ส่งผ่าน Firebase multicast ได้
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
 
@@ -94,12 +93,12 @@ function chunk<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-// Function narrows auth payload to an active Worker token shape for push token registration.
+// Function ตรวจ auth payload ให้เป็น token ของ Worker ที่ active ก่อนลงทะเบียน push token
 function isWorkerAuth(auth?: AccessTokenPayload): auth is AccessTokenPayload {
   return Boolean(auth && auth.role === "worker" && auth.account_id && auth.session_id);
 }
 
-// Function registers or refreshes an FCM token from the authenticated Worker Mobile API.
+// Function ลงทะเบียนหรือ refresh FCM token จาก API ของ Worker Mobile ที่ auth แล้ว
 export async function registerWorkerPushToken(
   auth: AccessTokenPayload | undefined,
   session: SessionDto | undefined,
@@ -135,7 +134,7 @@ export async function registerWorkerPushToken(
   };
 }
 
-// Function registers an FCM token during auth login/force-login when Mobile sends one.
+// Function ลงทะเบียน FCM token ตอน auth login/force-login เมื่อ Mobile ส่ง token มา
 export async function registerWorkerPushTokenForAccount(input: {
   worker_code: string;
   session_id: number;
@@ -156,7 +155,7 @@ export async function registerWorkerPushTokenForAccount(input: {
   }, connection);
 }
 
-// Function revokes all active push tokens tied to a session when the session is revoked.
+// Function เพิกถอน push token ที่ active ทั้งหมดของ session เมื่อ session ถูกเพิกถอน
 export async function revokeWorkerPushTokensBySession(
   sessionId: number,
   connection?: DbConnection
@@ -164,8 +163,8 @@ export async function revokeWorkerPushTokensBySession(
   await workerPushTokenRepository.revokeBySessionId(sessionId, connection);
 }
 
-// Function sends FCM push notifications by WorkerCode and revokes invalid stored tokens.
-export async function sendWorkerPushNotification(
+// Function ส่ง FCM push notification ตาม WorkerCode และ revoke token ที่ใช้ไม่ได้
+async function sendWorkerPushNotification(
   input: WorkerPushEventInput
 ): Promise<void> {
   if (!ensureFirebaseApp()) {
@@ -209,7 +208,7 @@ export async function sendWorkerPushNotification(
   await workerPushTokenRepository.revokeByTokenHashes(invalidTokenHashes);
 }
 
-// Function bridges internal account ids to WorkerCode before sending mobile push notifications.
+// Function แปลง account id ภายในเป็น WorkerCode ก่อนส่ง push notification ไป Mobile
 export async function sendWorkerPushNotificationByAccountIds(input: {
   account_ids: number[];
   type: string;
@@ -217,9 +216,7 @@ export async function sendWorkerPushNotificationByAccountIds(input: {
   message: string;
   payload?: Record<string, unknown>;
 }): Promise<void> {
-  const profiles = await profileRepository.findByAccountIds(input.account_ids);
-  const workerCodes = profiles
-    .map((profile) => profile.worker_code)
+  const workerCodes = (await getWorkerCodesByAccountIds(input.account_ids))
     .filter((workerCode): workerCode is string => Boolean(workerCode));
 
   await sendWorkerPushNotification({

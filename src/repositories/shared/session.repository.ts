@@ -1,16 +1,16 @@
 import type { Prisma } from "@prisma/client";
 
-// import Mapper
+// Import Mappers
 import { mapSession } from "./mappers";
 import { buildRevokeData, client, toId } from "./repository-utils";
 
-// import Types
+// Import Types
 import type { SessionDto } from "../../types/auth.type";
-import type { DbConnection } from "../../types/common.type";
+import type { DbConnection } from "../../types/shared/common.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้าง where condition สำหรับหา session ที่ยัง active และยังไม่หมดอายุ
+// Function สร้าง active session where จาก DB
 function buildActiveSessionWhere(
   where: Prisma.UserSessionWhereInput = {}
 ): Prisma.UserSessionWhereInput {
@@ -23,7 +23,7 @@ function buildActiveSessionWhere(
   };
 }
 
-// Function ค้นหา session active ล่าสุดของ account ใช้ร่วมกับ Auth และ Admin Workers
+// Function ค้นหา active ตาม account ID จาก DB
 export async function findActiveByAccountId(
   accountId: number | string,
   connection?: DbConnection
@@ -40,7 +40,7 @@ export async function findActiveByAccountId(
   );
 }
 
-// Function ค้นหา session active จาก id และ account ใช้กับ WebSocket auth
+// Function ค้นหา active ตาม ID และ account ID จาก DB
 export async function findActiveByIdAndAccountId(
   sessionId: number | string,
   accountId: number | string,
@@ -56,7 +56,7 @@ export async function findActiveByIdAndAccountId(
   );
 }
 
-// Function revoke session active ทั้งหมดของ account ใช้ร่วมกับ Admin Workers และ Admin Settings
+// Function เพิกถอน active ตาม account ID จาก DB
 export async function revokeActiveByAccountId(
   accountId: number | string,
   connection?: DbConnection
@@ -70,7 +70,7 @@ export async function revokeActiveByAccountId(
   });
 }
 
-// Function revoke session active อื่นของ account โดยคง session ปัจจุบันไว้
+// Function เพิกถอน active ตาม account ID except จาก DB
 export async function revokeActiveByAccountIdExcept(
   accountId: number | string,
   exceptSessionId: number | string,

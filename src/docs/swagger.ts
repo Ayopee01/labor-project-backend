@@ -5,7 +5,7 @@ import { toPascalCaseKey, toPascalCasePayload } from "../middlewares/api-case.mi
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เรียง tag ของ Swagger โดยให้ System แสดงก่อน แล้วตามด้วย Auth และ Admin
+// Function เรียง Swagger tags สำหรับ Swagger/OpenAPI
 function sortSwaggerTags(firstTag: string, secondTag: string): number {
   const tagOrder: Record<string, number> = {
     System: 0,
@@ -25,7 +25,7 @@ function sortSwaggerTags(firstTag: string, secondTag: string): number {
   return firstOrder - secondOrder || firstTag.localeCompare(secondTag);
 }
 
-// Function เรียง API ใน Swagger ตาม flow การใช้งานของระบบ
+// Function เรียง Swagger operations สำหรับ Swagger/OpenAPI
 function sortSwaggerOperations(
   firstOperation: { get: (key: string) => string },
   secondOperation: { get: (key: string) => string }
@@ -74,7 +74,7 @@ function sortSwaggerOperations(
     "post /api/workers/me/break": 75,
     "post /api/workers/me/assignments/{ticketNo}/accept": 76,
     "post /api/workers/me/assignments/{ticketNo}/check-in-qr": 77,
-    "post /api/workers/me/tickets/{boothCode}/complete": 78,
+    "post /api/workers/me/assignments/{ticketNo}/tickets/{boothCode}/complete": 78,
     "get /api/admin/events": 85,
     "post /api/line/webhook": 90,
   };
@@ -86,7 +86,6 @@ function sortSwaggerOperations(
   return firstOrder - secondOrder || firstKey.localeCompare(secondKey);
 }
 
-// Config OpenAPI specification จากไฟล์ YAML ของแต่ละ Swagger tag
 const openapi = swaggerJsdoc({
   definition: {
     openapi: "3.0.0",
@@ -110,12 +109,12 @@ const openapi = swaggerJsdoc({
   ],
 });
 
-// Function checks plain objects before recursively transforming OpenAPI schemas.
+// Function ตรวจสอบ plain object ก่อนแปลง schema ของ OpenAPI แบบ recursive
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-// Config description text replacements for field names that should display as PascalCase in Swagger.
+// Config ข้อความ description ของ field ที่ต้องแสดงเป็น PascalCase ใน Swagger
 const swaggerDescriptionReplacements: Array<[string, string]> = [
   ["access_token", "AccessToken"],
   ["refresh_token", "RefreshToken"],
@@ -132,7 +131,7 @@ const swaggerDescriptionReplacements: Array<[string, string]> = [
   ["accept_deadline_at", "AcceptDeadlineAt"],
 ];
 
-// Function rewrites selected schema descriptions so Swagger matches the PascalCase API contract.
+// Function เขียน description บาง schema ใหม่ให้ Swagger ตรงกับ contract PascalCase
 function transformDescriptionText(description: string): string {
   return swaggerDescriptionReplacements.reduce(
     (nextDescription, [from, to]) => nextDescription.split(from).join(to),
@@ -140,7 +139,7 @@ function transformDescriptionText(description: string): string {
   );
 }
 
-// Function recursively converts OpenAPI schema property names to PascalCase for public docs.
+// Function แปลงชื่อ property ใน OpenAPI schema เป็น PascalCase แบบ recursive สำหรับ docs
 function transformSchemaKeys(schema: unknown, seen = new Set<unknown>()): void {
   if (Array.isArray(schema)) {
     for (const entry of schema) {
@@ -190,6 +189,7 @@ function transformSchemaKeys(schema: unknown, seen = new Set<unknown>()): void {
   }
 }
 
+// Function สร้าง external open API spec สำหรับ Swagger/OpenAPI
 function buildExternalOpenApiSpec(): Record<string, unknown> {
   const externalOpenapi = JSON.parse(JSON.stringify(openapi)) as Record<string, unknown>;
   transformSchemaKeys(externalOpenapi);
@@ -199,6 +199,7 @@ function buildExternalOpenApiSpec(): Record<string, unknown> {
 
 const externalOpenapi = buildExternalOpenApiSpec();
 
+// Function ตั้งค่า Swagger สำหรับ Swagger/OpenAPI
 export default function setupSwagger(app: Express): void {
   app.get("/api-docs/openapi.json", (_req: Request, res: Response) => {
     res.json(externalOpenapi);

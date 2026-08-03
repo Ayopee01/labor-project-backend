@@ -1,14 +1,14 @@
-// import
+// Import Dependencies
 import { mapTicketWorker } from "./mappers";
 import { client } from "./repository-utils";
 
-// import Types
-import type { DbConnection } from "../../types/common.type";
+// Import Types
+import type { DbConnection } from "../../types/shared/common.type";
 import type { TicketWorkerDto } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึง worker ทั้งหมดของ ticket
+// Function ดึงรายการ ticket workers จาก DB
 export async function listTicketWorkers(
   ticketId: number,
   connection?: DbConnection

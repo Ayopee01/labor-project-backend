@@ -1,14 +1,14 @@
-// import Library
+// Import Library
 import type { NextFunction, Request, Response } from "express";
-// import
+// Import Dependencies
 import { sessionRepository } from "../repositories/auth.repository";
 import ApiError from "../utils/api-error";
-// import types
+// Import Types
 import type { AccessTokenPayload, SessionDto } from "../types/auth.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ดึง auth payload จาก request และโยน error ถ้า token ไม่สมบูรณ์
+// Function ตรวจสอบและดึง auth payload สำหรับ Express middleware
 function requireAuthPayload(req: Request): AccessTokenPayload {
   if (!req.auth || !req.auth.session_id || !req.auth.account_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -17,7 +17,7 @@ function requireAuthPayload(req: Request): AccessTokenPayload {
   return req.auth;
 }
 
-// Function ตรวจสอบว่า session เป็นของ account ใน token หรือไม่
+// Function จัดการ session matches auth สำหรับ Express middleware
 function sessionMatchesAuth(
   session: SessionDto | null,
   auth: AccessTokenPayload
@@ -25,7 +25,7 @@ function sessionMatchesAuth(
   return Boolean(session && session.account_id === auth.account_id);
 }
 
-// Function ตรวจสอบว่า session ใน token ยัง active อยู่
+// Function จัดการ session middleware สำหรับ Express middleware
 export default async function sessionMiddleware(
   req: Request,
   _res: Response,

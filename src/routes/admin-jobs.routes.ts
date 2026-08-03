@@ -1,21 +1,19 @@
-// import Library
+// Import Library
 import express from "express";
-// import Middleware
+// Import Middleware
 import authMiddleware from "../middlewares/auth.middleware";
 import permissionMiddleware from "../middlewares/permission.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 
-// import Service
+// Import Services
 import * as adminJobsService from "../services/admin-jobs.service";
 import * as adminWorkersService from "../services/admin-workers.service";
 
-// Config Express router สำหรับ Admin Jobs routes
 const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 
-// Route ดึงสถานะ worker ทั้งหมดสำหรับหน้า monitor/dispatch
 router.get(
   "/jobs/workers/status",
   permissionMiddleware(["jobs:read"]),
@@ -29,7 +27,6 @@ router.get(
   }
 );
 
-// Route บังคับเปลี่ยนสถานะ worker จากหน้า monitor/dispatch
 router.post(
   "/jobs/workers/:workerCode/status/force",
   permissionMiddleware(["workers:force_status"]),
@@ -46,7 +43,6 @@ router.post(
   }
 );
 
-// Route ยกเลิกงานระดับรถ/ตลาด/แผงผ่าน endpoint เดียว
 router.post(
   "/jobs/cancel",
   permissionMiddleware(["jobs:cancel"]),
@@ -60,7 +56,6 @@ router.post(
   }
 );
 
-// Route ดึงรายการงานรถสำหรับ Admin
 router.get(
   "/vehicle-jobs/operations",
   permissionMiddleware(["jobs:read"]),
@@ -87,7 +82,6 @@ router.get(
   }
 );
 
-// Route assign worker เข้างานรถแบบระบุรายคน
 router.post(
   "/vehicle-jobs/:ticketNo/assign-workers",
   permissionMiddleware(["jobs:assign"]),
@@ -104,7 +98,6 @@ router.post(
   }
 );
 
-// Route ต่อเวลา scan QR ของงานรถ
 router.post(
   "/vehicle-jobs/:ticketNo/scan-deadline/extend",
   permissionMiddleware(["jobs:extend_deadline"]),
@@ -121,7 +114,6 @@ router.post(
   }
 );
 
-// Route ยกเลิก assignment รายคน
 router.post(
   "/vehicle-jobs/:ticketNo/workers/:workerCode/assignment/cancel",
   permissionMiddleware(["jobs:cancel"]),

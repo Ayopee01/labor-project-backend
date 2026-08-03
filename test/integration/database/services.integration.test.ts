@@ -5,12 +5,10 @@ import { assertSafeTestDatabaseUrl } from "../../setup/test-env";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config เปิด DB integration test เฉพาะตอนตั้ง RUN_DB_TESTS=1
 const runDbTests = process.env.RUN_DB_TESTS === "1";
 
 /* -------------------------------------- Tests -------------------------------------- */
 
-// Test integration ของ service หลักโดยใช้ DB จริง เฉพาะตอนเปิด RUN_DB_TESTS=1 และ DATABASE_URL เป็น test DB
 test(
   "services create user, login, refresh, and read current schedule",
   {
@@ -21,7 +19,6 @@ test(
   async () => {
     assertSafeTestDatabaseUrl();
 
-    // Step Arrange ตั้งค่า secret สำหรับ JWT และ refresh token hash ใน test
     process.env.JWT_ACCESS_SECRET = "service-test-access-secret";
     process.env.JWT_REFRESH_SECRET = "service-test-refresh-secret";
     process.env.JWT_LOGIN_CHALLENGE_SECRET =
@@ -41,7 +38,6 @@ test(
     const workerCode = "MN000130";
 
     try {
-      // Step Act สร้าง worker ผ่าน admin-workers service พร้อม profile และ work schedule
       const created = await userService.createUser(
         {
           img: "https://example.com/worker.jpg",
@@ -62,14 +58,12 @@ test(
         }
       );
 
-      // Step Assert ตรวจว่าสร้าง worker สำเร็จ
       assert.equal(created.message, "Worker created successfully.");
       const workerAccount = await accountRepository.findUserByIdentifier(workerCode);
       assert.ok(workerAccount);
       assert.equal(workerAccount.phone, phone);
       assert.equal(await verifyPassword(phone, workerAccount.password_hash), true);
 
-      // Step Arrange สร้าง admin account เพื่อทดสอบ login ฝั่ง Admin Web
       const admin = await accountRepository.create({
         username: `service-admin-${suffix}`,
         password_hash: await hashPassword("Admin@123456"),
@@ -81,13 +75,11 @@ test(
         created_by: 1,
       });
 
-      // Step Act login ด้วย admin account
       const adminLogin = await authService.login({
         username: admin.username,
         password: "Admin@123456",
       });
 
-      // Step Assert ตรวจว่า admin login แล้วไม่มี profile/schedule แบบ worker
       assert.equal(adminLogin.token_type, "Bearer");
       assert.ok(adminLogin.access_token);
       assert.ok(adminLogin.refresh_token);
@@ -102,7 +94,6 @@ test(
         undefined
       );
 
-      // Step Assert ตรวจว่า worker role login ต้องส่ง device_id/device_name
       await assert.rejects(
         () =>
           authService.login({
@@ -117,7 +108,6 @@ test(
           )
       );
 
-      // Step Act login ด้วย worker พร้อมข้อมูลอุปกรณ์
       const login = await authService.login({
         username: workerCode,
         password: phone,
@@ -125,29 +115,24 @@ test(
         device_name: "Chrome on Windows",
       });
 
-      // Step Assert ตรวจว่า worker login ได้ token ครบ
       assert.equal(login.token_type, "Bearer");
       assert.ok(login.access_token);
       assert.ok(login.refresh_token);
       assert.equal((login as { account?: unknown }).account, undefined);
 
-      // Step Act ขอ token ชุดใหม่จาก refresh token
       const refreshed = await authService.refresh({
         refresh_token: login.refresh_token,
       });
 
-      // Step Assert ตรวจว่า refresh ได้ access/refresh token ใหม่
       assert.ok(refreshed.access_token);
       assert.ok(refreshed.refresh_token);
 
-      // Step Act ดึงรายการ worker ด้วย search เพื่อหา worker ที่เพิ่งสร้าง
       const list = await userService.listUsers({
         page: 1,
         limit: 20,
         search: workerCode,
       });
 
-      // Step Assert ตรวจ response list ว่าซ่อน password และ map profile/schedule ถูกต้อง
       assert.equal(list.pagination.total, 1);
       const createdUser = list.data[0];
       assert.equal(createdUser.worker_code, workerCode);
@@ -197,7 +182,6 @@ test(
         (createdUser.work_schedule as { is_current?: boolean } | null)?.is_current,
         undefined
       );
-      // Step Act แก้สถานะ worker และเปลี่ยน work schedule เป็นกะกลางคืน
       const updated = await userService.updateUser(
         workerCode,
         {
@@ -214,7 +198,6 @@ test(
         }
       );
 
-      // Step Assert ตรวจว่า update account/schedule สำเร็จ และ session active ถูกเคลียร์
       assert.equal(updated.status, "inactive");
       assert.equal(updated.worker_code, workerCode);
       assert.equal(updated.details.position, "Worker");
@@ -225,7 +208,6 @@ test(
       assert.equal(updated.details.shift_end_time, "06:00");
       assert.ok(updated.details.shift_name);
     } finally {
-      // Step Cleanup ปิด Prisma connection หลังจบ integration test
       await closePrisma();
     }
   }

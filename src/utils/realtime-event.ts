@@ -1,13 +1,13 @@
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
-import { publishNotification } from "./notifications.service";
-import { sendWorkerPushNotificationByAccountIds } from "./worker-push.service";
+import { publishNotification } from "../services/notifications.service";
+import { sendWorkerPushNotificationByAccountIds } from "../utils/worker-push";
 
 import type { PublishRealtimeEventInput } from "../types/notifications.type";
 import type { WorkerSocketEventType } from "../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ส่ง realtime event ไปยัง Admin ผ่าน SSE และ Worker ผ่าน WebSocket ตามกลุ่มผู้รับ
+// Function กระจาย event realtime event สำหรับ helper กลาง
 export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
   const payload = input.payload ?? {};
 

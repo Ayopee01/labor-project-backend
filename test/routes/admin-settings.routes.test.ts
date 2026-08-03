@@ -33,7 +33,7 @@ after(async () => {
 
 /* -------------------------------------- Admin Settings Route Tests -------------------------------------- */
 
-// Function login admin ผ่าน auth route จริง เพื่อให้ได้ token พร้อม permissions เหมือน flow จริง
+// Function จัดการ login admin สำหรับ test
 async function loginAdmin(accountId: number, permissionLevel: string) {
   const passwordHash = await password.hashPassword("Admin@123456");
   const admin = addAdmin(accountId, passwordHash);
@@ -65,12 +65,9 @@ async function loginAdmin(accountId: number, permissionLevel: string) {
   };
 }
 
-// Test endpoint create admin ว่า owner สร้าง manager level ต่ำกว่า พร้อม permissions เริ่มต้นได้
 test("POST /api/admin/admins allows owner to create lower level admin", async () => {
-  // Step Arrange login owner ที่มี admins:create permission
   const { token } = await loginAdmin(9101, "owner");
 
-  // Step Act เรียก endpoint สร้าง admin account ใหม่ใน Settings/Permissions flow
   const response = await server.request("POST", "/api/admin/admins", {
     token,
     body: {
@@ -85,7 +82,6 @@ test("POST /api/admin/admins allows owner to create lower level admin", async ()
     },
   });
 
-  // Step Assert account ใหม่ต้องเป็น role admin และได้ permission level/permissions ตามที่กำหนด
   assert.equal(response.status, 201);
   assert.equal(response.body.message, "Admin account created successfully.");
   assert.equal(response.body.account.role, "admin");
@@ -97,12 +93,9 @@ test("POST /api/admin/admins allows owner to create lower level admin", async ()
   assert.deepEqual(response.body.permissions, ["workers:read", "workers:create"]);
 });
 
-// Test endpoint create admin ว่า manager level เท่ากันหรือต่ำกว่าไม่สามารถสร้าง admin level เดียวกันได้
 test("POST /api/admin/admins rejects creating equal level admin", async () => {
-  // Step Arrange login manager level ปกติที่มี admins:create แต่ rank ไม่สูงกว่า target admin
   const { token } = await loginAdmin(9102, "manager");
 
-  // Step Act พยายามสร้าง admin level manager เท่ากัน
   const response = await server.request("POST", "/api/admin/admins", {
     token,
     body: {
@@ -114,7 +107,6 @@ test("POST /api/admin/admins rejects creating equal level admin", async () => {
     },
   });
 
-  // Step Assert ต้องถูก reject เพราะ actor ต้องมี permission level สูงกว่า target เท่านั้น
   assert.equal(response.status, 403);
   assert.equal(response.body.code, "NEW_PERMISSION_LEVEL_NOT_MANAGEABLE");
 });

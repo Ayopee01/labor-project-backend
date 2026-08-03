@@ -32,6 +32,12 @@
       "description": "Local backend base URL for testing."
     },
     {
+      "key": "publicBaseUrl",
+      "value": "",
+      "type": "string",
+      "description": "Optional Cloudflare Tunnel public base URL, for example https://example.trycloudflare.com. Use publicBaseUrl + /api/line/webhook in LINE Developers."
+    },
+    {
       "key": "wsBaseUrl",
       "value": "ws://localhost:8080",
       "type": "string",
@@ -131,13 +137,25 @@
       "key": "vendorConfirmToken",
       "value": "",
       "type": "string",
-      "description": "Signed token from the vendor LINE completion message: copy value after action=vendor_confirm_completion&token=."
+      "description": "Manual test only. Signed token for vendor confirm if copied from a LINE button payload or delivery log. Real vendors normally tap the LINE button directly."
     },
     {
       "key": "vendorRejectToken",
       "value": "",
       "type": "string",
-      "description": "Signed token from the vendor LINE completion message: copy value after action=vendor_reject_completion&token=."
+      "description": "Manual test only. Signed token for vendor reject if copied from a LINE button payload or delivery log. Real vendors normally tap the LINE button directly."
+    },
+    {
+      "key": "vendorRatingToken",
+      "value": "",
+      "type": "string",
+      "description": "Manual test only. Signed token for vendor rating if copied from the LINE rating payload or delivery log. Real vendors normally tap the LINE rating button directly."
+    },
+    {
+      "key": "lineUserId",
+      "value": "Ubd9b17811181e01f8fca0372d2b37088",
+      "type": "string",
+      "description": "LINE User ID mapped in seed for manual LINE webhook tests. Real LINE webhooks send this as source.userId automatically."
     },
     {
       "key": "driverQrToken",
@@ -876,7 +894,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/jobs/workers/status\nAuth: Admin access token\nBody: None\nNotes: Admin Jobs. Lists only active workers who are online and inside their current shift. Response is shaped for the worker queue board with FullName, WorkerCode, ShirtNumber, ImageUrl, ShiftName, LatestActivityAt, StatusEnteredAt, QueuePosition, and one status only. Data is already sorted by board column order and the real order inside each status. Ready workers use Redis QueuePosition. Board status values: open_app, ready, assigned, working, break."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/jobs/workers/status\nAuth: Admin access token\nBody: None\nNotes: Admin Jobs. Lists active current-shift workers for the worker queue board. Workers with an active queue/assignment remain visible even when their Worker WebSocket is disconnected; use SocketConnected to show the connection state. Response includes FullName, WorkerCode, ShirtNumber, ImageUrl, ShiftName, LatestActivityAt, StatusEnteredAt, QueuePosition, SocketConnected, and one status only. Data is already sorted by board column order and the real order inside each status. Ready workers use Redis QueuePosition. Board status values: open_app, ready, assigned, working, break."
           },
           "response": []
         },
@@ -923,7 +941,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/workers/{{workerCode}}/status/force\nAuth: Admin access token\nBody: status open_app|ready|break, optional reason\nResponse: Message, FullName, WorkerCode, Status only.\nNotes: Admin Jobs. {{workerCode}} must be WorkerCode and must have an active Worker WebSocket connection. If the Worker is offline, response is 409 WORKER_NOT_ONLINE. open_app means the Worker is online/opened the app but not in ready queue; it removes the Worker from dispatch queue. ready puts the online Worker into Redis queue. break starts a configured break, default 15 minutes, and consumes a break count. Offline workers are not a board status and should not be shown by GET /api/admin/jobs/workers/status."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/jobs/workers/{{workerCode}}/status/force\nAuth: Admin access token\nBody: status open_app|ready|break, optional reason\nResponse: Message, FullName, WorkerCode, Status only.\nNotes: Admin Jobs. {{workerCode}} must be WorkerCode and must have an active Worker WebSocket connection for this force action. If the Worker socket is not connected, response is 409 WORKER_NOT_ONLINE. open_app means the Worker opened the app but is not in the ready queue; it removes the Worker from dispatch queue. ready puts the Worker into Redis queue. break starts a configured break, default 15 minutes, and consumes a break count. GET /api/admin/jobs/workers/status can still show active queue or assignment workers with SocketConnected=false when their socket is disconnected."
           },
           "response": []
         },
@@ -1035,7 +1053,7 @@
                 {
                   "key": "search",
                   "value": "",
-                  "description": "Search vehicle job ref, license plate, gate transaction ref, market, stall, ticket, or vendor name."
+                  "description": "Search TicketNo, license plate, MarketCode/MarketName, BoothCode/BoothName, ProductCode/ProductName, or vendor name."
                 },
                 {
                   "key": "operation_status",
@@ -1125,7 +1143,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/history?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&status=\nAuth: Admin access token\nQuery: date_from/date_to/search/status optional. date is still supported as a legacy single-day filter. status can match vehicle, market, stall, stall confirmation, or worker assignment status. page optional; when page is omitted backend returns all matching rows ordered by latest CreatedAt. When page is sent backend returns that page and pagination metadata.\nSupported status examples: WAIT, WORKING, DELIVERED, REJECT, COMPLETED, CANCELLED, PENDING, ACCEPTED, SCANNED, TIMEOUT.\nResponse: Data[].VehicleJob plus Markets[].Tickets[].Products[] for the Admin history report. Search can match vehicle job ref, license plate, gate transaction ref, market ref/name, stall job ref, ticket no, or stall no.\nNotes: Use search with a license plate to see what that vehicle delivered, use market ref/name to see vehicles that delivered to that market, or use stall ref/no to see vehicles and products for that stall in the selected date range."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/history?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&status=\nAuth: Admin access token\nQuery: date_from/date_to/search/status optional. date is still supported as a legacy single-day filter. status can match vehicle, market, booth/ticket, confirmation, or worker assignment status. page optional; when page is omitted backend returns all matching rows ordered by latest CreatedAt. When page is sent backend returns that page and pagination metadata.\nSupported status examples: WAIT, WORKING, DELIVERED, REJECT, COMPLETED, CANCELLED, PENDING, ACCEPTED, SCANNED, TIMEOUT.\nResponse: Data[].VehicleJob plus Markets[].Tickets[].Products[] for the Admin history report. Search can match TicketNo, license plate, MarketCode/MarketName, BoothCode/BoothName, ProductCode/ProductName, or vendor name.\nNotes: Use search with a license plate to see what that vehicle delivered, use MarketCode/MarketName to see vehicles that delivered to that market, or use BoothCode/BoothName to see vehicles and products for that booth in the selected date range."
           },
           "response": []
         },
@@ -1353,7 +1371,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/settings\nAuth: Admin access token with settings:update permission\nBody: Partial JSON is allowed. Updated settings affect new calculations after this request; existing assignment deadlines already saved in DB remain unchanged. WorkerAcceptTimeoutLimit controls how many consecutive accept timeouts are allowed before the worker is taken offline for the shift. WorkerScanWarningBeforeMinutes controls when Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING for ACCEPTED workers who have not checked in. WorkerScanTeamRemainingMinutes controls the shortened scan window for remaining team members after the first worker checks in. VendorConfirmTimeoutHours auto-confirms first submitted totals after vendor timeout, and VendorReconfirmTimeoutHours does the same after a rejected ticket is resubmitted."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/settings\nAuth: Admin access token with settings:update permission\nBody: Partial JSON is allowed. Updated settings affect new calculations after this request; existing assignment deadlines already saved in DB remain unchanged. WorkerAcceptTimeoutLimit controls how many consecutive accept timeouts are allowed before the worker is moved to open_app and the current shift is closed. WorkerScanWarningBeforeMinutes controls when Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING for ACCEPTED workers who have not checked in. WorkerScanTeamRemainingMinutes controls the shortened scan window for remaining team members after the first worker checks in. VendorConfirmTimeoutHours auto-confirms first submitted totals after vendor timeout, and VendorReconfirmTimeoutHours does the same after a rejected ticket is resubmitted."
           },
           "response": []
         },
@@ -1759,7 +1777,7 @@
                 }
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create it with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: Gate payload, 1 request per ticket/booth. Required fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, MarketName, BoothCode, BoothName, LicensePlate, VehicleTypeCode, VehicleTypeName, ProductCode, ProductName, PackageCode, PackageName, Quantity, Dispatch. Gate does not send VendorLineId; backend maps MarketCode + BoothCode to owner/member LINE targets from internal master_owner_stalls and master_member_stalls tables. Backend derives the internal idempotency key from TicketNo + MarketCode + BoothCode and returns WorkersRequired = 1 for now; worker-count calculation will be added later.\nResponse: Result, Ticket, Market, Booth, Product, and Qr. Ticket includes TicketNo, TicketCreatedAt, BoothCount, vehicle info, WorkersRequired, and Status. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload. Success/replay responses do not include Message or GateTransactionRef. Qr.WorkerQrToken equals TicketNo, so Worker scans/sends TicketNo for check-in. GateTransactionRef is returned only in 409 mismatch errors for debugging. Missing MarketCode + BoothCode LINE target mapping returns 409 BOOTH_VENDOR_LINE_NOT_CONFIGURED.\nResult: 201 + Result CREATED for a new Gate transaction, 200 + Result REPLAYED when the same TicketNo + MarketCode + BoothCode is retried with the same payload, 409 when the same key is reused with a different payload, the same TicketNo exceeds BoothCount, the same BoothCode is reused under one TicketNo, BoothCount changes for an existing TicketNo, or MarketCode + BoothCode has no active owner/member LINE target mapping.\nNotes: Saves gateResult, ticketNo, marketCode, boothCode, productCode, driverQrToken, and workerQrToken collection variables. BoothCount is the maximum number of distinct BoothCode values allowed under the same TicketNo. MarketCode may repeat, but BoothCode cannot repeat under the same TicketNo. With Dispatch true, backend creates or marks this vehicle job as WORKING and dispatches ready workers to this job first through WebSocket."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create it with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: Gate payload, 1 request per ticket/booth. Required fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, MarketName, BoothCode, BoothName, LicensePlate, VehicleTypeCode, VehicleTypeName, ProductCode, ProductName, PackageCode, PackageName, Quantity, Dispatch. Gate does not send VendorLineId; backend maps MarketCode + BoothCode to owner/member LINE targets from internal master_owner_stalls and master_member_stalls tables. Backend derives the internal idempotency key from TicketNo + MarketCode + BoothCode, sends a LINE Flex card notification to active owner/member targets when a new ticket is created, and returns WorkersRequired = 1 for now; worker-count calculation will be added later.\nResponse: Result, Ticket, Market, Booth, Product, and Qr. Ticket includes TicketNo, TicketCreatedAt, BoothCount, vehicle info, WorkersRequired, and Status. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload. Success/replay responses do not include Message or GateTransactionRef. Qr.WorkerQrToken equals TicketNo, so Worker scans/sends TicketNo for check-in. GateTransactionRef is returned only in 409 mismatch errors for debugging. Missing MarketCode + BoothCode LINE target mapping returns 409 BOOTH_VENDOR_LINE_NOT_CONFIGURED.\nResult: 201 + Result CREATED for a new Gate transaction, 200 + Result REPLAYED when the same TicketNo + MarketCode + BoothCode is retried with the same payload, 409 when the same key is reused with a different payload, the same TicketNo exceeds BoothCount, the same BoothCode is reused under one TicketNo, BoothCount changes for an existing TicketNo, or MarketCode + BoothCode has no active owner/member LINE target mapping.\nNotes: Saves gateResult, ticketNo, marketCode, boothCode, productCode, driverQrToken, and workerQrToken collection variables. BoothCount is the maximum number of distinct BoothCode values allowed under the same TicketNo. MarketCode may repeat, but BoothCode cannot repeat under the same TicketNo. With Dispatch true, backend creates or marks this vehicle job as WORKING and dispatches ready workers to this job first through WebSocket."
           },
           "response": []
         }
@@ -2088,7 +2106,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/accept\nAuth: Worker access token\nBody: None\nPath: {{ticketNo}} comes from WORKER_ASSIGNED.ticketNo.\nNotes: Assignment must be PENDING and accepted within WorkerAcceptDeadlineSeconds, default 60 seconds. If not accepted in time, assignment becomes TIMEOUT and the connected worker returns to the tail of the queue. After WorkerAcceptTimeoutLimit consecutive accept timeouts, default 3, the worker is taken offline for the shift. Response is trimmed for the worker job detail screen only: LicensePlate, team[].FullName/WorkerCode/ImageUrl/ScanStatus, markets[].marketName/StallCount/stalls[].boothCode/boothName/ProductCount/products[].productCode/productName/quantity/packageName. Use stalls[].boothCode later with POST /api/workers/me/tickets/{{boothCode}}/complete."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/accept\nAuth: Worker access token\nBody: None\nPath: {{ticketNo}} comes from WORKER_ASSIGNED.ticketNo.\nNotes: Assignment must be PENDING and accepted within WorkerAcceptDeadlineSeconds, default 60 seconds. If not accepted in time, assignment becomes TIMEOUT and the worker returns to the tail of the queue even when the Worker WebSocket is disconnected. The consecutive accept-timeout streak resets after a successful accept. After WorkerAcceptTimeoutLimit consecutive accept timeouts, default 3, the worker is moved to open_app and cannot re-enter the queue in the same shift. Response is trimmed for the worker job detail screen only: LicensePlate, team[].FullName/WorkerCode/ImageUrl/ScanStatus, markets[].marketName/StallCount/stalls[].boothCode/boothName/ProductCount/products[].productCode/productName/quantity/packageName. Use the same {{ticketNo}} plus stalls[].BoothCode later with POST /api/workers/me/assignments/{{ticketNo}}/tickets/{{boothCode}}/complete."
           },
           "response": []
         },
@@ -2139,18 +2157,15 @@
           "response": []
         },
         {
-          "name": "POST /api/workers/me/tickets/:boothCode/complete",
+          "name": "POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const body = pm.response.json();",
-                  "const confirm = body.DebugLinePostback?.Confirm;",
-                  "const reject = body.DebugLinePostback?.Reject;",
-                  "if (confirm) pm.collectionVariables.set('vendorConfirmToken', String(confirm).split('token=')[1] || '');",
-                  "if (reject) pm.collectionVariables.set('vendorRejectToken', String(reject).split('token=')[1] || '');"
+                  "// Production-like response does not expose LINE postback tokens.",
+                  "// Vendor confirm/reject should come from the real LINE OA button postback."
                 ]
               }
             }
@@ -2179,7 +2194,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/workers/me/tickets/{{boothCode}}/complete",
+              "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/tickets/{{boothCode}}/complete",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2187,6 +2202,8 @@
                 "api",
                 "workers",
                 "me",
+                "assignments",
+                "{{ticketNo}}",
                 "tickets",
                 "{{boothCode}}",
                 "complete"
@@ -2195,7 +2212,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/tickets/{{boothCode}}/complete\nAuth: Worker access token\nBody: Items required. Send every ProductCode in the ticket with ConfirmedQuantity counted by the worker.\nNotes: {{boothCode}} is the boothCode from Gate payload/response, such as STALLJOB-001. Any worker mapped to this ticket can submit after the assigned team has checked in, and stalls/markets in the same vehicle job can be submitted in any order. The first request while the ticket is WAIT/WORKING/REJECT succeeds. The ticket and AssignmentStatus become DELIVERED, and vendor is notified via LINE queue with signed confirm/reject tokens. If vendor rejects, ticket and AssignmentStatus become REJECT so worker must resubmit. If vendor does not respond, backend auto-confirms after VendorConfirmTimeoutHours for first submission or VendorReconfirmTimeoutHours after a rejected resubmission. When LINE_DEBUG_POSTBACK_RESPONSE=true, response includes DebugLinePostback and this request saves vendorConfirmToken/vendorRejectToken automatically."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/tickets/{{boothCode}}/complete\nAuth: Worker access token\nBody: Items required. Send every ProductCode in the ticket with ConfirmedQuantity counted by the worker.\nNotes: {{ticketNo}} is the TicketNo from the accepted/check-in assignment and {{boothCode}} is the BoothCode from that accepted job payload. Backend resolves the ticket using TicketNo + BoothCode, so a BoothCode reused under another TicketNo will not be selected by mistake. Any worker mapped to this ticket can submit after the assigned team has checked in, and stalls/markets in the same vehicle job can be submitted in any order. The first request while the ticket is WAIT/WORKING/REJECT succeeds. The ticket and AssignmentStatus become DELIVERED, and vendor is notified through a real LINE Flex card with Confirm/Reject buttons. The response does not expose LINE postback tokens. If vendor confirms, the job can close and backend sends an optional 1-5 rating Flex card to the confirming LINE user. If vendor rejects, ticket and AssignmentStatus become REJECT so worker must resubmit. If vendor does not respond, backend auto-confirms after VendorConfirmTimeoutHours for first submission or VendorReconfirmTimeoutHours after a rejected resubmission."
           },
           "response": []
         }
@@ -2256,7 +2273,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"Events\": [\n    {\n      \"Type\": \"postback\",\n      \"Source\": {\n        \"UserId\": \"line-vendor-a\"\n      },\n      \"Postback\": {\n        \"Data\": \"action=vendor_confirm_completion&token={{vendorConfirmToken}}\"\n      }\n    }\n  ]\n}",
+              "raw": "{\n  \"events\": [\n    {\n      \"type\": \"postback\",\n      \"source\": {\n        \"userId\": \"{{lineUserId}}\"\n      },\n      \"postback\": {\n        \"data\": \"token={{vendorConfirmToken}}\"\n      }\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2277,7 +2294,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Mock LINE postback. userId must match vendor_line_id. Copy vendorConfirmToken from the LINE completion message token= value. Confirms the waiting ticket completion and notifies worker/admin. If this confirmation makes every ticket in the vehicle job terminal, backend closes the market/vehicle job and sets AssignmentStatus to COMPLETED so workers can go online for the next job. If there is another stall job, AssignmentStatus returns to WORKING."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Manual mock LINE postback using the same token-only format as the real LINE Flex buttons. source.userId should use {{lineUserId}} from the seed mapping. In normal use, vendor taps Confirm in LINE OA and this request is sent by LINE, not Postman. Confirms the waiting ticket completion, notifies worker/admin, and sends a 1-5 optional rating Flex prompt to the confirming LINE user. If this confirmation makes every ticket in the vehicle job terminal, backend closes the market/vehicle job and sets AssignmentStatus to COMPLETED so workers can go online for the next job. If there is another stall job, AssignmentStatus returns to WORKING. If vendor taps a rating score, backend replies with a thank-you Flex card and a temporary 0.00 baht service-charge summary card."
           },
           "response": []
         },
@@ -2294,7 +2311,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"Events\": [\n    {\n      \"Type\": \"postback\",\n      \"Source\": {\n        \"UserId\": \"line-vendor-a\"\n      },\n      \"Postback\": {\n        \"Data\": \"action=vendor_reject_completion&token={{vendorRejectToken}}&reject_reason=Quantity mismatch\"\n      }\n    }\n  ]\n}",
+              "raw": "{\n  \"events\": [\n    {\n      \"type\": \"postback\",\n      \"source\": {\n        \"userId\": \"{{lineUserId}}\"\n      },\n      \"postback\": {\n        \"data\": \"token={{vendorRejectToken}}&reject_reason=Quantity mismatch\"\n      }\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2315,7 +2332,45 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Mock LINE postback. userId must match vendor_line_id. Copy vendorRejectToken from the LINE completion message token= value. Optional RejectReason is saved to the stall job and returned by Admin operations/history until the worker resubmits. Rejects the waiting ticket completion, sets AssignmentStatus to REJECT, then the worker can submit the ticket completion again."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Manual mock LINE postback using the same token-only format as the real LINE Flex buttons. source.userId should use {{lineUserId}} from the seed mapping. In normal use, vendor taps Reject in LINE OA and this request is sent by LINE, not Postman. Optional RejectReason is saved to the stall job and returned by Admin operations/history until the worker resubmits. Rejects the waiting ticket completion, sends a reject result Flex card to vendor, sets AssignmentStatus to REJECT, then the worker can submit the ticket completion again."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/line/webhook - vendor rating",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"events\": [\n    {\n      \"type\": \"postback\",\n      \"source\": {\n        \"userId\": \"{{lineUserId}}\"\n      },\n      \"postback\": {\n        \"data\": \"token={{vendorRatingToken}}&score=5\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/line/webhook",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "webhook"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Manual mock LINE rating postback. source.userId should use {{lineUserId}} from the seed mapping. Score must be 1-5. In normal use, vendor taps one of the optional rating buttons after confirming completion. Backend stores one rating per Ticket and LINE user; if the same LINE user taps again, the latest score replaces the old one. After a valid rating, backend sends a thank-you Flex card and a temporary 0.00 baht service-charge summary card."
           },
           "response": []
         }

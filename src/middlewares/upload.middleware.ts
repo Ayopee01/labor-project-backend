@@ -1,27 +1,36 @@
+// Import Library
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
+
+// Import Middleware
 import { normalizeApiRequestPayload } from "./api-case.middleware";
+
+// Import Utils
 import ApiError from "../utils/api-error";
 
-// Config path สำหรับเก็บรูป worker ที่ upload เข้ามา
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config โฟลเดอร์เก็บรูป worker ที่อัปโหลดจาก multipart/form-data
 const workerUploadDir = path.resolve(process.cwd(), "uploads", "workers");
 
-// Config MIME type รูป worker ที่อนุญาตให้อัปโหลด
+// Config MIME type รูปภาพที่อนุญาตให้อัปโหลด
 const allowedImageMimeTypes = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
 ]);
 
-// Function สร้างโฟลเดอร์ uploads/workers หากยังไม่มีอยู่จริง
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function สร้างโฟลเดอร์ upload เมื่อยังไม่มีอยู่
 function ensureUploadDir() {
   fs.mkdirSync(workerUploadDir, { recursive: true });
 }
 
-// Config storage ของ multer สำหรับบันทึกรูป worker ลง uploads/workers
+// Config storage ของ multer สำหรับตั้ง path และชื่อไฟล์รูป worker
 const storage = multer.diskStorage({
   destination: (_req, _file, callback) => {
     ensureUploadDir();
@@ -34,7 +43,7 @@ const storage = multer.diskStorage({
   },
 });
 
-// Middleware รับรูป worker และตรวจชนิดไฟล์/ขนาดก่อนบันทึกลง uploads
+// Config middleware สำหรับรับรูป worker พร้อมจำกัดขนาดและชนิดไฟล์
 export const uploadWorkerImage = multer({
   storage,
   limits: {
@@ -56,23 +65,7 @@ export const uploadWorkerImage = multer({
   },
 });
 
-// Function แปลง field string ที่เป็น JSON ใน multipart/form-data กลับเป็น object
-function parseJsonField(value: unknown) {
-  if (typeof value !== "string") {
-    return value;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-function parseAndNormalizeJsonField(value: unknown) {
-  return normalizeApiRequestPayload(parseJsonField(value));
-}
-
+// Function ดึงไฟล์รูป worker จากรูปแบบ req.file หรือ req.files ที่ multer คืนมา
 function getWorkerImageFile(req: Request): Express.Multer.File | undefined {
   if (req.file) {
     return req.file;
@@ -85,7 +78,7 @@ function getWorkerImageFile(req: Request): Express.Multer.File | undefined {
   return req.files?.image?.[0] ?? req.files?.Image?.[0];
 }
 
-// Function แปลง multipart/form-data ให้เป็น body รูปแบบเดียวกับ JSON API เดิม
+// Function normalize body แบบ multipart ให้ใช้ key ภายในเหมือน JSON body ปกติ
 export function normalizeCreateUserMultipartBody(
   req: Request,
   _res: Response,
@@ -102,28 +95,6 @@ export function normalizeCreateUserMultipartBody(
   if (file) {
     body.image_url = `/uploads/workers/${file.filename}`;
   }
-
-  if (body.work_schedule) {
-    body.work_schedule = parseAndNormalizeJsonField(body.work_schedule);
-  }
-
-  if (body.work_schedules) {
-    body.work_schedules = parseAndNormalizeJsonField(body.work_schedules);
-  } else if (
-    body.work_date ||
-    body.shift_start_time ||
-    body.shift_end_time
-  ) {
-    body.work_schedule = {
-      work_date: body.work_date,
-      shift_start_time: body.shift_start_time,
-      shift_end_time: body.shift_end_time,
-    };
-  }
-
-  delete body.work_date;
-  delete body.shift_start_time;
-  delete body.shift_end_time;
 
   req.body = body;
   next();
