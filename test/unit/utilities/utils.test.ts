@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { before, test } from "node:test";
+import { Prisma } from "@prisma/client";
 
 import type ApiErrorClass from "../../../src/utils/api-error";
 
@@ -17,6 +18,7 @@ let jwt: typeof import("../../../src/utils/jwt");
 let password: typeof import("../../../src/utils/password");
 let refreshTokenHash: typeof import("../../../src/utils/refresh-token-hash");
 let shift: typeof import("../../../src/utils/shift");
+let laborJobPricing: typeof import("../../../src/utils/labor-job-pricing");
 let authConfig: typeof import("../../../src/config/auth.config");
 let schemas: typeof import("../../../src/validation/schemas");
 let apiCase: typeof import("../../../src/middlewares/api-case.middleware");
@@ -30,6 +32,7 @@ before(async () => {
   password = await import("../../../src/utils/password");
   refreshTokenHash = await import("../../../src/utils/refresh-token-hash");
   shift = await import("../../../src/utils/shift");
+  laborJobPricing = await import("../../../src/utils/labor-job-pricing");
   authConfig = await import("../../../src/config/auth.config");
   schemas = await import("../../../src/validation/schemas");
   apiCase = await import("../../../src/middlewares/api-case.middleware");
@@ -152,30 +155,157 @@ test("login body schema allows device fields to be omitted", () => {
   assert.equal(loginBody.device_name, undefined);
 });
 
-test("gate vehicle job schema accepts PascalCase Gate body", () => {
+test("gate vehicle job schema accepts multi booth PascalCase Gate body", () => {
   const gateBody = schemas.gateVehicleJobBodySchema.parse({
     TicketNo: "TKT-DISPATCH-NOW",
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
     BoothCount: 2,
     MarketCode: "MARKET-A",
-    MarketName: "Market A",
-    BoothCode: "BOOTH-A01",
-    BoothName: "Vendor A",
     LicensePlate: "ABC-1234",
     VehicleTypeCode: "PICKUP",
     VehicleTypeName: "Pickup truck",
-    ProductCode: "PRODUCT-DISPATCH-NOW",
-    ProductName: "Cabbage",
-    PackageCode: "CRATE",
-    PackageName: "crate",
-    Quantity: 10,
+    Booths: [
+      {
+        BoothCode: "BOOTH-A01",
+        Products: [
+          {
+            ProductCode: "PRODUCT-DISPATCH-NOW",
+            PackageCode: "CRATE",
+            Quantity: 10,
+          },
+        ],
+      },
+      {
+        BoothCode: "BOOTH-A02",
+        Products: [
+          {
+            ProductCode: "PRODUCT-002",
+            PackageCode: "BOX",
+            Quantity: 20,
+          },
+          {
+            ProductCode: "PRODUCT-003",
+            PackageCode: "BAG",
+            Quantity: 30,
+          },
+        ],
+      },
+    ],
     Dispatch: true,
   });
 
   assert.equal(gateBody.Dispatch, true);
   assert.equal(gateBody.VehicleTypeName, "Pickup truck");
   assert.equal(gateBody.BoothCount, 2);
+  assert.equal(gateBody.Booths.length, 2);
+  assert.equal(gateBody.Booths[0].BoothCode, "BOOTH-A01");
+  assert.equal(gateBody.Booths[0].Products.length, 1);
+  assert.equal(
+    gateBody.Booths[0].Products[0].ProductCode,
+    "PRODUCT-DISPATCH-NOW"
+  );
+  assert.equal(gateBody.Booths[1].BoothCode, "BOOTH-A02");
+  assert.equal(gateBody.Booths[1].Products.length, 2);
+  assert.equal(gateBody.Booths[1].Products[0].PackageCode, "BOX");
+  assert.equal(gateBody.Booths[1].Products[1].Quantity, 30);
+  assert.equal("ProductFullCode" in gateBody.Booths[0].Products[0], false);
   assert.equal("workersRequired" in gateBody, false);
+});
+
+test("gate vehicle job schema rejects BoothCount mismatch", () => {
+  assert.throws(() =>
+    schemas.gateVehicleJobBodySchema.parse({
+      TicketNo: "TKT-BOOTH-COUNT-MISMATCH",
+      TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+      BoothCount: 2,
+      MarketCode: "MARKET-A",
+      LicensePlate: "ABC-1234",
+      VehicleTypeCode: "PICKUP",
+      VehicleTypeName: "Pickup truck",
+      Booths: [
+        {
+          BoothCode: "BOOTH-A01",
+          Products: [
+            {
+              ProductCode: "PRODUCT-001",
+              PackageCode: "CRATE",
+              Quantity: 10,
+            },
+          ],
+        },
+      ],
+      Dispatch: true,
+    })
+  );
+});
+
+test("gate vehicle job schema rejects duplicate BoothCode", () => {
+  assert.throws(() =>
+    schemas.gateVehicleJobBodySchema.parse({
+      TicketNo: "TKT-DUPLICATE-BOOTH",
+      TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+      BoothCount: 2,
+      MarketCode: "MARKET-A",
+      LicensePlate: "ABC-1234",
+      VehicleTypeCode: "PICKUP",
+      VehicleTypeName: "Pickup truck",
+      Booths: [
+        {
+          BoothCode: "BOOTH-A01",
+          Products: [
+            {
+              ProductCode: "PRODUCT-001",
+              PackageCode: "CRATE",
+              Quantity: 10,
+            },
+          ],
+        },
+        {
+          BoothCode: "BOOTH-A01",
+          Products: [
+            {
+              ProductCode: "PRODUCT-002",
+              PackageCode: "BOX",
+              Quantity: 20,
+            },
+          ],
+        },
+      ],
+      Dispatch: true,
+    })
+  );
+});
+
+test("gate vehicle job schema rejects duplicate ProductCode and PackageCode in same booth", () => {
+  assert.throws(() =>
+    schemas.gateVehicleJobBodySchema.parse({
+      TicketNo: "TKT-DUPLICATE-PRODUCT",
+      TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+      BoothCount: 1,
+      MarketCode: "MARKET-A",
+      LicensePlate: "ABC-1234",
+      VehicleTypeCode: "PICKUP",
+      VehicleTypeName: "Pickup truck",
+      Booths: [
+        {
+          BoothCode: "BOOTH-A01",
+          Products: [
+            {
+              ProductCode: "PRODUCT-001",
+              PackageCode: "CRATE",
+              Quantity: 10,
+            },
+            {
+              ProductCode: "PRODUCT-001",
+              PackageCode: "CRATE",
+              Quantity: 20,
+            },
+          ],
+        },
+      ],
+      Dispatch: true,
+    })
+  );
 });
 
 test("API case utilities normalize PascalCase request payloads", () => {
@@ -364,6 +494,87 @@ test("update user schema allows partial profile updates", () => {
     "https://example.com/new-worker-image.jpg"
   );
   assert.equal("worker_code" in (updateBody.profile ?? {}), false);
+});
+
+/* -------------------------------------- Labor Job Pricing Tests -------------------------------------- */
+
+test("labor job pricing parses master product worker ranges", () => {
+  const parsed = laborJobPricing.parseMasterProductRange({
+    workerRanges: {
+      range1To50: 1,
+      range51To100: 2,
+      range101To200: 3,
+      range201To400: 4,
+      range401To600: 4,
+      rangeOver600: 5,
+    },
+  });
+
+  assert.equal(parsed.workerRanges.range101To200, 3);
+  assert.throws(
+    () =>
+      laborJobPricing.parseMasterProductRange({
+        workerRanges: {
+          range1To50: 1,
+          range51To100: 2,
+          range101To200: 3,
+          range201To400: 4,
+          range401To600: 4,
+          rangeOver600: -1,
+        },
+      }),
+    (error) => error instanceof ApiError && error.code === "MASTER_PRODUCT_RANGE_INVALID"
+  );
+});
+
+test("labor job pricing calculates required workers by quantity range", () => {
+  const ranges = {
+    range1To50: 1,
+    range51To100: 2,
+    range101To200: 3,
+    range201To400: 4,
+    range401To600: 5,
+    rangeOver600: 6,
+  };
+
+  assert.deepEqual(laborJobPricing.calculateRequiredWorkerCount(1, ranges), {
+    rangeCode: "RANGE_1_TO_50",
+    requiredWorkerCount: 1,
+  });
+  assert.deepEqual(laborJobPricing.calculateRequiredWorkerCount(50, ranges), {
+    rangeCode: "RANGE_1_TO_50",
+    requiredWorkerCount: 1,
+  });
+  assert.deepEqual(laborJobPricing.calculateRequiredWorkerCount(51, ranges), {
+    rangeCode: "RANGE_51_TO_100",
+    requiredWorkerCount: 2,
+  });
+  assert.deepEqual(laborJobPricing.calculateRequiredWorkerCount(601, ranges), {
+    rangeCode: "RANGE_OVER_600",
+    requiredWorkerCount: 6,
+  });
+  assert.throws(
+    () => laborJobPricing.calculateRequiredWorkerCount(0, ranges),
+    (error) => error instanceof ApiError && error.code === "INVALID_QUANTITY"
+  );
+});
+
+test("labor job pricing calculates stall charge and labor payment with Decimal", () => {
+  const payment = laborJobPricing.calculateJobPayment({
+    quantity: 500,
+    stallRate: new Prisma.Decimal("6.00"),
+    laborRate: new Prisma.Decimal("4.44"),
+    actualLaborCount: 9,
+  });
+
+  assert.equal(laborJobPricing.decimalToMoneyString(payment.stallFee), "3000.00");
+  assert.equal(laborJobPricing.decimalToMoneyString(payment.laborFee), "2220.00");
+  assert.equal(laborJobPricing.decimalToMoneyString(payment.rawTotalFee), "5220.00");
+  assert.equal(laborJobPricing.decimalToMoneyString(payment.totalFee), "5220.00");
+  assert.equal(laborJobPricing.decimalToMoneyString(payment.workerPayEach), "246.00");
+  assert.equal(laborJobPricing.decimalToMoneyString(payment.workerPayoutTotal), "2214.00");
+  assert.equal(laborJobPricing.decimalToMoneyString(payment.fundAmount), "6.00");
+  assert.equal(payment.workerPayoutTotal.plus(payment.fundAmount).equals(payment.laborFee), true);
 });
 
 /* -------------------------------------- Shift Tests -------------------------------------- */

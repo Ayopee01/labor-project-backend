@@ -1350,6 +1350,42 @@
               type: string
               example: Admin permissions updated successfully. Active sessions were revoked.
 
+    GateTicketProductRequest:
+      type: object
+      required:
+        - ProductCode
+        - PackageCode
+        - Quantity
+      properties:
+        ProductCode:
+          type: string
+          example: "02020300"
+          description: Product code used with PackageCode to lookup master_product.
+        PackageCode:
+          type: string
+          example: "29"
+          description: Package code used with ProductCode to lookup master_product.
+        Quantity:
+          type: integer
+          minimum: 1
+          example: 180
+
+    GateTicketBoothRequest:
+      type: object
+      required:
+        - BoothCode
+        - Products
+      properties:
+        BoothCode:
+          type: string
+          example: OM3/40
+          description: Booth code used with MarketCode to lookup master_market.
+        Products:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/GateTicketProductRequest"
+
     GateTicketRequest:
       type: object
       required:
@@ -1357,78 +1393,53 @@
         - TicketCreatedAt
         - BoothCount
         - MarketCode
-        - MarketName
-        - BoothCode
-        - BoothName
         - LicensePlate
         - VehicleTypeCode
         - VehicleTypeName
-        - ProductCode
-        - ProductName
-        - PackageCode
-        - PackageName
-        - Quantity
+        - Booths
         - Dispatch
       properties:
         TicketNo:
           type: string
-          example: TKT-20260723-000125
+          example: TKT-20260804-000001
           description: Gate ticket number used as the vehicle-level job reference.
+
         TicketCreatedAt:
           type: string
           format: date-time
-          example: "2026-07-23T14:30:00+07:00"
-          description: Date-time when Gate created the ticket.
+          example: "2026-08-04T14:30:00+07:00"
+
         BoothCount:
           type: integer
           minimum: 1
           example: 2
-          description: Maximum number of distinct BoothCode values allowed under this TicketNo. The same TicketNo cannot exceed this count.
+          description: Must equal the number of items in Booths.
+
         MarketCode:
           type: string
           example: "1123"
-          description: Market code from Gate.
-        MarketName:
-          type: string
-          example: Orange Market
-        BoothCode:
-          type: string
-          example: B-018
-          description: Booth code from Gate. Backend uses MarketCode + BoothCode to map the booth to owner/member LINE targets from internal master data.
-        BoothName:
-          type: string
-          example: Orange Booth
+
         LicensePlate:
           type: string
           example: ABC-1234
+
         VehicleTypeCode:
           type: string
           example: PICKUP
-          description: Vehicle type code from Gate.
+
         VehicleTypeName:
           type: string
           example: Pickup truck
-          description: Vehicle type name from Gate. Stored as the vehicle type display value.
-        ProductCode:
-          type: string
-          example: FRUIT-ORG001
-          description: Product code from Gate. Worker uses this value when submitting counted quantities.
-        ProductName:
-          type: string
-          example: Orange
-        PackageCode:
-          type: string
-          example: "22"
-        PackageName:
-          type: string
-          example: Orange package
-        Quantity:
-          type: number
-          example: 180
+
+        Booths:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/GateTicketBoothRequest"
+
         Dispatch:
           type: boolean
           example: true
-          description: Set true when the vehicle is ready to unload and workers should be dispatched immediately without waiting for Driver ready.
     VehicleJob:
       type: object
       properties:
@@ -1689,15 +1700,85 @@
                               type: array
                               items:
                                 $ref: "#/components/schemas/TicketProduct"
+    GateTicketResponseProduct:
+      type: object
+      required:
+        - ProductCode
+        - ProductFullCode
+        - ProductName
+        - PackageCode
+        - PackageName
+        - Quantity
+      properties:
+        ProductCode:
+          type: string
+          example: "02020300"
+        ProductFullCode:
+          type: string
+          example: "02020300000000000000"
+        ProductName:
+          type: string
+          example: Rambutan
+        PackageCode:
+          type: string
+          example: "29"
+        PackageName:
+          type: string
+          example: Crate 20
+        Quantity:
+          type: integer
+          example: 180
+
+    GateTicketResponseStallPayment:
+      type: object
+      required:
+        - Amount
+        - RoundingAmount
+      properties:
+        Amount:
+          type: string
+          example: "432.00"
+        RoundingAmount:
+          type: string
+          example: "0.00"
+
+    GateTicketResponseBooth:
+      type: object
+      required:
+        - BoothCode
+        - BoothName
+        - Products
+        - StallPayment
+      properties:
+        BoothCode:
+          type: string
+          example: OM3/40
+
+        BoothName:
+          type: string
+          nullable: true
+          example: Vendor A
+
+        Products:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateTicketResponseProduct"
+
+        StallPayment:
+          $ref: "#/components/schemas/GateTicketResponseStallPayment"
+
     GateTicketResponse:
       type: object
       required:
         - Result
         - Ticket
         - Market
-        - Booth
-        - Product
+        - Booths
+        - WorkerCount
+        - WorkerPayment
+        - OrderRemainder
         - Qr
+
       properties:
         Result:
           type: string
@@ -1705,6 +1786,7 @@
             - CREATED
             - REPLAYED
           example: CREATED
+
         Ticket:
           type: object
           required:
@@ -1714,41 +1796,42 @@
             - LicensePlate
             - VehicleTypeCode
             - VehicleTypeName
-            - WorkersRequired
             - Status
           properties:
             TicketNo:
               type: string
-              example: TKT-20260723-000125
+              example: TKT-20260804-000001
+
             TicketCreatedAt:
               type: string
               format: date-time
-              example: "2026-07-23T07:30:00.000Z"
+              example: "2026-08-04T07:30:00.000Z"
+
             BoothCount:
               type: integer
               example: 2
+
             LicensePlate:
               type: string
               example: ABC-1234
+
             VehicleTypeCode:
               type: string
               nullable: true
               example: PICKUP
+
             VehicleTypeName:
               type: string
               nullable: true
               example: Pickup truck
-            WorkersRequired:
-              type: integer
-              example: 1
-              description: Fixed at 1 for the current Gate flow. Worker-count calculation will be added later.
+
             Status:
               type: string
               enum:
                 - unload_now
                 - waiting_unload
               example: unload_now
-              description: Gate response status derived from Dispatch. Dispatch true returns unload_now; Dispatch false returns waiting_unload.
+
         Market:
           type: object
           required:
@@ -1758,46 +1841,64 @@
             MarketCode:
               type: string
               example: "1123"
+
             MarketName:
               type: string
-              example: Orange Market
-        Booth:
+              example: ตลาดส้ม 4
+
+        Booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateTicketResponseBooth"
+
+        WorkerCount:
+          type: integer
+          example: 3
+          description: Maximum required worker count calculated from all products in the order.
+
+        WorkerPayment:
           type: object
           required:
-            - BoothCode
-            - BoothName
+            - AmountPerWorker
+            - WorkerCount
+            - TotalAmount
+            - DeductedRemainder
           properties:
-            BoothCode:
+            AmountPerWorker:
               type: string
-              example: B-018
-            BoothName:
+              example: "54.00"
+
+            WorkerCount:
+              type: integer
+              example: 3
+
+            TotalAmount:
               type: string
-              nullable: true
-              example: Orange Stall
-        Product:
+              example: "162.00"
+
+            DeductedRemainder:
+              type: string
+              example: "0.00"
+
+        OrderRemainder:
           type: object
           required:
-            - ProductCode
-            - ProductName
-            - PackageCode
-            - PackageName
-            - Quantity
+            - StallRoundingAmount
+            - WorkerDeductedAmount
+            - TotalAmount
           properties:
-            ProductCode:
+            StallRoundingAmount:
               type: string
-              example: FRUIT-ORG001
-            ProductName:
+              example: "0.00"
+
+            WorkerDeductedAmount:
               type: string
-              example: Tangerine
-            PackageCode:
+              example: "0.00"
+
+            TotalAmount:
               type: string
-              example: "22"
-            PackageName:
-              type: string
-              example: Orange package
-            Quantity:
-              type: number
-              example: 180
+              example: "0.00"
+
         Qr:
           type: object
           required:
@@ -1806,10 +1907,10 @@
           properties:
             DriverQrToken:
               type: string
+
             WorkerQrToken:
               type: string
-              description: Worker QR value. For Gate-created jobs this is the same value as TicketNo.
-              example: TKT-20260723-000125
+              example: TKT-20260804-000001
     DriverSessionResponse:
       type: object
       properties:

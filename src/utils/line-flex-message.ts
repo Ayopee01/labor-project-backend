@@ -20,16 +20,27 @@ const STAR_COLOR = "#F6C343";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function แปลงค่าที่อาจว่างให้เป็นข้อความสำหรับแสดงใน LINE
-function asDisplayText(value: string | number | null | undefined): string {
-  const text = value === null || value === undefined ? "" : String(value).trim();
+// Function แปลงค่าว่างเป็นข้อความสำหรับแสดงผล
+function asDisplayText(
+  value: string | number | null | undefined
+): string {
+  const text =
+    value === null || value === undefined
+      ? ""
+      : String(value).trim();
 
   return text || "-";
 }
 
-// Function format จำนวนสินค้าให้ตัดทศนิยมส่วนเกินออก
-function formatQuantity(value: string | number | null | undefined): string {
-  if (value === null || value === undefined || value === "") {
+// Function format จำนวนสินค้าให้ตัดทศนิยมส่วนเกิน
+function formatQuantity(
+  value: string | number | null | undefined
+): string {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return "-";
   }
 
@@ -41,11 +52,36 @@ function formatQuantity(value: string | number | null | undefined): string {
 
   return Number.isInteger(numberValue)
     ? String(numberValue)
-    : numberValue.toFixed(2).replace(/\.?0+$/, "");
+    : numberValue
+        .toFixed(2)
+        .replace(/\.?0+$/, "");
 }
 
-// Function format วันที่เป็นรูปแบบวัน/เดือน/ปีตาม timezone กรุงเทพฯ
-function formatBangkokDisplayDate(value: string | null | undefined): string {
+// Function format จำนวนเงินเป็น 2 ตำแหน่ง
+function formatMoney(
+  value: string | number | null | undefined
+): string {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "-";
+  }
+
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return String(value);
+  }
+
+  return numberValue.toFixed(2);
+}
+
+// Function format วันที่ตาม timezone กรุงเทพฯ
+function formatBangkokDisplayDate(
+  value: string | null | undefined
+): string {
   if (!value) {
     return "-";
   }
@@ -64,8 +100,11 @@ function formatBangkokDisplayDate(value: string | null | undefined): string {
   }).format(date);
 }
 
-// Function สร้างแถว label/value มาตรฐานใน Flex bubble
-function fieldRow(label: string, value: string | number | null | undefined): LineFlexComponent {
+// Function สร้างแถว label/value ใน Flex
+function fieldRow(
+  label: string,
+  value: string | number | null | undefined
+): LineFlexComponent {
   return {
     type: "box",
     layout: "horizontal",
@@ -93,8 +132,10 @@ function fieldRow(label: string, value: string | number | null | undefined): Lin
   };
 }
 
-// Function สร้างเส้นคั่นใน Flex bubble
-function separator(margin = "lg"): LineFlexComponent {
+// Function สร้างเส้นคั่นใน Flex
+function separator(
+  margin = "lg"
+): LineFlexComponent {
   return {
     type: "separator",
     margin,
@@ -102,7 +143,7 @@ function separator(margin = "lg"): LineFlexComponent {
   };
 }
 
-// Function สร้างแถวสรุปรายการสินค้าสำหรับแจ้งลงสินค้า
+// Function สร้างแถวรายการสินค้า
 function productSummaryRow(input: {
   name: string;
   quantity: string | number | null | undefined;
@@ -142,8 +183,10 @@ function productSummaryRow(input: {
   };
 }
 
-// Function สร้าง block รายการสินค้าตอนให้ vendor ตรวจสอบยอด
-function completionProductBlock(product: TicketProductDto): LineFlexComponent {
+// Function สร้าง block สินค้าสำหรับ Vendor ตรวจยอด
+function completionProductBlock(
+  product: TicketProductDto
+): LineFlexComponent {
   return {
     type: "box",
     layout: "vertical",
@@ -157,14 +200,28 @@ function completionProductBlock(product: TicketProductDto): LineFlexComponent {
         color: TEXT_COLOR,
         wrap: true,
       },
-      fieldRow("ตามใบงาน", `${formatQuantity(product.quantity)} ${asDisplayText(product.packageName)}`),
-      fieldRow("ส่งยอด", `${formatQuantity(product.confirmed_quantity)} ${asDisplayText(product.packageName)}`),
+      fieldRow(
+        "ตามใบงาน",
+        `${formatQuantity(product.quantity)} ${asDisplayText(
+          product.packageName
+        )}`
+      ),
+      fieldRow(
+        "ส่งยอด",
+        `${formatQuantity(
+          product.confirmed_quantity
+        )} ${asDisplayText(product.packageName)}`
+      ),
     ],
   };
 }
 
-// Function สร้าง bubble กลางที่ใช้ร่วมกันในข้อความ LINE หลายแบบ
-function buildBubble(title: string, contents: LineFlexComponent[], footer?: LineFlexComponent): Record<string, unknown> {
+// Function สร้าง Bubble กลางสำหรับ Flex
+function buildBubble(
+  title: string,
+  contents: LineFlexComponent[],
+  footer?: LineFlexComponent
+): Record<string, unknown> {
   return {
     type: "bubble",
     size: "mega",
@@ -188,7 +245,7 @@ function buildBubble(title: string, contents: LineFlexComponent[], footer?: Line
   };
 }
 
-// Function สร้างปุ่ม postback สำหรับ confirm/reject/rating
+// Function สร้างปุ่ม postback ใน Flex
 function postbackButton(input: {
   label: string;
   data: string;
@@ -210,44 +267,130 @@ function postbackButton(input: {
   };
 }
 
-// Function สร้างข้อความแจ้งเจ้าของแผงเมื่อ Gate สร้าง ticket ลงสินค้า
-export function buildGateTicketCreatedFlexMessage(response: GateVehicleJobResponse): LineMessage {
+// Function สร้างข้อความแจ้งลงสินค้าของแต่ละแผง
+export function buildGateTicketCreatedFlexMessage(
+  response: GateVehicleJobResponse,
+  booth: GateVehicleJobResponse["Booths"][number]
+): LineMessage {
+  const productRows: LineFlexComponent[] =
+    booth.Products.flatMap(
+      (product, index) => [
+        ...(index > 0
+          ? [separator("md")]
+          : []),
+
+        productSummaryRow({
+          name: product.ProductName,
+          quantity: product.Quantity,
+          packageName: product.PackageName,
+        }),
+      ]
+    );
+
   return {
     type: "flex",
-    altText: `แจ้งลงสินค้า ${response.Ticket.TicketNo}`,
-    contents: buildBubble("แจ้งลงสินค้า", [
-      fieldRow("เลขที่งาน:", response.Ticket.TicketNo),
-      fieldRow("รหัสแผง:", response.Booth.BoothCode),
-      fieldRow("ชื่อแผง:", response.Booth.BoothName),
-      fieldRow("ทะเบียนรถ:", response.Ticket.LicensePlate),
-      separator(),
-      productSummaryRow({
-        name: response.Product.ProductName,
-        quantity: response.Product.Quantity,
-        packageName: response.Product.PackageName,
-      }),
-      separator(),
-      {
-        type: "text",
-        text: "หากไม่ใช่สินค้าของท่าน กรุณาติดต่อร้านค้าต้นทางของท่าน",
-        size: "xs",
-        color: TEXT_COLOR,
-        weight: "bold",
-        margin: "md",
-        wrap: true,
-      },
-    ]),
+
+    altText:
+      `แจ้งลงสินค้า ${response.Ticket.TicketNo} ` +
+      `${booth.BoothCode}`,
+
+    contents: buildBubble(
+      "แจ้งลงสินค้า",
+      [
+        fieldRow(
+          "เลขที่งาน:",
+          response.Ticket.TicketNo
+        ),
+
+        fieldRow(
+          "ตลาด:",
+          response.Market.MarketName
+        ),
+
+        fieldRow(
+          "รหัสแผง:",
+          booth.BoothCode
+        ),
+
+        fieldRow(
+          "ชื่อแผง:",
+          booth.BoothName
+        ),
+
+        fieldRow(
+          "ทะเบียนรถ:",
+          response.Ticket.LicensePlate
+        ),
+
+        separator(),
+
+        {
+          type: "text",
+          text: "รายการสินค้า",
+          size: "sm",
+          weight: "bold",
+          color: TEXT_COLOR,
+          margin: "md",
+          wrap: true,
+        },
+
+        ...productRows,
+
+        separator(),
+
+        fieldRow(
+          "ยอดชำระ:",
+          `${formatMoney(
+            booth.StallPayment.Amount
+          )} บาท`
+        ),
+
+        ...(Number(
+          booth.StallPayment.RoundingAmount
+        ) > 0
+          ? [
+              fieldRow(
+                "ยอดปัดเศษ:",
+                `${formatMoney(
+                  booth.StallPayment
+                    .RoundingAmount
+                )} บาท`
+              ),
+            ]
+          : []),
+
+        separator(),
+
+        {
+          type: "text",
+          text:
+            "หากไม่ใช่สินค้าของท่าน กรุณาติดต่อร้านค้าต้นทางของท่าน",
+          size: "xs",
+          color: TEXT_COLOR,
+          weight: "bold",
+          margin: "md",
+          wrap: true,
+        },
+      ]
+    ),
   };
 }
 
-// Function สร้างข้อความให้ vendor ตรวจสอบยอดและกดถูกต้อง/ไม่ถูกต้อง
+// Function สร้างข้อความให้ Vendor ตรวจสอบยอด
 export function buildVendorCompletionReviewFlexMessage(input: {
   ticket: GateTicketDto;
-  postbackData: { confirm: string; reject: string };
+  postbackData: {
+    confirm: string;
+    reject: string;
+  };
   detail: VehicleJobDetailResponse | null;
   products: TicketProductDto[];
 }): LineMessage {
-  const market = findTicketMarket(input.detail, input.ticket);
+  const market = findTicketMarket(
+    input.detail,
+    input.ticket
+  );
+
   const footer: LineFlexComponent = {
     type: "box",
     layout: "horizontal",
@@ -271,58 +414,118 @@ export function buildVendorCompletionReviewFlexMessage(input: {
 
   return {
     type: "flex",
-    altText: `กรุณาตรวจสอบข้อมูล ${input.detail?.vehicle_job.ticketNo ?? input.ticket.boothCode}`,
-    contents: buildBubble("กรุณาตรวจสอบข้อมูล", [
-      fieldRow("เลขที่งาน:", input.detail?.vehicle_job.ticketNo),
-      fieldRow("รหัสแผง:", input.ticket.boothCode),
-      fieldRow("ชื่อแผง:", input.ticket.boothName),
-      fieldRow("ทะเบียนรถ:", input.detail?.vehicle_job.license_plate),
-      fieldRow("ตลาด:", market?.marketName),
-      separator(),
-      ...input.products.flatMap((product, index) => [
-        ...(index > 0 ? [separator("md")] : []),
-        completionProductBlock(product),
-      ]),
-    ], footer),
+
+    altText:
+      `กรุณาตรวจสอบข้อมูล ${
+        input.detail?.vehicle_job.ticketNo ??
+        input.ticket.boothCode
+      }`,
+
+    contents: buildBubble(
+      "กรุณาตรวจสอบข้อมูล",
+      [
+        fieldRow(
+          "เลขที่งาน:",
+          input.detail?.vehicle_job.ticketNo
+        ),
+
+        fieldRow(
+          "รหัสแผง:",
+          input.ticket.boothCode
+        ),
+
+        fieldRow(
+          "ชื่อแผง:",
+          input.ticket.boothName
+        ),
+
+        fieldRow(
+          "ทะเบียนรถ:",
+          input.detail?.vehicle_job.license_plate
+        ),
+
+        fieldRow(
+          "ตลาด:",
+          market?.marketName
+        ),
+
+        separator(),
+
+        ...input.products.flatMap(
+          (product, index) => [
+            ...(index > 0
+              ? [separator("md")]
+              : []),
+
+            completionProductBlock(product),
+          ]
+        ),
+      ],
+      footer
+    ),
   };
 }
 
-// Function สร้างข้อความแจ้งผลหลัง vendor confirm หรือ reject ยอด
+// Function สร้างข้อความหลัง Vendor confirm หรือ reject
 export function buildVendorCompletionResultFlexMessage(input: {
   ticket: GateTicketDto;
   detail: VehicleJobDetailResponse | null;
   isConfirmed: boolean;
 }): LineMessage {
-  const text = input.isConfirmed
-    ? "คุณได้ยืนยันข้อมูลถูกต้อง ปิดงานเรียบร้อย"
-    : "คุณได้แจ้งข้อมูลไม่ถูกต้องแล้ว กรุณารอคนงานส่งยอดใหม่อีกครั้ง";
-  const title = input.isConfirmed
-    ? "ยืนยันข้อมูลสำเร็จ"
-    : "แจ้งตีกลับข้อมูลแล้ว";
+  const text =
+    input.isConfirmed
+      ? "คุณได้ยืนยันข้อมูลถูกต้อง ปิดงานเรียบร้อย"
+      : "คุณได้แจ้งข้อมูลไม่ถูกต้องแล้ว กรุณารอคนงานส่งยอดใหม่อีกครั้ง";
+
+  const title =
+    input.isConfirmed
+      ? "ยืนยันข้อมูลสำเร็จ"
+      : "แจ้งตีกลับข้อมูลแล้ว";
 
   return {
     type: "flex",
+
     altText: text,
-    contents: buildBubble(title, [
-      fieldRow("เลขที่งาน:", input.detail?.vehicle_job.ticketNo),
-      fieldRow("รหัสแผง:", input.ticket.boothCode),
-      fieldRow("ชื่อแผง:", input.ticket.boothName),
-      separator(),
-      {
-        type: "text",
-        text,
-        size: "md",
-        color: input.isConfirmed ? TEXT_COLOR : WARNING_COLOR,
-        weight: "bold",
-        wrap: true,
-        align: "center",
-        margin: "md",
-      },
-    ]),
+
+    contents: buildBubble(
+      title,
+      [
+        fieldRow(
+          "เลขที่งาน:",
+          input.detail?.vehicle_job.ticketNo
+        ),
+
+        fieldRow(
+          "รหัสแผง:",
+          input.ticket.boothCode
+        ),
+
+        fieldRow(
+          "ชื่อแผง:",
+          input.ticket.boothName
+        ),
+
+        separator(),
+
+        {
+          type: "text",
+          text,
+          size: "md",
+          color:
+            input.isConfirmed
+              ? TEXT_COLOR
+              : WARNING_COLOR,
+          weight: "bold",
+          wrap: true,
+          align: "center",
+          margin: "md",
+        },
+      ]
+    ),
   };
 }
 
-// Function สร้างข้อความขอคะแนนหลัง vendor confirm งานสำเร็จ
+// Function สร้างข้อความขอคะแนนหลังปิดงาน
 export function buildVendorRatingPromptFlexMessage(input: {
   ticket: GateTicketDto;
   detail: VehicleJobDetailResponse | null;
@@ -330,106 +533,166 @@ export function buildVendorRatingPromptFlexMessage(input: {
 }): LineMessage {
   return {
     type: "flex",
-    altText: `กรุณาให้คะแนน ${input.detail?.vehicle_job.ticketNo ?? input.ticket.boothCode}`,
-    contents: buildBubble("กรุณาให้คะแนน", [
-      separator(),
-      {
-        type: "box",
-        layout: "horizontal",
-        spacing: "sm",
-        margin: "lg",
-        contents: [1, 2, 3, 4, 5].map((score) =>
-          postbackButton({
-            label: String(score),
-            data: `token=${input.ratingToken}&score=${score}`,
-            displayText: String(score),
-            style: "link",
-            color: MUTED_COLOR,
-          })
-        ),
-      },
-    ]),
+
+    altText:
+      `กรุณาให้คะแนน ${
+        input.detail?.vehicle_job.ticketNo ??
+        input.ticket.boothCode
+      }`,
+
+    contents: buildBubble(
+      "กรุณาให้คะแนน",
+      [
+        separator(),
+
+        {
+          type: "box",
+          layout: "horizontal",
+          spacing: "sm",
+          margin: "lg",
+
+          contents: [1, 2, 3, 4, 5].map(
+            (score) =>
+              postbackButton({
+                label: String(score),
+
+                data:
+                  `token=${input.ratingToken}` +
+                  `&score=${score}`,
+
+                displayText:
+                  String(score),
+
+                style: "link",
+
+                color:
+                  MUTED_COLOR,
+              })
+          ),
+        },
+      ]
+    ),
   };
 }
 
-// Function สร้างข้อความขอบคุณและสรุปค่าใช้บริการหลัง vendor ให้คะแนน
+// Function สร้างข้อความสรุปหลัง Vendor ให้คะแนน
 export function buildVendorRatingResultFlexMessages(input: {
   ticket: GateTicketDto;
   detail: VehicleJobDetailResponse | null;
   score: number;
   serviceChargeBaht?: number;
 }): LineMessage[] {
-  const ticketNo = input.detail?.vehicle_job.ticketNo ?? "-";
-  const serviceChargeBaht = input.serviceChargeBaht ?? 0;
-  const stars = `${"★".repeat(input.score)}${"☆".repeat(5 - input.score)}`;
+  const ticketNo =
+    input.detail?.vehicle_job.ticketNo ??
+    "-";
+
+  const serviceChargeBaht =
+    input.serviceChargeBaht ?? 0;
+
+  const stars =
+    `${"★".repeat(input.score)}` +
+    `${"☆".repeat(5 - input.score)}`;
 
   return [
     {
       type: "flex",
-      altText: `ขอบคุณสำหรับการให้คะแนน ${input.score}/5`,
-      contents: buildBubble("ขอบคุณ! สำหรับการให้คะแนน", [
-        separator(),
-        {
-          type: "text",
-          text: stars,
-          size: "xl",
-          color: STAR_COLOR,
-          align: "center",
-          margin: "lg",
-          wrap: true,
-        },
-      ]),
+
+      altText:
+        `ขอบคุณสำหรับการให้คะแนน ` +
+        `${input.score}/5`,
+
+      contents: buildBubble(
+        "ขอบคุณ! สำหรับการให้คะแนน",
+        [
+          separator(),
+
+          {
+            type: "text",
+            text: stars,
+            size: "xl",
+            color: STAR_COLOR,
+            align: "center",
+            margin: "lg",
+            wrap: true,
+          },
+        ]
+      ),
     },
+
     {
       type: "flex",
-      altText: `สรุปค่าใช้บริการ ${ticketNo}`,
-      contents: buildBubble("สรุปค่าใช้บริการ", [
-        separator(),
-        {
-          type: "text",
-          text: `เลขที่งาน ${ticketNo}`,
-          size: "md",
-          color: TEXT_COLOR,
-          align: "center",
-          margin: "lg",
-          wrap: true,
-        },
-        {
-          type: "text",
-          text: formatBangkokDisplayDate(input.detail?.vehicle_job.ticket_created_at),
-          size: "md",
-          color: TEXT_COLOR,
-          align: "center",
-          wrap: true,
-        },
-        {
-          type: "text",
-          text: `ลงแผง ${input.ticket.boothCode} ${asDisplayText(input.ticket.boothName)}`,
-          size: "md",
-          color: TEXT_COLOR,
-          align: "center",
-          wrap: true,
-        },
-        {
-          type: "text",
-          text: `${serviceChargeBaht.toFixed(2)} บาท`,
-          size: "xl",
-          weight: "bold",
-          color: TEXT_COLOR,
-          align: "center",
-          margin: "lg",
-          wrap: true,
-        },
-        {
-          type: "text",
-          text: "ขอบคุณที่ใช้บริการ",
-          size: "sm",
-          color: TEXT_COLOR,
-          align: "center",
-          margin: "md",
-          wrap: true,
-        },
-      ]),
+
+      altText:
+        `สรุปค่าใช้บริการ ${ticketNo}`,
+
+      contents: buildBubble(
+        "สรุปค่าใช้บริการ",
+        [
+          separator(),
+
+          {
+            type: "text",
+            text:
+              `เลขที่งาน ${ticketNo}`,
+            size: "md",
+            color: TEXT_COLOR,
+            align: "center",
+            margin: "lg",
+            wrap: true,
+          },
+
+          {
+            type: "text",
+            text:
+              formatBangkokDisplayDate(
+                input.detail
+                  ?.vehicle_job
+                  .ticket_created_at
+              ),
+            size: "md",
+            color: TEXT_COLOR,
+            align: "center",
+            wrap: true,
+          },
+
+          {
+            type: "text",
+            text:
+              `ลงแผง ${input.ticket.boothCode} ` +
+              `${asDisplayText(
+                input.ticket.boothName
+              )}`,
+            size: "md",
+            color: TEXT_COLOR,
+            align: "center",
+            wrap: true,
+          },
+
+          {
+            type: "text",
+            text:
+              `${serviceChargeBaht.toFixed(
+                2
+              )} บาท`,
+            size: "xl",
+            weight: "bold",
+            color: TEXT_COLOR,
+            align: "center",
+            margin: "lg",
+            wrap: true,
+          },
+
+          {
+            type: "text",
+            text: "ขอบคุณที่ใช้บริการ",
+            size: "sm",
+            color: TEXT_COLOR,
+            align: "center",
+            margin: "md",
+            wrap: true,
+          },
+        ]
+      ),
     },
   ];
 }

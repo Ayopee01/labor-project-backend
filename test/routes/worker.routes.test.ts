@@ -53,17 +53,21 @@ function buildGateVehicleJobBody(suffix: string) {
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
     BoothCount: 1,
     MarketCode: `MARKET-${suffix}`,
-    MarketName: "Market A",
-    BoothCode: `STALL-${suffix}`,
-    BoothName: "Vendor A",
     LicensePlate: `ABC-${suffix}`,
     VehicleTypeCode: "PICKUP",
     VehicleTypeName: "Pickup truck",
-    ProductCode: `PRODUCT-${suffix}-001`,
-    ProductName: "Cabbage",
-    PackageCode: "CRATE",
-    PackageName: "crate",
-    Quantity: 10,
+    Booths: [
+      {
+        BoothCode: `STALL-${suffix}`,
+        Products: [
+          {
+            ProductCode: "02020300",
+            PackageCode: "29",
+            Quantity: 180,
+          },
+        ],
+      },
+    ],
     Dispatch: true,
   };
 }
@@ -157,12 +161,14 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
 
   assert.equal(response.status, 201);
   assert.deepEqual(Object.keys(response.body).sort(), [
-    "Booth",
+    "Booths",
     "Market",
-    "Product",
+    "OrderRemainder",
     "Qr",
     "Result",
     "Ticket",
+    "WorkerCount",
+    "WorkerPayment",
   ]);
   assert.deepEqual(Object.keys(response.body.Ticket).sort(), [
     "BoothCount",
@@ -172,7 +178,6 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
     "TicketNo",
     "VehicleTypeCode",
     "VehicleTypeName",
-    "WorkersRequired",
   ]);
   assert.equal(response.body.Result, "CREATED");
   assert.equal(response.body.Ticket.TicketNo, "TKT-20260723-001");
@@ -181,34 +186,62 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(response.body.Ticket.LicensePlate, "ABC-001");
   assert.equal(response.body.Ticket.VehicleTypeCode, "PICKUP");
   assert.equal(response.body.Ticket.VehicleTypeName, "Pickup truck");
-  assert.equal(response.body.Ticket.WorkersRequired, 1);
   assert.equal(response.body.Ticket.Status, "unload_now");
   assert.equal(response.body.Market.MarketCode, "MARKET-001");
   assert.equal(response.body.Market.MarketName, "Market A");
-  assert.equal(response.body.Booth.BoothCode, "STALL-001");
-  assert.equal(response.body.Booth.BoothName, "Vendor A");
-  assert.equal(response.body.Product.ProductCode, "PRODUCT-001-001");
-  assert.equal(response.body.Product.ProductName, "Cabbage");
-  assert.equal(response.body.Product.PackageCode, "CRATE");
-  assert.equal(response.body.Product.PackageName, "crate");
-  assert.equal(response.body.Product.Quantity, 10);
+  assert.equal(response.body.Booths.length, 1);
+
+  const firstBooth = response.body.Booths[0];
+  const firstProduct = firstBooth.Products[0];
+
+  assert.equal(firstBooth.BoothCode, "STALL-001");
+  assert.equal(firstBooth.BoothName, "Vendor A");
+  assert.equal(firstBooth.Products.length, 1);
+  assert.equal(firstProduct.ProductCode, "02020300");
+  assert.equal(firstProduct.ProductFullCode, "02020300000000000000");
+  assert.equal(firstProduct.ProductName, "Rambutan");
+  assert.equal(firstProduct.PackageCode, "29");
+  assert.equal(firstProduct.PackageName, "Crate 20");
+  assert.equal(firstProduct.Quantity, 180);
+  assert.equal(response.body.WorkerCount, 3);
+  assert.deepEqual(firstBooth.StallPayment, {
+    Amount: "432.00",
+    RoundingAmount: "0.00",
+  });
+  assert.deepEqual(response.body.WorkerPayment, {
+    AmountPerWorker: "54.00",
+    WorkerCount: 3,
+    TotalAmount: "162.00",
+    DeductedRemainder: "0.00",
+  });
+  assert.deepEqual(response.body.OrderRemainder, {
+    StallRoundingAmount: "0.00",
+    WorkerDeductedAmount: "0.00",
+    TotalAmount: "0.00",
+  });
   assert.equal(response.body.Qr.WorkerQrToken, "TKT-20260723-001");
   assert.equal(response.body.message, undefined);
   assert.equal(response.body.vehicle_job, undefined);
   assert.equal(response.body.gate_transaction_ref, undefined);
   assert.equal(response.body.markets, undefined);
+
   assert.equal(state.vehicleJobs.length, 1);
   assert.equal(state.vehicleJobs[0].vehicle_type, "Pickup truck");
   assert.equal(state.vehicleJobs[0].ticket_created_at, "2026-07-23T07:30:00.000Z");
   assert.equal(state.vehicleJobs[0].booth_count, 1);
   assert.equal(state.vehicleJobs[0].worker_qr_token, "TKT-20260723-001");
+
+  assert.equal(state.gateTickets.length, 1);
   assert.equal(state.gateTickets[0].marketCode, "MARKET-001");
   assert.equal(state.gateTickets[0].boothCode, "STALL-001");
   assert.equal(state.gateTickets[0].boothName, "Vendor A");
   assert.equal(state.gateTickets[0].vendor_line_id, "line-vendor-stall-001");
-  assert.equal(state.ticketProducts[0].productCode, "PRODUCT-001-001");
-  assert.equal(state.ticketProducts[0].packageCode, "CRATE");
-  assert.equal(state.ticketProducts[0].packageName, "crate");
+
+  assert.equal(state.ticketProducts.length, 1);
+  assert.equal(state.ticketProducts[0].productCode, "02020300");
+  assert.equal(state.ticketProducts[0].packageCode, "29");
+  assert.equal(state.ticketProducts[0].packageName, "Crate 20");
+
   assert.equal(state.lineMessages.length, 2);
   const gateLineMessage = state.lineMessages[0] as {
     name?: string;
@@ -220,14 +253,17 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
       }>;
     };
   };
+
   assert.equal(gateLineMessage.name, "send-gate-ticket-created");
   assert.equal(gateLineMessage.data?.to, "line-vendor-stall-001");
+
   const gateFlexMessage = gateLineMessage.data?.messages?.[0];
   const gateFlexContents = JSON.stringify(gateFlexMessage?.contents);
+
   assert.equal(gateFlexMessage?.type, "flex");
   assert.match(gateFlexContents, /TKT-20260723-001/);
   assert.match(gateFlexContents, /ABC-001/);
-  assert.match(gateFlexContents, /Cabbage/);
+  assert.match(gateFlexContents, /Rambutan/);
 });
 
 test("POST /api/gate/tickets returns waiting_unload status when Dispatch is false", async () => {
@@ -271,25 +307,35 @@ test("POST /api/gate/tickets dispatches a ready connected worker to the new Gate
 test("POST /api/gate/tickets replays the same Gate request", async () => {
   const body = buildGateVehicleJobBody("002");
   const headers = await gateAuthHeaders();
-  const created = await server.request("POST", "/api/gate/tickets", { body, headers });
-  const replayed = await server.request("POST", "/api/gate/tickets", { body, headers });
+
+  const created = await server.request("POST", "/api/gate/tickets", {
+    body,
+    headers,
+  });
+  const replayed = await server.request("POST", "/api/gate/tickets", {
+    body,
+    headers,
+  });
 
   assert.equal(created.status, 201);
   assert.equal(replayed.status, 200);
   assert.deepEqual(Object.keys(replayed.body).sort(), [
-    "Booth",
+    "Booths",
     "Market",
-    "Product",
+    "OrderRemainder",
     "Qr",
     "Result",
     "Ticket",
+    "WorkerCount",
+    "WorkerPayment",
   ]);
   assert.equal(replayed.body.Result, "REPLAYED");
   assert.equal(replayed.body.Ticket.TicketNo, "TKT-20260723-002");
   assert.equal(replayed.body.Ticket.Status, "unload_now");
   assert.equal(replayed.body.Market.MarketCode, "MARKET-002");
-  assert.equal(replayed.body.Booth.BoothCode, "STALL-002");
-  assert.equal(replayed.body.Product.ProductCode, "PRODUCT-002-001");
+  assert.equal(replayed.body.Booths[0].BoothCode, "STALL-002");
+  assert.equal(replayed.body.Booths[0].Products[0].ProductCode, "02020300");
+  assert.equal(replayed.body.WorkerCount, 3);
   assert.equal(replayed.body.message, undefined);
   assert.equal(replayed.body.vehicle_job, undefined);
   assert.equal(replayed.body.idempotency_key, undefined);
@@ -301,7 +347,11 @@ test("POST /api/gate/tickets replays the same Gate request", async () => {
 test("POST /api/gate/tickets rejects reused Gate ref with a different payload", async () => {
   const body = buildGateVehicleJobBody("003");
   const headers = await gateAuthHeaders();
-  await server.request("POST", "/api/gate/tickets", { body, headers });
+
+  await server.request("POST", "/api/gate/tickets", {
+    body,
+    headers,
+  });
 
   const mismatch = await server.request("POST", "/api/gate/tickets", {
     body: {
@@ -316,110 +366,187 @@ test("POST /api/gate/tickets rejects reused Gate ref with a different payload", 
   assert.equal(mismatch.body.duplicate_field, "gate_transaction_ref");
 });
 
-test("POST /api/gate/tickets appends a new booth to the same Gate ticket", async () => {
-  const createdBody = {
+test("POST /api/gate/tickets creates multiple booths and products in one request", async () => {
+  const body = {
     ...buildGateVehicleJobBody("004"),
     BoothCount: 2,
+    Booths: [
+      {
+        BoothCode: "STALL-004",
+        Products: [
+          {
+            ProductCode: "02020300",
+            PackageCode: "29",
+            Quantity: 180,
+          },
+        ],
+      },
+      {
+        BoothCode: "STALL-004-B",
+        Products: [
+          {
+            ProductCode: "02030103",
+            PackageCode: "19",
+            Quantity: 100,
+          },
+          {
+            ProductCode: "02011701",
+            PackageCode: "19",
+            Quantity: 80,
+          },
+        ],
+      },
+    ],
   };
-  const headers = await gateAuthHeaders();
-  await server.request("POST", "/api/gate/tickets", { body: createdBody, headers });
 
-  const nextBoothBody = {
-    ...buildGateVehicleJobBody("005"),
-    TicketNo: createdBody.TicketNo,
-    BoothCount: 2,
-    MarketCode: createdBody.MarketCode,
-    MarketName: createdBody.MarketName,
-    BoothCode: "STALL-004-B",
-    BoothName: "Vendor B",
-    ProductCode: "PRODUCT-004-002",
-  };
-  const appended = await server.request("POST", "/api/gate/tickets", {
-    body: nextBoothBody,
-    headers,
+  const response = await server.request("POST", "/api/gate/tickets", {
+    body,
+    headers: await gateAuthHeaders(),
   });
 
-  assert.equal(appended.status, 201);
-  assert.equal(appended.body.Ticket.TicketNo, createdBody.TicketNo);
-  assert.equal(appended.body.Ticket.BoothCount, 2);
-  assert.equal(appended.body.Ticket.WorkersRequired, 1);
-  assert.equal(appended.body.Ticket.Status, "unload_now");
-  assert.equal(appended.body.Market.MarketCode, createdBody.MarketCode);
-  assert.equal(appended.body.Booth.BoothCode, "STALL-004-B");
-  assert.equal(appended.body.Product.ProductCode, "PRODUCT-004-002");
+  assert.equal(response.status, 201);
+  assert.equal(response.body.Result, "CREATED");
+  assert.equal(response.body.Ticket.TicketNo, "TKT-20260723-004");
+  assert.equal(response.body.Ticket.BoothCount, 2);
+  assert.equal(response.body.Booths.length, 2);
+
+  assert.equal(response.body.Booths[0].BoothCode, "STALL-004");
+  assert.equal(response.body.Booths[0].BoothName, "Vendor A");
+  assert.equal(response.body.Booths[0].Products.length, 1);
+
+  assert.equal(response.body.Booths[1].BoothCode, "STALL-004-B");
+  assert.equal(response.body.Booths[1].BoothName, "Vendor B");
+  assert.equal(response.body.Booths[1].Products.length, 2);
+  assert.equal(response.body.Booths[1].Products[0].ProductCode, "02030103");
+  assert.equal(response.body.Booths[1].Products[1].ProductCode, "02011701");
+
+  assert.deepEqual(response.body.Booths[0].StallPayment, {
+    Amount: "432.00",
+    RoundingAmount: "0.00",
+  });
+  assert.deepEqual(response.body.Booths[1].StallPayment, {
+    Amount: "432.00",
+    RoundingAmount: "0.00",
+  });
+
+  assert.equal(response.body.WorkerCount, 3);
+  assert.deepEqual(response.body.WorkerPayment, {
+    AmountPerWorker: "108.00",
+    WorkerCount: 3,
+    TotalAmount: "324.00",
+    DeductedRemainder: "0.00",
+  });
+  assert.deepEqual(response.body.OrderRemainder, {
+    StallRoundingAmount: "0.00",
+    WorkerDeductedAmount: "0.00",
+    TotalAmount: "0.00",
+  });
+
   assert.equal(state.vehicleJobs.length, 1);
+  assert.equal(state.vehicleJobs[0].booth_count, 2);
+  assert.equal(state.vehicleJobs[0].workers_required, 3);
+
   assert.equal(state.gateTickets.length, 2);
+  assert.equal(state.gateTickets[0].boothCode, "STALL-004");
   assert.equal(state.gateTickets[1].boothCode, "STALL-004-B");
-  assert.equal(state.gateTickets[1].boothName, "Vendor B");
-});
 
-test("POST /api/gate/tickets rejects appending beyond BoothCount for the same TicketNo", async () => {
-  const createdBody = buildGateVehicleJobBody("008");
-  const headers = await gateAuthHeaders();
-  await server.request("POST", "/api/gate/tickets", { body: createdBody, headers });
+  assert.equal(state.ticketProducts.length, 3);
+  assert.deepEqual(
+    state.ticketProducts.map((product) => product.productCode),
+    ["02020300", "02030103", "02011701"]
+  );
 
-  const overLimit = await server.request("POST", "/api/gate/tickets", {
-    body: {
-      ...buildGateVehicleJobBody("009"),
-      TicketNo: createdBody.TicketNo,
-      BoothCount: 1,
-      BoothCode: "STALL-008-B",
-      ProductCode: "PRODUCT-008-002",
-    },
-    headers,
+  assert.equal(state.lineMessages.length, 4);
+  const vendorBMessages = state.lineMessages.filter((message) => {
+    const data = (message as { data?: { to?: string } }).data;
+    return data?.to === "line-vendor-stall-004-b";
   });
 
-  assert.equal(overLimit.status, 409);
-  assert.equal(overLimit.body.code, "GATE_TICKET_BOOTH_LIMIT_REACHED");
-  assert.equal(state.gateTickets.length, 1);
+  assert.equal(vendorBMessages.length, 1);
+  assert.match(
+    JSON.stringify(
+      (vendorBMessages[0] as {
+        data?: {
+          messages?: Array<{
+            contents?: unknown;
+          }>;
+        };
+      }).data?.messages?.[0]?.contents
+    ),
+    /Cherry|Melon/
+  );
 });
 
-test("POST /api/gate/tickets rejects duplicate BoothCode under the same TicketNo", async () => {
-  const createdBody = {
-    ...buildGateVehicleJobBody("010"),
-    BoothCount: 2,
-  };
-  const headers = await gateAuthHeaders();
-  await server.request("POST", "/api/gate/tickets", { body: createdBody, headers });
-
-  const duplicateBooth = await server.request("POST", "/api/gate/tickets", {
+test("POST /api/gate/tickets rejects BoothCount mismatch", async () => {
+  const response = await server.request("POST", "/api/gate/tickets", {
     body: {
-      ...buildGateVehicleJobBody("011"),
-      TicketNo: createdBody.TicketNo,
+      ...buildGateVehicleJobBody("008"),
       BoothCount: 2,
-      BoothCode: createdBody.BoothCode,
-      ProductCode: "PRODUCT-010-002",
     },
-    headers,
+    headers: await gateAuthHeaders(),
   });
 
-  assert.equal(duplicateBooth.status, 409);
-  assert.equal(duplicateBooth.body.code, "GATE_TICKET_BOOTH_ALREADY_EXISTS");
-  assert.equal(state.gateTickets.length, 1);
+  assert.equal(response.status, 400);
+  assert.equal(response.body.code, "VALIDATION_ERROR");
 });
 
-test("POST /api/gate/tickets rejects BoothCount changes for an existing TicketNo", async () => {
-  const createdBody = {
-    ...buildGateVehicleJobBody("012"),
-    BoothCount: 2,
-  };
-  const headers = await gateAuthHeaders();
-  await server.request("POST", "/api/gate/tickets", { body: createdBody, headers });
+test("POST /api/gate/tickets rejects duplicate BoothCode in the same request", async () => {
+  const base = buildGateVehicleJobBody("010");
 
-  const mismatch = await server.request("POST", "/api/gate/tickets", {
+  const response = await server.request("POST", "/api/gate/tickets", {
     body: {
-      ...buildGateVehicleJobBody("013"),
-      TicketNo: createdBody.TicketNo,
-      BoothCount: 3,
-      BoothCode: "STALL-012-B",
-      ProductCode: "PRODUCT-012-002",
+      ...base,
+      BoothCount: 2,
+      Booths: [
+        base.Booths[0],
+        {
+          BoothCode: base.Booths[0].BoothCode,
+          Products: [
+            {
+              ProductCode: "02020300",
+              PackageCode: "29",
+              Quantity: 100,
+            },
+          ],
+        },
+      ],
     },
-    headers,
+    headers: await gateAuthHeaders(),
   });
 
-  assert.equal(mismatch.status, 409);
-  assert.equal(mismatch.body.code, "GATE_TICKET_BOOTH_COUNT_MISMATCH");
-  assert.equal(state.gateTickets.length, 1);
+  assert.equal(response.status, 400);
+  assert.equal(response.body.code, "VALIDATION_ERROR");
+});
+
+test("POST /api/gate/tickets rejects duplicate ProductCode + PackageCode in the same booth", async () => {
+  const base = buildGateVehicleJobBody("012");
+
+  const response = await server.request("POST", "/api/gate/tickets", {
+    body: {
+      ...base,
+      Booths: [
+        {
+          BoothCode: "STALL-012",
+          Products: [
+            {
+              ProductCode: "02020300",
+              PackageCode: "29",
+              Quantity: 180,
+            },
+            {
+              ProductCode: "02020300",
+              PackageCode: "29",
+              Quantity: 100,
+            },
+          ],
+        },
+      ],
+    },
+    headers: await gateAuthHeaders(),
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.code, "VALIDATION_ERROR");
 });
 
 /* -------------------------------------- Admin Worker Status Route Tests -------------------------------------- */
@@ -903,6 +1030,9 @@ test("worker queue can return admin-cancelled workers to the front in priority o
 
 test("dispatch assigns ready workers in FIFO order", async () => {
   const job = addDispatchableJob(501, 2);
+  addWorker(11);
+  addWorker(12);
+  addWorker(13);
   state.connectedWorkers.add(11);
   state.connectedWorkers.add(12);
   state.connectedWorkers.add(13);
@@ -947,6 +1077,8 @@ test("dispatch assigns ready workers in FIFO order", async () => {
 
 test("dispatch assigns disconnected ready worker by FIFO order", async () => {
   addDispatchableJob(601, 1);
+  addWorker(21);
+  addWorker(22);
   await workerQueue.enqueueWorker(21);
   await workerQueue.enqueueWorker(22);
 
@@ -1360,8 +1492,8 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete sub
       (event) =>
         Boolean(
           event &&
-            typeof event === "object" &&
-            (event as { type?: string }).type === "TICKET_COMPLETION_SUBMITTED"
+          typeof event === "object" &&
+          (event as { type?: string }).type === "TICKET_COMPLETION_SUBMITTED"
         )
     )
   );
@@ -1369,8 +1501,8 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete sub
     (event) =>
       Boolean(
         event &&
-          typeof event === "object" &&
-          (event as { type?: string }).type === "TICKET_COMPLETION_SUBMITTED"
+        typeof event === "object" &&
+        (event as { type?: string }).type === "TICKET_COMPLETION_SUBMITTED"
       )
   );
   const submittedWorkerPayload = (submittedEvent as { worker_payload?: Record<string, unknown> })
@@ -1470,8 +1602,8 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete sub
     (event) =>
       Boolean(
         event &&
-          typeof event === "object" &&
-          (event as { type?: string }).type === "TICKET_COMPLETION_RESULT"
+        typeof event === "object" &&
+        (event as { type?: string }).type === "TICKET_COMPLETION_RESULT"
       )
   );
   const resultWorkerPayload = (resultEvent as { worker_payload?: Record<string, unknown> })
@@ -1688,8 +1820,8 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
     (event) =>
       Boolean(
         event &&
-          typeof event === "object" &&
-          (event as { type?: string }).type === "TICKET_COMPLETION_RESULT"
+        typeof event === "object" &&
+        (event as { type?: string }).type === "TICKET_COMPLETION_RESULT"
       )
   );
   assert.equal(
@@ -1855,9 +1987,7 @@ test("break return moves worker to open_app when WebSocket is still disconnected
   assert.equal(warningNotification.payload?.warning_before_minutes, 2);
   assert.equal(
     Number(warningNotification.payload?.remaining_seconds) > 0 &&
-      Number(warningNotification.payload?.remaining_seconds) <= 120,
+    Number(warningNotification.payload?.remaining_seconds) <= 120,
     true
   );
 });
-
-

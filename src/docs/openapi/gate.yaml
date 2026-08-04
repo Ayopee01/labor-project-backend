@@ -6,27 +6,51 @@
       summary: Create a Gate ticket using Gate Client Credentials.
       description: >
         Use HTTP Basic Auth where username is `ClientId` and password is
-        `ClientSecret`. Gate sends one flat PascalCase payload per
-        ticket/booth using TicketNo, TicketCreatedAt, BoothCount,
-        MarketCode/MarketName, BoothCode/BoothName, VehicleTypeName, and
-        ProductCode/ProductName/PackageCode/PackageName. Backend derives the
-        idempotency key from TicketNo + MarketCode + BoothCode,
-        maps MarketCode + BoothCode to owner/member LINE targets from the
-        internal master_owner_stalls and master_member_stalls tables,
-        sends a LINE Flex notification to those owner/member targets when a
-        new Gate ticket is created,
-        returns the saved Ticket/Market/Booth/Product objects, returns
-        Qr.WorkerQrToken as the same value as TicketNo for worker check-in, and
-        returns Ticket.WorkersRequired as 1 for the current Gate flow;
-        worker-count calculation will be added later. Ticket.Status is derived
-        from Dispatch only: true returns unload_now and false returns
-        waiting_unload. Success/replay responses do not include Message or
-        GateTransactionRef. BoothCount is the maximum number of distinct
-        BoothCode values allowed under the same TicketNo. Sending the same
-        TicketNo with a new BoothCode appends that booth until BoothCount is
-        reached. MarketCode may repeat, but BoothCode cannot repeat under the
-        same TicketNo. Set `Dispatch` to `true` when the vehicle is already
-        ready to unload.
+        `ClientSecret`.
+
+        Gate sends one PascalCase request per TicketNo. One request can contain
+        multiple booths using Booths[], and each booth can contain multiple
+        products using Products[].
+
+        BoothCount must equal Booths.length. BoothCode cannot be duplicated
+        inside the same request. ProductCode + PackageCode cannot be duplicated
+        inside the same booth.
+
+        Backend resolves MarketName and BoothName from master_market using
+        MarketCode + BoothCode.
+
+        Backend resolves ProductFullCode, ProductName, PackageName and
+        PackageWeight from master_product using ProductCode + PackageCode.
+
+        Backend selects master_rate from the requested MarketCode and package
+        weight. If no market-specific rate is found, rate MarketCode `0000`
+        is used as fallback.
+
+        Required workers are calculated for every product using
+        master_product.range. WorkerCount for the VehicleJob is the maximum
+        required worker count from all products in the request.
+
+        Stall payment is calculated separately for each booth. Product amounts
+        inside the booth are combined before the booth total is rounded up.
+
+        Worker payment is calculated from the total labor fee of all products
+        in the order and divided by WorkerCount.
+
+        Backend returns Ticket, Market, Booths[], WorkerCount, WorkerPayment,
+        OrderRemainder and Qr.
+
+        Each Booth item contains Products[] and StallPayment.
+
+        The idempotency key is derived from TicketNo + MarketCode.
+
+        Sending the same payload again returns REPLAYED. Sending the same
+        idempotency key with a different payload returns a conflict.
+
+        Ticket.Status is derived from Dispatch:
+        true = unload_now,
+        false = waiting_unload.
+
+        Qr.WorkerQrToken uses TicketNo for worker check-in.
       operationId: createGateTicket
       security:
         - gateBasicAuth: []
@@ -62,7 +86,7 @@
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Duplicate Gate ticket idempotency key payload mismatch, BoothCount limit/duplicate booth violation, or missing active MarketCode + BoothCode LINE target mapping.
+          description: Duplicate Gate ticket idempotency key payload mismatch, BoothCount limit/duplicate booth violation, missing active master_market/master_product/master_rate data, or missing active MarketCode + BoothCode LINE target mapping.
           content:
             application/json:
               schema:

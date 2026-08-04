@@ -252,6 +252,30 @@ model MasterMemberStall {
   @@map("master_member_stalls")
 }
 
+model MasterMarket {
+  id                    Int       @id @default(autoincrement())
+  sourceMarketId        Int?      @map("source_market_id")
+  sourceBoothId         Int       @unique @map("source_booth_id")
+  marketCode            String    @map("market_code") @db.VarChar(20)
+  marketName            String?   @map("market_name") @db.VarChar(255)
+  boothCode             String    @map("booth_code") @db.VarChar(50)
+  boothName             String    @map("booth_name") @db.VarChar(255)
+  marketStatus          String?   @map("market_status") @db.VarChar(20)
+  boothStatus           String    @map("booth_status") @db.VarChar(20)
+  sourceMarketCreatedAt DateTime? @map("source_market_created_at") @db.Timestamp(3)
+  sourceMarketUpdatedAt DateTime? @map("source_market_updated_at") @db.Timestamp(3)
+  sourceBoothCreatedAt  DateTime? @map("source_booth_created_at") @db.Timestamp(3)
+  sourceBoothUpdatedAt  DateTime? @map("source_booth_updated_at") @db.Timestamp(3)
+  syncedAt              DateTime  @default(now()) @map("synced_at") @db.Timestamp(3)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  @@unique([marketCode, boothCode])
+  @@index([marketCode, boothStatus])
+  @@index([boothCode])
+  @@map("master_market")
+}
+
 model MasterProduct {
   id              Int      @id
   productCode     String   @map("product_code") @db.VarChar(50)

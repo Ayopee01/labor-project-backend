@@ -1,5 +1,5 @@
 // Import Library
-import { Prisma } from "@prisma/client";
+import { Prisma, type MasterMarket, type MasterProduct, type MasterRate } from "@prisma/client";
 
 // Import Dependencies
 import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
@@ -179,7 +179,79 @@ export async function findActiveVendorLineTargetsByStall(
   return targets;
 }
 
-// Function สร้าง vehicle job จาก gate จาก DB
+// Function ค้นหา master_product จาก productFullCode + packageCode ที่ยังใช้งานอยู่
+export async function findActiveMarketBoothByCodes(
+  marketCode: string,
+  boothCode: string,
+  connection?: DbConnection
+): Promise<MasterMarket | null> {
+  const db = client(connection);
+  const marketBooth = await db.masterMarket.findUnique({
+    where: {
+      marketCode_boothCode: {
+        marketCode,
+        boothCode,
+      },
+    },
+  });
+
+  if (
+    !marketBooth ||
+    marketBooth.boothStatus !== "Normal" ||
+    (marketBooth.marketStatus !== null && marketBooth.marketStatus !== "Normal")
+  ) {
+    return null;
+  }
+
+  return marketBooth;
+}
+
+// Function ค้นหา master_product จาก productCode + packageCode ที่ยังใช้งานอยู่
+export async function findActiveProductsByProductCodeAndPackageCode(
+  productCode: string,
+  packageCode: string,
+  connection?: DbConnection
+): Promise<MasterProduct[]> {
+  const db = client(connection);
+
+  return db.masterProduct.findMany({
+    where: {
+      productCode,
+      packageCode,
+      status: "ACTIVE",
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+}
+
+// Function ค้นหา master_rate ที่ตรง market และช่วงน้ำหนักที่ยังใช้งานอยู่
+export async function findActiveRatesByMarketAndWeight(
+  marketCode: string,
+  packageWeight: Prisma.Decimal,
+  connection?: DbConnection
+): Promise<MasterRate[]> {
+  const db = client(connection);
+
+  return db.masterRate.findMany({
+    where: {
+      marketCode,
+      status: 1,
+      weightMin: {
+        lt: packageWeight,
+      },
+      weightMax: {
+        gte: packageWeight,
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+}
+
+// Function สร้างหรืออัปเดต vehicle job, market, booth และสินค้า จาก payload ของ Gate
 export async function createVehicleJobFromGate(
   input: GateVehicleJobCreateInput,
   payloadSnapshot: Prisma.InputJsonValue,
@@ -189,6 +261,7 @@ export async function createVehicleJobFromGate(
   const dispatchNow = input.dispatch_now === true;
   const vehicleStatus = dispatchNow ? VEHICLE_JOB_STATUS.WORKING : VEHICLE_JOB_STATUS.WAIT;
   const ticketStatus = TICKET_STATUS.WAIT;
+  const requestedWorkersRequired = Math.max(1, input.workers_required);
   const existingVehicleJob = await db.vehicleJob.findUnique({
     where: {
       ticketNo: input.ticketNo,
@@ -204,12 +277,15 @@ export async function createVehicleJobFromGate(
         vehicleType: input.vehicle_type ?? null,
         ticketCreatedAt: input.ticket_created_at,
         boothCount: input.booth_count,
-        workersRequired: 1,
+        workersRequired: requestedWorkersRequired,
         dispatchNow,
         status: vehicleStatus,
         driverQrToken: createRandomToken("driver_qr"),
       },
     }));
+  const savedWorkersRequired = existingVehicleJob
+    ? Math.max(existingVehicleJob.workersRequired, requestedWorkersRequired)
+    : requestedWorkersRequired;
   const shouldUpdateVehicle =
     existingVehicleJob &&
     (existingVehicleJob.gateTransactionRef !== input.gate_transaction_ref ||
@@ -217,7 +293,7 @@ export async function createVehicleJobFromGate(
       existingVehicleJob.vehicleType !== (input.vehicle_type ?? null) ||
       existingVehicleJob.ticketCreatedAt.getTime() !== input.ticket_created_at.getTime() ||
       existingVehicleJob.boothCount !== input.booth_count ||
-      existingVehicleJob.workersRequired !== 1 ||
+      existingVehicleJob.workersRequired !== savedWorkersRequired ||
       (dispatchNow && !existingVehicleJob.dispatchNow) ||
       (dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT));
   const savedVehicleJob = shouldUpdateVehicle
@@ -231,7 +307,7 @@ export async function createVehicleJobFromGate(
           vehicleType: input.vehicle_type ?? null,
           ticketCreatedAt: input.ticket_created_at,
           boothCount: input.booth_count,
-          workersRequired: 1,
+          workersRequired: savedWorkersRequired,
           dispatchNow: existingVehicleJob.dispatchNow || dispatchNow,
           status: dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT
             ? vehicleStatus

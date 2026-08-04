@@ -222,24 +222,83 @@ export const resetPasswordBodySchema = z.object({
 
 /* -------------------------------------- Job Flow Schemas -------------------------------------- */
 
-export const gateVehicleJobBodySchema = z.object({
-  TicketNo: trimmedString,
-  TicketCreatedAt: dateTimeString,
-  BoothCount: z.coerce.number().int().positive(),
-  MarketCode: trimmedString,
-  MarketName: trimmedString,
-  BoothCode: trimmedString,
-  BoothName: trimmedString,
-  LicensePlate: trimmedString,
-  VehicleTypeCode: trimmedString,
-  VehicleTypeName: trimmedString,
+// Schema สินค้าแต่ละรายการที่ Gate ส่งมา
+const gateVehicleJobProductSchema = z.object({
   ProductCode: trimmedString,
-  ProductName: trimmedString,
   PackageCode: trimmedString,
-  PackageName: trimmedString,
-  Quantity: z.coerce.number().positive(),
-  Dispatch: z.boolean(),
+  Quantity: z.coerce.number().int().positive(),
 });
+
+// Schema แผงและรายการสินค้าที่ Gate ส่งมา
+const gateVehicleJobBoothSchema = z
+  .object({
+    BoothCode: trimmedString,
+    Products: z.array(gateVehicleJobProductSchema).min(1),
+  })
+  .superRefine((input, context) => {
+    const productKeys = new Set<string>();
+
+    for (let index = 0; index < input.Products.length; index++) {
+      const product = input.Products[index];
+      const productKey = `${product.ProductCode}:${product.PackageCode}`;
+
+      if (productKeys.has(productKey)) {
+        context.addIssue({
+          code: "custom",
+          path: ["Products", index],
+          message: "ProductCode + PackageCode must not be duplicated in the same booth.",
+        });
+      }
+
+      productKeys.add(productKey);
+    }
+  });
+
+// Schema request หลักสำหรับสร้างงานจาก Gate
+export const gateVehicleJobBodySchema = z
+  .object({
+    TicketNo: trimmedString,
+    TicketCreatedAt: dateTimeString,
+
+    BoothCount: z.coerce.number().int().positive(),
+
+    MarketCode: trimmedString,
+
+    LicensePlate: trimmedString,
+    VehicleTypeCode: trimmedString,
+    VehicleTypeName: trimmedString,
+
+    Booths: z.array(gateVehicleJobBoothSchema).min(1),
+
+    Dispatch: z.boolean(),
+  })
+  .superRefine((input, context) => {
+    // ตรวจ BoothCount ให้ตรงกับจำนวน Booth จริง
+    if (input.BoothCount !== input.Booths.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["BoothCount"],
+        message: "BoothCount must match Booths length.",
+      });
+    }
+
+    // ตรวจ BoothCode ซ้ำใน Ticket เดียวกัน
+    const boothCodes = new Set<string>();
+
+    for (let index = 0; index < input.Booths.length; index++) {
+      const booth = input.Booths[index];
+
+      if (boothCodes.has(booth.BoothCode)) {
+        context.addIssue({
+          code: "custom",
+          path: ["Booths", index, "BoothCode"],
+          message: "BoothCode must not be duplicated.",
+        });
+      }
+
+      boothCodes.add(booth.BoothCode);
+    }
+  });
 
 export const driverQrSessionBodySchema = z.object({
   qr_token: trimmedString,

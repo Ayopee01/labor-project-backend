@@ -111,7 +111,7 @@
     },
     {
       "key": "ticketNo",
-      "value": "TKT-20260723-000125",
+      "value": "TKT-20260804-000001",
       "type": "string",
       "description": "ticketNo returned by POST /api/gate/tickets. With the Gate payload this equals TicketNo."
     },
@@ -123,15 +123,15 @@
     },
     {
       "key": "boothCode",
-      "value": "B-018",
+      "value": "OM3/40",
       "type": "string",
-      "description": "boothCode used by admin stall APIs and worker ticket completion. With the Gate payload this equals BoothCode."
+      "description": "boothCode used by admin stall APIs and worker ticket completion. Gate Flow saves the first Booths[] item here for follow-up requests."
     },
     {
       "key": "productCode",
-      "value": "FRUIT-ORG001",
+      "value": "02020300",
       "type": "string",
-      "description": "productCode returned by Gate response and used by worker product quantity confirmation. With the Gate payload this equals ProductCode."
+      "description": "productCode used by worker product quantity confirmation. Gate Flow saves the first product from the first Booths[] item here for follow-up requests."
     },
     {
       "key": "vendorConfirmToken",
@@ -1722,13 +1722,18 @@
                 "type": "text/javascript",
                 "exec": [
                   "const body = pm.response.json();",
-                  "if (body.Result) pm.collectionVariables.set('gateResult', String(body.Result));",
-                  "if (body.Ticket?.TicketNo) pm.collectionVariables.set('ticketNo', String(body.Ticket.TicketNo));",
-                  "if (body.Market?.MarketCode) pm.collectionVariables.set('marketCode', String(body.Market.MarketCode));",
-                  "if (body.Booth?.BoothCode) pm.collectionVariables.set('boothCode', String(body.Booth.BoothCode));",
-                  "if (body.Product?.ProductCode) pm.collectionVariables.set('productCode', String(body.Product.ProductCode));",
-                  "if (body.Qr?.DriverQrToken) pm.collectionVariables.set('driverQrToken', body.Qr.DriverQrToken);",
-                  "if (body.Qr?.WorkerQrToken) pm.collectionVariables.set('workerQrToken', body.Qr.WorkerQrToken);"
+                  "const firstBooth = body.Booths?.[0];",
+                  "const firstProduct = firstBooth?.Products?.[0];",
+                  "if (body.Result) pm.collectionVariables.set(\"gateResult\", body.Result);",
+                  "if (body.Ticket?.TicketNo) pm.collectionVariables.set(\"ticketNo\", body.Ticket.TicketNo);",
+                  "if (body.Market?.MarketCode) pm.collectionVariables.set(\"marketCode\", body.Market.MarketCode);",
+                  "if (firstBooth?.BoothCode) pm.collectionVariables.set(\"boothCode\", firstBooth.BoothCode);",
+                  "if (firstProduct?.ProductCode) pm.collectionVariables.set(\"productCode\", firstProduct.ProductCode);",
+                  "if (body.WorkerCount !== undefined) pm.collectionVariables.set(\"workerCount\", String(body.WorkerCount));",
+                  "if (firstBooth?.StallPayment?.Amount) pm.collectionVariables.set(\"stallPaymentAmount\", String(firstBooth.StallPayment.Amount));",
+                  "if (body.WorkerPayment?.AmountPerWorker) pm.collectionVariables.set(\"workerPaymentAmountPerWorker\", String(body.WorkerPayment.AmountPerWorker));",
+                  "if (body.Qr?.DriverQrToken) pm.collectionVariables.set(\"driverQrToken\", body.Qr.DriverQrToken);",
+                  "if (body.Qr?.WorkerQrToken) pm.collectionVariables.set(\"workerQrToken\", body.Qr.WorkerQrToken);"
                 ]
               }
             }
@@ -1744,7 +1749,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"TicketNo\": \"TKT-20260723-000125\",\n  \"TicketCreatedAt\": \"2026-07-23T14:30:00+07:00\",\n  \"BoothCount\": 2,\n  \"MarketCode\": \"1123\",\n  \"MarketName\": \"Orange Market\",\n  \"BoothCode\": \"B-018\",\n  \"BoothName\": \"Orange Booth\",\n  \"LicensePlate\": \"ABC-1234\",\n  \"VehicleTypeCode\": \"PICKUP\",\n  \"VehicleTypeName\": \"Pickup truck\",\n  \"ProductCode\": \"FRUIT-ORG001\",\n  \"ProductName\": \"Orange\",\n  \"PackageCode\": \"22\",\n  \"PackageName\": \"Orange package\",\n  \"Quantity\": 180,\n  \"Dispatch\": true\n}",
+              "raw": "{\n  \"TicketNo\": \"TKT-20260804-000001\",\n  \"TicketCreatedAt\": \"2026-08-04T14:30:00+07:00\",\n  \"BoothCount\": 2,\n  \"MarketCode\": \"1123\",\n  \"LicensePlate\": \"ABC-1234\",\n  \"VehicleTypeCode\": \"PICKUP\",\n  \"VehicleTypeName\": \"Pickup truck\",\n  \"Booths\": [\n    {\n      \"BoothCode\": \"OM3/40\",\n      \"Products\": [\n        {\n          \"ProductCode\": \"02020300\",\n          \"PackageCode\": \"29\",\n          \"Quantity\": 180\n        }\n      ]\n    },\n    {\n      \"BoothCode\": \"OM1/1\",\n      \"Products\": [\n        {\n          \"ProductCode\": \"02030103\",\n          \"PackageCode\": \"19\",\n          \"Quantity\": 100\n        },\n        {\n          \"ProductCode\": \"02011701\",\n          \"PackageCode\": \"19\",\n          \"Quantity\": 80\n        }\n      ]\n    }\n  ],\n  \"Dispatch\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1777,7 +1782,7 @@
                 }
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create it with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: Gate payload, 1 request per ticket/booth. Required fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, MarketName, BoothCode, BoothName, LicensePlate, VehicleTypeCode, VehicleTypeName, ProductCode, ProductName, PackageCode, PackageName, Quantity, Dispatch. Gate does not send VendorLineId; backend maps MarketCode + BoothCode to owner/member LINE targets from internal master_owner_stalls and master_member_stalls tables. Backend derives the internal idempotency key from TicketNo + MarketCode + BoothCode, sends a LINE Flex card notification to active owner/member targets when a new ticket is created, and returns WorkersRequired = 1 for now; worker-count calculation will be added later.\nResponse: Result, Ticket, Market, Booth, Product, and Qr. Ticket includes TicketNo, TicketCreatedAt, BoothCount, vehicle info, WorkersRequired, and Status. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload. Success/replay responses do not include Message or GateTransactionRef. Qr.WorkerQrToken equals TicketNo, so Worker scans/sends TicketNo for check-in. GateTransactionRef is returned only in 409 mismatch errors for debugging. Missing MarketCode + BoothCode LINE target mapping returns 409 BOOTH_VENDOR_LINE_NOT_CONFIGURED.\nResult: 201 + Result CREATED for a new Gate transaction, 200 + Result REPLAYED when the same TicketNo + MarketCode + BoothCode is retried with the same payload, 409 when the same key is reused with a different payload, the same TicketNo exceeds BoothCount, the same BoothCode is reused under one TicketNo, BoothCount changes for an existing TicketNo, or MarketCode + BoothCode has no active owner/member LINE target mapping.\nNotes: Saves gateResult, ticketNo, marketCode, boothCode, productCode, driverQrToken, and workerQrToken collection variables. BoothCount is the maximum number of distinct BoothCode values allowed under the same TicketNo. MarketCode may repeat, but BoothCode cannot repeat under the same TicketNo. With Dispatch true, backend creates or marks this vehicle job as WORKING and dispatches ready workers to this job first through WebSocket."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create credentials with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: One request per TicketNo. Booths contains all booths under the ticket, and each Booth contains Products. Required root fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, LicensePlate, VehicleTypeCode, VehicleTypeName, Booths, Dispatch. Each Booth requires BoothCode and Products. Each Product requires ProductCode, PackageCode, Quantity. BoothCount must equal Booths.length. BoothCode cannot be duplicated in the same request. ProductCode + PackageCode cannot be duplicated inside the same booth.\nCalculation: Backend resolves MarketName/BoothName from master_market using MarketCode + BoothCode. Backend resolves ProductFullCode/ProductName/PackageName/PackageWeight from master_product using ProductCode + PackageCode. Rate is selected from master_rate by MarketCode + PackageWeight, with MarketCode 0000 as fallback. WorkerCount is the maximum required worker count from all products. StallPayment is calculated separately per booth after combining that booth's product amounts. WorkerPayment is calculated from the total labor fee of all products in the order.\nResponse: Result, Ticket, Market, Booths, WorkerCount, WorkerPayment, OrderRemainder, and Qr. Each Booth response contains Products and StallPayment. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload. Qr.WorkerQrToken equals TicketNo for worker check-in.\nIdempotency: Gate transaction ref is derived from TicketNo + MarketCode. Same payload returns REPLAYED. Same idempotency key with a different payload returns 409.\nResult: 201 CREATED for a new ticket, 200 REPLAYED for the same payload, 400 for request validation errors such as BoothCount mismatch or duplicate booth/product-package, 409 for payload mismatch, duplicate TicketNo, missing master_market/master_product/master_rate data, or missing active vendor LINE mapping.\nNotes: Saves gateResult, ticketNo, marketCode, first BoothCode, first ProductCode, workerCount, first booth StallPayment.Amount, workerPaymentAmountPerWorker, driverQrToken, and workerQrToken into collection variables."
           },
           "response": []
         }

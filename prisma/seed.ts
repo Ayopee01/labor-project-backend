@@ -3,6 +3,7 @@ import { closePrisma, getPrisma } from "../src/db/prisma";
 import { ADMIN_PERMISSIONS } from "../src/config/permission.config";
 import type { AdminPermission, AdminPermissionLevel } from "../src/config/permission.config";
 import { hashPassword } from "../src/utils/password";
+import { seedMasterMarkets } from "./master-market.seed";
 import { seedMasterProducts } from "./master-product.seed";
 import { seedMasterRates } from "./master-rate.seed";
 
@@ -51,8 +52,8 @@ const SEED_ROLE_PERMISSION_TEMPLATES: Record<AdminPermissionLevel, AdminPermissi
 const SEED_MASTER_OWNER_STALLS = [
   {
     MarketCode: "1123",
-    BoothCode: "B-018",
-    BoothName: "Orange Booth 18",
+    BoothCode: "OM3/40",
+    BoothName: "Mock Owner OM3/40",
     CardId: "1234567890123",
     CustomerTelephone: "0812220001",
     FirstName: "Orange",
@@ -341,6 +342,7 @@ async function main(): Promise<void> {
     });
   }
 
+  await seedMasterMarkets(prisma);
   await seedMasterProducts(prisma);
   await seedMasterRates(prisma);
 

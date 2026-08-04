@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import Module = require("node:module");
+import { Prisma } from "@prisma/client";
 import { normalizeApiRequestPayload } from "../../src/middlewares/api-case.middleware";
 import { applyIsolatedTestEnv } from "../setup/test-env";
 
@@ -177,6 +178,40 @@ type GateRequestLogRecord = {
   response_snapshot: unknown | null;
 };
 
+type MasterProductRecord = {
+  id: number;
+  productCode: string;
+  productFullCode: string;
+  productName: string;
+  packageCode: string;
+  packageName: string;
+  packageWeight: number;
+  range: unknown;
+  status: string;
+};
+
+type MasterRateRecord = {
+  id: number;
+  sourceRateId: number;
+  marketCode: string;
+  weightRangeName: string;
+  weightMin: Prisma.Decimal;
+  weightMax: Prisma.Decimal;
+  stallRate: Prisma.Decimal;
+  laborRate: Prisma.Decimal;
+  status: number;
+};
+
+type MasterMarketRecord = {
+  id: number;
+  marketCode: string;
+  marketName: string | null;
+  boothCode: string;
+  boothName: string;
+  marketStatus: string | null;
+  boothStatus: string;
+};
+
 const ACTIVE_ASSIGNMENT_STATUSES = [
   "PENDING",
   "ACCEPTED",
@@ -239,6 +274,9 @@ export const state = {
   ticketRatings: [] as TicketRatingRecord[],
   lineActionTokens: [] as LineActionTokenRecord[],
   gateRequestLogs: [] as GateRequestLogRecord[],
+  masterMarkets: [] as MasterMarketRecord[],
+  masterProducts: [] as MasterProductRecord[],
+  masterRates: [] as MasterRateRecord[],
   gateClients: new Map<string, GateClientRecord>(),
   shiftAttendances: [] as WorkerShiftAttendanceRecord[],
   authAccountsByUsername: new Map<string, AccountRecord>(),
@@ -326,7 +364,7 @@ class FakeRedis {
     return { ...(FakeRedis.hashes.get(key) ?? {}) };
   }
 
-  async expire(): Promise<void> {}
+  async expire(): Promise<void> { }
 
   async get(key: string): Promise<string | null> {
     const value = FakeRedis.strings.get(key);
@@ -399,7 +437,178 @@ class FakeWorker {
     state.workerProcessors.set(name, processor);
   }
 
-  on(): void {}
+  on(): void { }
+}
+
+// Function เติม master product/rate พื้นฐานสำหรับ Gate pricing route tests
+function seedMasterDataForRouteTests(): void {
+  state.masterMarkets.push(
+    ...[
+      "000",
+      "000B",
+      "001",
+      "002",
+      "003",
+      "004",
+      "005",
+      "006",
+      "007",
+      "008",
+      "009",
+      "010",
+      "011",
+      "012",
+      "013",
+    ].map((suffix, index) => ({
+      id: index + 1,
+      marketCode: `MARKET-${suffix}`,
+      marketName: "Market A",
+      boothCode: `STALL-${suffix}`,
+      boothName: "Vendor A",
+      marketStatus: "Normal",
+      boothStatus: "Normal",
+    })),
+    {
+      id: 1001,
+      marketCode: "MARKET-004",
+      marketName: "Market A",
+      boothCode: "STALL-004-B",
+      boothName: "Vendor B",
+      marketStatus: "Normal",
+      boothStatus: "Normal",
+    },
+    {
+      id: 1002,
+      marketCode: "MARKET-008",
+      marketName: "Market A",
+      boothCode: "STALL-008-B",
+      boothName: "Vendor B",
+      marketStatus: "Normal",
+      boothStatus: "Normal",
+    },
+    {
+      id: 1004,
+      marketCode: "MARKET-009",
+      marketName: "Market A",
+      boothCode: "STALL-008-B",
+      boothName: "Vendor B",
+      marketStatus: "Normal",
+      boothStatus: "Normal",
+    },
+    {
+      id: 1003,
+      marketCode: "MARKET-012",
+      marketName: "Market A",
+      boothCode: "STALL-012-B",
+      boothName: "Vendor B",
+      marketStatus: "Normal",
+      boothStatus: "Normal",
+    },
+    {
+      id: 1005,
+      marketCode: "MARKET-011",
+      marketName: "Market A",
+      boothCode: "STALL-010",
+      boothName: "Vendor A",
+      marketStatus: "Normal",
+      boothStatus: "Normal",
+    },
+    {
+      id: 1006,
+      marketCode: "MARKET-013",
+      marketName: "Market A",
+      boothCode: "STALL-012-B",
+      boothName: "Vendor B",
+      marketStatus: "Normal",
+      boothStatus: "Normal",
+    }
+  );
+  state.masterProducts.push(
+    {
+      id: 1,
+      productCode: "02020300",
+      productFullCode: "02020300000000000000",
+      productName: "Rambutan",
+      packageCode: "29",
+      packageName: "Crate 20",
+      packageWeight: 20,
+      range: {
+        workerRanges: {
+          range1To50: 1,
+          range51To100: 2,
+          range101To200: 3,
+          range201To400: 4,
+          range401To600: 4,
+          rangeOver600: 5,
+        },
+      },
+      status: "ACTIVE",
+    },
+    {
+      id: 2,
+      productCode: "02030103",
+      productFullCode: "02030103000000000000",
+      productName: "Cherry",
+      packageCode: "19",
+      packageName: "Box 10",
+      packageWeight: 20,
+      range: {
+        workerRanges: {
+          range1To50: 1,
+          range51To100: 2,
+          range101To200: 3,
+          range201To400: 4,
+          range401To600: 4,
+          rangeOver600: 5,
+        },
+      },
+      status: "ACTIVE",
+    },
+    {
+      id: 3,
+      productCode: "02011701",
+      productFullCode: "02011701000000000000",
+      productName: "Melon",
+      packageCode: "19",
+      packageName: "Box 10",
+      packageWeight: 20,
+      range: {
+        workerRanges: {
+          range1To50: 1,
+          range51To100: 2,
+          range101To200: 3,
+          range201To400: 4,
+          range401To600: 4,
+          rangeOver600: 5,
+        },
+      },
+      status: "ACTIVE",
+    }
+  );
+  state.masterRates.push(
+    {
+      id: 1,
+      sourceRateId: 1,
+      marketCode: "0000",
+      weightRangeName: "1-25.0",
+      weightMin: new Prisma.Decimal("0.00"),
+      weightMax: new Prisma.Decimal("25.00"),
+      stallRate: new Prisma.Decimal("1.50"),
+      laborRate: new Prisma.Decimal("0.90"),
+      status: 1,
+    },
+    {
+      id: 2,
+      sourceRateId: 2,
+      marketCode: "0000",
+      weightRangeName: "25.1-50.0",
+      weightMin: new Prisma.Decimal("25.00"),
+      weightMax: new Prisma.Decimal("50.00"),
+      stallRate: new Prisma.Decimal("3.50"),
+      laborRate: new Prisma.Decimal("2.59"),
+      status: 1,
+    }
+  );
 }
 
 /* -------------------------------------- Test Data Builders -------------------------------------- */
@@ -448,6 +657,9 @@ export function resetRouteTestState(): void {
   state.ticketRatings.length = 0;
   state.lineActionTokens.length = 0;
   state.gateRequestLogs.length = 0;
+  state.masterMarkets.length = 0;
+  state.masterProducts.length = 0;
+  state.masterRates.length = 0;
   state.gateClients.clear();
   state.shiftAttendances.length = 0;
   state.authAccountsByUsername.clear();
@@ -468,6 +680,7 @@ export function resetRouteTestState(): void {
   state.nextLineActionTokenId = 1;
   state.nextGateClientId = 1;
   state.nextShiftAttendanceId = 1;
+  seedMasterDataForRouteTests();
 }
 
 // Function จัดการ add worker สำหรับ test
@@ -968,7 +1181,7 @@ const workerApplicationRepositoryMock = {
     state.assignments.filter(
       (assignment) =>
         assignment.vehicle_job_id === vehicleJobId &&
-            ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
+        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
     ).length,
   createAssignment: async (
     vehicleJobId: number,
@@ -1568,12 +1781,51 @@ const gateRepositoryMock = {
       existing_booth_count: boothCodes.size,
       duplicate_booth: duplicateBooth
         ? {
-            boothCode: duplicateBooth.boothCode,
-            marketCode: duplicateBooth.marketCode ?? "",
-          }
+          boothCode: duplicateBooth.boothCode,
+          marketCode: duplicateBooth.marketCode ?? "",
+        }
         : null,
     };
   },
+  findActiveMarketBoothByCodes: async (marketCode: string, boothCode: string) =>
+    state.masterMarkets.find(
+      (market) =>
+        market.marketCode === marketCode &&
+        market.boothCode === boothCode &&
+        market.boothStatus === "Normal" &&
+        (market.marketStatus === null || market.marketStatus === "Normal")
+    ) ?? null,
+  findActiveProductByFullCodeAndPackageCode: async (
+    productFullCode: string,
+    packageCode: string
+  ) =>
+    state.masterProducts.find(
+      (product) =>
+        product.productFullCode === productFullCode &&
+        product.packageCode === packageCode &&
+        product.status === "ACTIVE"
+    ) ?? null,
+  findActiveProductsByProductCodeAndPackageCode: async (
+    productCode: string,
+    packageCode: string
+  ) =>
+    state.masterProducts.filter(
+      (product) =>
+        product.productCode === productCode &&
+        product.packageCode === packageCode &&
+        product.status === "ACTIVE"
+    ),
+  findActiveRatesByMarketAndWeight: async (
+    marketCode: string,
+    packageWeight: Prisma.Decimal
+  ) =>
+    state.masterRates.filter(
+      (rate) =>
+        rate.marketCode === marketCode &&
+        rate.status === 1 &&
+        rate.weightMin.lt(packageWeight) &&
+        rate.weightMax.gte(packageWeight)
+    ),
   findActiveVendorLineTargetsByStall: async (_marketCode: string, boothCode: string) => [
     {
       line_user_id: `line-vendor-${boothCode.toLowerCase()}`,
@@ -1591,6 +1843,7 @@ const gateRepositoryMock = {
     booth_count: number;
     license_plate: string;
     vehicle_type?: string | null;
+    workers_required: number;
     dispatch_now?: boolean;
     markets: Array<{
       marketCode: string;
@@ -1604,6 +1857,7 @@ const gateRepositoryMock = {
         products: Array<{
           productCode: string;
           productName: string;
+          productFullCode?: string | null;
           packageCode: string;
           packageName: string;
           quantity: number;
@@ -1619,6 +1873,7 @@ const gateRepositoryMock = {
 
     if (!vehicleJob) {
       const vehicleJobId = Math.max(0, ...state.vehicleJobs.map((job) => job.id)) + 1;
+      const requestedWorkersRequired = Math.max(1, input.workers_required);
       vehicleJob = {
         id: vehicleJobId,
         ticketNo: input.ticketNo,
@@ -1627,7 +1882,7 @@ const gateRepositoryMock = {
         vehicle_type: input.vehicle_type ?? null,
         ticket_created_at: input.ticket_created_at.toISOString(),
         booth_count: input.booth_count,
-        workers_required: 1,
+        workers_required: requestedWorkersRequired,
         dispatch_now: dispatchNow,
         status: dispatchNow ? "WORKING" : "WAIT",
         driver_qr_token: `driver-qr-${vehicleJobId}`,
@@ -1638,12 +1893,16 @@ const gateRepositoryMock = {
 
       state.vehicleJobs.push(vehicleJob);
     } else {
+      const requestedWorkersRequired = Math.max(1, input.workers_required);
       vehicleJob.gate_transaction_ref = input.gate_transaction_ref;
       vehicleJob.license_plate = input.license_plate;
       vehicleJob.vehicle_type = input.vehicle_type ?? null;
       vehicleJob.ticket_created_at = input.ticket_created_at.toISOString();
       vehicleJob.booth_count = input.booth_count;
-      vehicleJob.workers_required = 1;
+      vehicleJob.workers_required = Math.max(
+        vehicleJob.workers_required,
+        requestedWorkersRequired
+      );
       vehicleJob.worker_qr_token = input.ticketNo;
       vehicleJob.dispatch_now = vehicleJob.dispatch_now || dispatchNow;
       if (dispatchNow && vehicleJob.status === "WAIT") {
@@ -2079,7 +2338,7 @@ const adminSettingsRepositoryMock = {
     },
   },
   listSettings: async () => [],
-  upsertSettings: async () => {},
+  upsertSettings: async () => { },
 };
 
 const gateClientRepositoryMock = {
@@ -2448,9 +2707,9 @@ export type TestServer = {
 function shouldReturnExternalBody(body: unknown, forceExternal?: boolean): boolean {
   return Boolean(
     forceExternal ||
-      (body &&
-        typeof body === "object" &&
-        ("Result" in body || "Ticket" in body))
+    (body &&
+      typeof body === "object" &&
+      ("Result" in body || "Ticket" in body))
   );
 }
 
@@ -2514,4 +2773,3 @@ export function restoreRouteTestLoader(): void {
   moduleWithLoad._load = originalLoad;
   patched = false;
 }
-

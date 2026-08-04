@@ -9,10 +9,10 @@ import { ACCOUNT_ROLES, ACCOUNT_SOURCES, type AccountDto, type AccountRole, type
 
 /* -------------------------------------- Functions -------------------------------------- */
 
+// Function แปลงวันที่จาก DB เป็น ISO string สำหรับ DTO
 function toIsoString(value: Date): string;
 function toIsoString(value: string): string;
 function toIsoString(value: Date | null): string | null;
-// Function จัดการ เป็น ISO string จาก DB
 function toIsoString(value: Date | string | null): string | null {
   if (value instanceof Date) {
     return value.toISOString();
@@ -30,9 +30,9 @@ function toDateString(value: Date | string): string {
   return value.trim().slice(0, 10);
 }
 
+// Function ตัดข้อมูล sensitive และข้อมูล sync ภายในออกจาก account response
 export function sanitizeAccount(account: AccountDto): SafeAccountDto;
 export function sanitizeAccount(account: null): null;
-// Function จัดการ sanitize account จาก DB
 export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | null {
   if (!account) {
     return null;

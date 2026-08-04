@@ -50,6 +50,7 @@ const requestKeyMap: Record<string, string> = {
   PackageName: "packageName",
   PermissionLevel: "permission_level",
   ProductCode: "productCode",
+  ProductFullCode: "productFullCode",
   ProductCount: "product_count",
   ProductName: "productName",
   QrToken: "qr_token",
