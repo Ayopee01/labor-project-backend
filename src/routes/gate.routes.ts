@@ -21,4 +21,19 @@ router.post(
   }
 );
 
+// TODO: REMOVE BEFORE PRODUCTION
+// Route ไว้ทดสอบ Gate สำหรับดึงรายการตลาด แผงค้า สินค้า และแพ็กเกจ
+router.get(
+  "/options",
+  gateClientAuthMiddleware,
+  async (req, res, next) => {
+    try {
+      const result = await gateService.getGateOptions(req.query);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;

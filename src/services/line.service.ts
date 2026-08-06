@@ -76,8 +76,8 @@ function parseLinePostback(data: string | undefined): {
   return {
     action:
       action === "vendor_confirm_completion" ||
-      action === "vendor_reject_completion" ||
-      action === "vendor_rate_ticket"
+        action === "vendor_reject_completion" ||
+        action === "vendor_rate_ticket"
         ? action
         : null,
     token: params.get("token"),
@@ -222,9 +222,9 @@ export async function handleLineWebhook(
         );
         const vendorLineTargets = ticket
           ? await workerApplicationRepository.listActiveVendorLineTargetsForTicket(
-              ticket.id,
-              transaction
-            )
+            ticket.id,
+            transaction
+          )
           : [];
         const vendorLineTarget = vendorLineTargets.find(
           (target) => target.line_user_id === lineUserId
@@ -297,7 +297,7 @@ export async function handleLineWebhook(
           ticket: ratingResult.ticket,
           detail: ratingResult.detail,
           score: ratingResult.rating.score,
-          serviceChargeBaht: 0,
+          stallAmountBaht: 0,
         }),
       });
 
@@ -338,9 +338,9 @@ export async function handleLineWebhook(
       );
       const vendorLineTargets = ticket
         ? await workerApplicationRepository.listActiveVendorLineTargetsForTicket(
-            ticket.id,
-            transaction
-          )
+          ticket.id,
+          transaction
+        )
         : [];
       const vendorLineTarget = vendorLineTargets.find(
         (target) => target.line_user_id === lineUserId

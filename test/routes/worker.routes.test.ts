@@ -163,12 +163,10 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.deepEqual(Object.keys(response.body).sort(), [
     "Booths",
     "Market",
-    "OrderRemainder",
     "Qr",
     "Result",
     "Ticket",
     "WorkerCount",
-    "WorkerPayment",
   ]);
   assert.deepEqual(Object.keys(response.body.Ticket).sort(), [
     "BoothCount",
@@ -204,21 +202,15 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(firstProduct.PackageName, "Crate 20");
   assert.equal(firstProduct.Quantity, 180);
   assert.equal(response.body.WorkerCount, 3);
-  assert.deepEqual(firstBooth.StallPayment, {
-    Amount: "432.00",
-    RoundingAmount: "0.00",
-  });
-  assert.deepEqual(response.body.WorkerPayment, {
-    AmountPerWorker: "54.00",
-    WorkerCount: 3,
-    TotalAmount: "162.00",
-    DeductedRemainder: "0.00",
-  });
-  assert.deepEqual(response.body.OrderRemainder, {
-    StallRoundingAmount: "0.00",
-    WorkerDeductedAmount: "0.00",
-    TotalAmount: "0.00",
-  });
+
+  assert.equal(firstProduct.WorkerCount, 3);
+  assert.equal(firstProduct.StallAmount, undefined);
+  assert.equal(firstProduct.WorkerPayment, undefined);
+  assert.equal(firstBooth.StallPayment, undefined);
+  assert.equal(firstBooth.WorkerPayment, undefined);
+  assert.equal(response.body.WorkerPayment, undefined);
+  assert.equal(response.body.OrderRemainder, undefined);
+
   assert.equal(response.body.Qr.WorkerQrToken, "TKT-20260723-001");
   assert.equal(response.body.message, undefined);
   assert.equal(response.body.vehicle_job, undefined);
@@ -241,6 +233,21 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(state.ticketProducts[0].productCode, "02020300");
   assert.equal(state.ticketProducts[0].packageCode, "29");
   assert.equal(state.ticketProducts[0].packageName, "Crate 20");
+
+  const savedProduct = state.ticketProducts[0];
+  assert.equal(savedProduct.productFullCode, "02020300000000000000");
+  assert.equal(savedProduct.package_weight_snapshot, "20");
+  assert.equal(savedProduct.rate_id_snapshot, 1);
+  assert.equal(savedProduct.source_rate_id_snapshot, 1);
+  assert.equal(savedProduct.rate_market_code, "0000");
+  assert.equal(savedProduct.rate_source, "CENTRAL_RATE");
+  assert.equal(savedProduct.weight_range_name, "1-25.0");
+  assert.equal(savedProduct.weight_min_snapshot, "0");
+  assert.equal(savedProduct.weight_max_snapshot, "25");
+  assert.equal(savedProduct.stall_rate_snapshot, "1.5");
+  assert.equal(savedProduct.labor_rate_snapshot, "0.9");
+  assert.ok(savedProduct.rate_snapshot_at);
+  assert.equal(savedProduct.confirmed_quantity, null); // Gate Create ยังไม่มีจำนวนจริง
 
   assert.equal(state.lineMessages.length, 2);
   const gateLineMessage = state.lineMessages[0] as {
@@ -322,12 +329,10 @@ test("POST /api/gate/tickets replays the same Gate request", async () => {
   assert.deepEqual(Object.keys(replayed.body).sort(), [
     "Booths",
     "Market",
-    "OrderRemainder",
     "Qr",
     "Result",
     "Ticket",
     "WorkerCount",
-    "WorkerPayment",
   ]);
   assert.equal(replayed.body.Result, "REPLAYED");
   assert.equal(replayed.body.Ticket.TicketNo, "TKT-20260723-002");

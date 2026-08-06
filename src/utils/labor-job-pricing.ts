@@ -32,28 +32,36 @@ export type WorkerRequirementCalculation = {
   requiredWorkerCount: number;
 };
 
-export type JobPaymentCalculationInput = {
-  quantity: number;
+export type ProductStallChargeCalculationInput = {
+  quantity: Prisma.Decimal;
   stallRate: Prisma.Decimal;
   laborRate: Prisma.Decimal;
-  actualLaborCount: number;
 };
 
-export type JobPaymentCalculation = {
-  quantity: number;
+export type ProductStallChargeCalculation = {
+  quantity: Prisma.Decimal;
+
   stallRate: Prisma.Decimal;
   laborRate: Prisma.Decimal;
-  stallFee: Prisma.Decimal;
-  laborFee: Prisma.Decimal;
-  rawTotalFee: Prisma.Decimal;
-  totalFee: Prisma.Decimal;
-  roundingAmount: Prisma.Decimal;
-  actualLaborCount: number;
-  workerRawPayEach: Prisma.Decimal;
-  workerPayEach: Prisma.Decimal;
-  workerPayRemainderEach: Prisma.Decimal;
-  workerPayoutTotal: Prisma.Decimal;
-  fundAmount: Prisma.Decimal;
+  stallFeeRaw: Prisma.Decimal;// Quantity × PackagePrice
+  stallFeeRounded: Prisma.Decimal;// CEIL(stallFeeRaw)
+  laborFeeRaw: Prisma.Decimal;// Quantity × PackageRate
+  productCharge: Prisma.Decimal;// CEIL(stallFeeRounded + laborFeeRaw)
+};
+
+export type ProductWorkerPaymentCalculationInput = {
+  laborFeeRaw: Prisma.Decimal;
+  actualWorkerCount: number;
+};
+
+export type ProductWorkerPaymentCalculation = {
+  laborFeeRaw: Prisma.Decimal;
+  actualWorkerCount: number;
+  rawAmountPerWorker: Prisma.Decimal;  // ค่าแรงเต็ม ÷ Worker
+  finalAmountPerWorker: Prisma.Decimal;  // เงินเต็มที่ Worker ได้จริง
+  remainderAmountPerWorker: Prisma.Decimal;  // เศษของ Worker 1 คน
+  workerPayoutTotal: Prisma.Decimal;  // เงินที่ Worker ทุกคนได้รับจริงรวมกัน
+  fundAmount: Prisma.Decimal;  // เศษทั้งหมดของ Product ที่เข้ากองทุน
 };
 
 /* -------------------------------------- Config -------------------------------------- */
@@ -77,6 +85,28 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 // Function throws a consistent API error for invalid integer inputs.
 function assertPositiveInteger(value: number, code: string, message: string): void {
   if (!Number.isInteger(value) || value <= 0) {
+    throw new ApiError(400, code, message);
+  }
+}
+
+// Function validates that a Decimal value is finite and greater than zero.
+function assertPositiveDecimal(
+  value: Prisma.Decimal,
+  code: string,
+  message: string
+): void {
+  if (!value.isFinite() || value.lte(0)) {
+    throw new ApiError(400, code, message);
+  }
+}
+
+// Function validates that a Decimal value is finite and not negative.
+function assertNonNegativeDecimal(
+  value: Prisma.Decimal,
+  code: string,
+  message: string
+): void {
+  if (!value.isFinite() || value.isNegative()) {
     throw new ApiError(400, code, message);
   }
 }
@@ -183,53 +213,160 @@ export function packageWeightToDecimal(packageWeight: number): Prisma.Decimal {
   return new Prisma.Decimal(String(packageWeight));
 }
 
-// Function calculates stall charge and labor payout using Decimal arithmetic only.
-export function calculateJobPayment(
-  input: JobPaymentCalculationInput
-): JobPaymentCalculation {
-  assertPositiveInteger(input.quantity, "INVALID_QUANTITY", "Quantity must be a positive integer.");
-  assertPositiveInteger(
-    input.actualLaborCount,
-    "ACTUAL_LABOR_COUNT_INVALID",
-    "Actual labor count must be a positive integer."
+// Function calculates the final stall charge for one product using Method A.
+//
+// Method A:
+// 1. stallFeeRaw     = quantity × stallRate
+// 2. stallFeeRounded = CEIL(stallFeeRaw)
+// 3. laborFeeRaw     = quantity × laborRate
+// 4. productCharge   = CEIL(stallFeeRounded + laborFeeRaw)
+//
+// Each product must be calculated and rounded independently
+// before productCharge values are summed into the booth total.
+export function calculateProductStallCharge(
+  input: ProductStallChargeCalculationInput
+): ProductStallChargeCalculation {
+  assertPositiveDecimal(
+    input.quantity,
+    "INVALID_QUANTITY",
+    "Quantity must be greater than zero."
   );
 
-  const quantity = new Prisma.Decimal(input.quantity);
-  const stallFee = quantity.mul(input.stallRate);
-  const laborFee = quantity.mul(input.laborRate);
-  const rawTotalFee = stallFee.plus(laborFee);
-  const totalFee = rawTotalFee.ceil();
-  const roundingAmount = totalFee.minus(rawTotalFee);
-  const workerRawPayEach = laborFee.div(input.actualLaborCount);
-  const workerPayEach = workerRawPayEach.floor();
-  const workerPayRemainderEach = workerRawPayEach.minus(workerPayEach);
-  const workerPayoutTotal = workerPayEach.mul(input.actualLaborCount);
-  const fundAmount = laborFee.minus(workerPayoutTotal);
+  assertNonNegativeDecimal(
+    input.stallRate,
+    "INVALID_STALL_RATE",
+    "Stall rate must not be negative."
+  );
+
+  assertNonNegativeDecimal(
+    input.laborRate,
+    "INVALID_LABOR_RATE",
+    "Labor rate must not be negative."
+  );
+
+  const stallFeeRaw =
+    input.quantity.mul(input.stallRate);
+
+  // Method A:
+  // ปัดส่วนแผงขึ้นก่อน
+  const stallFeeRounded =
+    stallFeeRaw.ceil();
+
+  // ค่าแรงยังไม่ปัด
+  const laborFeeRaw =
+    input.quantity.mul(input.laborRate);
+
+  // เอายอดแผงที่ปัดแล้ว + ค่าแรง
+  // แล้วปัดขึ้นอีกครั้งเป็นยอด Product สุดท้าย
+  const productCharge =
+    stallFeeRounded
+      .plus(laborFeeRaw)
+      .ceil();
 
   if (
-    fundAmount.isNegative() ||
-    !workerPayoutTotal.plus(fundAmount).equals(laborFee)
+    stallFeeRounded.lt(stallFeeRaw) ||
+    productCharge.lt(
+      stallFeeRounded.plus(laborFeeRaw)
+    )
   ) {
     throw new ApiError(
       500,
-      "PAYMENT_CALCULATION_INVALID",
-      "Labor payment calculation is invalid."
+      "STALL_PAYMENT_CALCULATION_INVALID",
+      "Stall payment calculation is invalid."
     );
   }
 
   return {
     quantity: input.quantity,
+
     stallRate: input.stallRate,
     laborRate: input.laborRate,
-    stallFee,
-    laborFee,
-    rawTotalFee,
-    totalFee,
-    roundingAmount,
-    actualLaborCount: input.actualLaborCount,
-    workerRawPayEach,
-    workerPayEach,
-    workerPayRemainderEach,
+
+    stallFeeRaw,
+    stallFeeRounded,
+    laborFeeRaw,
+    productCharge,
+  };
+}
+
+// Function splits one product's labor fee equally among
+// the workers who belong to the booth when the ticket completes.
+//
+// Worker receives whole baht only.
+// The fractional remainder from every worker is retained as fund.
+export function calculateProductWorkerPayment(
+  input: ProductWorkerPaymentCalculationInput
+): ProductWorkerPaymentCalculation {
+  assertNonNegativeDecimal(
+    input.laborFeeRaw,
+    "INVALID_LABOR_FEE",
+    "Labor fee must not be negative."
+  );
+
+  assertPositiveInteger(
+    input.actualWorkerCount,
+    "ACTUAL_WORKER_COUNT_INVALID",
+    "Actual worker count must be a positive integer."
+  );
+
+  // ค่าแรงเต็มของ Product ÷ Worker จริงในแผง
+  const rawAmountPerWorker =
+    input.laborFeeRaw.div(
+      input.actualWorkerCount
+    );
+
+  // Worker รับเฉพาะจำนวนบาทเต็ม
+  const finalAmountPerWorker =
+    rawAmountPerWorker.floor();
+
+  // เศษของ Worker คนนี้
+  const remainderAmountPerWorker =
+    rawAmountPerWorker.minus(
+      finalAmountPerWorker
+    );
+
+  // จำนวนเงิน Worker ทุกคนได้รับจริง
+  const workerPayoutTotal =
+    finalAmountPerWorker.mul(
+      input.actualWorkerCount
+    );
+
+  // Fund ต้องคำนวณจากก้อนจริง
+  //
+  // ห้ามใช้:
+  // remainderAmountPerWorker × workerCount
+  //
+  // เพราะเลขหารไม่ลงตัวอาจมีปัญหา precision
+  const fundAmount =
+    input.laborFeeRaw.minus(
+      workerPayoutTotal
+    );
+
+  if (
+    fundAmount.isNegative() ||
+    remainderAmountPerWorker.isNegative() ||
+    !workerPayoutTotal
+      .plus(fundAmount)
+      .equals(input.laborFeeRaw)
+  ) {
+    throw new ApiError(
+      500,
+      "WORKER_PAYMENT_CALCULATION_INVALID",
+      "Worker payment calculation is invalid."
+    );
+  }
+
+  return {
+    laborFeeRaw:
+      input.laborFeeRaw,
+
+    actualWorkerCount:
+      input.actualWorkerCount,
+
+    rawAmountPerWorker,
+    finalAmountPerWorker,
+    remainderAmountPerWorker,
+
     workerPayoutTotal,
     fundAmount,
   };

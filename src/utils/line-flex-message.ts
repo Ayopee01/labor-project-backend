@@ -53,8 +53,8 @@ function formatQuantity(
   return Number.isInteger(numberValue)
     ? String(numberValue)
     : numberValue
-        .toFixed(2)
-        .replace(/\.?0+$/, "");
+      .toFixed(2)
+      .replace(/\.?0+$/, "");
 }
 
 // Function format จำนวนเงินเป็น 2 ตำแหน่ง
@@ -322,6 +322,7 @@ export function buildGateTicketCreatedFlexMessage(
           response.Ticket.LicensePlate
         ),
 
+
         separator(),
 
         {
@@ -335,29 +336,6 @@ export function buildGateTicketCreatedFlexMessage(
         },
 
         ...productRows,
-
-        separator(),
-
-        fieldRow(
-          "ยอดชำระ:",
-          `${formatMoney(
-            booth.StallPayment.Amount
-          )} บาท`
-        ),
-
-        ...(Number(
-          booth.StallPayment.RoundingAmount
-        ) > 0
-          ? [
-              fieldRow(
-                "ยอดปัดเศษ:",
-                `${formatMoney(
-                  booth.StallPayment
-                    .RoundingAmount
-                )} บาท`
-              ),
-            ]
-          : []),
 
         separator(),
 
@@ -416,9 +394,8 @@ export function buildVendorCompletionReviewFlexMessage(input: {
     type: "flex",
 
     altText:
-      `กรุณาตรวจสอบข้อมูล ${
-        input.detail?.vehicle_job.ticketNo ??
-        input.ticket.boothCode
+      `กรุณาตรวจสอบข้อมูล ${input.detail?.vehicle_job.ticketNo ??
+      input.ticket.boothCode
       }`,
 
     contents: buildBubble(
@@ -535,9 +512,8 @@ export function buildVendorRatingPromptFlexMessage(input: {
     type: "flex",
 
     altText:
-      `กรุณาให้คะแนน ${
-        input.detail?.vehicle_job.ticketNo ??
-        input.ticket.boothCode
+      `กรุณาให้คะแนน ${input.detail?.vehicle_job.ticketNo ??
+      input.ticket.boothCode
       }`,
 
     contents: buildBubble(
@@ -580,14 +556,11 @@ export function buildVendorRatingResultFlexMessages(input: {
   ticket: GateTicketDto;
   detail: VehicleJobDetailResponse | null;
   score: number;
-  serviceChargeBaht?: number;
+  stallAmountBaht: number;
 }): LineMessage[] {
   const ticketNo =
     input.detail?.vehicle_job.ticketNo ??
     "-";
-
-  const serviceChargeBaht =
-    input.serviceChargeBaht ?? 0;
 
   const stars =
     `${"★".repeat(input.score)}` +
@@ -671,7 +644,7 @@ export function buildVendorRatingResultFlexMessages(input: {
           {
             type: "text",
             text:
-              `${serviceChargeBaht.toFixed(
+              `${input.stallAmountBaht.toFixed(
                 2
               )} บาท`,
             size: "xl",

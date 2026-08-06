@@ -559,22 +559,163 @@ test("labor job pricing calculates required workers by quantity range", () => {
   );
 });
 
-test("labor job pricing calculates stall charge and labor payment with Decimal", () => {
-  const payment = laborJobPricing.calculateJobPayment({
-    quantity: 500,
-    stallRate: new Prisma.Decimal("6.00"),
-    laborRate: new Prisma.Decimal("4.44"),
-    actualLaborCount: 9,
-  });
+// Test Method A โดยเฉพาะ
+test("labor job pricing calculates stall charge using Method A", () => {
+  const payment =
+    laborJobPricing.calculateProductStallCharge({
+      quantity:
+        new Prisma.Decimal("1"),
 
-  assert.equal(laborJobPricing.decimalToMoneyString(payment.stallFee), "3000.00");
-  assert.equal(laborJobPricing.decimalToMoneyString(payment.laborFee), "2220.00");
-  assert.equal(laborJobPricing.decimalToMoneyString(payment.rawTotalFee), "5220.00");
-  assert.equal(laborJobPricing.decimalToMoneyString(payment.totalFee), "5220.00");
-  assert.equal(laborJobPricing.decimalToMoneyString(payment.workerPayEach), "246.00");
-  assert.equal(laborJobPricing.decimalToMoneyString(payment.workerPayoutTotal), "2214.00");
-  assert.equal(laborJobPricing.decimalToMoneyString(payment.fundAmount), "6.00");
-  assert.equal(payment.workerPayoutTotal.plus(payment.fundAmount).equals(payment.laborFee), true);
+      stallRate:
+        new Prisma.Decimal("3.20"),
+
+      laborRate:
+        new Prisma.Decimal("0.10"),
+    });
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.stallFeeRaw
+    ),
+    "3.20"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.stallFeeRounded
+    ),
+    "4.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.laborFeeRaw
+    ),
+    "0.10"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.productCharge
+    ),
+    "5.00"
+  );
+});
+
+// Test ตัวอย่าง Worker จากไฟล์ Rate
+test("labor job pricing splits labor payment and stores worker remainders as fund", () => {
+  const payment =
+    laborJobPricing.calculateProductWorkerPayment({
+      laborFeeRaw:
+        new Prisma.Decimal("818.10"),
+
+      actualWorkerCount:
+        9,
+    });
+
+  assert.equal(
+    payment.rawAmountPerWorker.toFixed(8),
+    "90.90000000"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.finalAmountPerWorker
+    ),
+    "90.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.remainderAmountPerWorker
+    ),
+    "0.90"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.workerPayoutTotal
+    ),
+    "810.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.fundAmount
+    ),
+    "8.10"
+  );
+
+  assert.equal(
+    payment.workerPayoutTotal
+      .plus(payment.fundAmount)
+      .equals(payment.laborFeeRaw),
+    true
+  );
+});
+
+//Test กรณีหารไม่ลงตัว
+test("labor job pricing calculates fund from labor fee instead of rounded worker remainder", () => {
+  const payment =
+    laborJobPricing.calculateProductWorkerPayment({
+      laborFeeRaw:
+        new Prisma.Decimal("100.00"),
+
+      actualWorkerCount:
+        3,
+    });
+
+  assert.equal(
+    payment.rawAmountPerWorker.toFixed(8),
+    "33.33333333"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.finalAmountPerWorker
+    ),
+    "33.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.workerPayoutTotal
+    ),
+    "99.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      payment.fundAmount
+    ),
+    "1.00"
+  );
+
+  assert.equal(
+    payment.workerPayoutTotal
+      .plus(payment.fundAmount)
+      .equals(payment.laborFeeRaw),
+    true
+  );
+});
+
+// Test validation เพิ่ม
+test("labor job pricing rejects invalid worker count", () => {
+  assert.throws(
+    () =>
+      laborJobPricing.calculateProductWorkerPayment({
+        laborFeeRaw:
+          new Prisma.Decimal("100.00"),
+
+        actualWorkerCount:
+          0,
+      }),
+
+    (error) =>
+      error instanceof ApiError &&
+      error.code ===
+        "ACTUAL_WORKER_COUNT_INVALID"
+  );
 });
 
 /* -------------------------------------- Shift Tests -------------------------------------- */

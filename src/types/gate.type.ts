@@ -1,21 +1,96 @@
+/* -------------------------------------- Gate Options -------------------------------------- */
+
+// Type ตัวเลือกตลาดสำหรับหน้า Gate UI
+export interface GateMarketOption {
+  MarketCode: string;
+  MarketName: string;
+}
+
+// Type ตัวเลือกแผงค้าสำหรับหน้า Gate UI
+export interface GateBoothOption {
+  BoothCode: string;
+  BoothName: string;
+}
+
+// Type ตัวเลือกแพ็กเกจของสินค้า
+export interface GatePackageOption {
+  PackageCode: string;
+  PackageName: string;
+  PackageWeight: number;
+}
+
+// Type ตัวเลือกสินค้าพร้อมแพ็กเกจ
+export interface GateProductOption {
+  ProductCode: string;
+  ProductName: string;
+  Packages: GatePackageOption[];
+}
+
+// Type response สำหรับ Dropdown/Select ของ Gate UI
+export interface GateOptionsResponse {
+  Markets: GateMarketOption[];
+  Booths: GateBoothOption[];
+  Products: GateProductOption[];
+}
+
 /* -------------------------------------- Gate Create Input -------------------------------------- */
 
 // Type ข้อมูลสินค้าก่อนบันทึกจาก Gate
+//
+// quantity:
+// - เป็นจำนวนที่ Gate ส่งมา
+// - ใช้สำหรับคำนวณจำนวน Worker ที่ต้อง Dispatch จาก Master
+// - ยังไม่ใช่จำนวนที่ใช้คิดเงินจริง
+//
+// Rate Snapshot:
+// - Snapshot ตอน Gate Create
+// - จะถูกนำกลับมาใช้ตอน Ticket/Booth COMPLETE
+// - ตอน COMPLETE จะใช้ confirmedQuantity แทน quantity
 interface GateProductCreateInput {
   productCode: string;
-  productName: string;
   productFullCode: string;
+  productName: string;
+
   packageCode: string;
   packageName: string;
+
   quantity: number;
+
+  packageWeightSnapshot: string;
+
+  rateIdSnapshot: number;
+  sourceRateIdSnapshot: number;
+
+  // MarketCode ของ Rate ที่ถูกใช้จริง
+  // อาจเป็นตลาดที่ร้องขอ หรือ "0000" กรณีใช้ Central Rate
+  rateMarketCode: string;
+
+  rateSource:
+  | "MARKET_RATE"
+  | "CENTRAL_RATE";
+
+  weightRangeName: string;
+  weightMinSnapshot: string;
+  weightMaxSnapshot: string;
+
+  // PackagePrice
+  stallRateSnapshot: string;
+
+  // PackageRate
+  laborRateSnapshot: string;
+
+  // เวลาที่ Snapshot Rate
+  rateSnapshotAt: Date;
 }
 
 // Type ข้อมูลแผงก่อนบันทึกจาก Gate
 interface GateTicketCreateInput {
   boothCode: string;
   boothName: string;
+
   vendor_line_id?: string;
   reject_reason?: string;
+
   products: GateProductCreateInput[];
 }
 
@@ -23,20 +98,33 @@ interface GateTicketCreateInput {
 interface GateMarketCreateInput {
   marketCode: string;
   marketName: string;
+
   dropoff_point?: string;
+
   tickets: GateTicketCreateInput[];
 }
 
 // Type ข้อมูลสำหรับสร้าง VehicleJob จาก Gate
 export interface GateVehicleJobCreateInput {
   gate_transaction_ref: string;
+
   ticketNo: string;
   ticket_created_at: Date;
+
   booth_count: number;
+
   license_plate: string;
   vehicle_type?: string;
+
+  // จำนวน Worker ที่ Master กำหนด
+  // ใช้สำหรับ Dispatch เท่านั้น
+  //
+  // ห้ามใช้เป็นจำนวน Worker สำหรับหารเงินจริง
+  // เพราะ Financial จะใช้ Worker จริงที่อยู่ใน Booth ตอน COMPLETE
   workers_required: number;
+
   dispatch_now?: boolean;
+
   markets: GateMarketCreateInput[];
 }
 
@@ -46,6 +134,9 @@ export interface GateVehicleJobCreateInput {
 export interface GateVehicleJobProductBody {
   ProductCode: string;
   PackageCode: string;
+
+  // จำนวนจาก Gate
+  // ใช้หา Worker requirement จาก Master
   Quantity: number;
 }
 
@@ -59,11 +150,13 @@ export interface GateVehicleJobBoothBody {
 export interface GateVehicleJobBody {
   TicketNo: string;
   TicketCreatedAt: string;
+
   BoothCount: number;
 
   MarketCode: string;
 
   LicensePlate: string;
+
   VehicleTypeCode: string;
   VehicleTypeName: string;
 
@@ -88,10 +181,14 @@ export type GateVehicleJobResponseStatus =
 interface GateVehicleJobResponseTicket {
   TicketNo: string;
   TicketCreatedAt: string;
+
   BoothCount: number;
+
   LicensePlate: string;
+
   VehicleTypeCode: string | null;
   VehicleTypeName: string | null;
+
   Status: GateVehicleJobResponseStatus;
 }
 
@@ -102,47 +199,45 @@ interface GateVehicleJobResponseMarket {
 }
 
 // Type ข้อมูล Product ที่คืนให้ Gate
+//
+// ไม่มีข้อมูลเงินจริงในขั้นตอน Gate Create
+// เพราะยังไม่มี confirmedQuantity และยังไม่มี Worker จริง ณ ตอน Complete
 interface GateVehicleJobResponseProduct {
   ProductCode: string;
   ProductFullCode: string;
   ProductName: string;
+
   PackageCode: string;
   PackageName: string;
-  Quantity: number;
-}
 
-// Type ยอดเงินของแผง
-interface GateVehicleJobResponseStallPayment {
-  Amount: string;
-  RoundingAmount: string;
+  // จำนวนที่ Gate ส่งเข้ามา
+  Quantity: number;
+
+  // จำนวน Worker ที่ Master กำหนดสำหรับ Product นี้
+  // ใช้ด้าน Operation / Dispatch เท่านั้น
+  WorkerCount: number;
 }
 
 // Type ข้อมูล Booth ที่คืนให้ Gate
+//
+// ไม่มี StallPayment / WorkerPayment ในขั้นตอนนี้
 interface GateVehicleJobResponseBooth {
   BoothCode: string;
   BoothName: string | null;
 
   Products: GateVehicleJobResponseProduct[];
-
-  StallPayment: GateVehicleJobResponseStallPayment;
-}
-
-// Type เงินที่จ่ายให้ Worker
-interface GateVehicleJobResponseWorkerPayment {
-  AmountPerWorker: string;
-  WorkerCount: number;
-  TotalAmount: string;
-  DeductedRemainder: string;
-}
-
-// Type ยอดเศษรวมของ Order
-interface GateVehicleJobResponseOrderRemainder {
-  StallRoundingAmount: string;
-  WorkerDeductedAmount: string;
-  TotalAmount: string;
 }
 
 // Type response หลักของ Gate
+//
+// Gate Create จะคืนเฉพาะข้อมูล Operation
+// ยังไม่มี:
+// - StallPayment
+// - WorkerPayment
+// - OrderRemainder
+// - Fund
+//
+// Financial จะเกิดภายหลังเมื่อ Booth/Ticket COMPLETE
 export interface GateVehicleJobResponse {
   Result: GateVehicleJobResult;
 
@@ -152,11 +247,11 @@ export interface GateVehicleJobResponse {
 
   Booths: GateVehicleJobResponseBooth[];
 
+  // จำนวน Worker ที่ระบบต้อง Dispatch
+  // มาจาก Master Worker Range
+  //
+  // ไม่ใช่จำนวน Worker ที่ใช้หารเงินจริง
   WorkerCount: number;
-
-  WorkerPayment: GateVehicleJobResponseWorkerPayment;
-
-  OrderRemainder: GateVehicleJobResponseOrderRemainder;
 
   Qr: {
     DriverQrToken: string;
@@ -169,8 +264,11 @@ export interface GateVehicleJobResponse {
 // Type ข้อมูล Gate request สำหรับ replay
 export interface GateRequestReplayRecord {
   gate_transaction_ref: string;
+
   payload_snapshot: unknown;
-  response_snapshot: GateVehicleJobResponse | null;
+
+  response_snapshot:
+  GateVehicleJobResponse | null;
 }
 
 /* -------------------------------------- Vendor LINE -------------------------------------- */
@@ -178,7 +276,10 @@ export interface GateRequestReplayRecord {
 // Type LINE ปลายทางของ Vendor
 export interface GateVendorLineTargetDto {
   line_user_id: string;
-  target_type: "owner" | "member";
+
+  target_type:
+  | "owner"
+  | "member";
 }
 
 /* -------------------------------------- Gate Append -------------------------------------- */
@@ -186,6 +287,7 @@ export interface GateVendorLineTargetDto {
 // Type สถานะการเพิ่มแผงใน Ticket เดิม
 export interface GateTicketAppendStateDto {
   vehicle_job_id: number;
+
   booth_count: number;
   existing_booth_count: number;
 

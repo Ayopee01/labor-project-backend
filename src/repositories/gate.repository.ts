@@ -8,7 +8,7 @@ import { client, createRandomToken, requireDto } from "./shared/repository-utils
 
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
-import type { GateRequestReplayRecord, GateTicketAppendStateDto, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVendorLineTargetDto } from "../types/gate.type";
+import type { GateRequestReplayRecord, GateTicketAppendStateDto, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVendorLineTargetDto, GateBoothOption } from "../types/gate.type";
 import type { VehicleJobDto } from "../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -112,9 +112,9 @@ export async function getGateTicketAppendState(
     existing_booth_count: boothCodes.size,
     duplicate_booth: duplicateBooth
       ? {
-          boothCode: duplicateBooth.boothCode,
-          marketCode: duplicateBooth.marketJob.marketCode,
-        }
+        boothCode: duplicateBooth.boothCode,
+        marketCode: duplicateBooth.marketJob.marketCode,
+      }
       : null,
   };
 }
@@ -177,6 +177,126 @@ export async function findActiveVendorLineTargetsByStall(
   }
 
   return targets;
+}
+
+// TODO: REMOVE BEFORE PRODUCTION
+// Function ดึงรายการตลาดที่พร้อมใช้สำหรับ Gate UI
+export async function listGateMarketOptions(
+  marketCode?: string,
+  connection?: DbConnection
+) {
+  const db = client(connection);
+
+  return db.masterMarket.findMany({
+    where: {
+      ...(marketCode
+        ? {
+          marketCode,
+        }
+        : {}),
+      boothStatus: "Normal",
+      marketName: {
+        not: null,
+      },
+      OR: [
+        { marketStatus: null },
+        { marketStatus: "Normal" },
+      ],
+    },
+    select: {
+      marketCode: true,
+      marketName: true,
+    },
+    distinct: ["marketCode"],
+    orderBy: {
+      marketCode: "asc",
+    },
+  });
+}
+
+// TODO: REMOVE BEFORE PRODUCTION
+// Function ดึงรายการแผงของตลาดที่มี Vendor LINE mapping พร้อมใช้งาน
+export async function listGateBoothOptionsByMarketCode(
+  marketCode: string,
+  connection?: DbConnection
+): Promise<GateBoothOption[]> {
+  const db = client(connection);
+
+  const [marketBooths, vendorStalls] = await Promise.all([
+    db.masterMarket.findMany({
+      where: {
+        marketCode,
+        boothStatus: "Normal",
+        OR: [
+          { marketStatus: null },
+          { marketStatus: "Normal" },
+        ],
+      },
+      select: {
+        boothCode: true,
+        boothName: true,
+      },
+      orderBy: {
+        boothCode: "asc",
+      },
+    }),
+
+    db.masterOwnerStall.findMany({
+      where: {
+        marketCode,
+        status: "active",
+        ownerStatus: "Normal",
+        lineUserId: {
+          not: null,
+        },
+      },
+      select: {
+        boothCode: true,
+      },
+    }),
+  ]);
+
+  const configuredBoothCodes = new Set(
+    vendorStalls.map((stall) => stall.boothCode)
+  );
+
+  return marketBooths
+    .filter((booth) =>
+      configuredBoothCodes.has(booth.boothCode)
+    )
+    .map((booth) => ({
+      BoothCode: booth.boothCode,
+      BoothName: booth.boothName,
+    }));
+}
+
+// TODO: REMOVE BEFORE PRODUCTION
+// Function ดึงรายการสินค้าและแพ็กเกจที่ยังใช้งานอยู่สำหรับ Gate UI
+export async function listGateProductPackageOptions(
+  connection?: DbConnection
+) {
+  const db = client(connection);
+
+  return db.masterProduct.findMany({
+    where: {
+      status: "ACTIVE",
+    },
+    select: {
+      productCode: true,
+      productName: true,
+      packageCode: true,
+      packageName: true,
+      packageWeight: true,
+    },
+    orderBy: [
+      {
+        productCode: "asc",
+      },
+      {
+        packageCode: "asc",
+      },
+    ],
+  });
 }
 
 // Function ค้นหา master_product จาก productFullCode + packageCode ที่ยังใช้งานอยู่
@@ -298,22 +418,22 @@ export async function createVehicleJobFromGate(
       (dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT));
   const savedVehicleJob = shouldUpdateVehicle
     ? await db.vehicleJob.update({
-        where: {
-          id: vehicleJob.id,
-        },
-        data: {
-          gateTransactionRef: input.gate_transaction_ref,
-          licensePlate: input.license_plate,
-          vehicleType: input.vehicle_type ?? null,
-          ticketCreatedAt: input.ticket_created_at,
-          boothCount: input.booth_count,
-          workersRequired: savedWorkersRequired,
-          dispatchNow: existingVehicleJob.dispatchNow || dispatchNow,
-          status: dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT
-            ? vehicleStatus
-            : existingVehicleJob.status,
-        },
-      })
+      where: {
+        id: vehicleJob.id,
+      },
+      data: {
+        gateTransactionRef: input.gate_transaction_ref,
+        licensePlate: input.license_plate,
+        vehicleType: input.vehicle_type ?? null,
+        ticketCreatedAt: input.ticket_created_at,
+        boothCount: input.booth_count,
+        workersRequired: savedWorkersRequired,
+        dispatchNow: existingVehicleJob.dispatchNow || dispatchNow,
+        status: dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT
+          ? vehicleStatus
+          : existingVehicleJob.status,
+      },
+    })
     : vehicleJob;
   const marketStatus =
     savedVehicleJob.status === VEHICLE_JOB_STATUS.WORKING || dispatchNow
@@ -370,24 +490,112 @@ export async function createVehicleJobFromGate(
       for (const product of ticket.products) {
         await db.ticketProduct.upsert({
           where: {
-            ticketId_productCode: {
+            ticketId_productCode_packageCode: {
               ticketId: createdTicket.id,
               productCode: product.productCode,
+              packageCode: product.packageCode,
             },
           },
           update: {
-            productName: product.productName,
-            packageCode: product.packageCode,
-            packageName: product.packageName,
-            quantity: product.quantity,
+            productName:
+              product.productName,
+
+            productFullCode:
+              product.productFullCode,
+
+            packageName:
+              product.packageName,
+
+            quantity:
+              product.quantity,
+
+            packageWeightSnapshot:
+              product.packageWeightSnapshot,
+
+            rateIdSnapshot:
+              product.rateIdSnapshot,
+
+            sourceRateIdSnapshot:
+              product.sourceRateIdSnapshot,
+
+            rateMarketCode:
+              product.rateMarketCode,
+
+            rateSource:
+              product.rateSource,
+
+            weightRangeName:
+              product.weightRangeName,
+
+            weightMinSnapshot:
+              product.weightMinSnapshot,
+
+            weightMaxSnapshot:
+              product.weightMaxSnapshot,
+
+            stallRateSnapshot:
+              product.stallRateSnapshot,
+
+            laborRateSnapshot:
+              product.laborRateSnapshot,
+
+            rateSnapshotAt:
+              product.rateSnapshotAt,
           },
           create: {
-            ticketId: createdTicket.id,
-            productCode: product.productCode,
-            productName: product.productName,
-            packageCode: product.packageCode,
-            packageName: product.packageName,
-            quantity: product.quantity,
+            ticketId:
+              createdTicket.id,
+
+            productCode:
+              product.productCode,
+
+            productFullCode:
+              product.productFullCode,
+
+            productName:
+              product.productName,
+
+            packageCode:
+              product.packageCode,
+
+            packageName:
+              product.packageName,
+
+            quantity:
+              product.quantity,
+
+            packageWeightSnapshot:
+              product.packageWeightSnapshot,
+
+            rateIdSnapshot:
+              product.rateIdSnapshot,
+
+            sourceRateIdSnapshot:
+              product.sourceRateIdSnapshot,
+
+            rateMarketCode:
+              product.rateMarketCode,
+
+            rateSource:
+              product.rateSource,
+
+            weightRangeName:
+              product.weightRangeName,
+
+            weightMinSnapshot:
+              product.weightMinSnapshot,
+
+            weightMaxSnapshot:
+              product.weightMaxSnapshot,
+
+            stallRateSnapshot:
+              product.stallRateSnapshot,
+
+            laborRateSnapshot:
+              product.laborRateSnapshot,
+
+            rateSnapshotAt:
+              product.rateSnapshotAt,
           },
         });
       }

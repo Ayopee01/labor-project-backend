@@ -119,12 +119,26 @@ type WorkerShiftAttendanceRecord = {
 type TicketProductRecord = {
   id: number;
   ticket_id: number;
+
   productCode: string;
+  productFullCode: string | null;
   productName: string;
+
   packageCode: string;
   packageName: string;
   quantity: string;
   confirmed_quantity: string | null;
+  package_weight_snapshot: string | null;
+  rate_id_snapshot: number | null;
+  source_rate_id_snapshot: number | null;
+  rate_market_code: string | null;
+  rate_source: string | null;
+  weight_range_name: string | null;
+  weight_min_snapshot: string | null;
+  weight_max_snapshot: string | null;
+  stall_rate_snapshot: string | null;
+  labor_rate_snapshot: string | null;
+  rate_snapshot_at: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -856,24 +870,58 @@ export function addTicketForVehicleJob(
     {
       id: ticketId * 10 + 1,
       ticket_id: ticketId,
+
       productCode: `PRODUCT-${ticketId}-1`,
+      productFullCode: null,
       productName: "Apple",
+
       packageCode: "fruit",
       packageName: "kg",
+
       quantity: "10",
       confirmed_quantity: null,
+
+      package_weight_snapshot: null,
+      rate_id_snapshot: null,
+      source_rate_id_snapshot: null,
+      rate_market_code: null,
+      rate_source: null,
+      weight_range_name: null,
+      weight_min_snapshot: null,
+      weight_max_snapshot: null,
+      stall_rate_snapshot: null,
+      labor_rate_snapshot: null,
+      rate_snapshot_at: null,
+
       created_at: now,
       updated_at: now,
     },
     {
       id: ticketId * 10 + 2,
       ticket_id: ticketId,
+
       productCode: `PRODUCT-${ticketId}-2`,
+      productFullCode: null,
       productName: "Cabbage",
+
       packageCode: "vegetable",
       packageName: "box",
+
       quantity: "5",
       confirmed_quantity: null,
+
+      package_weight_snapshot: null,
+      rate_id_snapshot: null,
+      source_rate_id_snapshot: null,
+      rate_market_code: null,
+      rate_source: null,
+      weight_range_name: null,
+      weight_min_snapshot: null,
+      weight_max_snapshot: null,
+      stall_rate_snapshot: null,
+      labor_rate_snapshot: null,
+      rate_snapshot_at: null,
+
       created_at: now,
       updated_at: now,
     }
@@ -1857,10 +1905,23 @@ const gateRepositoryMock = {
         products: Array<{
           productCode: string;
           productName: string;
-          productFullCode?: string | null;
+          productFullCode: string;
           packageCode: string;
           packageName: string;
           quantity: number;
+          packageWeightSnapshot: string;
+          rateIdSnapshot: number;
+          sourceRateIdSnapshot: number;
+          rateMarketCode: string;
+          rateSource:
+          | "MARKET_RATE"
+          | "CENTRAL_RATE";
+          weightRangeName: string;
+          weightMinSnapshot: string;
+          weightMaxSnapshot: string;
+          stallRateSnapshot: string;
+          laborRateSnapshot: string;
+          rateSnapshotAt: Date;
         }>;
       }>;
     }>;
@@ -1947,6 +2008,7 @@ const gateRepositoryMock = {
             created_at: now,
             updated_at: now,
           };
+
           state.gateTickets.push(ticket);
         } else {
           ticket.marketName = market.marketName;
@@ -1958,31 +2020,113 @@ const gateRepositoryMock = {
         }
 
         ticketInput.products.forEach((product) => {
-          let ticketProduct = state.ticketProducts.find(
-            (item) =>
-              item.ticket_id === ticket.id &&
-              item.productCode === product.productCode
-          );
+          let ticketProduct =
+            state.ticketProducts.find(
+              (item) =>
+                item.ticket_id === ticket.id &&
+                item.productCode === product.productCode &&
+                item.packageCode === product.packageCode
+            );
 
           if (!ticketProduct) {
             ticketProduct = {
               id: productId++,
               ticket_id: ticket.id,
+
               productCode: product.productCode,
+              productFullCode: product.productFullCode,
               productName: product.productName,
+
               packageCode: product.packageCode,
               packageName: product.packageName,
+
               quantity: String(product.quantity),
               confirmed_quantity: null,
+
+              package_weight_snapshot:
+                product.packageWeightSnapshot,
+
+              rate_id_snapshot:
+                product.rateIdSnapshot,
+
+              source_rate_id_snapshot:
+                product.sourceRateIdSnapshot,
+
+              rate_market_code:
+                product.rateMarketCode,
+
+              rate_source:
+                product.rateSource,
+
+              weight_range_name:
+                product.weightRangeName,
+
+              weight_min_snapshot:
+                product.weightMinSnapshot,
+
+              weight_max_snapshot:
+                product.weightMaxSnapshot,
+
+              stall_rate_snapshot:
+                product.stallRateSnapshot,
+
+              labor_rate_snapshot:
+                product.laborRateSnapshot,
+
+              rate_snapshot_at:
+                product.rateSnapshotAt.toISOString(),
+
               created_at: now,
               updated_at: now,
             };
+
             state.ticketProducts.push(ticketProduct);
           } else {
-            ticketProduct.productName = product.productName;
-            ticketProduct.packageCode = product.packageCode;
-            ticketProduct.packageName = product.packageName;
-            ticketProduct.quantity = String(product.quantity);
+            ticketProduct.productFullCode =
+              product.productFullCode;
+
+            ticketProduct.productName =
+              product.productName;
+
+            ticketProduct.packageName =
+              product.packageName;
+
+            ticketProduct.quantity =
+              String(product.quantity);
+
+            ticketProduct.package_weight_snapshot =
+              product.packageWeightSnapshot;
+
+            ticketProduct.rate_id_snapshot =
+              product.rateIdSnapshot;
+
+            ticketProduct.source_rate_id_snapshot =
+              product.sourceRateIdSnapshot;
+
+            ticketProduct.rate_market_code =
+              product.rateMarketCode;
+
+            ticketProduct.rate_source =
+              product.rateSource;
+
+            ticketProduct.weight_range_name =
+              product.weightRangeName;
+
+            ticketProduct.weight_min_snapshot =
+              product.weightMinSnapshot;
+
+            ticketProduct.weight_max_snapshot =
+              product.weightMaxSnapshot;
+
+            ticketProduct.stall_rate_snapshot =
+              product.stallRateSnapshot;
+
+            ticketProduct.labor_rate_snapshot =
+              product.laborRateSnapshot;
+
+            ticketProduct.rate_snapshot_at =
+              product.rateSnapshotAt.toISOString();
+
             ticketProduct.updated_at = now;
           }
         });

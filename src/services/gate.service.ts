@@ -12,7 +12,7 @@ import * as workerApplicationRepository from "../repositories/worker.repository"
 import { publishNotification } from "./notifications.service";
 
 // Import Types
-import type { GateVehicleJobBody, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVehicleJobResponseStatus, GateVehicleJobResult } from "../types/gate.type";
+import type { GateOptionsResponse, GateProductOption, GateVehicleJobBody, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVehicleJobResponseStatus, GateVehicleJobResult } from "../types/gate.type";
 import type { DbConnection } from "../types/shared/common.type";
 import type { LineMessage } from "../types/line.type";
 import type { VehicleJobDetailResponse } from "../types/worker.type";
@@ -23,74 +23,73 @@ import { gateVehicleJobBodySchema } from "../validation/schemas";
 
 // Import Utils
 import ApiError from "../utils/api-error";
-import { calculateRequiredWorkerCount, decimalToMoneyString, decimalToWeightString, packageWeightToDecimal, parseMasterProductRange } from "../utils/labor-job-pricing";
+import { calculateRequiredWorkerCount, decimalToWeightString, packageWeightToDecimal, parseMasterProductRange } from "../utils/labor-job-pricing";
 
 // Import Flex Message Builder
 import { buildGateTicketCreatedFlexMessage } from "../utils/line-flex-message";
 
 /* -------------------------------------- Types -------------------------------------- */
 
-type LaborProductPricing = {
+type LaborProductPreparation = {
   product: {
     id: number;
+
     productCode: string;
     productFullCode: string;
     productName: string;
+
     packageCode: string;
     packageName: string;
-    packageWeight: string;
+
     quantity: number;
   };
 
+  // จำนวน Worker จาก Master
+  // ใช้ Dispatch เท่านั้น
   requiredWorkerCount: number;
 
-  appliedRate: {
+  // Rate snapshot ณ ตอน Gate Create
+  rateSnapshot: {
     rateId: number;
     sourceRateId: number;
+
     requestedMarketCode: string;
     appliedMarketCode: string;
-    rateSource: "MARKET_RATE" | "CENTRAL_RATE";
-    packageWeight: string;
+
+    rateSource:
+    | "MARKET_RATE"
+    | "CENTRAL_RATE";
+
+    packageWeight: Prisma.Decimal;
+
     weightRangeName: string;
-    weightMin: string;
-    weightMax: string;
+    weightMin: Prisma.Decimal;
+    weightMax: Prisma.Decimal;
+
     stallRate: Prisma.Decimal;
     laborRate: Prisma.Decimal;
-  };
 
-  stallFee: Prisma.Decimal;
-  laborFee: Prisma.Decimal;
-  rawTotalFee: Prisma.Decimal;
+    snapshotAt: Date;
+  };
 };
 
-type LaborBoothPricing = {
+type LaborBoothPreparation = {
   boothCode: string;
   boothName: string;
-  products: LaborProductPricing[];
 
-  rawTotalFee: Prisma.Decimal;
-  totalFee: Prisma.Decimal;
-  roundingAmount: Prisma.Decimal;
+  products: LaborProductPreparation[];
 };
 
-type LaborJobPricing = {
+type LaborJobPreparation = {
   market: {
     marketCode: string;
     marketName: string;
   };
 
-  booths: LaborBoothPricing[];
+  booths: LaborBoothPreparation[];
 
+  // จำนวน Worker สำหรับ Dispatch
   workerCount: number;
-
-  totalLaborFee: Prisma.Decimal;
-  stallRoundingTotal: Prisma.Decimal;
-};
-
-type WorkerPaymentCalculation = {
-  amountPerWorker: Prisma.Decimal;
-  totalAmount: Prisma.Decimal;
-  deductedRemainder: Prisma.Decimal;
 };
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -166,16 +165,6 @@ function isGateVehicleJobBody(
       );
     });
   });
-}
-
-// Function รวมค่า Decimal หลายรายการ
-function sumDecimals(
-  values: Prisma.Decimal[]
-): Prisma.Decimal {
-  return values.reduce(
-    (total, value) => total.plus(value),
-    new Prisma.Decimal(0)
-  );
 }
 
 // Function หา Market + Booth จาก master
@@ -338,56 +327,28 @@ async function findApplicableRate(
   };
 }
 
-// Function คิดเงิน Worker จากค่าแรงรวม
-function calculateWorkerPayment(
-  totalLaborFee: Prisma.Decimal,
-  workerCount: number
-): WorkerPaymentCalculation {
-  if (!Number.isInteger(workerCount) || workerCount <= 0) {
-    throw new ApiError(
-      500,
-      "WORKER_COUNT_INVALID",
-      "Worker count must be greater than zero."
-    );
-  }
-
-  const amountPerWorker = totalLaborFee
-    .div(workerCount)
-    .floor();
-
-  const totalAmount = amountPerWorker.mul(workerCount);
-
-  const deductedRemainder =
-    totalLaborFee.minus(totalAmount);
-
-  if (
-    deductedRemainder.isNegative() ||
-    !totalAmount.plus(deductedRemainder).equals(totalLaborFee)
-  ) {
-    throw new ApiError(
-      500,
-      "PAYMENT_CALCULATION_INVALID",
-      "Worker payment calculation is invalid."
-    );
-  }
-
-  return {
-    amountPerWorker,
-    totalAmount,
-    deductedRemainder,
-  };
-}
-
-// Function คำนวณแรงงานและราคาทุกแผงทุกสินค้า
-async function calculateLaborJobPricing(
+// Function เตรียมข้อมูล Master สำหรับสร้างงานจาก Gate
+//
+// หน้าที่:
+// - Validate Market / Booth
+// - Validate Product / Package
+// - หา Worker requirement จาก Gate Quantity
+// - หา Rate ที่ใช้
+// - Snapshot Rate
+//
+// Function นี้ยังไม่คำนวณเงินจริง
+async function prepareLaborJob(
   input: GateVehicleJobBody,
   connection?: DbConnection
-): Promise<LaborJobPricing> {
-  const booths: LaborBoothPricing[] = [];
+): Promise<LaborJobPreparation> {
+  const booths: LaborBoothPreparation[] = [];
   const workerCounts: number[] = [];
-  const laborFees: Prisma.Decimal[] = [];
 
   let marketName = "";
+
+  // ให้ Product ทุกตัวใน request เดียวกัน
+  // ใช้เวลา snapshot เดียวกัน
+  const rateSnapshotAt = new Date();
 
   for (const boothInput of input.Booths) {
     const marketBooth =
@@ -398,12 +359,17 @@ async function calculateLaborJobPricing(
       );
 
     if (!marketName) {
-      marketName = marketBooth.marketName as string;
+      marketName =
+        marketBooth.marketName as string;
     }
 
-    const products: LaborProductPricing[] = [];
+    const products:
+      LaborProductPreparation[] = [];
 
-    for (const productInput of boothInput.Products) {
+    for (
+      const productInput
+      of boothInput.Products
+    ) {
       const product =
         await findActiveMasterProduct(
           productInput.ProductCode,
@@ -412,8 +378,12 @@ async function calculateLaborJobPricing(
         );
 
       const parsedRange =
-        parseMasterProductRange(product.range);
+        parseMasterProductRange(
+          product.range
+        );
 
+      // Gate Quantity ใช้ตรงนี้เท่านั้น
+      // เพื่อหา Worker ที่ต้องเรียก
       const workerRequirement =
         calculateRequiredWorkerCount(
           productInput.Quantity,
@@ -425,8 +395,11 @@ async function calculateLaborJobPricing(
       );
 
       const packageWeight =
-        packageWeightToDecimal(product.packageWeight);
+        packageWeightToDecimal(
+          product.packageWeight
+        );
 
+      // หา Rate ที่ใช้ ณ ตอนสร้างงาน
       const applicableRate =
         await findApplicableRate(
           input.MarketCode,
@@ -434,85 +407,89 @@ async function calculateLaborJobPricing(
           connection
         );
 
-      const quantity =
-        new Prisma.Decimal(productInput.Quantity);
-
-      const stallFee =
-        quantity.mul(applicableRate.rate.stallRate);
-
-      const laborFee =
-        quantity.mul(applicableRate.rate.laborRate);
-
-      const rawTotalFee =
-        stallFee.plus(laborFee);
-
-      laborFees.push(laborFee);
-
       products.push({
         product: {
-          id: product.id,
-          productCode: product.productCode,
-          productFullCode: product.productFullCode,
-          productName: product.productName,
-          packageCode: product.packageCode,
-          packageName: product.packageName,
-          packageWeight: String(product.packageWeight),
-          quantity: productInput.Quantity,
+          id:
+            product.id,
+
+          productCode:
+            product.productCode,
+
+          productFullCode:
+            product.productFullCode,
+
+          productName:
+            product.productName,
+
+          packageCode:
+            product.packageCode,
+
+          packageName:
+            product.packageName,
+
+          quantity:
+            productInput.Quantity,
         },
 
         requiredWorkerCount:
-          workerRequirement.requiredWorkerCount,
+          workerRequirement
+            .requiredWorkerCount,
 
-        appliedRate: {
-          rateId: applicableRate.rate.id,
-          sourceRateId: applicableRate.rate.sourceRateId,
+        rateSnapshot: {
+          rateId:
+            applicableRate.rate.id,
+
+          sourceRateId:
+            applicableRate.rate
+              .sourceRateId,
+
           requestedMarketCode:
-            applicableRate.requestedMarketCode,
+            applicableRate
+              .requestedMarketCode,
+
           appliedMarketCode:
-            applicableRate.appliedMarketCode,
+            applicableRate
+              .appliedMarketCode,
+
           rateSource:
             applicableRate.rateSource,
-          packageWeight:
-            decimalToWeightString(packageWeight),
-          weightRangeName:
-            applicableRate.rate.weightRangeName,
-          weightMin:
-            decimalToWeightString(applicableRate.rate.weightMin),
-          weightMax:
-            decimalToWeightString(applicableRate.rate.weightMax),
-          stallRate:
-            applicableRate.rate.stallRate,
-          laborRate:
-            applicableRate.rate.laborRate,
-        },
 
-        stallFee,
-        laborFee,
-        rawTotalFee,
+          packageWeight,
+
+          weightRangeName:
+            applicableRate.rate
+              .weightRangeName,
+
+          weightMin:
+            applicableRate.rate
+              .weightMin,
+
+          weightMax:
+            applicableRate.rate
+              .weightMax,
+
+          stallRate:
+            applicableRate.rate
+              .stallRate,
+
+          laborRate:
+            applicableRate.rate
+              .laborRate,
+
+          snapshotAt:
+            rateSnapshotAt,
+        },
       });
     }
 
-    // รวมยอดสินค้าของแผงก่อนปัดขึ้น
-    const rawTotalFee =
-      sumDecimals(
-        products.map(
-          (product) => product.rawTotalFee
-        )
-      );
-
-    const totalFee =
-      rawTotalFee.ceil();
-
-    const roundingAmount =
-      totalFee.minus(rawTotalFee);
-
     booths.push({
-      boothCode: marketBooth.boothCode,
-      boothName: marketBooth.boothName,
+      boothCode:
+        marketBooth.boothCode,
+
+      boothName:
+        marketBooth.boothName,
+
       products,
-      rawTotalFee,
-      totalFee,
-      roundingAmount,
     });
   }
 
@@ -524,80 +501,71 @@ async function calculateLaborJobPricing(
     );
   }
 
-  // ใช้จำนวน Worker สูงสุดจากสินค้าทั้งหมด
+  /*
+   * IMPORTANT:
+   *
+   * ตรงนี้คง logic Worker Required
+   * ของ Project ปัจจุบันไว้ก่อน
+   *
+   * Part 3 ไม่เปลี่ยนกติกาการ Dispatch
+   * เราเปลี่ยนเฉพาะ Financial Flow
+   */
   const workerCount =
-    Math.max(...workerCounts);
-
-  // รวมค่าแรงสินค้าทั้ง Order
-  const totalLaborFee =
-    sumDecimals(laborFees);
-
-  // รวมเศษการปัดขึ้นของทุกแผง
-  const stallRoundingTotal =
-    sumDecimals(
-      booths.map(
-        (booth) => booth.roundingAmount
-      )
+    workerCounts.reduce(
+      (total, count) =>
+        total + count,
+      0
     );
 
   return {
     market: {
-      marketCode: input.MarketCode,
+      marketCode:
+        input.MarketCode,
+
       marketName,
     },
 
     booths,
 
     workerCount,
-
-    totalLaborFee,
-
-    stallRoundingTotal,
   };
 }
 
 // Function สร้าง response ที่คืนให้ Gate
+//
+// Response นี้เป็นข้อมูล Operation เท่านั้น
+// ยังไม่มีเงินจริง
 function buildPublicGateVehicleJobResponse(
   detail: VehicleJobDetailResponse,
   input: GateVehicleJobBody,
   result: GateVehicleJobResult,
-  pricing: LaborJobPricing
+  preparation: LaborJobPreparation
 ): GateVehicleJobResponse {
-  const actualWorkerCount =
-    detail.vehicle_job.workers_required;
-
-  const workerPayment =
-    calculateWorkerPayment(
-      pricing.totalLaborFee,
-      actualWorkerCount
-    );
-
-  const totalRemainder =
-    pricing.stallRoundingTotal.plus(
-      workerPayment.deductedRemainder
-    );
-
   return {
-    Result: result,
+    Result:
+      result,
 
     Ticket: {
       TicketNo:
         detail.vehicle_job.ticketNo,
 
       TicketCreatedAt:
-        detail.vehicle_job.ticket_created_at,
+        detail.vehicle_job
+          .ticket_created_at,
 
       BoothCount:
         detail.vehicle_job.booth_count,
 
       LicensePlate:
-        detail.vehicle_job.license_plate,
+        detail.vehicle_job
+          .license_plate,
 
       VehicleTypeCode:
         input.VehicleTypeCode,
 
       VehicleTypeName:
-        detail.vehicle_job.vehicle_type,
+        detail.vehicle_job
+          .vehicle_type,
 
       Status:
         buildGateTicketResponseStatus(
@@ -607,100 +575,69 @@ function buildPublicGateVehicleJobResponse(
 
     Market: {
       MarketCode:
-        pricing.market.marketCode,
+        preparation.market.marketCode,
 
       MarketName:
-        pricing.market.marketName,
+        preparation.market.marketName,
     },
 
     Booths:
-      pricing.booths.map((booth) => ({
-        BoothCode:
-          booth.boothCode,
+      preparation.booths.map(
+        (booth) => ({
+          BoothCode:
+            booth.boothCode,
 
-        BoothName:
-          booth.boothName,
+          BoothName:
+            booth.boothName,
 
-        Products:
-          booth.products.map((item) => ({
-            ProductCode:
-              item.product.productCode,
+          Products:
+            booth.products.map(
+              (item) => ({
+                ProductCode:
+                  item.product
+                    .productCode,
 
-            ProductFullCode:
-              item.product.productFullCode,
+                ProductFullCode:
+                  item.product
+                    .productFullCode,
 
-            ProductName:
-              item.product.productName,
+                ProductName:
+                  item.product
+                    .productName,
 
-            PackageCode:
-              item.product.packageCode,
+                PackageCode:
+                  item.product
+                    .packageCode,
 
-            PackageName:
-              item.product.packageName,
+                PackageName:
+                  item.product
+                    .packageName,
 
-            Quantity:
-              item.product.quantity,
-          })),
+                Quantity:
+                  item.product.quantity,
 
-        StallPayment: {
-          Amount:
-            decimalToMoneyString(
-              booth.totalFee
+                // นี่คือ Master requirement
+                // ไม่ใช่จำนวนสำหรับหารเงินจริง
+                WorkerCount:
+                  item.requiredWorkerCount,
+              })
             ),
+        })
+      ),
 
-          RoundingAmount:
-            decimalToMoneyString(
-              booth.roundingAmount
-            ),
-        },
-      })),
-
+    // จำนวนที่ใช้ Dispatch
     WorkerCount:
-      actualWorkerCount,
-
-    WorkerPayment: {
-      AmountPerWorker:
-        decimalToMoneyString(
-          workerPayment.amountPerWorker
-        ),
-
-      WorkerCount:
-        actualWorkerCount,
-
-      TotalAmount:
-        decimalToMoneyString(
-          workerPayment.totalAmount
-        ),
-
-      DeductedRemainder:
-        decimalToMoneyString(
-          workerPayment.deductedRemainder
-        ),
-    },
-
-    OrderRemainder: {
-      StallRoundingAmount:
-        decimalToMoneyString(
-          pricing.stallRoundingTotal
-        ),
-
-      WorkerDeductedAmount:
-        decimalToMoneyString(
-          workerPayment.deductedRemainder
-        ),
-
-      TotalAmount:
-        decimalToMoneyString(
-          totalRemainder
-        ),
-    },
+      detail.vehicle_job
+        .workers_required,
 
     Qr: {
       DriverQrToken:
-        detail.vehicle_job.driver_qr_token,
+        detail.vehicle_job
+          .driver_qr_token,
 
       WorkerQrToken:
-        detail.vehicle_job.worker_qr_token,
+        detail.vehicle_job
+          .worker_qr_token,
     },
   };
 }
@@ -860,7 +797,7 @@ function buildGateTransactionRef(
 function buildGateCreateInput(
   input: GateVehicleJobBody,
   gateTransactionRef: string,
-  pricing: LaborJobPricing
+  preparation: LaborJobPreparation
 ): GateVehicleJobCreateInput {
   return {
     gate_transaction_ref:
@@ -870,7 +807,9 @@ function buildGateCreateInput(
       input.TicketNo,
 
     ticket_created_at:
-      new Date(input.TicketCreatedAt),
+      new Date(
+        input.TicketCreatedAt
+      ),
 
     booth_count:
       input.BoothCount,
@@ -882,7 +821,7 @@ function buildGateCreateInput(
       input.VehicleTypeName,
 
     workers_required:
-      pricing.workerCount,
+      preparation.workerCount,
 
     dispatch_now:
       input.Dispatch,
@@ -890,13 +829,15 @@ function buildGateCreateInput(
     markets: [
       {
         marketCode:
-          pricing.market.marketCode,
+          preparation.market
+            .marketCode,
 
         marketName:
-          pricing.market.marketName,
+          preparation.market
+            .marketName,
 
         tickets:
-          pricing.booths.map(
+          preparation.booths.map(
             (booth) => ({
               boothCode:
                 booth.boothCode,
@@ -908,22 +849,77 @@ function buildGateCreateInput(
                 booth.products.map(
                   (item) => ({
                     productCode:
-                      item.product.productCode,
+                      item.product
+                        .productCode,
 
                     productName:
-                      item.product.productName,
+                      item.product
+                        .productName,
 
                     productFullCode:
-                      item.product.productFullCode,
+                      item.product
+                        .productFullCode,
 
                     packageCode:
-                      item.product.packageCode,
+                      item.product
+                        .packageCode,
 
                     packageName:
-                      item.product.packageName,
+                      item.product
+                        .packageName,
 
                     quantity:
-                      item.product.quantity,
+                      item.product
+                        .quantity,
+
+                    packageWeightSnapshot:
+                      item.rateSnapshot
+                        .packageWeight
+                        .toString(),
+
+                    rateIdSnapshot:
+                      item.rateSnapshot
+                        .rateId,
+
+                    sourceRateIdSnapshot:
+                      item.rateSnapshot
+                        .sourceRateId,
+
+                    rateMarketCode:
+                      item.rateSnapshot
+                        .appliedMarketCode,
+
+                    rateSource:
+                      item.rateSnapshot
+                        .rateSource,
+
+                    weightRangeName:
+                      item.rateSnapshot
+                        .weightRangeName,
+
+                    weightMinSnapshot:
+                      item.rateSnapshot
+                        .weightMin
+                        .toString(),
+
+                    weightMaxSnapshot:
+                      item.rateSnapshot
+                        .weightMax
+                        .toString(),
+
+                    stallRateSnapshot:
+                      item.rateSnapshot
+                        .stallRate
+                        .toString(),
+
+                    laborRateSnapshot:
+                      item.rateSnapshot
+                        .laborRate
+                        .toString(),
+
+                    rateSnapshotAt:
+                      item.rateSnapshot
+                        .snapshotAt,
                   })
                 ),
             })
@@ -1044,7 +1040,7 @@ async function buildGateVehicleJobResponse(
   vehicleJobId: number,
   input: GateVehicleJobBody,
   result: GateVehicleJobResult,
-  pricing: LaborJobPricing,
+  preparation: LaborJobPreparation,
   connection?: Parameters<
     typeof workerApplicationRepository.getVehicleJobDetail
   >[1]
@@ -1067,8 +1063,116 @@ async function buildGateVehicleJobResponse(
     detail,
     input,
     result,
-    pricing
+    preparation
   );
+}
+
+// TODO: REMOVE BEFORE PRODUCTION
+// Function ดึงตัวเลือก Market / Booth / Product / Package สำหรับหน้า Gate UI ทดสอบ
+export async function getGateOptions(
+  query: unknown
+): Promise<GateOptionsResponse> {
+  const rawQuery = query as {
+    MarketCode?: unknown;
+  };
+
+  const normalizedMarketCode =
+    typeof rawQuery.MarketCode === "string"
+      ? rawQuery.MarketCode.trim() || undefined
+      : undefined;
+
+  const [
+    marketRows,
+    boothOptions,
+    productRows,
+  ] = await Promise.all([
+    gateRepository.listGateMarketOptions(
+      normalizedMarketCode
+    ),
+
+    normalizedMarketCode
+      ? gateRepository.listGateBoothOptionsByMarketCode(
+        normalizedMarketCode
+      )
+      : Promise.resolve([]),
+
+    normalizedMarketCode
+      ? Promise.resolve([])
+      : gateRepository.listGateProductPackageOptions(),
+  ]);
+
+  // จัด Market
+  const Markets = marketRows.flatMap((market) =>
+    market.marketName
+      ? [
+        {
+          MarketCode: market.marketCode,
+          MarketName: market.marketName,
+        },
+      ]
+      : []
+  );
+
+  /*
+   * นับ ProductCode + PackageCode ก่อน
+   * เพราะ POST /api/gate/tickets จะ Reject
+   * ถ้า ProductCode + PackageCode ตรงมากกว่า 1 record
+   */
+  const pairCounts = new Map<string, number>();
+
+  for (const row of productRows) {
+    const key =
+      `${row.productCode}:${row.packageCode}`;
+
+    pairCounts.set(
+      key,
+      (pairCounts.get(key) ?? 0) + 1
+    );
+  }
+
+  // Group Product -> Packages
+  const productMap =
+    new Map<string, GateProductOption>();
+
+  for (const row of productRows) {
+    const pairKey =
+      `${row.productCode}:${row.packageCode}`;
+
+    // ไม่ส่ง Product + Package ที่ ambiguous
+    if (pairCounts.get(pairKey) !== 1) {
+      continue;
+    }
+
+    let product =
+      productMap.get(row.productCode);
+
+    if (!product) {
+      product = {
+        ProductCode: row.productCode,
+        ProductName: row.productName,
+        Packages: [],
+      };
+
+      productMap.set(
+        row.productCode,
+        product
+      );
+    }
+
+    product.Packages.push({
+      PackageCode: row.packageCode,
+      PackageName: row.packageName,
+      PackageWeight: row.packageWeight,
+    });
+  }
+
+  return {
+    Markets,
+    Booths: boothOptions,
+    Products: Array.from(
+      productMap.values()
+    ),
+  };
 }
 
 // Function สร้าง VehicleJob จาก Gate
@@ -1181,9 +1285,12 @@ export async function createVehicleJobFromGate(
   const createResult =
     await withTransaction(
       async (transaction) => {
-        // คำนวณสินค้า แรงงาน และราคา
-        const pricing =
-          await calculateLaborJobPricing(
+        // Resolve Master + Worker requirement
+        // และ Snapshot Rate
+        //
+        // ยังไม่คำนวณเงินจริง
+        const preparation =
+          await prepareLaborJob(
             input,
             transaction
           );
@@ -1193,7 +1300,7 @@ export async function createVehicleJobFromGate(
           buildGateCreateInput(
             input,
             gateTransactionRef,
-            pricing
+            preparation
           );
 
         // เติม LINE ID ของแต่ละแผง
@@ -1217,7 +1324,7 @@ export async function createVehicleJobFromGate(
             vehicleJob.id,
             input,
             "CREATED",
-            pricing,
+            preparation,
             transaction
           );
 
@@ -1300,9 +1407,21 @@ export async function createVehicleJobFromGate(
   });
 
   // แจ้ง Vendor ของแต่ละแผง
-  await notifyVendorGateTicketCreated(
-    response
-  );
+  // await notifyVendorGateTicketCreated(
+  //   response
+  // );
+
+  // แจ้ง Vendor ของแต่ละแผง
+  try {
+    await notifyVendorGateTicketCreated(
+      response
+    );
+  } catch (error) {
+    console.error(
+      "Gate ticket was created but vendor notification failed.",
+      error
+    );
+  }
 
   return response;
 }
