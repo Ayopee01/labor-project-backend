@@ -82,6 +82,21 @@ router.get(
   }
 );
 
+router.get(
+  "/vehicle-jobs/:ticketNo/financials",
+  permissionMiddleware(["jobs:read"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.getVehicleJobFinancials(
+        req.params.ticketNo
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.post(
   "/vehicle-jobs/:ticketNo/assign-workers",
   permissionMiddleware(["jobs:assign"]),

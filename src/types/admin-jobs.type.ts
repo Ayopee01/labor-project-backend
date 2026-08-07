@@ -1,7 +1,9 @@
+import type { Prisma } from "@prisma/client";
 import type { VehicleJobDetailResponse } from "./worker.type";
 import type { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 
-export type VehicleJobOperationRecord = import("@prisma/client").Prisma.VehicleJobGetPayload<{
+// Type record สำหรับบอร์ด operation ของ VehicleJob
+export type VehicleJobOperationRecord = Prisma.VehicleJobGetPayload<{
   include: {
     marketJobs: {
       include: {
@@ -19,6 +21,150 @@ export type VehicleJobOperationRecord = import("@prisma/client").Prisma.VehicleJ
     };
   };
 }>;
+
+// Type record สำหรับอ่าน Financial breakdown ของ VehicleJob จาก DB
+export type AdminVehicleJobFinancialRecord = Prisma.VehicleJobGetPayload<{
+  include: {
+    tickets: {
+      include: {
+        marketJob: true;
+        workers: {
+          include: {
+            worker: true;
+            payments: true;
+          };
+        };
+        products: {
+          include: {
+            financial: {
+              include: {
+                workerPayments: {
+                  include: {
+                    ticketWorker: {
+                      include: {
+                        worker: true;
+                      };
+                    };
+                  };
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+}>;
+
+// Type สถานะ Financial ระดับ VehicleJob
+export type AdminVehicleJobFinancialStatus =
+  | "PENDING"
+  | "PARTIAL"
+  | "FINALIZED";
+
+// Type snapshot rate ที่ใช้คำนวณเงินจริงของ Product
+export interface AdminFinancialRateSnapshotResponse {
+  package_weight_snapshot: string | null;
+  rate_id_snapshot: number | null;
+  source_rate_id_snapshot: number | null;
+  rate_market_code: string | null;
+  rate_source: string | null;
+  weight_range_name: string | null;
+  weight_min_snapshot: string | null;
+  weight_max_snapshot: string | null;
+  stall_rate_snapshot: string | null;
+  labor_rate_snapshot: string | null;
+  rate_snapshot_at: string | null;
+}
+
+// Typeยอดเงินจริงของ Worker ต่อ Product
+export interface AdminFinancialWorkerPaymentResponse {
+  ticket_worker_id: number;
+  worker_code: string;
+  full_name: string;
+  membership_status: string;
+  raw_amount: string;
+  remainder_amount: string;
+  final_amount: string;
+}
+
+// Type Financial ที่ persist แล้วต่อ Product
+export interface AdminProductFinancialResponse {
+  stall_fee_raw: string;
+  stall_fee_rounded: string;
+  labor_fee_raw: string;
+  product_charge: string;
+  worker_count: number;
+  worker_payout_total: string;
+  fund_amount: string;
+  finalized_at: string;
+}
+
+// Type Product breakdown สำหรับ Admin
+export interface AdminFinancialProductResponse {
+  ticket_product_id: number;
+  productCode: string;
+  productFullCode: string | null;
+  productName: string;
+  packageCode: string;
+  packageName: string;
+  quantity: string;
+  confirmed_quantity: string | null;
+  rate_snapshot: AdminFinancialRateSnapshotResponse;
+  financial: AdminProductFinancialResponse | null;
+  workers: AdminFinancialWorkerPaymentResponse[];
+}
+
+// Typeยอดรวม Worker ต่อ Booth
+export interface AdminFinancialBoothWorkerResponse {
+  ticket_worker_id: number;
+  worker_code: string;
+  full_name: string;
+  membership_status: string;
+  total_amount: string;
+}
+
+// Type Booth breakdown สำหรับ Admin
+export interface AdminFinancialBoothResponse {
+  ticket_id: number;
+  marketCode: string;
+  marketName: string;
+  boothCode: string;
+  boothName: string | null;
+  status: string;
+  financialized: boolean;
+  final_stall_amount: string | null;
+  completed_at: string | null;
+  financialized_at: string | null;
+  summary: {
+    labor_fee_raw: string;
+    worker_payout_total: string;
+    fund_amount: string;
+  };
+  workers: AdminFinancialBoothWorkerResponse[];
+  products: AdminFinancialProductResponse[];
+}
+
+// Type response Financial breakdown ระดับ VehicleJob
+export interface AdminVehicleJobFinancialResponse {
+  vehicle_job: {
+    ticketNo: string;
+    gate_transaction_ref: string;
+    license_plate: string;
+    vehicle_type: string | null;
+    status: string;
+  };
+  financial_status: AdminVehicleJobFinancialStatus;
+  summary: {
+    booth_count: number;
+    financialized_booth_count: number;
+    final_stall_amount: string;
+    labor_fee_raw: string;
+    worker_payout_total: string;
+    fund_amount: string;
+  };
+  booths: AdminFinancialBoothResponse[];
+}
 
 export interface VehicleJobListFilters {
   search?: string;

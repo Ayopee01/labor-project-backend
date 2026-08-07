@@ -1,3 +1,6 @@
+// Import Library
+import { Prisma } from "@prisma/client";
+
 import { withTransaction } from "../db/prisma";
 import { enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning } from "../queues/worker-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
@@ -12,7 +15,7 @@ import {
   formatVehicleOperationItem,
 } from "../utils/admin-job-operations.formatter";
 // Import Types
-import type { AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminJobCancelResponse, AdminMarketJobActionResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobListItemResponse, AdminVehicleJobOperationListResponse } from "../types/admin-jobs.type";
+import type { AdminVehicleJobFinancialResponse, AdminVehicleJobFinancialRecord, AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminJobCancelResponse, AdminMarketJobActionResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobListItemResponse, AdminVehicleJobOperationListResponse } from "../types/admin-jobs.type";
 import type { GateTicketDto, MarketJobDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleJobDto } from "../types/worker.type";
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
@@ -153,6 +156,129 @@ function formatPublicVehicleJobHistoryDetail(
         products: ticket.products.map(formatPublicProduct),
       })),
     })),
+  };
+}
+
+// Function จัดสถานะ Financial ระดับ VehicleJob
+function resolveVehicleJobFinancialStatus(
+  boothCount: number,
+  financializedBoothCount: number
+): AdminVehicleJobFinancialResponse["financial_status"] {
+  if (financializedBoothCount === 0) {
+    return "PENDING";
+  }
+
+  if (financializedBoothCount < boothCount) {
+    return "PARTIAL";
+  }
+
+  return "FINALIZED";
+}
+
+// Function จัดรูปแบบ Product Financial สำหรับ Admin
+function formatAdminFinancialProduct(
+  product: AdminVehicleJobFinancialRecord["tickets"][number]["products"][number]
+): AdminVehicleJobFinancialResponse["booths"][number]["products"][number] {
+  const financial = product.financial;
+
+  return {
+    ticket_product_id: product.id,
+    productCode: product.productCode,
+    productFullCode: product.productFullCode,
+    productName: product.productName,
+    packageCode: product.packageCode,
+    packageName: product.packageName,
+    quantity: product.quantity.toFixed(2),
+    confirmed_quantity: product.confirmedQuantity?.toFixed(2) ?? null,
+    rate_snapshot: {
+      package_weight_snapshot: product.packageWeightSnapshot?.toFixed(2) ?? null,
+      rate_id_snapshot: product.rateIdSnapshot,
+      source_rate_id_snapshot: product.sourceRateIdSnapshot,
+      rate_market_code: product.rateMarketCode,
+      rate_source: product.rateSource,
+      weight_range_name: product.weightRangeName,
+      weight_min_snapshot: product.weightMinSnapshot?.toFixed(2) ?? null,
+      weight_max_snapshot: product.weightMaxSnapshot?.toFixed(2) ?? null,
+      stall_rate_snapshot: product.stallRateSnapshot?.toFixed(2) ?? null,
+      labor_rate_snapshot: product.laborRateSnapshot?.toFixed(2) ?? null,
+      rate_snapshot_at: product.rateSnapshotAt?.toISOString() ?? null,
+    },
+    financial: financial
+      ? {
+        stall_fee_raw: financial.stallFeeRaw.toFixed(4),
+        stall_fee_rounded: financial.stallFeeRounded.toFixed(2),
+        labor_fee_raw: financial.laborFeeRaw.toFixed(4),
+        product_charge: financial.productCharge.toFixed(2),
+        worker_count: financial.workerCount,
+        worker_payout_total: financial.workerPayoutTotal.toFixed(2),
+        fund_amount: financial.fundAmount.toFixed(4),
+        finalized_at: financial.finalizedAt.toISOString(),
+      }
+      : null,
+    workers:
+      financial?.workerPayments.map((payment) => ({
+        ticket_worker_id: payment.ticketWorker.id,
+        worker_code: payment.ticketWorker.worker.username,
+        full_name: payment.ticketWorker.worker.fullName,
+        membership_status: payment.ticketWorker.status,
+        raw_amount: payment.rawAmount.toFixed(8),
+        remainder_amount: payment.remainderAmount.toFixed(8),
+        final_amount: payment.finalAmount.toFixed(2),
+      })) ?? [],
+  };
+}
+
+// Function จัดรูปแบบ Booth Financial สำหรับ Admin
+function formatAdminFinancialBooth(
+  ticket: AdminVehicleJobFinancialRecord["tickets"][number]
+): AdminVehicleJobFinancialResponse["booths"][number] {
+  let laborFeeRaw = new Prisma.Decimal(0);
+  let workerPayoutTotal = new Prisma.Decimal(0);
+  let fundAmount = new Prisma.Decimal(0);
+
+  for (const product of ticket.products) {
+    if (!product.financial) {
+      continue;
+    }
+
+    laborFeeRaw = laborFeeRaw.plus(product.financial.laborFeeRaw);
+    workerPayoutTotal = workerPayoutTotal.plus(product.financial.workerPayoutTotal);
+    fundAmount = fundAmount.plus(product.financial.fundAmount);
+  }
+
+  const workers = ticket.workers.map((ticketWorker) => {
+    const totalAmount = ticketWorker.payments.reduce(
+      (total, payment) => total.plus(payment.finalAmount),
+      new Prisma.Decimal(0)
+    );
+
+    return {
+      ticket_worker_id: ticketWorker.id,
+      worker_code: ticketWorker.worker.username,
+      full_name: ticketWorker.worker.fullName,
+      membership_status: ticketWorker.status,
+      total_amount: totalAmount.toFixed(2),
+    };
+  });
+
+  return {
+    ticket_id: ticket.id,
+    marketCode: ticket.marketJob.marketCode,
+    marketName: ticket.marketJob.marketName,
+    boothCode: ticket.boothCode,
+    boothName: ticket.boothName,
+    status: ticket.status,
+    financialized: ticket.financializedAt !== null,
+    final_stall_amount: ticket.finalStallAmount?.toFixed(2) ?? null,
+    completed_at: ticket.completedAt?.toISOString() ?? null,
+    financialized_at: ticket.financializedAt?.toISOString() ?? null,
+    summary: {
+      labor_fee_raw: laborFeeRaw.toFixed(4),
+      worker_payout_total: workerPayoutTotal.toFixed(2),
+      fund_amount: fundAmount.toFixed(4),
+    },
+    workers,
+    products: ticket.products.map(formatAdminFinancialProduct),
   };
 }
 
@@ -314,6 +440,72 @@ async function listStallJobWorkerIds(ticket: GateTicketDto): Promise<number[]> {
   }
 
   return listVehicleJobWorkerIds(ticket.vehicle_job_id);
+}
+
+// Function ดึง Financial breakdown ของ VehicleJob สำหรับ Admin
+export async function getVehicleJobFinancials(
+  ticketNoParam: unknown
+): Promise<AdminVehicleJobFinancialResponse> {
+  const ticketNo = parseReference(
+    ticketNoParam,
+    "INVALID_VEHICLE_JOB_REF",
+    "Ticket no is invalid."
+  );
+
+  const vehicleJob = await adminJobsRepository.findVehicleJobFinancialByRef(ticketNo);
+
+  if (!vehicleJob) {
+    throw new ApiError(
+      404,
+      "VEHICLE_JOB_NOT_FOUND",
+      "Vehicle job not found."
+    );
+  }
+
+  const booths = vehicleJob.tickets.map(formatAdminFinancialBooth);
+  const financializedBoothCount = vehicleJob.tickets.filter(
+    (ticket) => ticket.financializedAt !== null
+  ).length;
+
+  let finalStallAmount = new Prisma.Decimal(0);
+  let laborFeeRaw = new Prisma.Decimal(0);
+  let workerPayoutTotal = new Prisma.Decimal(0);
+  let fundAmount = new Prisma.Decimal(0);
+
+  for (const booth of booths) {
+    if (booth.final_stall_amount !== null) {
+      finalStallAmount = finalStallAmount.plus(booth.final_stall_amount);
+    }
+
+    laborFeeRaw = laborFeeRaw.plus(booth.summary.labor_fee_raw);
+    workerPayoutTotal = workerPayoutTotal.plus(
+      booth.summary.worker_payout_total
+    );
+    fundAmount = fundAmount.plus(booth.summary.fund_amount);
+  }
+
+  return {
+    vehicle_job: {
+      ticketNo: vehicleJob.ticketNo,
+      gate_transaction_ref: vehicleJob.gateTransactionRef,
+      license_plate: vehicleJob.licensePlate,
+      vehicle_type: vehicleJob.vehicleType,
+      status: vehicleJob.status,
+    },
+    financial_status: resolveVehicleJobFinancialStatus(
+      vehicleJob.tickets.length,
+      financializedBoothCount
+    ),
+    summary: {
+      booth_count: vehicleJob.tickets.length,
+      financialized_booth_count: financializedBoothCount,
+      final_stall_amount: finalStallAmount.toFixed(2),
+      labor_fee_raw: laborFeeRaw.toFixed(4),
+      worker_payout_total: workerPayoutTotal.toFixed(2),
+      fund_amount: fundAmount.toFixed(4),
+    },
+    booths,
+  };
 }
 
 // Function ดึงรายการ vehicle jobs ใน service flow

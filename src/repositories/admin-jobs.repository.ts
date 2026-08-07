@@ -16,7 +16,7 @@ export { listTicketWorkers } from "./shared/ticket-worker.repository";
 import type { DbConnection } from "../types/shared/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import type { GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
-import type { VehicleJobListFilters, VehicleJobListResult, VehicleJobOperationFilters, VehicleJobOperationRecord } from "../types/admin-jobs.type";
+import type { AdminVehicleJobFinancialRecord, VehicleJobListFilters, VehicleJobListResult, VehicleJobOperationFilters, VehicleJobOperationRecord } from "../types/admin-jobs.type";
 
 export { accountRepository, profileRepository };
 
@@ -387,6 +387,66 @@ export async function listVehicleJobOperations(
         ],
         include: {
           worker: true,
+        },
+      },
+    },
+  });
+}
+
+// Function ดึง Financial breakdown ของ VehicleJob ตาม TicketNo จาก DB
+export async function findVehicleJobFinancialByRef(
+  ticketNo: string,
+  connection?: DbConnection
+): Promise<AdminVehicleJobFinancialRecord | null> {
+  const db = client(connection);
+
+  return db.vehicleJob.findUnique({
+    where: {
+      ticketNo,
+    },
+    include: {
+      tickets: {
+        orderBy: {
+          id: "asc",
+        },
+        include: {
+          marketJob: true,
+          workers: {
+            orderBy: {
+              id: "asc",
+            },
+            include: {
+              worker: true,
+              payments: {
+                orderBy: {
+                  id: "asc",
+                },
+              },
+            },
+          },
+          products: {
+            orderBy: {
+              id: "asc",
+            },
+            include: {
+              financial: {
+                include: {
+                  workerPayments: {
+                    orderBy: {
+                      id: "asc",
+                    },
+                    include: {
+                      ticketWorker: {
+                        include: {
+                          worker: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
