@@ -143,6 +143,29 @@ function isValidRatingScore(score: number | null): score is number {
   return typeof score === "number" && Number.isInteger(score) && score >= 1 && score <= 5;
 }
 
+// Function อ่านยอดสุดท้ายของแผงหลัง Financialization
+function requireFinalStallAmountBaht(ticket: GateTicketDto): number {
+  if (ticket.final_stall_amount === null || ticket.financialized_at === null) {
+    throw new ApiError(
+      500,
+      "TICKET_FINANCIAL_STATE_INVALID",
+      "Completed ticket does not have finalized financial data."
+    );
+  }
+
+  const amount = Number(ticket.final_stall_amount);
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new ApiError(
+      500,
+      "TICKET_FINAL_STALL_AMOUNT_INVALID",
+      "Final stall amount is invalid."
+    );
+  }
+
+  return amount;
+}
+
 // Function สร้าง vendor rating messages ใน service flow
 async function buildVendorRatingMessages(
   ticket: GateTicketDto,
@@ -283,6 +306,8 @@ export async function handleLineWebhook(
         continue;
       }
 
+      const stallAmountBaht = requireFinalStallAmountBaht(ratingResult.ticket);
+
       await enqueueLoggedLineMessage({
         jobName: "send-vendor-ticket-rating-result",
         action: "send_vendor_ticket_rating_result",
@@ -292,12 +317,13 @@ export async function handleLineWebhook(
           submission_id: ratingResult.submission.id,
           line_user_id: lineUserId,
           score: ratingResult.rating.score,
+          final_stall_amount: ratingResult.ticket.final_stall_amount,
         },
         messages: buildVendorRatingResultFlexMessages({
           ticket: ratingResult.ticket,
           detail: ratingResult.detail,
           score: ratingResult.rating.score,
-          stallAmountBaht: 0,
+          stallAmountBaht,
         }),
       });
 

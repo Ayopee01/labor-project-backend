@@ -1,4 +1,5 @@
 import * as workerApplicationRepository from "../repositories/worker.repository";
+import { finalizeTicketFinancials } from "../services/ticket-financial.service";
 import { ASSIGNMENT_STATUS } from "../constants/job-status";
 import { buildTicketResultAudience } from "./ticket-audience";
 import { getWorkerCodesByAccountIds } from "./worker-identity";
@@ -22,29 +23,37 @@ export async function applyVendorTicketCompletionResult(input: {
   const isConfirmed = input.action === "confirm";
   const updated = isConfirmed
     ? await workerApplicationRepository.confirmTicketCompletion(
-        input.ticket.id,
-        input.submission.id,
-        input.connection,
-        input.resolvedByLineUserId
-      )
+      input.ticket.id,
+      input.submission.id,
+      input.connection,
+      input.resolvedByLineUserId
+    )
     : await workerApplicationRepository.rejectTicketCompletion(
-        input.ticket.id,
-        input.submission.id,
-        input.rejectReason,
-        input.connection,
-        input.resolvedByLineUserId
-      );
+      input.ticket.id,
+      input.submission.id,
+      input.rejectReason,
+      input.connection,
+      input.resolvedByLineUserId
+    );
+
+  const financial = isConfirmed
+    ? await finalizeTicketFinancials(
+      updated.ticket.id,
+      input.connection
+    )
+    : null;
+
   const completedVehicleJob = isConfirmed
     ? await workerApplicationRepository.closeCompletedVehicleJobIfReady(
-        updated.ticket.vehicle_job_id,
-        input.connection
-      )
+      updated.ticket.vehicle_job_id,
+      input.connection
+    )
     : null;
   const nextTicket = isConfirmed && !completedVehicleJob
     ? await workerApplicationRepository.activateNextTicketIfReady(
-        updated.ticket.vehicle_job_id,
-        input.connection
-      )
+      updated.ticket.vehicle_job_id,
+      input.connection
+    )
     : null;
 
   if (isConfirmed && !completedVehicleJob) {
@@ -71,9 +80,9 @@ export async function applyVendorTicketCompletionResult(input: {
   ]);
   const completedWorkerCodes = completedVehicleJob
     ? await getWorkerCodesByAccountIds(
-        completedVehicleJob.completed_worker_account_ids,
-        input.connection
-      )
+      completedVehicleJob.completed_worker_account_ids,
+      input.connection
+    )
     : [];
   const assignmentStatus = isConfirmed
     ? completedVehicleJob
@@ -85,6 +94,7 @@ export async function applyVendorTicketCompletionResult(input: {
     ...updated,
     products,
     detail,
+    financial,
     completedVehicleJob,
     completedWorkerCodes,
     nextTicket,

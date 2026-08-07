@@ -37,6 +37,13 @@ export const TICKET_STATUS = {
   CANCELLED: "CANCELLED",
 } as const;
 
+// Config สถานะ membership ของ Worker ภายใน Ticket/Booth 
+export const TICKET_WORKER_STATUS = {
+  WORKING: "WORKING", // Worker คนนี้ยังเป็นสมาชิกของ Booth และมีสิทธิ์ถูกนำไปคิดค่าแรง
+  CANCELLED: "CANCELLED", // ถูกถอดออกก่อน Booth Complete จึงไม่มีสิทธิ์ได้เงิน Booth นี้
+  COMPLETED: "COMPLETED", // เป็นสมาชิกที่ทำ Booth นี้เสร็จแล้ว และจะถูกใช้เป็นประวัติการจ่ายเงิน
+} as const;
+
 // Config สถานะ assignment ที่ยังล็อก worker ไว้กับงานรถ
 export const ACTIVE_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.PENDING,

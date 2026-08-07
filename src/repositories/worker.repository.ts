@@ -2,8 +2,8 @@
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import * as workScheduleRepository from "./shared/work-schedule.repository";
-import type { Prisma, WorkerShiftAttendance } from "@prisma/client";
-import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
+import { Prisma } from "@prisma/client";
+import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS, WORKING_ASSIGNMENT_STATUSES, TICKET_WORKER_STATUS } from "../constants/job-status";
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct, mapTicketWorker, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
 export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail } from "./shared/vehicle-job.repository";
@@ -11,8 +11,9 @@ export { countActiveAssignments, createAssignment, findAssignmentById, findCurre
 export { listTicketWorkers } from "./shared/ticket-worker.repository";
 
 // Import Types
+import type { WorkerShiftAttendance } from "@prisma/client";
 import type { DbConnection } from "../types/shared/common.type";
-import type { CompletedVehicleJobResult, CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VendorLineTargetDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto, WorkerShiftAttendanceKeyInput, WorkerShiftAttendanceWriteInput, WorkerShiftCloseReason } from "../types/worker.type";
+import type { CompletedVehicleJobResult, CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VendorLineTargetDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentEarningsDto, WorkerAssignmentTeamMemberDto, WorkerShiftAttendanceKeyInput, WorkerShiftAttendanceWriteInput, WorkerShiftCloseReason } from "../types/worker.type";
 
 // Function สร้าง shift snapshot จาก DB
 function buildShiftSnapshot(input: WorkerShiftAttendanceWriteInput) {
@@ -312,7 +313,15 @@ export async function activateNextTicketIfReady(
 
   const activatableTicketStatuses: string[] = [TICKET_STATUS.WAIT];
 
-  if (!activatableTicketStatuses.includes(current.ticket.status)) {
+  if (!activatableTicketStatuses.includes(current.ticket.status)
+  ) {
+    // Sync membership ให้ตรงกับ Assignment ปัจจุบัน
+    await syncTicketWorkersFromVehicleAssignments(
+      current.ticket.id,
+      vehicleJobId,
+      connection
+    );
+
     return current;
   }
 
@@ -324,6 +333,12 @@ export async function activateNextTicketIfReady(
       status: TICKET_STATUS.WORKING,
     },
   });
+
+  await syncTicketWorkersFromVehicleAssignments(
+    ticket.id,
+    vehicleJobId,
+    connection
+  );
 
   return {
     ...current,
@@ -419,7 +434,7 @@ export async function listVehicleJobAssignmentTeam(
   });
 }
 
-// Function ดึงรายการ worker assignment history ตาม date จาก DB
+// Function ดึงรายการ worker assignment history พร้อมรายได้จริงตาม date จาก DB
 export async function listWorkerAssignmentHistoryByDate(
   workerAccountId: number,
   startAt: Date,
@@ -427,6 +442,7 @@ export async function listWorkerAssignmentHistoryByDate(
   connection?: DbConnection
 ): Promise<WorkerAssignmentHistoryItemDto[]> {
   const db = client(connection);
+
   const assignments = await db.vehicleJobAssignment.findMany({
     where: {
       workerAccountId,
@@ -443,9 +459,102 @@ export async function listWorkerAssignmentHistoryByDate(
     },
   });
 
+  if (assignments.length === 0) {
+    return [];
+  }
+
+  const vehicleJobIds = [
+    ...new Set(assignments.map((assignment) => assignment.vehicleJobId)),
+  ];
+
+  const ticketWorkers = await db.ticketWorker.findMany({
+    where: {
+      workerAccountId,
+      ticket: {
+        vehicleJobId: {
+          in: vehicleJobIds,
+        },
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+    include: {
+      ticket: true,
+      payments: {
+        orderBy: {
+          id: "asc",
+        },
+        include: {
+          productFinancial: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const earningsByVehicleJobId = new Map<number, WorkerAssignmentEarningsDto>();
+
+  for (const vehicleJobId of vehicleJobIds) {
+    const vehicleTicketWorkers = ticketWorkers.filter(
+      (ticketWorker) => ticketWorker.ticket.vehicleJobId === vehicleJobId
+    );
+
+    let totalAmount = new Prisma.Decimal(0);
+
+    const booths = vehicleTicketWorkers.map((ticketWorker) => {
+      let boothAmount = new Prisma.Decimal(0);
+
+      const products = ticketWorker.payments.map((payment) => {
+        boothAmount = boothAmount.plus(payment.finalAmount);
+
+        const financial = payment.productFinancial;
+        const product = financial.product;
+
+        return {
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          productName: product.productName,
+          packageName: product.packageName,
+          confirmed_quantity: financial.confirmedQuantity.toFixed(2),
+          final_amount: payment.finalAmount.toFixed(2),
+        };
+      });
+
+      totalAmount = totalAmount.plus(boothAmount);
+
+      return {
+        ticket_id: ticketWorker.ticket.id,
+        boothCode: ticketWorker.ticket.boothCode,
+        boothName: ticketWorker.ticket.boothName,
+        membership_status: ticketWorker.status,
+        amount: boothAmount.toFixed(2),
+        products,
+      };
+    });
+
+    earningsByVehicleJobId.set(vehicleJobId, {
+      total_amount: totalAmount.toFixed(2),
+      booths,
+    });
+  }
+
   return assignments.map((assignment) => ({
-    assignment: requireDto(mapVehicleJobAssignment(assignment), "assignment"),
-    vehicle_job: requireDto(mapVehicleJob(assignment.vehicleJob), "vehicle job"),
+    assignment: requireDto(
+      mapVehicleJobAssignment(assignment),
+      "assignment"
+    ),
+    vehicle_job: requireDto(
+      mapVehicleJob(assignment.vehicleJob),
+      "vehicle job"
+    ),
+    earnings: earningsByVehicleJobId.get(assignment.vehicleJobId) ?? {
+      total_amount: "0.00",
+      booths: [],
+    },
   }));
 }
 
@@ -525,10 +634,10 @@ export async function listAcceptedAssignmentsByVehicleJob(
       status: ASSIGNMENT_STATUS.ACCEPTED,
       ...(excludedAssignmentId
         ? {
-            id: {
-              not: excludedAssignmentId,
-            },
-          }
+          id: {
+            not: excludedAssignmentId,
+          },
+        }
         : {}),
     },
     orderBy: {
@@ -736,83 +845,196 @@ export async function updateTicketProductConfirmations(
   const db = client(connection);
 
   for (const item of items) {
-    const result = await db.ticketProduct.updateMany({
-      where: {
-        ticketId,
-        productCode: item.productCode,
-      },
-      data: {
-        confirmedQuantity: item.confirmed_quantity,
-      },
-    });
+    const result =
+      await db.ticketProduct.updateMany({
+        where: {
+          ticketId,
+          productCode: item.productCode,
+          packageCode: item.packageCode,
+        },
+        data: {
+          confirmedQuantity: item.confirmed_quantity,
+        },
+      });
 
     if (result.count !== 1) {
-      throw new Error("Ticket product confirmation did not update a product.");
+      throw new Error(
+        "Ticket product confirmation did not update exactly one product."
+      );
     }
   }
 
-  return listTicketProducts(ticketId, connection);
+  return listTicketProducts(
+    ticketId,
+    connection
+  );
 }
 
-// Function จัดการ ensure ticket workers จาก vehicle assignments จาก DB
-export async function ensureTicketWorkersFromVehicleAssignments(
+// Function sync Worker ที่ทำงานจริงของ VehicleJob เข้ากับ TicketWorker ของ Booth ปัจจุบัน
+export async function syncTicketWorkersFromVehicleAssignments(
   ticketId: number,
   vehicleJobId: number,
   connection?: DbConnection
 ): Promise<TicketWorkerDto[]> {
   const db = client(connection);
-  const existingWorkers = await db.ticketWorker.findMany({
-    where: {
-      ticketId,
-    },
-    orderBy: {
-      id: "asc",
-    },
-  });
+  const now = new Date();
 
-  if (existingWorkers.length > 0) {
-    return existingWorkers
-      .map((worker) => mapTicketWorker(worker))
-      .filter((worker): worker is TicketWorkerDto => worker !== null);
-  }
-
-  const assignments = await db.vehicleJobAssignment.findMany({
-    where: {
-      vehicleJobId,
-      status: {
-        in: SCANNED_ASSIGNMENT_STATUSES,
+  // Worker ที่ยังทำงานจริงกับรถ ณ ตอนนี้
+  const assignments =
+    await db.vehicleJobAssignment.findMany({
+      where: {
+        vehicleJobId,
+        status: {
+          in: SCANNED_ASSIGNMENT_STATUSES,
+        },
       },
-    },
-    orderBy: {
-      id: "asc",
-    },
-  });
+      orderBy: {
+        id: "asc",
+      },
+    });
 
-  if (assignments.length === 0) {
-    return [];
+  const activeWorkerAccountIds = [
+    ...new Set(
+      assignments.map(
+        (assignment) =>
+          assignment.workerAccountId
+      )
+    ),
+  ];
+
+  const existingWorkers =
+    await db.ticketWorker.findMany({
+      where: {
+        ticketId,
+      },
+      orderBy: {
+        id: "asc",
+      },
+    });
+
+  const existingWorkerAccountIds =
+    new Set(
+      existingWorkers.map(
+        (worker) =>
+          worker.workerAccountId
+      )
+    );
+
+  // Worker ใหม่ที่ยังไม่มี membership
+  const missingWorkerAccountIds =
+    activeWorkerAccountIds.filter(
+      (workerAccountId) =>
+        !existingWorkerAccountIds.has(
+          workerAccountId
+        )
+    );
+
+  if (
+    missingWorkerAccountIds.length > 0
+  ) {
+    await db.ticketWorker.createMany({
+      data:
+        missingWorkerAccountIds.map(
+          (workerAccountId) => ({
+            ticketId,
+            workerAccountId,
+
+            status:
+              TICKET_WORKER_STATUS.WORKING,
+
+            joinedAt:
+              now,
+          })
+        ),
+
+      skipDuplicates: true,
+    });
   }
 
-  await db.ticketWorker.createMany({
-    data: assignments.map((assignment) => ({
-      ticketId,
-      workerAccountId: assignment.workerAccountId,
-      status: ASSIGNMENT_STATUS.WORKING,
-    })),
-    skipDuplicates: true,
-  });
+  // Worker ที่ยัง active รวมถึงกรณีเคย CANCELLED แล้วถูกนำกลับมาอีกครั้ง
+  if (
+    activeWorkerAccountIds.length > 0
+  ) {
+    const completedAt =
+      new Date();
 
-  const workers = await db.ticketWorker.findMany({
+    await db.ticketWorker.updateMany({
+      where: {
+        ticketId,
+
+        status:
+          TICKET_WORKER_STATUS.WORKING,
+      },
+
+      data: {
+        status:
+          TICKET_WORKER_STATUS.COMPLETED,
+
+        completedAt,
+
+        cancelledAt:
+          null,
+      },
+    });
+  }
+
+
+  // Worker ที่ถูก Admin cancel Assignment ปัจจุบันไม่อยู่แล้ว
+  await db.ticketWorker.updateMany({
     where: {
       ticketId,
+
+      status: {
+        notIn: [
+          TICKET_WORKER_STATUS.COMPLETED,
+          TICKET_WORKER_STATUS.CANCELLED,
+        ],
+      },
+
+      ...(activeWorkerAccountIds.length > 0
+        ? {
+          workerAccountId: {
+            notIn:
+              activeWorkerAccountIds,
+          },
+        }
+        : {}),
     },
-    orderBy: {
-      id: "asc",
+
+    data: {
+      status:
+        TICKET_WORKER_STATUS.CANCELLED,
+
+      cancelledAt:
+        now,
+
+      completedAt:
+        null,
     },
   });
+
+  const workers =
+    await db.ticketWorker.findMany({
+      where: {
+        ticketId,
+      },
+
+      orderBy: {
+        id: "asc",
+      },
+    });
 
   return workers
-    .map((worker) => mapTicketWorker(worker))
-    .filter((worker): worker is TicketWorkerDto => worker !== null);
+    .map(
+      (worker) =>
+        mapTicketWorker(worker)
+    )
+    .filter(
+      (
+        worker
+      ): worker is TicketWorkerDto =>
+        worker !== null
+    );
 }
 
 // Function อัปเดตสถานะ ticket delivered จาก DB
@@ -1016,6 +1238,126 @@ export async function confirmTicketCompletion(
   };
 }
 
+// Function ดึงข้อมูลทั้งหมดที่ใช้สำหรับ Financialize Ticket
+export async function findTicketFinancializationContext(
+  ticketId: number,
+  connection?: DbConnection
+) {
+  const db = client(connection);
+
+  return db.gateTicket.findUnique({
+    where: {
+      id: ticketId,
+    },
+
+    include: {
+      products: {
+        orderBy: {
+          id: "asc",
+        },
+
+        include: {
+          financial: true,
+        },
+      },
+
+      workers: {
+        where: {
+          status: TICKET_WORKER_STATUS.COMPLETED,
+        },
+
+        orderBy: {
+          id: "asc",
+        },
+      },
+    },
+  });
+}
+
+// Function บันทึก Financial ของ Product
+export async function createTicketProductFinancial(
+  input: {
+    ticketProductId: number;
+    confirmedQuantity: Prisma.Decimal;
+    stallFeeRaw: Prisma.Decimal;
+    stallFeeRounded: Prisma.Decimal;
+    laborFeeRaw: Prisma.Decimal;
+    productCharge: Prisma.Decimal;
+    workerCount: number;
+    workerPayoutTotal: Prisma.Decimal;
+    fundAmount: Prisma.Decimal;
+    finalizedAt: Date;
+
+    workerPayments: Array<{
+      ticketWorkerId: number;
+      rawAmount: Prisma.Decimal;
+      remainderAmount: Prisma.Decimal;
+      finalAmount: Prisma.Decimal;
+    }>;
+  },
+  connection?: DbConnection
+) {
+  const db = client(connection);
+
+  return db.ticketProductFinancial.create({
+    data: {
+      ticketProductId: input.ticketProductId,
+      confirmedQuantity: input.confirmedQuantity,
+      stallFeeRaw: input.stallFeeRaw,
+      stallFeeRounded: input.stallFeeRounded,
+      laborFeeRaw: input.laborFeeRaw,
+      productCharge: input.productCharge,
+      workerCount: input.workerCount,
+      workerPayoutTotal: input.workerPayoutTotal,
+      fundAmount: input.fundAmount,
+      finalizedAt: input.finalizedAt,
+
+      workerPayments: {
+        create:
+          input.workerPayments.map(
+            (payment) => ({
+              ticketWorkerId: payment.ticketWorkerId,
+              rawAmount: payment.rawAmount,
+              remainderAmount: payment.remainderAmount,
+              finalAmount: payment.finalAmount,
+            })
+          ),
+      },
+    },
+  });
+}
+
+// Functionปิด Financialization ของ Ticket
+export async function markGateTicketFinancialized(
+  ticketId: number,
+  finalStallAmount: Prisma.Decimal,
+  finalizedAt: Date,
+  connection?: DbConnection
+): Promise<void> {
+  const db = client(connection);
+
+  const result =
+    await db.gateTicket.updateMany({
+      where: {
+        id: ticketId,
+        status: TICKET_STATUS.COMPLETED,
+        financializedAt: null,
+      },
+
+      data: {
+        finalStallAmount,
+        completedAt: finalizedAt,
+        financializedAt: finalizedAt,
+      },
+    });
+
+  if (result.count !== 1) {
+    throw new Error(
+      "Gate ticket financialization did not update exactly one ticket."
+    );
+  }
+}
+
 // Function ปิด completed vehicle job if ready จาก DB
 export async function closeCompletedVehicleJobIfReady(
   vehicleJobId: number,
@@ -1106,13 +1448,13 @@ export async function closeCompletedVehicleJobIfReady(
   const updatedVehicleJob = TERMINAL_JOB_STATUSES.includes(refreshedVehicleJob.status)
     ? refreshedVehicleJob
     : await db.vehicleJob.update({
-        where: {
-          id: vehicleJobId,
-        },
-        data: {
-          status: vehicleStatus,
-        },
-      });
+      where: {
+        id: vehicleJobId,
+      },
+      data: {
+        status: vehicleStatus,
+      },
+    });
   const activeAssignments = refreshedVehicleJob.assignments.filter((assignment) =>
     ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
   );
@@ -1168,15 +1510,6 @@ export async function rejectTicketCompletion(
   if (updateResult.count !== 1) {
     throw new Error("Ticket reject did not update a waiting ticket.");
   }
-
-  await db.ticketWorker.updateMany({
-    where: {
-      ticketId,
-    },
-    data: {
-      status: TICKET_STATUS.REJECT,
-    },
-  });
 
   const [ticket, submission] = await Promise.all([
     db.gateTicket.findUnique({

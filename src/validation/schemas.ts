@@ -310,6 +310,7 @@ export const workerScanBodySchema = z.object({
 
 const workerTicketCompleteItemSchema = z.object({
   productCode: trimmedString,
+  packageCode: trimmedString,
   confirmed_quantity: z.coerce.number().min(0),
 });
 

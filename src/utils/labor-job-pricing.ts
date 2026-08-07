@@ -226,10 +226,10 @@ export function packageWeightToDecimal(packageWeight: number): Prisma.Decimal {
 export function calculateProductStallCharge(
   input: ProductStallChargeCalculationInput
 ): ProductStallChargeCalculation {
-  assertPositiveDecimal(
+  assertNonNegativeDecimal(
     input.quantity,
     "INVALID_QUANTITY",
-    "Quantity must be greater than zero."
+    "Quantity must not be negative."
   );
 
   assertNonNegativeDecimal(

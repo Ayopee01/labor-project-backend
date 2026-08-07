@@ -93,6 +93,9 @@ type GateTicketRecord = {
   reject_reason: string | null;
   status: string;
   confirmation_status: string | null;
+  final_stall_amount?: string | null;
+  completed_at?: string | null;
+  financialized_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -148,6 +151,32 @@ type TicketWorkerRecord = {
   ticket_id: number;
   worker_account_id: number;
   status: string;
+  joined_at: string;
+  cancelled_at: string | null;
+  completed_at: string | null;
+};
+
+type TicketProductFinancialRecord = {
+  id: number;
+  ticket_product_id: number;
+  confirmed_quantity: string;
+  stall_fee_raw: string;
+  stall_fee_rounded: string;
+  labor_fee_raw: string;
+  product_charge: string;
+  worker_count: number;
+  worker_payout_total: string;
+  fund_amount: string;
+  finalized_at: string;
+};
+
+type TicketWorkerPaymentRecord = {
+  id: number;
+  ticket_product_financial_id: number;
+  ticket_worker_id: number;
+  raw_amount: string;
+  remainder_amount: string;
+  final_amount: string;
 };
 
 type TicketCompletionSubmissionRecord = {
@@ -282,9 +311,13 @@ export const state = {
   vehicleJobs: [] as VehicleJobRecord[],
   assignments: [] as AssignmentRecord[],
   gateTickets: [] as GateTicketRecord[],
+
   ticketProducts: [] as TicketProductRecord[],
   ticketWorkers: [] as TicketWorkerRecord[],
+  ticketProductFinancials: [] as TicketProductFinancialRecord[],
+  ticketWorkerPayments: [] as TicketWorkerPaymentRecord[],
   completionSubmissions: [] as TicketCompletionSubmissionRecord[],
+
   ticketRatings: [] as TicketRatingRecord[],
   lineActionTokens: [] as LineActionTokenRecord[],
   gateRequestLogs: [] as GateRequestLogRecord[],
@@ -304,6 +337,8 @@ export const state = {
   nextAssignmentId: 1,
   nextSessionId: 1,
   nextTicketWorkerId: 1,
+  nextTicketProductFinancialId: 1,
+  nextTicketWorkerPaymentId: 1,
   nextSubmissionId: 1,
   nextRatingId: 1,
   nextLineActionTokenId: 1,
@@ -667,6 +702,8 @@ export function resetRouteTestState(): void {
   state.gateTickets.length = 0;
   state.ticketProducts.length = 0;
   state.ticketWorkers.length = 0;
+  state.ticketProductFinancials.length = 0;
+  state.ticketWorkerPayments.length = 0;
   state.completionSubmissions.length = 0;
   state.ticketRatings.length = 0;
   state.lineActionTokens.length = 0;
@@ -685,10 +722,11 @@ export function resetRouteTestState(): void {
   state.queueJobs.clear();
   state.queueJobs.set(process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string, new Map());
   state.queueJobs.set(process.env.BULLMQ_WORKER_BREAK_RETURN_QUEUE as string, new Map());
-  state.workerProcessors.clear();
   state.nextAssignmentId = 1;
   state.nextSessionId = 1;
   state.nextTicketWorkerId = 1;
+  state.nextTicketProductFinancialId = 1;
+  state.nextTicketWorkerPaymentId = 1;
   state.nextSubmissionId = 1;
   state.nextRatingId = 1;
   state.nextLineActionTokenId = 1;
@@ -870,29 +908,25 @@ export function addTicketForVehicleJob(
     {
       id: ticketId * 10 + 1,
       ticket_id: ticketId,
-
       productCode: `PRODUCT-${ticketId}-1`,
       productFullCode: null,
       productName: "Apple",
-
       packageCode: "fruit",
       packageName: "kg",
-
       quantity: "10",
       confirmed_quantity: null,
 
-      package_weight_snapshot: null,
-      rate_id_snapshot: null,
-      source_rate_id_snapshot: null,
-      rate_market_code: null,
-      rate_source: null,
-      weight_range_name: null,
-      weight_min_snapshot: null,
-      weight_max_snapshot: null,
-      stall_rate_snapshot: null,
-      labor_rate_snapshot: null,
-      rate_snapshot_at: null,
-
+      package_weight_snapshot: "20",
+      rate_id_snapshot: 1,
+      source_rate_id_snapshot: 1,
+      rate_market_code: "0000",
+      rate_source: "CENTRAL_RATE",
+      weight_range_name: "1-25.0",
+      weight_min_snapshot: "0.00",
+      weight_max_snapshot: "25.00",
+      stall_rate_snapshot: "1.50",
+      labor_rate_snapshot: "0.90",
+      rate_snapshot_at: now,
       created_at: now,
       updated_at: now,
     },
@@ -910,18 +944,17 @@ export function addTicketForVehicleJob(
       quantity: "5",
       confirmed_quantity: null,
 
-      package_weight_snapshot: null,
-      rate_id_snapshot: null,
-      source_rate_id_snapshot: null,
-      rate_market_code: null,
-      rate_source: null,
-      weight_range_name: null,
-      weight_min_snapshot: null,
-      weight_max_snapshot: null,
-      stall_rate_snapshot: null,
-      labor_rate_snapshot: null,
-      rate_snapshot_at: null,
-
+      package_weight_snapshot: "20",
+      rate_id_snapshot: 1,
+      source_rate_id_snapshot: 1,
+      rate_market_code: "0000",
+      rate_source: "CENTRAL_RATE",
+      weight_range_name: "1-25.0",
+      weight_min_snapshot: "0.00",
+      weight_max_snapshot: "25.00",
+      stall_rate_snapshot: "1.50",
+      labor_rate_snapshot: "0.90",
+      rate_snapshot_at: now,
       created_at: now,
       updated_at: now,
     }
@@ -1433,26 +1466,108 @@ const workerApplicationRepositoryMock = {
           new Date(right.created_at ?? 0).getTime() -
           new Date(left.created_at ?? 0).getTime()
       )
-      .map((assignment) => ({
-        assignment,
-        vehicle_job: state.vehicleJobs.find(
-          (job) => job.id === assignment.vehicle_job_id
-        ) ?? {
-          id: assignment.vehicle_job_id,
-          ticketNo: `JOB-${assignment.vehicle_job_id}`,
-          gate_transaction_ref: `GATE-${assignment.vehicle_job_id}`,
-          license_plate: "TEST",
-          vehicle_type: null,
-          ticket_created_at: assignment.created_at ?? new Date().toISOString(),
-          booth_count: 1,
-          workers_required: 1,
-          status: "WORKING",
-          driver_qr_token: `driver-qr-${assignment.vehicle_job_id}`,
-          worker_qr_token: `JOB-${assignment.vehicle_job_id}`,
-          created_at: assignment.created_at ?? new Date().toISOString(),
-          updated_at: assignment.created_at ?? new Date().toISOString(),
-        },
-      })),
+      .map((assignment) => {
+        const vehicleJob =
+          state.vehicleJobs.find((job) => job.id === assignment.vehicle_job_id) ?? {
+            id: assignment.vehicle_job_id,
+            ticketNo: `JOB-${assignment.vehicle_job_id}`,
+            gate_transaction_ref: `GATE-${assignment.vehicle_job_id}`,
+            license_plate: "TEST",
+            vehicle_type: null,
+            ticket_created_at: assignment.created_at ?? new Date().toISOString(),
+            booth_count: 1,
+            workers_required: 1,
+            status: "WORKING",
+            driver_qr_token: `driver-qr-${assignment.vehicle_job_id}`,
+            worker_qr_token: `JOB-${assignment.vehicle_job_id}`,
+            created_at: assignment.created_at ?? new Date().toISOString(),
+            updated_at: assignment.created_at ?? new Date().toISOString(),
+          };
+
+        const ticketWorkers = state.ticketWorkers.filter((ticketWorker) => {
+          if (ticketWorker.worker_account_id !== workerAccountId) {
+            return false;
+          }
+
+          const ticket = state.gateTickets.find(
+            (item) => item.id === ticketWorker.ticket_id
+          );
+
+          return ticket?.vehicle_job_id === assignment.vehicle_job_id;
+        });
+
+        let totalAmount = new Prisma.Decimal(0);
+
+        const booths = ticketWorkers.map((ticketWorker) => {
+          const ticket = state.gateTickets.find(
+            (item) => item.id === ticketWorker.ticket_id
+          );
+
+          if (!ticket) {
+            throw new Error("Ticket not found for worker history.");
+          }
+
+          const payments = state.ticketWorkerPayments.filter(
+            (payment) => payment.ticket_worker_id === ticketWorker.id
+          );
+
+          let boothAmount = new Prisma.Decimal(0);
+
+          const products = payments.map((payment) => {
+            const financial = state.ticketProductFinancials.find(
+              (item) => item.id === payment.ticket_product_financial_id
+            );
+
+            if (!financial) {
+              throw new Error(
+                "Ticket product financial not found for worker history."
+              );
+            }
+
+            const product = state.ticketProducts.find(
+              (item) => item.id === financial.ticket_product_id
+            );
+
+            if (!product) {
+              throw new Error("Ticket product not found for worker history.");
+            }
+
+            boothAmount = boothAmount.plus(payment.final_amount);
+
+            return {
+              productCode: product.productCode,
+              packageCode: product.packageCode,
+              productName: product.productName,
+              packageName: product.packageName,
+              confirmed_quantity: new Prisma.Decimal(
+                financial.confirmed_quantity
+              ).toFixed(2),
+              final_amount: new Prisma.Decimal(payment.final_amount).toFixed(2),
+            };
+          });
+
+          totalAmount = totalAmount.plus(boothAmount);
+
+          return {
+            ticket_id: ticket.id,
+            boothCode: ticket.boothCode,
+            boothName: ticket.boothName,
+            membership_status: ticketWorker.status,
+            amount: boothAmount.toFixed(2),
+            products,
+          };
+        });
+
+        return {
+          assignment,
+          vehicle_job: vehicleJob,
+          earnings: {
+            total_amount: totalAmount.toFixed(2),
+            booths,
+          },
+        };
+      }),
+
   findGateTicketForCompletion: async (ticketId: number) =>
     state.gateTickets.find((ticket) => ticket.id === ticketId) ?? null,
   listActiveVendorLineTargetsForTicket: async (ticketId: number) => {
@@ -1489,34 +1604,103 @@ const workerApplicationRepositoryMock = {
         ticket.boothCode === boothCode
     ) ?? null;
   },
-  ensureTicketWorkersFromVehicleAssignments: async (
-    ticketId: number,
-    vehicleJobId: number
-  ) => {
-    const existing = state.ticketWorkers.filter((worker) => worker.ticket_id === ticketId);
+  syncTicketWorkersFromVehicleAssignments:
+    async (
+      ticketId: number,
+      vehicleJobId: number
+    ) => {
+      const now =
+        new Date().toISOString();
 
-    if (existing.length > 0) {
-      return existing;
-    }
+      const activeWorkerAccountIds =
+        [
+          ...new Set(
+            state.assignments
+              .filter(
+                (assignment) =>
+                  assignment.vehicle_job_id ===
+                  vehicleJobId &&
+                  SCANNED_ASSIGNMENT_STATUSES.includes(
+                    assignment.status
+                  )
+              )
+              .map(
+                (assignment) =>
+                  assignment.worker_account_id
+              )
+          ),
+        ];
 
-    return state.assignments
-      .filter(
-        (assignment) =>
-          assignment.vehicle_job_id === vehicleJobId &&
-          SCANNED_ASSIGNMENT_STATUSES.includes(assignment.status)
-      )
-      .map((assignment) => {
-        const ticketWorker = {
-          id: state.nextTicketWorkerId++,
-          ticket_id: ticketId,
-          worker_account_id: assignment.worker_account_id,
-          status: "WORKING",
-        };
+      for (const workerAccountId of activeWorkerAccountIds) {
+        let ticketWorker =
+          state.ticketWorkers.find(
+            (worker) =>
+              worker.ticket_id ===
+              ticketId &&
+              worker.worker_account_id ===
+              workerAccountId
+          );
 
-        state.ticketWorkers.push(ticketWorker);
-        return ticketWorker;
-      });
-  },
+        if (!ticketWorker) {
+          ticketWorker = {
+            id: state.nextTicketWorkerId++,
+            ticket_id: ticketId,
+            worker_account_id: workerAccountId,
+            status: "WORKING",
+            joined_at: now,
+            cancelled_at: null,
+            completed_at: null,
+          };
+
+          state.ticketWorkers.push(
+            ticketWorker
+          );
+        } else if (
+          ticketWorker.status !==
+          "COMPLETED"
+        ) {
+          ticketWorker.status =
+            "WORKING";
+
+          ticketWorker.cancelled_at =
+            null;
+
+          ticketWorker.completed_at =
+            null;
+        }
+      }
+
+      state.ticketWorkers
+        .filter(
+          (worker) =>
+            worker.ticket_id ===
+            ticketId &&
+            worker.status !==
+            "COMPLETED" &&
+            worker.status !==
+            "CANCELLED" &&
+            !activeWorkerAccountIds.includes(
+              worker.worker_account_id
+            )
+        )
+        .forEach((worker) => {
+          worker.status =
+            "CANCELLED";
+
+          worker.cancelled_at =
+            now;
+
+          worker.completed_at =
+            null;
+        });
+
+      return state.ticketWorkers.filter(
+        (worker) =>
+          worker.ticket_id ===
+          ticketId
+      );
+    },
+
   listTicketWorkers: async (ticketId: number) =>
     state.ticketWorkers.filter((worker) => worker.ticket_id === ticketId),
   listTicketProducts: async (ticketId: number) =>
@@ -1636,10 +1820,26 @@ const workerApplicationRepositoryMock = {
     submission.status = "COMPLETED";
     submission.confirmed_at = new Date().toISOString();
     submission.resolved_by_line_user_id = resolvedByLineUserId ?? null;
+    const completedAt =
+      new Date().toISOString();
+
     state.ticketWorkers
-      .filter((worker) => worker.ticket_id === ticketId)
+      .filter(
+        (worker) =>
+          worker.ticket_id ===
+          ticketId &&
+          worker.status ===
+          "WORKING"
+      )
       .forEach((worker) => {
-        worker.status = "COMPLETED";
+        worker.status =
+          "COMPLETED";
+
+        worker.completed_at =
+          completedAt;
+
+        worker.cancelled_at =
+          null;
       });
 
     return {
@@ -1669,17 +1869,259 @@ const workerApplicationRepositoryMock = {
     submission.status = "REJECT";
     submission.rejected_at = new Date().toISOString();
     submission.resolved_by_line_user_id = resolvedByLineUserId ?? null;
-    state.ticketWorkers
-      .filter((worker) => worker.ticket_id === ticketId)
-      .forEach((worker) => {
-        worker.status = "REJECT";
-      });
 
     return {
       ticket,
       submission,
     };
   },
+
+  // Function ดึงข้อมูลทั้งหมดสำหรับ Financialize Ticket ใน route test
+  findTicketFinancializationContext:
+    async (
+      ticketId: number) => {
+      const ticket =
+        state.gateTickets.find(
+          (item) =>
+            item.id === ticketId);
+
+      if (!ticket) {
+        return null;
+      }
+
+      const products =
+        state.ticketProducts
+          .filter(
+            (product) =>
+              product.ticket_id === ticketId)
+          .sort(
+            (left, right) => left.id - right.id)
+          .map((product) => {
+            const financial =
+              state.ticketProductFinancials.find(
+                (item) => item.ticket_product_id === product.id) ?? null;
+
+            return {
+              id:
+                product.id,
+
+              confirmedQuantity:
+                product.confirmed_quantity ===
+                  null
+                  ? null
+                  : new Prisma.Decimal(
+                    product.confirmed_quantity
+                  ),
+
+              packageWeightSnapshot:
+                product.package_weight_snapshot ===
+                  null
+                  ? null
+                  : new Prisma.Decimal(
+                    product.package_weight_snapshot
+                  ),
+
+              rateIdSnapshot: product.rate_id_snapshot,
+              sourceRateIdSnapshot: product.source_rate_id_snapshot,
+              rateMarketCode: product.rate_market_code,
+              rateSource: product.rate_source,
+              weightRangeName: product.weight_range_name,
+              weightMinSnapshot: product.weight_min_snapshot ===
+                null
+                ? null
+                : new Prisma.Decimal(
+                  product.weight_min_snapshot
+                ),
+              weightMaxSnapshot: product.weight_max_snapshot ===
+                null
+                ? null
+                : new Prisma.Decimal(
+                  product.weight_max_snapshot
+                ),
+              stallRateSnapshot: product.stall_rate_snapshot ===
+                null
+                ? null
+                : new Prisma.Decimal(
+                  product.stall_rate_snapshot
+                ),
+              laborRateSnapshot: product.labor_rate_snapshot ===
+                null
+                ? null
+                : new Prisma.Decimal(
+                  product.labor_rate_snapshot
+                ),
+              rateSnapshotAt: product.rate_snapshot_at
+                ? new Date(
+                  product.rate_snapshot_at
+                )
+                : null,
+
+              financial,
+            };
+          });
+
+      const workers =
+        state.ticketWorkers
+          .filter(
+            (worker) =>
+              worker.ticket_id ===
+              ticketId &&
+              worker.status ===
+              "COMPLETED"
+          )
+          .sort(
+            (left, right) =>
+              left.id - right.id
+          );
+
+      return {
+        id:
+          ticket.id,
+
+        status:
+          ticket.status,
+
+        finalStallAmount:
+          ticket.final_stall_amount
+            ? new Prisma.Decimal(
+              ticket.final_stall_amount
+            )
+            : null,
+
+        financializedAt:
+          ticket.financialized_at
+            ? new Date(
+              ticket.financialized_at
+            )
+            : null,
+
+        products,
+        workers,
+      };
+    },
+
+  // Function สร้าง Product Financial
+  createTicketProductFinancial:
+    async (
+      input: {
+        ticketProductId: number;
+        confirmedQuantity: Prisma.Decimal;
+        stallFeeRaw: Prisma.Decimal;
+        stallFeeRounded: Prisma.Decimal;
+        laborFeeRaw: Prisma.Decimal;
+        productCharge: Prisma.Decimal;
+        workerCount: number;
+        workerPayoutTotal: Prisma.Decimal;
+        fundAmount: Prisma.Decimal;
+        finalizedAt: Date;
+
+        workerPayments: Array<{
+          ticketWorkerId: number;
+          rawAmount: Prisma.Decimal;
+          remainderAmount: Prisma.Decimal;
+          finalAmount: Prisma.Decimal;
+        }>;
+      }
+    ) => {
+      const existing =
+        state.ticketProductFinancials.find(
+          (financial) =>
+            financial.ticket_product_id ===
+            input.ticketProductId
+        );
+
+      if (existing) {
+        throw new Error(
+          "Ticket product financial already exists."
+        );
+      }
+
+      const financial = {
+        id:
+          state
+            .nextTicketProductFinancialId++,
+        ticket_product_id: input.ticketProductId,
+        confirmed_quantity: input.confirmedQuantity.toString(),
+        stall_fee_raw: input.stallFeeRaw.toString(),
+        stall_fee_rounded: input.stallFeeRounded.toString(),
+        labor_fee_raw: input.laborFeeRaw.toString(),
+        product_charge: input.productCharge.toString(),
+        worker_count: input.workerCount,
+        worker_payout_total: input.workerPayoutTotal.toString(),
+        fund_amount: input.fundAmount.toString(),
+        finalized_at: input.finalizedAt.toISOString(),
+      };
+
+      state.ticketProductFinancials.push(
+        financial
+      );
+
+      for (
+        const payment
+        of input.workerPayments
+      ) {
+        const duplicate =
+          state.ticketWorkerPayments.find(
+            (item) =>
+              item
+                .ticket_product_financial_id ===
+              financial.id &&
+              item.ticket_worker_id ===
+              payment.ticketWorkerId
+          );
+
+        if (duplicate) {
+          throw new Error(
+            "Ticket worker payment already exists."
+          );
+        }
+
+        state.ticketWorkerPayments.push({
+          id:
+            state
+              .nextTicketWorkerPaymentId++,
+          ticket_product_financial_id: financial.id,
+          ticket_worker_id: payment.ticketWorkerId,
+          raw_amount: payment.rawAmount.toString(),
+          remainder_amount: payment.remainderAmount.toString(),
+          final_amount: payment.finalAmount.toString(),
+        });
+      }
+
+      return financial;
+    },
+
+  // Functionบันทึกยอดรวมและเวลาที่ Financialize Ticket
+  markGateTicketFinancialized:
+    async (
+      ticketId: number,
+      finalStallAmount:
+        Prisma.Decimal,
+      finalizedAt: Date
+    ): Promise<void> => {
+      const ticket =
+        state.gateTickets.find(
+          (item) =>
+            item.id === ticketId
+        );
+
+      if (
+        !ticket ||
+        ticket.status !==
+        "COMPLETED" ||
+        ticket.financialized_at
+      ) {
+        throw new Error(
+          "Gate ticket financialization did not update exactly one ticket."
+        );
+      }
+
+      ticket.final_stall_amount = finalStallAmount.toFixed(2);
+      ticket.completed_at = finalizedAt.toISOString();
+      ticket.financialized_at = finalizedAt.toISOString();
+      ticket.updated_at = finalizedAt.toISOString();
+    },
+
   closeCompletedVehicleJobIfReady: async (vehicleJobId: number) => {
     const job = state.vehicleJobs.find((item) => item.id === vehicleJobId);
     const tickets = state.gateTickets.filter(
@@ -1719,13 +2161,18 @@ const workerApplicationRepositoryMock = {
   },
   updateTicketProductConfirmations: async (
     ticketId: number,
-    items: Array<{ productCode: string; confirmed_quantity: number }>
+    items: Array<{
+      productCode: string;
+      packageCode: string;
+      confirmed_quantity: number;
+    }>
   ) => {
     for (const item of items) {
       const product = state.ticketProducts.find(
         (candidate) =>
           candidate.ticket_id === ticketId &&
-          candidate.productCode === item.productCode
+          candidate.productCode === item.productCode &&
+          candidate.packageCode === item.packageCode
       );
 
       if (!product) {

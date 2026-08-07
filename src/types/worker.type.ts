@@ -120,6 +120,9 @@ export interface GateTicketDto {
   reject_reason: string | null;
   status: string;
   confirmation_status: string;
+  final_stall_amount: string | null;
+  completed_at: string | null;
+  financialized_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -165,6 +168,9 @@ export interface TicketWorkerDto {
   ticket_id: number;
   worker_account_id: number;
   status: string;
+  joined_at: string;
+  cancelled_at: string | null;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -265,10 +271,37 @@ export interface VehicleJobAssignmentDto {
   updated_at: string;
 }
 
-// Type DTO ประวัติ assignment พร้อมข้อมูลงานรถ
+// Typeรายได้ Worker ต่อ Product ในประวัติงาน
+export interface WorkerAssignmentEarningProductDto {
+  productCode: string;
+  packageCode: string;
+  productName: string;
+  packageName: string;
+  confirmed_quantity: string;
+  final_amount: string;
+}
+
+// Typeรายได้ Worker ต่อ Booth ในประวัติงาน
+export interface WorkerAssignmentEarningBoothDto {
+  ticket_id: number;
+  boothCode: string;
+  boothName: string | null;
+  membership_status: string;
+  amount: string;
+  products: WorkerAssignmentEarningProductDto[];
+}
+
+// Typeสรุปรายได้ Worker ต่อ VehicleJob
+export interface WorkerAssignmentEarningsDto {
+  total_amount: string;
+  booths: WorkerAssignmentEarningBoothDto[];
+}
+
+// Type DTO ประวัติ assignment พร้อมข้อมูลงานรถและรายได้จริง
 export interface WorkerAssignmentHistoryItemDto {
   assignment: VehicleJobAssignmentDto;
   vehicle_job: VehicleJobDto;
+  earnings: WorkerAssignmentEarningsDto;
 }
 
 // Type response ประวัติ assignment ที่ส่งให้ Worker Mobile
@@ -283,6 +316,7 @@ export interface WorkerAssignmentHistoryItemResponse {
   scanned_at: string | null;
   completed_at: string | null;
   timeout_reason: string | null;
+  earnings: WorkerAssignmentEarningsDto;
   created_at: string;
   updated_at: string;
 }
@@ -372,6 +406,7 @@ export interface TicketCompletionResponse {
 // Type input รายการสินค้าที่ worker ยืนยันจำนวนตอนส่งยอด
 export interface TicketProductConfirmationInput {
   productCode: string;
+  packageCode: string;
   confirmed_quantity: number;
 }
 

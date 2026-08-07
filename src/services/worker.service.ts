@@ -1,4 +1,5 @@
 // Import Library
+import { Prisma } from "@prisma/client";
 // Import Dependencies
 import { withTransaction } from "../db/prisma";
 import { enqueueLoggedLineMessage } from "../queues/notification-queue";
@@ -23,10 +24,10 @@ import {
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { LineMessage } from "../types/line.type";
-import type { GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
+import type { TicketProductConfirmationInput, GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import type { DbConnection } from "../types/shared/common.type";
-import { ASSIGNMENT_STATUS, TICKET_STATUS } from "../constants/job-status";
+import { ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS } from "../constants/job-status";
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { workerAssignmentHistoryQuerySchema, workerScanBodySchema, workerTicketCompleteBodySchema } from "../validation/schemas";
@@ -110,6 +111,7 @@ function buildWorkerAssignmentHistoryItemResponse(
     scanned_at: item.assignment.scanned_at,
     completed_at: item.assignment.completed_at,
     timeout_reason: timeoutReason,
+    earnings: item.earnings,
     created_at: item.assignment.created_at,
     updated_at: item.assignment.updated_at,
   };
@@ -269,35 +271,60 @@ function buildVendorCompletionMessages(
   ];
 }
 
+// Function สร้าง key สำหรับระบุสินค้าแต่ละ package ภายใน ticket
+function buildTicketProductKey(
+  productCode: string,
+  packageCode: string
+): string {
+  return JSON.stringify([
+    productCode,
+    packageCode,
+  ]);
+}
+
 // Function ตรวจสอบ ticket completion items ใน service flow
 function validateTicketCompletionItems(
   products: TicketProductDto[],
-  items: Array<{ productCode: string; confirmed_quantity: number }>
+  items: TicketProductConfirmationInput[]
 ): void {
-  const productCodes = new Set(products.map((product) => product.productCode));
-  const itemCodes = new Set<string>();
+  const productKeys = new Set(
+    products.map((product) =>
+      buildTicketProductKey(
+        product.productCode,
+        product.packageCode
+      )
+    )
+  );
+
+  const itemKeys = new Set<string>();
 
   for (const item of items) {
-    if (!productCodes.has(item.productCode)) {
+    const itemKey =
+      buildTicketProductKey(
+        item.productCode,
+        item.packageCode
+      );
+
+    if (!productKeys.has(itemKey)) {
       throw new ApiError(
         400,
         "INVALID_TICKET_PRODUCT",
-        "Ticket product does not belong to this ticket."
+        "Ticket product and package do not belong to this ticket."
       );
     }
 
-    if (itemCodes.has(item.productCode)) {
+    if (itemKeys.has(itemKey)) {
       throw new ApiError(
         400,
         "DUPLICATE_TICKET_PRODUCT",
-        "Ticket product is duplicated in completion items."
+        "Ticket product and package are duplicated in completion items."
       );
     }
 
-    itemCodes.add(item.productCode);
+    itemKeys.add(itemKey);
   }
 
-  if (itemCodes.size !== products.length) {
+  if (itemKeys.size !== products.length) {
     throw new ApiError(
       400,
       "INCOMPLETE_TICKET_PRODUCTS",
@@ -613,10 +640,10 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
     phone: account.phone,
     shift: schedule
       ? {
-          name: schedule.shift_name,
-          start_time: schedule.shift_start_time,
-          end_time: schedule.shift_end_time,
-        }
+        name: schedule.shift_name,
+        start_time: schedule.shift_start_time,
+        end_time: schedule.shift_end_time,
+      }
       : null,
   };
   const remainingBreakTime = status === WORKER_WORK_STATUS.BREAK
@@ -637,19 +664,27 @@ export async function listWorkerAssignmentHistory(
   auth?: AccessTokenPayload
 ): Promise<{
   date: string;
+  total_earnings: string;
   data: WorkerAssignmentHistoryItemResponse[];
 }> {
   const account = await requireWorker(auth);
   const input = parseWithSchema(workerAssignmentHistoryQuerySchema, query);
   const { startAt, endAt } = buildBangkokDateRange(input.date);
+
   const history = await workerApplicationRepository.listWorkerAssignmentHistoryByDate(
     account.id,
     startAt,
     endAt
   );
 
+  const totalEarnings = history.reduce(
+    (total, item) => total.plus(item.earnings.total_amount),
+    new Prisma.Decimal(0)
+  );
+
   return {
     date: input.date,
+    total_earnings: totalEarnings.toFixed(2),
     data: history.map(buildWorkerAssignmentHistoryItemResponse),
   };
 }
@@ -1045,17 +1080,28 @@ async function completeResolvedWorkerTicket(
       );
     }
 
-    const ticketWorkers = await workerApplicationRepository.ensureTicketWorkersFromVehicleAssignments(
-      ticket.id,
-      ticket.vehicle_job_id,
-      transaction
-    );
-    const isTicketWorker = ticketWorkers.some(
-      (worker) => worker.worker_account_id === account.id
-    );
+    const ticketWorkers =
+      await workerApplicationRepository
+        .syncTicketWorkersFromVehicleAssignments(
+          ticket.id,
+          ticket.vehicle_job_id,
+          transaction
+        );
+
+    // ตรวจสอบว่า Worker ที่ส่งยอดยังเป็นสมาชิกที่ทำงานอยู่ใน Ticket/Booth นี้
+    const isTicketWorker =
+      ticketWorkers.some(
+        (worker) =>
+          worker.worker_account_id === account.id &&
+          worker.status === TICKET_WORKER_STATUS.WORKING
+      );
 
     if (!isTicketWorker) {
-      throw new ApiError(403, "WORKER_NOT_IN_TICKET", "Worker is not assigned to this ticket.");
+      throw new ApiError(
+        403,
+        "WORKER_NOT_IN_TICKET",
+        "Worker is not assigned to this ticket."
+      );
     }
 
     const products = await workerApplicationRepository.listTicketProducts(

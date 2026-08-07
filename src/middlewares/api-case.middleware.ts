@@ -103,6 +103,12 @@ const requestKeyMap: Record<string, string> = {
   WorkDate: "work_date",
   WorkSchedule: "work_schedule",
   WorkStartDate: "work_start_date",
+
+  FinalAmount: "final_amount",
+  MembershipStatus: "membership_status",
+  TicketId: "ticket_id",
+  TotalAmount: "total_amount",
+  TotalEarnings: "total_earnings",
 };
 
 /* -------------------------------------- Functions -------------------------------------- */

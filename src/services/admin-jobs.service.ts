@@ -699,7 +699,7 @@ export async function cancelAssignment(
   }
 
   const vehicleJob = await adminJobsRepository.findVehicleJobById(assignment.vehicle_job_id);
-  const cancelledAssignment = await adminJobsRepository.cancelAssignment(assignment.id);
+  const cancelledAssignment = await withTransaction(async (transaction) => adminJobsRepository.cancelAssignment(assignment.id, transaction));
 
   await removeAssignmentTimeout(assignment.id);
   await removeScanTimeout(assignment.id);

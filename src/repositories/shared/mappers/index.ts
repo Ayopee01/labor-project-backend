@@ -233,6 +233,9 @@ export function mapGateTicket(record: GateTicket | null): GateTicketDto | null {
     reject_reason: record.rejectReason,
     status: record.status,
     confirmation_status: record.status,
+    final_stall_amount: record.finalStallAmount?.toFixed(2) ?? null,
+    completed_at: record.completedAt ? toIsoString(record.completedAt) : null,
+    financialized_at: record.financializedAt ? toIsoString(record.financializedAt) : null,
     created_at: toIsoString(record.createdAt),
     updated_at: toIsoString(record.updatedAt),
   };
@@ -269,6 +272,13 @@ export function mapTicketWorker(record: TicketWorker | null): TicketWorkerDto | 
     ticket_id: record.ticketId,
     worker_account_id: record.workerAccountId,
     status: record.status,
+    joined_at: toIsoString(record.joinedAt),
+    cancelled_at: record.cancelledAt
+      ? toIsoString(record.cancelledAt)
+      : null,
+    completed_at: record.completedAt
+      ? toIsoString(record.completedAt)
+      : null,
     created_at: toIsoString(record.createdAt),
     updated_at: toIsoString(record.updatedAt),
   };

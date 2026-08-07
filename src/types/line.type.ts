@@ -114,6 +114,7 @@ export interface VendorTicketCompletionFlowResult {
   submission: import("./worker.type").TicketCompletionSubmissionDto;
   products: import("./worker.type").TicketProductDto[];
   detail: import("./worker.type").VehicleJobDetailResponse | null;
+  financial: import("../services/ticket-financial.service").TicketFinancializationResult | null;
   completedVehicleJob: import("./worker.type").CompletedVehicleJobResult | null;
   completedWorkerCodes: Array<string | null>;
   nextTicket: import("./worker.type").CurrentTicketProgressDto | null;

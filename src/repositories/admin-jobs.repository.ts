@@ -2,12 +2,7 @@
 import { Prisma } from "@prisma/client";
 
 // Import Dependencies
-import {
-  ACTIVE_ASSIGNMENT_STATUSES,
-  ASSIGNMENT_STATUS,
-  TICKET_STATUS,
-  VEHICLE_JOB_STATUS,
-} from "../constants/job-status";
+import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import { mapAccount, mapGateTicket, mapMarketJob, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
@@ -170,15 +165,15 @@ export async function listVehicleJobs(
 
   const where: Prisma.VehicleJobWhereInput = {
     ...((filters.startAt || filters.endAt) && {
-        createdAt: {
-          ...(filters.startAt && {
-            gte: filters.startAt,
-          }),
-          ...(filters.endAt && {
-            lt: filters.endAt,
-          }),
-        },
-      }),
+      createdAt: {
+        ...(filters.startAt && {
+          gte: filters.startAt,
+        }),
+        ...(filters.endAt && {
+          lt: filters.endAt,
+        }),
+      },
+    }),
     ...(andFilters.length > 0 && {
       AND: andFilters,
     }),
@@ -342,15 +337,15 @@ export async function listVehicleJobOperations(
 
   const where: Prisma.VehicleJobWhereInput = {
     ...((filters.startAt || filters.endAt) && {
-        createdAt: {
-          ...(filters.startAt && {
-            gte: filters.startAt,
-          }),
-          ...(filters.endAt && {
-            lt: filters.endAt,
-          }),
-        },
-      }),
+      createdAt: {
+        ...(filters.startAt && {
+          gte: filters.startAt,
+        }),
+        ...(filters.endAt && {
+          lt: filters.endAt,
+        }),
+      },
+    }),
     ...(andFilters.length > 0 && {
       AND: andFilters,
     }),
@@ -498,6 +493,20 @@ export async function cancelVehicleJob(
   connection?: DbConnection
 ): Promise<VehicleJobDto> {
   const db = client(connection);
+  const now = new Date();
+
+  await db.ticketWorker.updateMany({
+    where: {
+      status: TICKET_WORKER_STATUS.WORKING,
+
+      ticket: { vehicleJobId },
+    },
+    data: {
+      status: TICKET_WORKER_STATUS.CANCELLED,
+      cancelledAt: now,
+      completedAt: null,
+    },
+  });
 
   await db.vehicleJobAssignment.updateMany({
     where: {
@@ -545,6 +554,20 @@ export async function cancelMarketJob(
   connection?: DbConnection
 ): Promise<MarketJobDto> {
   const db = client(connection);
+  const now = new Date();
+
+  await db.ticketWorker.updateMany({
+    where: {
+      status: TICKET_WORKER_STATUS.WORKING,
+      ticket: { marketJobId },
+    },
+    data: {
+      status: TICKET_WORKER_STATUS.CANCELLED,
+      cancelledAt: now,
+      completedAt: null,
+    },
+  });
+
   const marketJob = await db.marketJob.update({
     where: {
       id: marketJobId,
@@ -571,6 +594,21 @@ export async function cancelGateTicket(
   connection?: DbConnection
 ): Promise<GateTicketDto> {
   const db = client(connection);
+  const now = new Date();
+
+  await db.ticketWorker.updateMany(
+    {
+      where: {
+        ticketId,
+        status: TICKET_WORKER_STATUS.WORKING,
+      },
+      data: {
+        status: TICKET_WORKER_STATUS.CANCELLED,
+        cancelledAt: now,
+        completedAt: null,
+      },
+    });
+
   const ticket = await db.gateTicket.update({
     where: {
       id: ticketId,
@@ -616,18 +654,18 @@ export async function listAcceptedAssignmentsByVehicleJob(
   const db = client(connection);
   const workerAccountIds = workerCodes && workerCodes.length > 0
     ? (
-        await db.account.findMany({
-          where: {
-            role: "worker",
-            username: {
-              in: workerCodes,
-            },
+      await db.account.findMany({
+        where: {
+          role: "worker",
+          username: {
+            in: workerCodes,
           },
-          select: {
-            id: true,
-          },
-        })
-      ).map((account) => account.id)
+        },
+        select: {
+          id: true,
+        },
+      })
+    ).map((account) => account.id)
     : undefined;
 
   if (workerCodes && workerCodes.length > 0 && workerAccountIds?.length === 0) {
@@ -640,10 +678,10 @@ export async function listAcceptedAssignmentsByVehicleJob(
       status: ASSIGNMENT_STATUS.ACCEPTED,
       ...(workerAccountIds &&
         workerAccountIds.length > 0 && {
-          workerAccountId: {
-            in: workerAccountIds,
-          },
-        }),
+        workerAccountId: {
+          in: workerAccountIds,
+        },
+      }),
     },
     orderBy: {
       id: "asc",
@@ -655,22 +693,65 @@ export async function listAcceptedAssignmentsByVehicleJob(
     .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
 }
 
-// Function ยกเลิก assignment จาก DB
+// Function ยกเลิก assignment จาก DB พร้อมถอด Worker ออกจาก Booth ที่ยังไม่ Complete
 export async function cancelAssignment(
   assignmentId: number,
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto> {
   const db = client(connection);
-  const assignment = await db.vehicleJobAssignment.update({
+  const now = new Date();
+
+  const assignment =
+    await db.vehicleJobAssignment.update({
+      where: {
+        id: assignmentId,
+      },
+
+      data: {
+        status:
+          ASSIGNMENT_STATUS.CANCELLED,
+      },
+    });
+
+  await db.ticketWorker.updateMany({
     where: {
-      id: assignmentId,
+      workerAccountId:
+        assignment.workerAccountId,
+
+      status:
+        TICKET_WORKER_STATUS.WORKING,
+
+      ticket: {
+        vehicleJobId:
+          assignment.vehicleJobId,
+
+        status: {
+          notIn: [
+            TICKET_STATUS.COMPLETED,
+            TICKET_STATUS.CANCELLED,
+          ],
+        },
+      },
     },
+
     data: {
-      status: ASSIGNMENT_STATUS.CANCELLED,
+      status:
+        TICKET_WORKER_STATUS.CANCELLED,
+
+      cancelledAt:
+        now,
+
+      completedAt:
+        null,
     },
   });
 
-  return requireDto(mapVehicleJobAssignment(assignment), "assignment cancel");
+  return requireDto(
+    mapVehicleJobAssignment(
+      assignment
+    ),
+    "assignment cancel"
+  );
 }
 
 // Function ต่อเวลา assignment scan deadline จาก DB

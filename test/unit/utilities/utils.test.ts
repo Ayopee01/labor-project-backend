@@ -313,6 +313,21 @@ test("API case utilities normalize PascalCase request payloads", () => {
     DeviceId: "mobile-001",
     WorkerCodes: ["MN000012"],
     WorkerAcceptDeadlineSeconds: 60,
+    TotalEarnings: "12.00",
+    Earnings: {
+      TotalAmount: "12.00",
+      Booths: [
+        {
+          TicketId: 977,
+          MembershipStatus: "COMPLETED",
+          Products: [
+            {
+              FinalAmount: "9.00",
+            },
+          ],
+        },
+      ],
+    },
     Items: [
       {
         ProductCode: "PRODUCT-001",
@@ -325,6 +340,21 @@ test("API case utilities normalize PascalCase request payloads", () => {
     device_id: "mobile-001",
     worker_codes: ["MN000012"],
     worker_accept_deadline_seconds: 60,
+    total_earnings: "12.00",
+    earnings: {
+      total_amount: "12.00",
+      booths: [
+        {
+          ticket_id: 977,
+          membership_status: "COMPLETED",
+          products: [
+            {
+              final_amount: "9.00",
+            },
+          ],
+        },
+      ],
+    },
     items: [
       {
         productCode: "PRODUCT-001",
@@ -714,7 +744,78 @@ test("labor job pricing rejects invalid worker count", () => {
     (error) =>
       error instanceof ApiError &&
       error.code ===
-        "ACTUAL_WORKER_COUNT_INVALID"
+      "ACTUAL_WORKER_COUNT_INVALID"
+  );
+});
+
+test("labor job pricing allows zero confirmed quantity", () => {
+  const stallCharge =
+    laborJobPricing.calculateProductStallCharge({
+      quantity:
+        new Prisma.Decimal("0.00"),
+
+      stallRate:
+        new Prisma.Decimal("6.00"),
+
+      laborRate:
+        new Prisma.Decimal("4.44"),
+    });
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      stallCharge.stallFeeRaw
+    ),
+    "0.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      stallCharge.stallFeeRounded
+    ),
+    "0.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      stallCharge.laborFeeRaw
+    ),
+    "0.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      stallCharge.productCharge
+    ),
+    "0.00"
+  );
+
+  const workerPayment =
+    laborJobPricing.calculateProductWorkerPayment({
+      laborFeeRaw:
+        stallCharge.laborFeeRaw,
+
+      actualWorkerCount: 3,
+    });
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      workerPayment.finalAmountPerWorker
+    ),
+    "0.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      workerPayment.workerPayoutTotal
+    ),
+    "0.00"
+  );
+
+  assert.equal(
+    laborJobPricing.decimalToMoneyString(
+      workerPayment.fundAmount
+    ),
+    "0.00"
   );
 });
 

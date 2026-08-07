@@ -202,8 +202,8 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(firstProduct.PackageName, "Crate 20");
   assert.equal(firstProduct.Quantity, 180);
   assert.equal(response.body.WorkerCount, 3);
-
   assert.equal(firstProduct.WorkerCount, 3);
+
   assert.equal(firstProduct.StallAmount, undefined);
   assert.equal(firstProduct.WorkerPayment, undefined);
   assert.equal(firstBooth.StallPayment, undefined);
@@ -425,31 +425,23 @@ test("POST /api/gate/tickets creates multiple booths and products in one request
   assert.equal(response.body.Booths[1].Products[0].ProductCode, "02030103");
   assert.equal(response.body.Booths[1].Products[1].ProductCode, "02011701");
 
-  assert.deepEqual(response.body.Booths[0].StallPayment, {
-    Amount: "432.00",
-    RoundingAmount: "0.00",
-  });
-  assert.deepEqual(response.body.Booths[1].StallPayment, {
-    Amount: "432.00",
-    RoundingAmount: "0.00",
-  });
+  assert.equal(response.body.Booths[0].StallPayment, undefined);
+  assert.equal(response.body.Booths[1].StallPayment, undefined);
 
-  assert.equal(response.body.WorkerCount, 3);
-  assert.deepEqual(response.body.WorkerPayment, {
-    AmountPerWorker: "108.00",
-    WorkerCount: 3,
-    TotalAmount: "324.00",
-    DeductedRemainder: "0.00",
-  });
-  assert.deepEqual(response.body.OrderRemainder, {
-    StallRoundingAmount: "0.00",
-    WorkerDeductedAmount: "0.00",
-    TotalAmount: "0.00",
-  });
+  assert.equal(response.body.WorkerCount, 7);
+  assert.equal(response.body.WorkerPayment, undefined);
+  assert.equal(response.body.OrderRemainder, undefined);
+
+  for (const booth of response.body.Booths) {
+    for (const product of booth.Products) {
+      assert.equal(product.StallAmount, undefined);
+      assert.equal(product.WorkerPayment, undefined);
+    }
+  }
 
   assert.equal(state.vehicleJobs.length, 1);
   assert.equal(state.vehicleJobs[0].booth_count, 2);
-  assert.equal(state.vehicleJobs[0].workers_required, 3);
+  assert.equal(state.vehicleJobs[0].workers_required, 7);
 
   assert.equal(state.gateTickets.length, 2);
   assert.equal(state.gateTickets[0].boothCode, "STALL-004");
@@ -722,12 +714,16 @@ test("GET /api/workers/me/assignments/history returns scan audit fields and time
 
   assert.equal(response.status, 200);
   assert.equal(response.body.date, "2026-07-24");
+  assert.equal(response.body.total_earnings, "0.00");
   assert.equal(response.body.data.length, 2);
+  assert.deepEqual(response.body.data[0].earnings, { total_amount: "0.00", booths: [], });
+  assert.deepEqual(response.body.data[1].earnings, { total_amount: "0.00", booths: [], });
   assert.deepEqual(Object.keys(response.body.data[0]).sort(), [
     "accept_deadline_at",
     "accepted_at",
     "completed_at",
     "created_at",
+    "earnings",
     "gate_transaction_ref",
     "license_plate",
     "scan_deadline_at",
@@ -1451,10 +1447,14 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete sub
     body: {
       items: products.map((product, index) => ({
         productCode: product.productCode,
+        packageCode: product.packageCode,
         confirmed_quantity: index === 0 ? 10 : 4,
       })),
     },
   });
+
+
+
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
     "assignment_status",
@@ -1585,6 +1585,23 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete sub
   assert.equal(ticket.status, "COMPLETED");
   assert.equal(assignment.status, "COMPLETED");
   assert.equal(job.status, "COMPLETED");
+
+  // Financialization ต้องเกิดหลัง Vendor Confirm
+  assert.equal(state.ticketProductFinancials.length, products.length);
+  assert.equal(state.ticketWorkerPayments.length, products.length);
+
+  // Ticket นี้มี Worker จริง 1 คน
+  assert.ok(state.ticketProductFinancials.every((financial) => financial.worker_count === 1));
+  assert.equal(ticket.final_stall_amount, "34.00");
+  assert.ok(ticket.completed_at);
+  assert.ok(ticket.financialized_at);
+  assert.equal(state.ticketProductFinancials[0].product_charge, "24");
+  assert.equal(state.ticketProductFinancials[1].product_charge, "10");
+  assert.equal(state.ticketProductFinancials[0].labor_fee_raw, "9");
+  assert.equal(state.ticketProductFinancials[1].labor_fee_raw, "3.6");
+  assert.equal(state.ticketProductFinancials[1].worker_payout_total, "3");
+  assert.equal(state.ticketProductFinancials[1].fund_amount, "0.6");
+
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");
   const workerReadyEvent = state.socketEvents.find((item) => {
     const payload = item.payload as { queue?: { status?: string } };
@@ -1747,15 +1764,146 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete sub
   };
   assert.equal(duplicateMemberMessage.name, "send-vendor-ticket-already-handled");
   assert.equal(duplicateMemberMessage.data?.to, `${ticket.vendor_line_id}-member`);
-  assert.match(
-    duplicateMemberMessage.data?.messages?.[0]?.text ?? "",
-    /รายการนี้ได้รับการดำเนินการเรียบร้อยแล้ว/
-  );
-  assert.match(
-    JSON.stringify(ratingResultMessage.data?.messages?.[1]?.contents),
-    /0\.00 บาท/
+  assert.match(duplicateMemberMessage.data?.messages?.[0]?.text ?? "", /รายการนี้ได้รับการดำเนินการเรียบร้อยแล้ว/);
+  assert.match(JSON.stringify(ratingResultMessage.data?.messages?.[1]?.contents), /34\.00 บาท/);
+  assert.doesNotMatch(JSON.stringify(ratingResultMessage.data?.messages?.[1]?.contents), /0\.00 บาท/);
+});
+
+test("vendor confirmation timeout auto-confirms ticket and financializes only once", async () => {
+  const { token, worker } = await loginWorker(76);
+  const job = addDispatchableJob(876, 1);
+  const ticket = addTicketForVehicleJob(job.id, 977);
+  const assignment = addPendingAssignment(1077, job.id, worker.id);
+
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.markWorkerAssigned(worker.id);
+
+  const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+
+  const submitResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticketNo}/tickets/${ticket.boothCode}/complete`,
+    {
+      token,
+      body: {
+        items: products.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    }
   );
 
+  assert.equal(submitResponse.status, 200);
+  assert.equal(ticket.status, "DELIVERED");
+  assert.equal(assignment.status, "DELIVERED");
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+
+  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  const processor = state.workerProcessors.get(queueName);
+
+  assert.ok(processor, "Assignment timeout processor must be registered.");
+
+  const submission = state.completionSubmissions.at(-1);
+
+  assert.ok(submission, "Completion submission must exist.");
+
+  await processor({
+    data: {
+      ticketId: ticket.id,
+      submissionId: submission.id,
+      kind: "vendor_confirm",
+    },
+  });
+
+  assert.equal(ticket.status, "COMPLETED");
+  assert.equal(ticket.confirmation_status, "COMPLETED");
+  assert.equal(submission.status, "COMPLETED");
+  assert.equal(assignment.status, "COMPLETED");
+  assert.equal(job.status, "COMPLETED");
+
+  assert.equal(ticket.final_stall_amount, "34.00");
+  assert.ok(ticket.completed_at);
+  assert.ok(ticket.financialized_at);
+
+  assert.equal(state.ticketProductFinancials.length, products.length);
+  assert.equal(state.ticketWorkerPayments.length, products.length);
+
+  assert.ok(
+    state.ticketProductFinancials.every((financial) => financial.worker_count === 1)
+  );
+
+  assert.equal(state.ticketProductFinancials[0].product_charge, "24");
+  assert.equal(state.ticketProductFinancials[1].product_charge, "10");
+
+  assert.equal(state.ticketProductFinancials[0].labor_fee_raw, "9");
+  assert.equal(state.ticketProductFinancials[1].labor_fee_raw, "3.6");
+
+  assert.equal(state.ticketProductFinancials[1].worker_payout_total, "3");
+  assert.equal(state.ticketProductFinancials[1].fund_amount, "0.6");
+
+  const financialCount = state.ticketProductFinancials.length;
+  const paymentCount = state.ticketWorkerPayments.length;
+  const financializedAt = ticket.financialized_at;
+
+  await processor({
+    data: {
+      ticketId: ticket.id,
+      submissionId: submission.id,
+      kind: "vendor_confirm",
+    },
+  });
+
+  assert.equal(state.ticketProductFinancials.length, financialCount);
+  assert.equal(state.ticketWorkerPayments.length, paymentCount);
+  assert.equal(ticket.final_stall_amount, "34.00");
+  assert.equal(ticket.financialized_at, financializedAt);
+  const assignmentCreatedAt = assignment.created_at;
+  assert.ok(assignmentCreatedAt);
+
+  const historyDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(assignmentCreatedAt));
+
+  const historyResponse = await server.request(
+    "GET",
+    `/api/workers/me/assignments/history?date=${historyDate}`,
+    {
+      token,
+    }
+  );
+
+  assert.equal(historyResponse.status, 200);
+
+  const historyItem = historyResponse.body.data.find(
+    (item: { ticketNo: string }) => item.ticketNo === job.ticketNo
+  );
+
+  assert.ok(historyItem);
+
+  assert.equal(historyItem.earnings.total_amount, "12.00");
+  assert.equal(historyResponse.body.total_earnings, "12.00");
+
+  assert.equal(historyItem.earnings.booths.length, 1);
+
+  const boothEarning = historyItem.earnings.booths[0];
+
+  assert.equal(boothEarning.ticket_id, ticket.id);
+  assert.equal(boothEarning.boothCode, ticket.boothCode);
+  assert.equal(boothEarning.membership_status, "COMPLETED");
+  assert.equal(boothEarning.amount, "12.00");
+  assert.equal(boothEarning.products.length, 2);
+
+  assert.equal(boothEarning.products[0].final_amount, "9.00");
+  assert.equal(boothEarning.products[1].final_amount, "3.00");
 });
 
 test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows resubmit", async () => {
@@ -1771,6 +1919,7 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
     body: {
       items: products.map((product) => ({
         productCode: product.productCode,
+        packageCode: product.packageCode,
         confirmed_quantity: Number(product.quantity),
       })),
     },
@@ -1821,6 +1970,12 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
   assert.equal(ticket.status, "REJECT");
   assert.equal(ticket.confirmation_status, "REJECT");
   assert.equal(assignment.status, "REJECT");
+
+  assert.equal(state.ticketProductFinancials.length, 0);
+  assert.equal(state.ticketWorkerPayments.length, 0);
+  assert.equal(ticket.final_stall_amount ?? null, null);
+  assert.equal(ticket.financialized_at ?? null, null);
+
   const rejectEvent = [...state.realtimeEvents].reverse().find(
     (event) =>
       Boolean(
@@ -1840,6 +1995,7 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
     body: {
       items: products.map((product) => ({
         productCode: product.productCode,
+        packageCode: product.packageCode,
         confirmed_quantity: Number(product.quantity),
       })),
     },
@@ -1867,6 +2023,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete all
     body: {
       items: products.map((product) => ({
         productCode: product.productCode,
+        packageCode: product.packageCode,
         confirmed_quantity: Number(product.quantity),
       })),
     },
@@ -1895,6 +2052,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete rej
     body: {
       items: products.map((product) => ({
         productCode: product.productCode,
+        packageCode: product.packageCode,
         confirmed_quantity: Number(product.quantity),
       })),
     },
@@ -1922,6 +2080,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete rej
       items: [
         {
           productCode: firstProduct.productCode,
+          packageCode: firstProduct.packageCode,
           confirmed_quantity: 10,
         },
       ],
