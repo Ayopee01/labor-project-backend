@@ -10,9 +10,7 @@ const TEST_OWNER = {
 } as const;
 
 // Function ผูก LINE User ทดสอบกับทุกแผงที่มีอยู่จริงใน Master Market
-export async function seedTestLine(
-  prisma: PrismaClient,
-): Promise<void> {
+export async function seedTestLine(prisma: PrismaClient): Promise<void> {
   const syncedAt = new Date();
 
   for (let index = 0; index < masterMarketSeedData.length; index += 100) {

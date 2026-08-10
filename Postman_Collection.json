@@ -226,14 +226,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Admin username/password only.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. Call GET /api/auth/me after login to fetch admin profile data, permissions, and latest activity."
           },
@@ -281,14 +275,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone from worker creation, DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
@@ -336,14 +324,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone, DeviceId, and DeviceName. FcmToken is intentionally omitted in this example.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Use this when Mobile has not received an FCM token from Firebase SDK yet. After login succeeds and Firebase SDK returns the token, call POST /api/auth/push-token with FcmToken and Platform."
           },
@@ -389,15 +371,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login/confirm-force",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login",
-                "confirm-force"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login", "confirm-force"]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName, optional FcmToken, optional Platform\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken. If FcmToken is sent, backend revokes the old session push token and stores the new token for this WorkerCode. If Mobile does not have an FCM token yet, omit it here and call POST /api/auth/push-token after Firebase SDK returns the token."
           },
@@ -431,14 +406,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/push-token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "push-token"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "push-token"]
             },
             "auth": {
               "type": "noauth"
@@ -487,14 +456,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/refresh",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "refresh"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/refresh\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: RefreshToken\nNotes: Returns a new AccessToken and RefreshToken."
           },
@@ -514,14 +477,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/logout",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "logout"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
             },
             "auth": {
               "type": "noauth"
@@ -544,14 +501,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "me"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
             },
             "auth": {
               "type": "noauth"
@@ -588,15 +539,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/me/password",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "me",
-                "password"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me", "password"]
             },
             "auth": {
               "type": "noauth"
@@ -677,14 +621,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/users",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "users"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "users"]
             },
             "auth": {
               "type": "noauth"
@@ -707,14 +645,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "users"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "users"],
               "query": [
                 {
                   "key": "page",
@@ -756,15 +688,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{workerCode}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "users",
-                "{{workerCode}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "users", "{{workerCode}}"]
             },
             "auth": {
               "type": "noauth"
@@ -802,15 +727,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{workerCode}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "users",
-                "{{workerCode}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "users", "{{workerCode}}"]
             },
             "auth": {
               "type": "noauth"
@@ -848,16 +766,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{workerCode}}/password",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "users",
-                "{{workerCode}}",
-                "password"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "users", "{{workerCode}}", "password"]
             },
             "auth": {
               "type": "noauth"
@@ -884,16 +794,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/jobs/workers/status",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "jobs",
-                "workers",
-                "status"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "jobs", "workers", "status"]
             },
             "auth": {
               "type": "noauth"
@@ -929,9 +831,7 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/jobs/workers/{{workerCode}}/status/force",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "admin",
@@ -976,15 +876,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/jobs/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "jobs",
-                "cancel"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "jobs", "cancel"]
             },
             "auth": {
               "type": "noauth"
@@ -1024,15 +917,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/operations?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&operation_status=",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "vehicle-jobs",
-                "operations"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "vehicle-jobs", "operations"],
               "query": [
                 {
                   "key": "date_from",
@@ -1104,15 +990,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/history?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&status=",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "vehicle-jobs",
-                "history"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "vehicle-jobs", "history"],
               "query": [
                 {
                   "key": "date_from",
@@ -1164,9 +1043,7 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/financials",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "admin",
@@ -1221,9 +1098,7 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/assign-workers",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "admin",
@@ -1266,9 +1141,7 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/scan-deadline/extend",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "admin",
@@ -1312,9 +1185,7 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/workers/{{workerCode}}/assignment/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "admin",
@@ -1351,14 +1222,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/settings",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "settings"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "settings"]
             },
             "auth": {
               "type": "noauth"
@@ -1394,14 +1259,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/settings",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "settings"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "settings"]
             },
             "auth": {
               "type": "noauth"
@@ -1423,14 +1282,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/roles",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "roles"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "roles"]
             },
             "auth": {
               "type": "noauth"
@@ -1452,14 +1305,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/gate-clients",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "gate-clients"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "gate-clients"]
             },
             "auth": {
               "type": "noauth"
@@ -1508,14 +1355,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/gate-clients",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "gate-clients"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "gate-clients"]
             },
             "auth": {
               "type": "noauth"
@@ -1551,15 +1392,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/gate-clients/{{gateClientId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "gate-clients",
-                "{{gateClientId}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "gate-clients", "{{gateClientId}}"]
             },
             "auth": {
               "type": "noauth"
@@ -1593,9 +1427,7 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/gate-clients/{{gateClientId}}/secret/rotate",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "admin",
@@ -1651,14 +1483,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/admins",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "admins"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "admins"]
             },
             "auth": {
               "type": "noauth"
@@ -1680,9 +1506,7 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{adminUserId}}/permissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "admin",
@@ -1725,9 +1549,7 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{adminUserId}}/permissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "admin",
@@ -1808,14 +1630,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/gate/options",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "gate",
-                "options"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "gate", "options"]
             },
             "auth": {
               "type": "basic",
@@ -1896,14 +1712,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/gate/tickets",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "gate",
-                "tickets"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "gate", "tickets"]
             },
             "auth": {
               "type": "basic",
@@ -1964,14 +1774,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/driver/qr-sessions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "driver",
-                "qr-sessions"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "driver", "qr-sessions"]
             },
             "auth": {
               "type": "noauth"
@@ -1993,15 +1797,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/driver/jobs/current",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "driver",
-                "jobs",
-                "current"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "driver", "jobs", "current"]
             },
             "auth": {
               "type": "noauth"
@@ -2023,16 +1820,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/driver/jobs/{{ticketNo}}/ready",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "driver",
-                "jobs",
-                "{{ticketNo}}",
-                "ready"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "driver", "jobs", "{{ticketNo}}", "ready"]
             },
             "auth": {
               "type": "noauth"
@@ -2060,15 +1849,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/online",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "workers",
-                "me",
-                "online"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "workers", "me", "online"]
             },
             "auth": {
               "type": "noauth"
@@ -2090,15 +1872,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/offline",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "workers",
-                "me",
-                "offline"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "workers", "me", "offline"]
             },
             "auth": {
               "type": "noauth"
@@ -2120,15 +1895,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/break",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "workers",
-                "me",
-                "break"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "workers", "me", "break"]
             },
             "auth": {
               "type": "noauth"
@@ -2150,15 +1918,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/status",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "workers",
-                "me",
-                "status"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "workers", "me", "status"]
             },
             "auth": {
               "type": "noauth"
@@ -2180,16 +1941,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "workers",
-                "me",
-                "assignments",
-                "history"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "workers", "me", "assignments", "history"],
               "query": [
                 {
                   "key": "date",
@@ -2234,9 +1987,7 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/accept",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "workers",
@@ -2280,9 +2031,7 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/check-in-qr",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "workers",
@@ -2338,9 +2087,7 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/tickets/{{boothCode}}/complete",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "workers",
@@ -2382,14 +2129,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/events",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "events"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "events"]
             },
             "auth": {
               "type": "noauth"
@@ -2425,14 +2166,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/line/webhook",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "line",
-                "webhook"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "line", "webhook"]
             },
             "auth": {
               "type": "noauth"
@@ -2463,14 +2198,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/line/webhook",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "line",
-                "webhook"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "line", "webhook"]
             },
             "auth": {
               "type": "noauth"
@@ -2501,14 +2230,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/line/webhook",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "line",
-                "webhook"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "line", "webhook"]
             },
             "auth": {
               "type": "noauth"

@@ -1953,7 +1953,6 @@
               example: TKT-20260804-000001
 
     DriverSessionResponse:
-
       type: object
       properties:
         driver_session_token:

@@ -1,7 +1,10 @@
 import dotenv from "dotenv";
 import { closePrisma, getPrisma } from "../src/db/prisma";
 import { ADMIN_PERMISSIONS } from "../src/config/permission.config";
-import type { AdminPermission, AdminPermissionLevel } from "../src/config/permission.config";
+import type {
+  AdminPermission,
+  AdminPermissionLevel,
+} from "../src/config/permission.config";
 import { hashPassword } from "../src/utils/password";
 
 // Import seed functions
@@ -43,10 +46,13 @@ const SEED_RUNTIME_SETTINGS = {
 
 const SEED_OPERATION_PERMISSIONS = ADMIN_PERMISSIONS.filter(
   (permission) =>
-    permission !== "settings:update" && permission !== "permissions:update"
+    permission !== "settings:update" && permission !== "permissions:update",
 );
 
-const SEED_ROLE_PERMISSION_TEMPLATES: Record<AdminPermissionLevel, AdminPermission[]> = {
+const SEED_ROLE_PERMISSION_TEMPLATES: Record<
+  AdminPermissionLevel,
+  AdminPermission[]
+> = {
   owner: [...ADMIN_PERMISSIONS],
   manager: [...ADMIN_PERMISSIONS],
   supervisor: [...SEED_OPERATION_PERMISSIONS],
@@ -115,8 +121,11 @@ async function main(): Promise<void> {
 
   for (const account of [admin]) {
     const permissions =
-      account.permissionLevel && account.permissionLevel in SEED_ROLE_PERMISSION_TEMPLATES
-        ? SEED_ROLE_PERMISSION_TEMPLATES[account.permissionLevel as AdminPermissionLevel]
+      account.permissionLevel &&
+      account.permissionLevel in SEED_ROLE_PERMISSION_TEMPLATES
+        ? SEED_ROLE_PERMISSION_TEMPLATES[
+            account.permissionLevel as AdminPermissionLevel
+          ]
         : [];
 
     await prisma.accountPermission.deleteMany({

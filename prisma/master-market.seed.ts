@@ -87078,7 +87078,9 @@ const masterMarketSeedDataPart16: MasterMarketSeed[] = [
   },
 ];
 
-export const masterMarketSeedData: MasterMarketSeed[] = ([] as MasterMarketSeed[]).concat(
+export const masterMarketSeedData: MasterMarketSeed[] = (
+  [] as MasterMarketSeed[]
+).concat(
   masterMarketSeedDataPart01,
   masterMarketSeedDataPart02,
   masterMarketSeedDataPart03,
