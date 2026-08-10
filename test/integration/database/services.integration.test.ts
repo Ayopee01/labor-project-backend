@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomInt } from "node:crypto";
 import { test } from "node:test";
 
 import { assertSafeTestDatabaseUrl } from "../../setup/test-env";
@@ -31,11 +32,14 @@ test(
     );
     const userService = await import("../../../src/services/admin-workers.service");
     const { closePrisma } = await import("../../../src/db/prisma");
+    const { closeWorkerQueueConnections } = await import(
+      "../../../src/queues/worker-queue"
+    );
     const { hashPassword, verifyPassword } = await import("../../../src/utils/password");
     const suffix = Date.now().toString(36);
     const phone = `service-phone-${suffix}`;
-    const shirtNumber = "130";
-    const workerCode = "MN000130";
+    const shirtNumber = String(randomInt(0, 1_000_000));
+    const workerCode = `MN${shirtNumber.padStart(6, "0")}`;
 
     try {
       const created = await userService.createUser(
@@ -103,8 +107,8 @@ test(
         (error) =>
           Boolean(
             error &&
-              typeof error === "object" &&
-              (error as { code?: string }).code === "VALIDATION_ERROR"
+            typeof error === "object" &&
+            (error as { code?: string }).code === "VALIDATION_ERROR"
           )
       );
 
@@ -209,6 +213,7 @@ test(
       assert.ok(updated.details.shift_name);
     } finally {
       await closePrisma();
+      await closeWorkerQueueConnections();
     }
   }
 );

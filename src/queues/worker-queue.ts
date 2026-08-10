@@ -657,3 +657,25 @@ export function startWorkerBreakReturnWorker(
     console.error("Worker break return job failed.", error);
   });
 }
+
+// Function ปิด Redis และ BullMQ connections สำหรับ test หรือ graceful shutdown
+export async function closeWorkerQueueConnections(): Promise<void> {
+  if (timeoutWorker) {
+    await timeoutWorker.close();
+    timeoutWorker = null;
+  }
+
+  if (breakReturnWorker) {
+    await breakReturnWorker.close();
+    breakReturnWorker = null;
+  }
+
+  await Promise.all([
+    assignmentTimeoutQueue.close(),
+    workerBreakReturnQueue.close(),
+  ]);
+
+  if (redis.status !== "end") {
+    await redis.quit();
+  }
+}

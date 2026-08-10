@@ -870,7 +870,7 @@ export async function updateTicketProductConfirmations(
   );
 }
 
-// Function sync Worker ที่ทำงานจริงของ VehicleJob เข้ากับ TicketWorker ของ Booth ปัจจุบัน
+// Function sync สมาชิก Worker ของ Ticket/Booth จาก assignment ปัจจุบัน
 export async function syncTicketWorkersFromVehicleAssignments(
   ticketId: number,
   vehicleJobId: number,
@@ -879,162 +879,109 @@ export async function syncTicketWorkersFromVehicleAssignments(
   const db = client(connection);
   const now = new Date();
 
-  // Worker ที่ยังทำงานจริงกับรถ ณ ตอนนี้
-  const assignments =
-    await db.vehicleJobAssignment.findMany({
-      where: {
-        vehicleJobId,
-        status: {
-          in: SCANNED_ASSIGNMENT_STATUSES,
-        },
+  // Worker ที่ scan แล้วและยังเกี่ยวข้องกับงานรถ ณ ตอนนี้
+  const assignments = await db.vehicleJobAssignment.findMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: SCANNED_ASSIGNMENT_STATUSES,
       },
-      orderBy: {
-        id: "asc",
-      },
-    });
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
 
   const activeWorkerAccountIds = [
     ...new Set(
-      assignments.map(
-        (assignment) =>
-          assignment.workerAccountId
-      )
+      assignments.map((assignment) => assignment.workerAccountId)
     ),
   ];
 
-  const existingWorkers =
-    await db.ticketWorker.findMany({
-      where: {
-        ticketId,
-      },
-      orderBy: {
-        id: "asc",
-      },
-    });
+  const existingWorkers = await db.ticketWorker.findMany({
+    where: {
+      ticketId,
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
 
-  const existingWorkerAccountIds =
-    new Set(
-      existingWorkers.map(
-        (worker) =>
-          worker.workerAccountId
-      )
-    );
+  const existingWorkerAccountIds = new Set(
+    existingWorkers.map((worker) => worker.workerAccountId)
+  );
 
-  // Worker ใหม่ที่ยังไม่มี membership
-  const missingWorkerAccountIds =
-    activeWorkerAccountIds.filter(
-      (workerAccountId) =>
-        !existingWorkerAccountIds.has(
-          workerAccountId
-        )
-    );
+  // Worker ใหม่ที่ยังไม่มี membership ใน Booth นี้
+  const missingWorkerAccountIds = activeWorkerAccountIds.filter(
+    (workerAccountId) => !existingWorkerAccountIds.has(workerAccountId)
+  );
 
-  if (
-    missingWorkerAccountIds.length > 0
-  ) {
+  if (missingWorkerAccountIds.length > 0) {
     await db.ticketWorker.createMany({
-      data:
-        missingWorkerAccountIds.map(
-          (workerAccountId) => ({
-            ticketId,
-            workerAccountId,
-
-            status:
-              TICKET_WORKER_STATUS.WORKING,
-
-            joinedAt:
-              now,
-          })
-        ),
-
+      data: missingWorkerAccountIds.map((workerAccountId) => ({
+        ticketId,
+        workerAccountId,
+        status: TICKET_WORKER_STATUS.WORKING,
+        joinedAt: now,
+      })),
       skipDuplicates: true,
     });
   }
 
-  // Worker ที่ยัง active รวมถึงกรณีเคย CANCELLED แล้วถูกนำกลับมาอีกครั้ง
-  if (
-    activeWorkerAccountIds.length > 0
-  ) {
-    const completedAt =
-      new Date();
-
+  // Worker ที่ยังอยู่ใน assignment ปัจจุบันต้องเป็น WORKING
+  // รวมถึงกรณีเคย CANCELLED แล้ว Admin นำ worker คนเดิมกลับเข้ามาก่อน Booth Complete
+  if (activeWorkerAccountIds.length > 0) {
     await db.ticketWorker.updateMany({
       where: {
         ticketId,
-
-        status:
-          TICKET_WORKER_STATUS.WORKING,
+        workerAccountId: {
+          in: activeWorkerAccountIds,
+        },
+        status: {
+          not: TICKET_WORKER_STATUS.COMPLETED,
+        },
       },
-
       data: {
-        status:
-          TICKET_WORKER_STATUS.COMPLETED,
-
-        completedAt,
-
-        cancelledAt:
-          null,
+        status: TICKET_WORKER_STATUS.WORKING,
+        cancelledAt: null,
+        completedAt: null,
       },
     });
   }
 
-
-  // Worker ที่ถูก Admin cancel Assignment ปัจจุบันไม่อยู่แล้ว
+  // Worker ที่เคย WORKING แต่ไม่อยู่ใน assignment ปัจจุบันแล้ว
+  // ถือว่าถูกถอดออกจาก Booth และไม่มีสิทธิ์ได้เงิน Booth นี้
   await db.ticketWorker.updateMany({
     where: {
       ticketId,
-
-      status: {
-        notIn: [
-          TICKET_WORKER_STATUS.COMPLETED,
-          TICKET_WORKER_STATUS.CANCELLED,
-        ],
-      },
-
+      status: TICKET_WORKER_STATUS.WORKING,
       ...(activeWorkerAccountIds.length > 0
         ? {
           workerAccountId: {
-            notIn:
-              activeWorkerAccountIds,
+            notIn: activeWorkerAccountIds,
           },
         }
         : {}),
     },
-
     data: {
-      status:
-        TICKET_WORKER_STATUS.CANCELLED,
-
-      cancelledAt:
-        now,
-
-      completedAt:
-        null,
+      status: TICKET_WORKER_STATUS.CANCELLED,
+      cancelledAt: now,
+      completedAt: null,
     },
   });
 
-  const workers =
-    await db.ticketWorker.findMany({
-      where: {
-        ticketId,
-      },
-
-      orderBy: {
-        id: "asc",
-      },
-    });
+  const workers = await db.ticketWorker.findMany({
+    where: {
+      ticketId,
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
 
   return workers
-    .map(
-      (worker) =>
-        mapTicketWorker(worker)
-    )
-    .filter(
-      (
-        worker
-      ): worker is TicketWorkerDto =>
-        worker !== null
-    );
+    .map((worker) => mapTicketWorker(worker))
+    .filter((worker): worker is TicketWorkerDto => worker !== null);
 }
 
 // Function อัปเดตสถานะ ticket delivered จาก DB
@@ -1202,12 +1149,17 @@ export async function confirmTicketCompletion(
     throw new Error("Ticket confirm did not update a waiting ticket.");
   }
 
+  const completedAt = new Date();
+
   await db.ticketWorker.updateMany({
     where: {
       ticketId,
+      status: TICKET_WORKER_STATUS.WORKING,
     },
     data: {
-      status: TICKET_STATUS.COMPLETED,
+      status: TICKET_WORKER_STATUS.COMPLETED,
+      completedAt,
+      cancelledAt: null,
     },
   });
 

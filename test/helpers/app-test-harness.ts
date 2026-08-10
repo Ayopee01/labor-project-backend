@@ -290,6 +290,7 @@ let appModule: typeof import("../../src/app") | null = null;
 let workerQueueModule: typeof import("../../src/queues/worker-queue") | null = null;
 let workerDispatchModule: typeof import("../../src/queues/worker-dispatch") | null = null;
 let passwordModule: typeof import("../../src/utils/password") | null = null;
+let ticketFinancialModule: typeof import("../../src/services/ticket-financial.service") | null = null;
 
 export const state = {
   connectedWorkers: new Set<number>(),
@@ -3015,6 +3016,395 @@ const gateClientRepositoryMock = {
   },
 };
 
+// Mock repository สำหรับ Admin VehicleJob Financial route test
+const adminJobsRepositoryMock = {
+  findVehicleJobByRef: async (ticketNo: string) =>
+    state.vehicleJobs.find(
+      (job) => job.ticketNo === ticketNo
+    ) ?? null,
+
+  findVehicleJobById: async (vehicleJobId: number) =>
+    state.vehicleJobs.find(
+      (job) => job.id === vehicleJobId
+    ) ?? null,
+
+  findWorkerByCode: async (workerCode: string) =>
+    Array.from(state.workers.values()).find(
+      (worker) => worker.username === workerCode
+    ) ?? null,
+
+  findCurrentAssignmentByWorker: async (workerAccountId: number) =>
+    state.assignments.find(
+      (assignment) =>
+        assignment.worker_account_id === workerAccountId &&
+        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
+    ) ?? null,
+
+  createAssignment: async (
+    vehicleJobId: number,
+    workerAccountId: number,
+    acceptDeadlineAt: Date
+  ) => {
+    const now = new Date().toISOString();
+
+    const assignment = {
+      id: state.nextAssignmentId++,
+      vehicle_job_id: vehicleJobId,
+      worker_account_id: workerAccountId,
+      status: "PENDING",
+      accept_deadline_at: acceptDeadlineAt.toISOString(),
+      scan_deadline_at: null,
+      accepted_at: null,
+      scanned_at: null,
+      completed_at: null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.assignments.push(assignment);
+
+    return assignment;
+  },
+
+  findActiveAssignmentByVehicleJobRefAndWorkerCode: async (
+    ticketNo: string,
+    workerCode: string
+  ) => {
+    const vehicleJob = state.vehicleJobs.find(
+      (job) => job.ticketNo === ticketNo
+    );
+
+    const worker = Array.from(state.workers.values()).find(
+      (item) => item.username === workerCode
+    );
+
+    if (!vehicleJob || !worker) {
+      return null;
+    }
+
+    return [...state.assignments]
+      .reverse()
+      .find(
+        (assignment) =>
+          assignment.vehicle_job_id === vehicleJob.id &&
+          assignment.worker_account_id === worker.id &&
+          ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
+      ) ?? null;
+  },
+
+  cancelAssignment: async (assignmentId: number) => {
+    const assignment = state.assignments.find(
+      (item) => item.id === assignmentId
+    );
+
+    if (!assignment) {
+      throw new Error("Assignment not found.");
+    }
+
+    const now = new Date().toISOString();
+
+    assignment.status = "CANCELLED";
+    assignment.updated_at = now;
+
+    state.ticketWorkers
+      .filter((ticketWorker) => {
+        if (
+          ticketWorker.worker_account_id !== assignment.worker_account_id ||
+          ticketWorker.status !== "WORKING"
+        ) {
+          return false;
+        }
+
+        const ticket = state.gateTickets.find(
+          (item) => item.id === ticketWorker.ticket_id
+        );
+
+        return (
+          ticket?.vehicle_job_id === assignment.vehicle_job_id &&
+          !["COMPLETED", "CANCELLED"].includes(ticket.status)
+        );
+      })
+      .forEach((ticketWorker) => {
+        ticketWorker.status = "CANCELLED";
+        ticketWorker.cancelled_at = now;
+        ticketWorker.completed_at = null;
+      });
+
+    return assignment;
+  },
+  findVehicleJobFinancialByRef: async (ticketNo: string) => {
+    const vehicleJob = state.vehicleJobs.find(
+      (job) => job.ticketNo === ticketNo
+    );
+
+    if (!vehicleJob) {
+      return null;
+    }
+
+    const tickets = state.gateTickets
+      .filter((ticket) => ticket.vehicle_job_id === vehicleJob.id)
+      .sort((left, right) => left.id - right.id);
+
+    return {
+      id: vehicleJob.id,
+      ticketNo: vehicleJob.ticketNo,
+      gateTransactionRef: vehicleJob.gate_transaction_ref,
+      licensePlate: vehicleJob.license_plate,
+      vehicleType: vehicleJob.vehicle_type,
+      status: vehicleJob.status,
+
+      tickets: tickets.map((ticket) => {
+        const ticketWorkers = state.ticketWorkers
+          .filter((worker) => worker.ticket_id === ticket.id)
+          .sort((left, right) => left.id - right.id);
+
+        const products = state.ticketProducts
+          .filter((product) => product.ticket_id === ticket.id)
+          .sort((left, right) => left.id - right.id);
+
+        return {
+          id: ticket.id,
+          boothCode: ticket.boothCode,
+          boothName: ticket.boothName,
+          status: ticket.status,
+
+          finalStallAmount:
+            ticket.final_stall_amount === null ||
+              ticket.final_stall_amount === undefined
+              ? null
+              : new Prisma.Decimal(ticket.final_stall_amount),
+
+          completedAt: ticket.completed_at
+            ? new Date(ticket.completed_at)
+            : null,
+
+          financializedAt: ticket.financialized_at
+            ? new Date(ticket.financialized_at)
+            : null,
+
+          marketJob: {
+            marketCode:
+              ticket.marketCode ?? `MARKET-${ticket.market_job_id}`,
+            marketName:
+              ticket.marketName ?? `Market ${ticket.market_job_id}`,
+          },
+
+          workers: ticketWorkers.map((ticketWorker) => {
+            const worker =
+              state.workers.get(ticketWorker.worker_account_id) ??
+              state.authAccountsById.get(ticketWorker.worker_account_id);
+
+            if (!worker) {
+              throw new Error(
+                "Worker account not found for admin financial test."
+              );
+            }
+
+            return {
+              id: ticketWorker.id,
+              status: ticketWorker.status,
+
+              worker: {
+                username: worker.username,
+                fullName: worker.full_name,
+              },
+
+              payments: state.ticketWorkerPayments
+                .filter(
+                  (payment) =>
+                    payment.ticket_worker_id === ticketWorker.id
+                )
+                .sort((left, right) => left.id - right.id)
+                .map((payment) => ({
+                  finalAmount: new Prisma.Decimal(
+                    payment.final_amount
+                  ),
+                })),
+            };
+          }),
+
+          products: products.map((product) => {
+            const financial =
+              state.ticketProductFinancials.find(
+                (item) =>
+                  item.ticket_product_id === product.id
+              ) ?? null;
+
+            return {
+              id: product.id,
+              productCode: product.productCode,
+              productFullCode: product.productFullCode,
+              productName: product.productName,
+
+              packageCode: product.packageCode,
+              packageName: product.packageName,
+
+              quantity: new Prisma.Decimal(product.quantity),
+
+              confirmedQuantity:
+                product.confirmed_quantity === null
+                  ? null
+                  : new Prisma.Decimal(
+                    product.confirmed_quantity
+                  ),
+
+              packageWeightSnapshot:
+                product.package_weight_snapshot === null
+                  ? null
+                  : new Prisma.Decimal(
+                    product.package_weight_snapshot
+                  ),
+
+              rateIdSnapshot: product.rate_id_snapshot,
+              sourceRateIdSnapshot:
+                product.source_rate_id_snapshot,
+
+              rateMarketCode: product.rate_market_code,
+              rateSource: product.rate_source,
+              weightRangeName: product.weight_range_name,
+
+              weightMinSnapshot:
+                product.weight_min_snapshot === null
+                  ? null
+                  : new Prisma.Decimal(
+                    product.weight_min_snapshot
+                  ),
+
+              weightMaxSnapshot:
+                product.weight_max_snapshot === null
+                  ? null
+                  : new Prisma.Decimal(
+                    product.weight_max_snapshot
+                  ),
+
+              stallRateSnapshot:
+                product.stall_rate_snapshot === null
+                  ? null
+                  : new Prisma.Decimal(
+                    product.stall_rate_snapshot
+                  ),
+
+              laborRateSnapshot:
+                product.labor_rate_snapshot === null
+                  ? null
+                  : new Prisma.Decimal(
+                    product.labor_rate_snapshot
+                  ),
+
+              rateSnapshotAt: product.rate_snapshot_at
+                ? new Date(product.rate_snapshot_at)
+                : null,
+
+              financial: financial
+                ? {
+                  stallFeeRaw: new Prisma.Decimal(
+                    financial.stall_fee_raw
+                  ),
+
+                  stallFeeRounded: new Prisma.Decimal(
+                    financial.stall_fee_rounded
+                  ),
+
+                  laborFeeRaw: new Prisma.Decimal(
+                    financial.labor_fee_raw
+                  ),
+
+                  productCharge: new Prisma.Decimal(
+                    financial.product_charge
+                  ),
+
+                  workerCount: financial.worker_count,
+
+                  workerPayoutTotal: new Prisma.Decimal(
+                    financial.worker_payout_total
+                  ),
+
+                  fundAmount: new Prisma.Decimal(
+                    financial.fund_amount
+                  ),
+
+                  finalizedAt: new Date(
+                    financial.finalized_at
+                  ),
+
+                  workerPayments:
+                    state.ticketWorkerPayments
+                      .filter(
+                        (payment) =>
+                          payment.ticket_product_financial_id ===
+                          financial.id
+                      )
+                      .sort(
+                        (left, right) =>
+                          left.id - right.id
+                      )
+                      .map((payment) => {
+                        const ticketWorker =
+                          state.ticketWorkers.find(
+                            (worker) =>
+                              worker.id ===
+                              payment.ticket_worker_id
+                          );
+
+                        if (!ticketWorker) {
+                          throw new Error(
+                            "Ticket worker not found for admin financial test."
+                          );
+                        }
+
+                        const worker =
+                          state.workers.get(
+                            ticketWorker.worker_account_id
+                          ) ??
+                          state.authAccountsById.get(
+                            ticketWorker.worker_account_id
+                          );
+
+                        if (!worker) {
+                          throw new Error(
+                            "Worker account not found for admin financial payment test."
+                          );
+                        }
+
+                        return {
+                          rawAmount:
+                            new Prisma.Decimal(
+                              payment.raw_amount
+                            ),
+
+                          remainderAmount:
+                            new Prisma.Decimal(
+                              payment.remainder_amount
+                            ),
+
+                          finalAmount:
+                            new Prisma.Decimal(
+                              payment.final_amount
+                            ),
+
+                          ticketWorker: {
+                            id: ticketWorker.id,
+                            status: ticketWorker.status,
+
+                            worker: {
+                              username:
+                                worker.username,
+                              fullName:
+                                worker.full_name,
+                            },
+                          },
+                        };
+                      }),
+                }
+                : null,
+            };
+          }),
+        };
+      }),
+    };
+  },
+};
+
 /* -------------------------------------- Module Loader Patch -------------------------------------- */
 
 // Function ตั้งค่า module loader จำลองสำหรับ route test
@@ -3049,6 +3439,10 @@ function patchModuleLoader(): void {
 
     if (request === "../repositories/worker.repository") {
       return workerApplicationRepositoryMock;
+    }
+
+    if (request === "../repositories/admin-jobs.repository") {
+      return adminJobsRepositoryMock;
     }
 
     if (request === "../repositories/gate.repository") {
@@ -3276,6 +3670,13 @@ export async function getWorkerDispatch() {
   patchModuleLoader();
   workerDispatchModule ??= await import("../../src/queues/worker-dispatch");
   return workerDispatchModule;
+}
+
+// Function ดึง Ticket Financial service สำหรับ test
+export async function getTicketFinancialService() {
+  patchModuleLoader();
+  ticketFinancialModule ??= await import("../../src/services/ticket-financial.service");
+  return ticketFinancialModule;
 }
 
 /* -------------------------------------- Test Server -------------------------------------- */
