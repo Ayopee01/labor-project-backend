@@ -93,7 +93,7 @@
     },
     {
       "key": "gateClientSecret",
-      "value": "gate_live_RnqzqVz1OCeLiEMMQRrddGDjaWxfDt2a7779bKJomTc",
+      "value": "",
       "type": "string",
       "description": "Gate ClientSecret shown once by Admin Settings create/rotate Gate client APIs."
     },
@@ -132,6 +132,10 @@
       "value": "02020300",
       "type": "string",
       "description": "productCode used by worker product quantity confirmation. Gate Flow saves the first product from the first Booths[] item here for follow-up requests."
+    },
+    {
+      "key": "packageCode",
+      "value": "29"
     },
     {
       "key": "vendorConfirmToken",
@@ -1148,6 +1152,37 @@
           "response": []
         },
         {
+          "name": "GET /api/admin/vehicle-jobs/:ticketNo/financials",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/financials",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "{{ticketNo}}",
+                "financials"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/financials\nAuth: Admin access token\nPermission: jobs:read\nBody: None\nResponse: Persisted financial breakdown grouped VehicleJob -> Booth -> Product -> Worker. FinancialStatus is PENDING, PARTIAL, or FINALIZED.\nImportant: This endpoint is read-only. It does not recompute money from current MasterRate. Product financial values come from persisted TicketProductFinancial records and worker earnings come from persisted TicketWorkerPayment.FinalAmount."
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/admin/vehicle-jobs/:ticketNo/assign-workers",
           "event": [
             {
@@ -1714,6 +1749,94 @@
       "name": "Gate Flow",
       "item": [
         {
+          "name": "GET /api/gate/options",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('Gate options contains Markets, Booths, Products', function () {",
+                  "  pm.expect(body.Markets).to.be.an('array');",
+                  "  pm.expect(body.Booths).to.be.an('array');",
+                  "  pm.expect(body.Products).to.be.an('array');",
+                  "});",
+                  "",
+                  "const forbiddenKeys = new Set([",
+                  "  'StallRate', 'LaborRate', 'PackagePrice', 'PackageRate',",
+                  "  'StallPayment', 'WorkerPayment', 'OrderRemainder',",
+                  "  'FinalStallAmount', 'FundAmount'",
+                  "]);",
+                  "",
+                  "function findForbidden(value, path = 'root', found = []) {",
+                  "  if (Array.isArray(value)) {",
+                  "    value.forEach((item, index) => findForbidden(item, `${path}[${index}]`, found));",
+                  "    return found;",
+                  "  }",
+                  "  if (value && typeof value === 'object') {",
+                  "    Object.entries(value).forEach(([key, child]) => {",
+                  "      if (forbiddenKeys.has(key)) found.push(`${path}.${key}`);",
+                  "      findForbidden(child, `${path}.${key}`, found);",
+                  "    });",
+                  "  }",
+                  "  return found;",
+                  "}",
+                  "",
+                  "pm.test('Gate options does not expose financial rates or amounts', function () {",
+                  "  pm.expect(findForbidden(body)).to.eql([]);",
+                  "});",
+                  "",
+                  "const firstMarket = body.Markets?.[0];",
+                  "const firstBooth = body.Booths?.[0];",
+                  "const firstProduct = body.Products?.[0];",
+                  "const firstPackage = firstProduct?.Packages?.[0];",
+                  "if (firstMarket?.MarketCode) pm.collectionVariables.set('marketCode', firstMarket.MarketCode);",
+                  "if (firstBooth?.BoothCode) pm.collectionVariables.set('boothCode', firstBooth.BoothCode);",
+                  "if (firstProduct?.ProductCode) pm.collectionVariables.set('productCode', firstProduct.ProductCode);",
+                  "if (firstPackage?.PackageCode) pm.collectionVariables.set('packageCode', firstPackage.PackageCode);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/gate/options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "gate",
+                "options"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{gateClientId}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{gateClientSecret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/gate/options\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}.\nBody: None\nPurpose: Test helper for Postman / Swagger / Gate integration testing.\nResponse: Markets, Booths, Products, and Packages with PackageWeight only. This endpoint must not expose financial rates or calculated money.\nNotes: The test script stores the first MarketCode, BoothCode, ProductCode, and PackageCode into collection variables for follow-up requests."
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/gate/tickets",
           "event": [
             {
@@ -1724,16 +1847,31 @@
                   "const body = pm.response.json();",
                   "const firstBooth = body.Booths?.[0];",
                   "const firstProduct = firstBooth?.Products?.[0];",
-                  "if (body.Result) pm.collectionVariables.set(\"gateResult\", body.Result);",
-                  "if (body.Ticket?.TicketNo) pm.collectionVariables.set(\"ticketNo\", body.Ticket.TicketNo);",
-                  "if (body.Market?.MarketCode) pm.collectionVariables.set(\"marketCode\", body.Market.MarketCode);",
-                  "if (firstBooth?.BoothCode) pm.collectionVariables.set(\"boothCode\", firstBooth.BoothCode);",
-                  "if (firstProduct?.ProductCode) pm.collectionVariables.set(\"productCode\", firstProduct.ProductCode);",
-                  "if (body.WorkerCount !== undefined) pm.collectionVariables.set(\"workerCount\", String(body.WorkerCount));",
-                  "if (firstBooth?.StallPayment?.Amount) pm.collectionVariables.set(\"stallPaymentAmount\", String(firstBooth.StallPayment.Amount));",
-                  "if (body.WorkerPayment?.AmountPerWorker) pm.collectionVariables.set(\"workerPaymentAmountPerWorker\", String(body.WorkerPayment.AmountPerWorker));",
-                  "if (body.Qr?.DriverQrToken) pm.collectionVariables.set(\"driverQrToken\", body.Qr.DriverQrToken);",
-                  "if (body.Qr?.WorkerQrToken) pm.collectionVariables.set(\"workerQrToken\", body.Qr.WorkerQrToken);"
+                  "",
+                  "pm.test('Gate response is operational only', function () {",
+                  "  pm.expect(body).to.have.property('Result');",
+                  "  pm.expect(body).to.have.property('Ticket');",
+                  "  pm.expect(body).to.have.property('Market');",
+                  "  pm.expect(body.Booths).to.be.an('array');",
+                  "  pm.expect(body).to.have.property('WorkerCount');",
+                  "  pm.expect(body).to.have.property('Qr');",
+                  "  pm.expect(body).to.not.have.property('WorkerPayment');",
+                  "  pm.expect(body).to.not.have.property('OrderRemainder');",
+                  "});",
+                  "",
+                  "pm.test('Gate booth response does not expose StallPayment', function () {",
+                  "  (body.Booths || []).forEach((booth) => pm.expect(booth).to.not.have.property('StallPayment'));",
+                  "});",
+                  "",
+                  "if (body.Result) pm.collectionVariables.set('gateResult', body.Result);",
+                  "if (body.Ticket?.TicketNo) pm.collectionVariables.set('ticketNo', body.Ticket.TicketNo);",
+                  "if (body.Market?.MarketCode) pm.collectionVariables.set('marketCode', body.Market.MarketCode);",
+                  "if (firstBooth?.BoothCode) pm.collectionVariables.set('boothCode', firstBooth.BoothCode);",
+                  "if (firstProduct?.ProductCode) pm.collectionVariables.set('productCode', firstProduct.ProductCode);",
+                  "if (firstProduct?.PackageCode) pm.collectionVariables.set('packageCode', firstProduct.PackageCode);",
+                  "if (body.WorkerCount !== undefined) pm.collectionVariables.set('workerCount', String(body.WorkerCount));",
+                  "if (body.Qr?.DriverQrToken) pm.collectionVariables.set('driverQrToken', body.Qr.DriverQrToken);",
+                  "if (body.Qr?.WorkerQrToken) pm.collectionVariables.set('workerQrToken', body.Qr.WorkerQrToken);"
                 ]
               }
             }
@@ -1782,7 +1920,7 @@
                 }
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create credentials with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: One request per TicketNo. Booths contains all booths under the ticket, and each Booth contains Products. Required root fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, LicensePlate, VehicleTypeCode, VehicleTypeName, Booths, Dispatch. Each Booth requires BoothCode and Products. Each Product requires ProductCode, PackageCode, Quantity. BoothCount must equal Booths.length. BoothCode cannot be duplicated in the same request. ProductCode + PackageCode cannot be duplicated inside the same booth.\nCalculation: Backend resolves MarketName/BoothName from master_market using MarketCode + BoothCode. Backend resolves ProductFullCode/ProductName/PackageName/PackageWeight from master_product using ProductCode + PackageCode. Rate is selected from master_rate by MarketCode + PackageWeight, with MarketCode 0000 as fallback. WorkerCount is the maximum required worker count from all products. StallPayment is calculated separately per booth after combining that booth's product amounts. WorkerPayment is calculated from the total labor fee of all products in the order.\nResponse: Result, Ticket, Market, Booths, WorkerCount, WorkerPayment, OrderRemainder, and Qr. Each Booth response contains Products and StallPayment. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload. Qr.WorkerQrToken equals TicketNo for worker check-in.\nIdempotency: Gate transaction ref is derived from TicketNo + MarketCode. Same payload returns REPLAYED. Same idempotency key with a different payload returns 409.\nResult: 201 CREATED for a new ticket, 200 REPLAYED for the same payload, 400 for request validation errors such as BoothCount mismatch or duplicate booth/product-package, 409 for payload mismatch, duplicate TicketNo, missing master_market/master_product/master_rate data, or missing active vendor LINE mapping.\nNotes: Saves gateResult, ticketNo, marketCode, first BoothCode, first ProductCode, workerCount, first booth StallPayment.Amount, workerPaymentAmountPerWorker, driverQrToken, and workerQrToken into collection variables."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create credentials with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: One request per TicketNo. Required root fields: TicketNo, TicketCreatedAt, BoothCount, MarketCode, LicensePlate, VehicleTypeCode, VehicleTypeName, Booths, Dispatch. Each Booth requires BoothCode and Products. Each Product requires ProductCode, PackageCode, Quantity. BoothCount must equal Booths.length. BoothCode cannot be duplicated in the same request. ProductCode + PackageCode cannot be duplicated inside the same booth.\nFinancial boundary: Gate Quantity is operational/dispatch quantity only. The backend may snapshot the applicable Master rate internally at Gate Create, but Gate Create does not calculate or expose StallPayment, WorkerPayment, OrderRemainder, Fund, or final financial amounts. Financialization happens only after worker-confirmed quantities are vendor-confirmed or auto-confirmed.\nResponse: Result, Ticket, Market, Booths with operational product data, WorkerCount for dispatch, and Qr. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload.\nIdempotency: Gate transaction ref is derived from TicketNo + MarketCode. Same payload returns REPLAYED. Same idempotency key with a different payload returns 409.\nNotes: Saves gateResult, ticketNo, marketCode, first BoothCode, first ProductCode, first PackageCode, workerCount, driverQrToken, and workerQrToken into collection variables."
           },
           "response": []
         }
@@ -2063,7 +2201,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nAuth: Worker access token\nQuery: date required, YYYY-MM-DD\nBody: None\nResponse: date and data[].ticketNo/GateTransactionRef/LicensePlate/status/AcceptDeadlineAt/ScanDeadlineAt/AcceptedAt/ScannedAt/CompletedAt/TimeoutReason/CreatedAt/UpdatedAt.\nNotes: Returns assignment history for the current worker only. The date is interpreted in Asia/Bangkok time and filters by assignment CreatedAt. TimeoutReason is null unless status is TIMEOUT; accept_timeout means the worker did not accept in time, scan_timeout means the worker accepted but did not scan QR in time."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nAuth: Worker access token\nQuery: date required, YYYY-MM-DD\nBody: None\nResponse: Date, TotalEarnings, and Data[]. Each assignment includes audit fields plus Earnings.TotalAmount and Earnings.Booths[].Products[].FinalAmount when persisted TicketWorkerPayment records exist.\nEarnings source: TicketWorkerPayment.FinalAmount only. It does not use Gate Quantity, current MasterRate, FinalStallAmount, or required worker count. Cancelled booth membership may appear with zero earnings. TIMEOUT assignments have zero earnings.\nNotes: The date is interpreted in Asia/Bangkok time and filters by assignment CreatedAt."
           },
           "response": []
         },
@@ -2191,7 +2329,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"Items\": [\n    {\n      \"ProductCode\": \"{{productCode}}\",\n      \"ConfirmedQuantity\": 8\n    }\n  ]\n}",
+              "raw": "{\n  \"Items\": [\n    {\n      \"ProductCode\": \"{{productCode}}\",\n      \"PackageCode\": \"{{packageCode}}\",\n      \"ConfirmedQuantity\": 8\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2217,7 +2355,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/tickets/{{boothCode}}/complete\nAuth: Worker access token\nBody: Items required. Send every ProductCode in the ticket with ConfirmedQuantity counted by the worker.\nNotes: {{ticketNo}} is the TicketNo from the accepted/check-in assignment and {{boothCode}} is the BoothCode from that accepted job payload. Backend resolves the ticket using TicketNo + BoothCode, so a BoothCode reused under another TicketNo will not be selected by mistake. Any worker mapped to this ticket can submit after the assigned team has checked in, and stalls/markets in the same vehicle job can be submitted in any order. The first request while the ticket is WAIT/WORKING/REJECT succeeds. The ticket and AssignmentStatus become DELIVERED, and vendor is notified through a real LINE Flex card with Confirm/Reject buttons. The response does not expose LINE postback tokens. If vendor confirms, the job can close and backend sends an optional 1-5 rating Flex card to the confirming LINE user. If vendor rejects, ticket and AssignmentStatus become REJECT so worker must resubmit. If vendor does not respond, backend auto-confirms after VendorConfirmTimeoutHours for first submission or VendorReconfirmTimeoutHours after a rejected resubmission."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/tickets/{{boothCode}}/complete\nAuth: Worker access token\nBody: Items required. Send every ProductCode + PackageCode in the ticket with ConfirmedQuantity counted by the worker.\nFinancial boundary: This request only records confirmed actual quantities and starts vendor confirmation. It must not create final financial records before vendor confirm or timeout auto-confirm.\nNotes: {{ticketNo}} is the TicketNo from the accepted/check-in assignment and {{boothCode}} is the BoothCode from that accepted job payload. Backend resolves each product by ProductCode + PackageCode. The response does not expose LINE postback tokens. Vendor confirm completes financialization; vendor reject returns the ticket to REJECT for resubmission."
           },
           "response": []
         }
@@ -2256,7 +2394,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/events\nAuth: Admin access token\nHeaders: Authorization: Bearer {{accessToken}}, Accept: text/event-stream\nBody: None\nNotes: This is an Admin-only SSE stream, not a JSON list. It stays open and receives realtime dashboard events including ASSIGNMENT_SCAN_DEADLINE_WARNING when an ACCEPTED worker has not checked in and remaining scan time is below WorkerScanWarningBeforeMinutes. Snapshot/latest state should still be loaded from Admin REST APIs."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/events\nAuth: Admin access token\nPermission: jobs:read\nHeaders: Authorization: Bearer {{accessToken}}, Accept: text/event-stream\nBody: None\nNotes: Admin-only SSE stream. It stays open and receives realtime dashboard events. Snapshot/latest state should still be loaded from Admin REST APIs."
           },
           "response": []
         }

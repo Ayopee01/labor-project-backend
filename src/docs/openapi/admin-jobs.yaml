@@ -200,6 +200,52 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminVehicleJobListResponse"
+  /api/admin/vehicle-jobs/{ticketNo}/financials:
+    get:
+      tags:
+        - Admin Jobs
+      summary: Get persisted financial breakdown of a vehicle job.
+      description: >
+        Returns the persisted financial result of a VehicleJob grouped by
+        booth, product, and worker. This endpoint is read-only and does not
+        recalculate money from the current MasterRate. Product financial values
+        come from TicketProductFinancial and worker earnings come from
+        TicketWorkerPayment.finalAmount. financial_status is PENDING when no
+        booth is financialized, PARTIAL when only some booths are financialized,
+        and FINALIZED when every booth is financialized. RateSnapshot shows the
+        values captured when the Gate ticket was created. Quantity is the original
+        Gate operational quantity; ConfirmedQuantity is the worker-confirmed
+        quantity used for financial calculation after vendor confirmation.
+      operationId: getAdminVehicleJobFinancials
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNo
+          required: true
+          schema:
+            type: string
+            example: TKT-20260723-000125
+          description: Vehicle TicketNo.
+      responses:
+        "200":
+          description: Persisted financial breakdown of the vehicle job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVehicleJobFinancialResponse"
+        "403":
+          description: Authenticated admin lacks jobs:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Vehicle job was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/admin/jobs/cancel:
     post:
       tags:

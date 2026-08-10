@@ -15,9 +15,10 @@ function sortSwaggerTags(firstTag: string, secondTag: string): number {
     "Admin Settings": 4,
     "Admin Realtime": 5,
     Gate: 6,
-    Driver: 7,
-    "Worker Application": 8,
-    LINE: 9,
+    "Gate - Test Helper": 7,
+    Driver: 8,
+    "Worker Application": 9,
+    LINE: 10,
   };
   const firstOrder = tagOrder[firstTag] ?? 999;
   const secondOrder = tagOrder[secondTag] ?? 999;
@@ -52,14 +53,17 @@ function sortSwaggerOperations(
     "post /api/admin/jobs/cancel": 29,
     "get /api/admin/vehicle-jobs/operations": 30,
     "get /api/admin/vehicle-jobs/history": 31,
-    "post /api/admin/vehicle-jobs/{ticketNo}/assign-workers": 32,
-    "post /api/admin/vehicle-jobs/{ticketNo}/scan-deadline/extend": 33,
-    "post /api/admin/vehicle-jobs/{ticketNo}/workers/{workerCode}/assignment/cancel": 34,
+    "get /api/admin/vehicle-jobs/{ticketNo}/financials": 32,
+    "post /api/admin/vehicle-jobs/{ticketNo}/assign-workers": 33,
+    "post /api/admin/vehicle-jobs/{ticketNo}/scan-deadline/extend": 34,
+    "post /api/admin/vehicle-jobs/{ticketNo}/workers/{workerCode}/assignment/cancel": 35,
     "get /api/admin/settings": 39,
     "patch /api/admin/settings": 40,
     "get /api/admin/roles": 41,
     "get /api/admin/users/{id}/permissions": 42,
     "patch /api/admin/users/{id}/permissions": 43,
+    // Gate
+    "get /api/gate/options": 49,
     "post /api/gate/tickets": 50,
     // Driver
     "post /api/driver/qr-sessions": 60,

@@ -383,6 +383,47 @@ class FakeRedis {
     return items.map(([member]) => member);
   }
 
+  async zpopmin(
+    key: string,
+    count: number = 1
+  ): Promise<string[]> {
+    const set =
+      FakeRedis.zsets.get(key);
+
+    if (!set || count <= 0) {
+      return [];
+    }
+
+    const items =
+      Array.from(set.entries())
+        .sort(
+          (
+            [leftMember, leftScore],
+            [rightMember, rightScore]
+          ) => {
+            if (leftScore !== rightScore) {
+              return leftScore - rightScore;
+            }
+
+            return leftMember.localeCompare(
+              rightMember
+            );
+          }
+        )
+        .slice(0, count);
+
+    for (const [member] of items) {
+      set.delete(member);
+    }
+
+    return items.flatMap(
+      ([member, score]) => [
+        member,
+        String(score),
+      ]
+    );
+  }
+
   async zrem(key: string, ...members: string[]): Promise<void> {
     const set = FakeRedis.zsets.get(key);
     members.forEach((member) => set?.delete(member));
@@ -2283,6 +2324,80 @@ const gateRepositoryMock = {
         : null,
     };
   },
+
+  listGateMarketOptions: async (
+    marketCode?: string
+  ) => {
+    const seen = new Set<string>();
+
+    return state.masterMarkets
+      .filter(
+        (market) =>
+          (!marketCode ||
+            market.marketCode === marketCode) &&
+          market.boothStatus === "Normal" &&
+          (market.marketStatus === null ||
+            market.marketStatus === "Normal") &&
+          market.marketName !== null
+      )
+      .filter((market) => {
+        if (seen.has(market.marketCode)) {
+          return false;
+        }
+
+        seen.add(market.marketCode);
+        return true;
+      })
+      .map((market) => ({
+        marketCode: market.marketCode,
+        marketName: market.marketName,
+      }))
+      .sort((left, right) =>
+        left.marketCode.localeCompare(
+          right.marketCode
+        )
+      );
+  },
+
+  listGateBoothOptionsByMarketCode: async (
+    marketCode: string
+  ) =>
+    state.masterMarkets
+      .filter(
+        (market) =>
+          market.marketCode === marketCode &&
+          market.boothStatus === "Normal" &&
+          (market.marketStatus === null ||
+            market.marketStatus === "Normal")
+      )
+      .map((market) => ({
+        BoothCode: market.boothCode,
+        BoothName: market.boothName,
+      })),
+
+  listGateProductPackageOptions: async () =>
+    state.masterProducts
+      .filter(
+        (product) =>
+          product.status === "ACTIVE"
+      )
+      .map((product) => ({
+        productCode:
+          product.productCode,
+
+        productName:
+          product.productName,
+
+        packageCode:
+          product.packageCode,
+
+        packageName:
+          product.packageName,
+
+        packageWeight:
+          product.packageWeight,
+      })),
+
   findActiveMarketBoothByCodes: async (marketCode: string, boothCode: string) =>
     state.masterMarkets.find(
       (market) =>

@@ -1571,15 +1571,21 @@
             type: object
             required:
               - productCode
+              - packageCode
               - confirmed_quantity
             properties:
               productCode:
                 type: string
-                example: PRODUCT-001
+                example: "02020300"
+              packageCode:
+                type: string
+                example: "29"
+                description: PackageCode must match the ProductCode in the GateTicket.
               confirmed_quantity:
                 type: number
                 minimum: 0
-                example: 8
+                example: 10
+                description: Actual quantity counted by the worker.
     TicketCompletionResponse:
       type: object
       properties:
@@ -1700,6 +1706,89 @@
                               type: array
                               items:
                                 $ref: "#/components/schemas/TicketProduct"
+
+    GateOptionMarket:
+      type: object
+      required:
+        - MarketCode
+        - MarketName
+      properties:
+        MarketCode:
+          type: string
+          example: "1123"
+        MarketName:
+          type: string
+          example: Market A
+
+    GateOptionBooth:
+      type: object
+      required:
+        - BoothCode
+        - BoothName
+      properties:
+        BoothCode:
+          type: string
+          example: OM3/40
+        BoothName:
+          type: string
+          nullable: true
+          example: Vendor A
+
+    GateOptionPackage:
+      type: object
+      required:
+        - PackageCode
+        - PackageName
+        - PackageWeight
+      properties:
+        PackageCode:
+          type: string
+          example: "29"
+        PackageName:
+          type: string
+          example: Crate 20
+        PackageWeight:
+          type: number
+          example: 20
+
+    GateOptionProduct:
+      type: object
+      required:
+        - ProductCode
+        - ProductName
+        - Packages
+      properties:
+        ProductCode:
+          type: string
+          example: "02020300"
+        ProductName:
+          type: string
+          example: Rambutan
+        Packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateOptionPackage"
+
+    GateOptionsResponse:
+      type: object
+      required:
+        - Markets
+        - Booths
+        - Products
+      properties:
+        Markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateOptionMarket"
+        Booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateOptionBooth"
+        Products:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateOptionProduct"
+
     GateTicketResponseProduct:
       type: object
       required:
@@ -1709,38 +1798,37 @@
         - PackageCode
         - PackageName
         - Quantity
+        - WorkerCount
       properties:
         ProductCode:
           type: string
           example: "02020300"
+
         ProductFullCode:
           type: string
           example: "02020300000000000000"
+
         ProductName:
           type: string
           example: Rambutan
+
         PackageCode:
           type: string
           example: "29"
+
         PackageName:
           type: string
           example: Crate 20
+
         Quantity:
           type: integer
           example: 180
+          description: Gate quantity used for operation and dispatch only.
 
-    GateTicketResponseStallPayment:
-      type: object
-      required:
-        - Amount
-        - RoundingAmount
-      properties:
-        Amount:
-          type: string
-          example: "432.00"
-        RoundingAmount:
-          type: string
-          example: "0.00"
+        WorkerCount:
+          type: integer
+          example: 3
+          description: Master worker requirement for this product. Not a financial worker divisor.
 
     GateTicketResponseBooth:
       type: object
@@ -1748,7 +1836,6 @@
         - BoothCode
         - BoothName
         - Products
-        - StallPayment
       properties:
         BoothCode:
           type: string
@@ -1764,9 +1851,6 @@
           items:
             $ref: "#/components/schemas/GateTicketResponseProduct"
 
-        StallPayment:
-          $ref: "#/components/schemas/GateTicketResponseStallPayment"
-
     GateTicketResponse:
       type: object
       required:
@@ -1775,8 +1859,6 @@
         - Market
         - Booths
         - WorkerCount
-        - WorkerPayment
-        - OrderRemainder
         - Qr
 
       properties:
@@ -1844,7 +1926,7 @@
 
             MarketName:
               type: string
-              example: ตลาดส้ม 4
+              example: Market A
 
         Booths:
           type: array
@@ -1853,51 +1935,8 @@
 
         WorkerCount:
           type: integer
-          example: 3
-          description: Maximum required worker count calculated from all products in the order.
-
-        WorkerPayment:
-          type: object
-          required:
-            - AmountPerWorker
-            - WorkerCount
-            - TotalAmount
-            - DeductedRemainder
-          properties:
-            AmountPerWorker:
-              type: string
-              example: "54.00"
-
-            WorkerCount:
-              type: integer
-              example: 3
-
-            TotalAmount:
-              type: string
-              example: "162.00"
-
-            DeductedRemainder:
-              type: string
-              example: "0.00"
-
-        OrderRemainder:
-          type: object
-          required:
-            - StallRoundingAmount
-            - WorkerDeductedAmount
-            - TotalAmount
-          properties:
-            StallRoundingAmount:
-              type: string
-              example: "0.00"
-
-            WorkerDeductedAmount:
-              type: string
-              example: "0.00"
-
-            TotalAmount:
-              type: string
-              example: "0.00"
+          example: 7
+          description: Total Master worker requirement used for dispatch across products.
 
         Qr:
           type: object
@@ -1907,11 +1946,14 @@
           properties:
             DriverQrToken:
               type: string
+              example: driver-qr-1
 
             WorkerQrToken:
               type: string
               example: TKT-20260804-000001
+
     DriverSessionResponse:
+
       type: object
       properties:
         driver_session_token:
@@ -2243,6 +2285,291 @@
               type: integer
             total_pages:
               type: integer
+    AdminFinancialRateSnapshot:
+      type: object
+      properties:
+        package_weight_snapshot:
+          type: string
+          nullable: true
+          example: "20.00"
+        rate_id_snapshot:
+          type: integer
+          nullable: true
+          example: 1
+        source_rate_id_snapshot:
+          type: integer
+          nullable: true
+          example: 1
+        rate_market_code:
+          type: string
+          nullable: true
+          example: "0000"
+        rate_source:
+          type: string
+          nullable: true
+          example: CENTRAL
+        weight_range_name:
+          type: string
+          nullable: true
+          example: "1-25.0"
+        weight_min_snapshot:
+          type: string
+          nullable: true
+          example: "0.00"
+        weight_max_snapshot:
+          type: string
+          nullable: true
+          example: "25.00"
+        stall_rate_snapshot:
+          type: string
+          nullable: true
+          example: "1.50"
+        labor_rate_snapshot:
+          type: string
+          nullable: true
+          example: "0.90"
+        rate_snapshot_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    AdminFinancialWorkerPayment:
+      type: object
+      properties:
+        ticket_worker_id:
+          type: integer
+          example: 101
+        worker_code:
+          type: string
+          example: MN000115
+        full_name:
+          type: string
+          example: Worker Name
+        membership_status:
+          type: string
+          enum:
+            - WORKING
+            - CANCELLED
+            - COMPLETED
+          example: COMPLETED
+        raw_amount:
+          type: string
+          example: "3.60000000"
+        remainder_amount:
+          type: string
+          example: "0.60000000"
+        final_amount:
+          type: string
+          example: "3.00"
+
+    AdminProductFinancial:
+      type: object
+      properties:
+        stall_fee_raw:
+          type: string
+          example: "6.0000"
+        stall_fee_rounded:
+          type: string
+          example: "6.00"
+        labor_fee_raw:
+          type: string
+          example: "3.6000"
+        product_charge:
+          type: string
+          example: "10.00"
+        worker_count:
+          type: integer
+          example: 1
+          description: Actual completed TicketWorker count used as the worker divisor.
+        worker_payout_total:
+          type: string
+          example: "3.00"
+        fund_amount:
+          type: string
+          example: "0.6000"
+        finalized_at:
+          type: string
+          format: date-time
+
+    AdminFinancialProduct:
+      type: object
+      properties:
+        ticket_product_id:
+          type: integer
+          example: 501
+        productCode:
+          type: string
+          example: "02020300"
+        productFullCode:
+          type: string
+          nullable: true
+          example: "02020300000000000000"
+        productName:
+          type: string
+          example: Rambutan
+        packageCode:
+          type: string
+          example: "29"
+        packageName:
+          type: string
+          example: Crate 20
+        quantity:
+          type: string
+          example: "10.00"
+          description: Original Gate operational quantity. Not the financial quantity.
+        confirmed_quantity:
+          type: string
+          nullable: true
+          example: "10.00"
+          description: Worker-confirmed quantity used for financial calculation after vendor confirmation.
+        rate_snapshot:
+          $ref: "#/components/schemas/AdminFinancialRateSnapshot"
+        financial:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/AdminProductFinancial"
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialWorkerPayment"
+
+    AdminFinancialBoothWorker:
+      type: object
+      properties:
+        ticket_worker_id:
+          type: integer
+          example: 101
+        worker_code:
+          type: string
+          example: MN000115
+        full_name:
+          type: string
+          example: Worker Name
+        membership_status:
+          type: string
+          enum:
+            - WORKING
+            - CANCELLED
+            - COMPLETED
+          example: COMPLETED
+        total_amount:
+          type: string
+          example: "12.00"
+          description: Sum of persisted TicketWorkerPayment.finalAmount for this booth.
+
+    AdminFinancialBooth:
+      type: object
+      properties:
+        ticket_id:
+          type: integer
+          example: 1001
+        marketCode:
+          type: string
+          example: "1123"
+        marketName:
+          type: string
+          example: Market A
+        boothCode:
+          type: string
+          example: OM3/40
+        boothName:
+          type: string
+          nullable: true
+          example: Vendor A
+        status:
+          type: string
+          example: COMPLETED
+        financialized:
+          type: boolean
+          example: true
+        final_stall_amount:
+          type: string
+          nullable: true
+          example: "34.00"
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        financialized_at:
+          type: string
+          format: date-time
+          nullable: true
+        summary:
+          type: object
+          properties:
+            labor_fee_raw:
+              type: string
+              example: "12.6000"
+            worker_payout_total:
+              type: string
+              example: "12.00"
+            fund_amount:
+              type: string
+              example: "0.6000"
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialBoothWorker"
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialProduct"
+
+    AdminVehicleJobFinancialResponse:
+      type: object
+      properties:
+        vehicle_job:
+          type: object
+          properties:
+            ticketNo:
+              type: string
+              example: TKT-20260723-000125
+            gate_transaction_ref:
+              type: string
+              example: GATE-REQ-001
+            license_plate:
+              type: string
+              example: ABC-1234
+            vehicle_type:
+              type: string
+              nullable: true
+              example: Six-wheel truck
+            status:
+              type: string
+              example: COMPLETED
+        financial_status:
+          type: string
+          enum:
+            - PENDING
+            - PARTIAL
+            - FINALIZED
+          example: FINALIZED
+        summary:
+          type: object
+          properties:
+            booth_count:
+              type: integer
+              example: 1
+            financialized_booth_count:
+              type: integer
+              example: 1
+            final_stall_amount:
+              type: string
+              example: "34.00"
+            labor_fee_raw:
+              type: string
+              example: "12.6000"
+            worker_payout_total:
+              type: string
+              example: "12.00"
+            fund_amount:
+              type: string
+              example: "0.6000"
+        booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialBooth"
+
     AdminVehicleJobListResponse:
       type: object
       properties:
@@ -2681,6 +3008,68 @@
           type: string
           description: Worker QR value that was just scanned. For Gate-created jobs this is the same value as ticketNo, and the mobile app can render it as a QR for other assigned workers in the same vehicle job.
           example: TKT-20260723-000125
+    WorkerAssignmentEarningProduct:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        packageCode:
+          type: string
+          example: "29"
+        productName:
+          type: string
+          example: Rambutan
+        packageName:
+          type: string
+          example: Crate 20
+        confirmed_quantity:
+          type: string
+          example: "10.00"
+        final_amount:
+          type: string
+          example: "9.00"
+          description: Persisted TicketWorkerPayment.finalAmount for this product.
+
+    WorkerAssignmentEarningBooth:
+      type: object
+      properties:
+        ticket_id:
+          type: integer
+          example: 1001
+        boothCode:
+          type: string
+          example: OM3/40
+        boothName:
+          type: string
+          nullable: true
+          example: Vendor A
+        membership_status:
+          type: string
+          enum:
+            - WORKING
+            - CANCELLED
+            - COMPLETED
+          example: COMPLETED
+        amount:
+          type: string
+          example: "12.00"
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentEarningProduct"
+
+    WorkerAssignmentEarnings:
+      type: object
+      properties:
+        total_amount:
+          type: string
+          example: "12.00"
+        booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentEarningBooth"
+
     WorkerAssignmentHistoryItem:
       type: object
       properties:
@@ -2725,6 +3114,8 @@
             - accept_timeout
             - scan_timeout
           description: Present when status is TIMEOUT. accept_timeout means the worker did not accept in time; scan_timeout means the worker accepted but did not scan QR in time.
+        earnings:
+          $ref: "#/components/schemas/WorkerAssignmentEarnings"
         created_at:
           type: string
           format: date-time
@@ -2737,6 +3128,11 @@
         date:
           type: string
           format: date
+          example: "2026-08-07"
+        total_earnings:
+          type: string
+          example: "12.00"
+          description: Total persisted worker earnings for all assignments in the selected date.
         data:
           type: array
           items:

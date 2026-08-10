@@ -135,6 +135,109 @@ after(async () => {
 
 /* -------------------------------------- Gate Route Tests -------------------------------------- */
 
+test(
+  "GET /api/gate/options returns Gate test helper data without financial rates",
+  async () => {
+    const headers =
+      await gateAuthHeaders();
+
+    const response =
+      await server.request(
+        "GET",
+        "/api/gate/options",
+        {
+          headers,
+          external: true,
+        }
+      );
+
+    assert.equal(
+      response.status,
+      200
+    );
+
+    assert.ok(
+      response.body.Markets.length > 0
+    );
+
+    assert.ok(
+      response.body.Products.length > 0
+    );
+
+    assert.deepEqual(
+      response.body.Booths,
+      []
+    );
+
+    const product =
+      response.body.Products[0];
+
+    const packageItem =
+      product.Packages[0];
+
+    assert.deepEqual(
+      Object.keys(packageItem).sort(),
+      [
+        "PackageCode",
+        "PackageName",
+        "PackageWeight",
+      ]
+    );
+
+    assert.equal(
+      packageItem.StallRate,
+      undefined
+    );
+
+    assert.equal(
+      packageItem.LaborRate,
+      undefined
+    );
+
+    assert.equal(
+      packageItem.StallPayment,
+      undefined
+    );
+
+    assert.equal(
+      packageItem.WorkerPayment,
+      undefined
+    );
+
+    const marketResponse =
+      await server.request(
+        "GET",
+        "/api/gate/options?MarketCode=MARKET-001",
+        {
+          headers,
+          external: true,
+        }
+      );
+
+    assert.equal(
+      marketResponse.status,
+      200
+    );
+
+    assert.equal(
+      marketResponse.body.Markets[0]
+        .MarketCode,
+      "MARKET-001"
+    );
+
+    assert.equal(
+      marketResponse.body.Booths[0]
+        .BoothCode,
+      "STALL-001"
+    );
+
+    assert.deepEqual(
+      marketResponse.body.Products,
+      []
+    );
+  }
+);
+
 test("POST /api/gate/tickets requires Gate client credentials", async () => {
   const response = await server.request("POST", "/api/gate/tickets", {
     body: buildGateVehicleJobBody("000"),
@@ -216,6 +319,14 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(response.body.WorkerPayment, undefined);
   assert.equal(response.body.OrderRemainder, undefined);
 
+  // Gate Create ต้อง Snapshot Rate แต่ยังห้ามสร้างเงินจริง
+  assert.equal(state.ticketProducts.length, 1);
+  assert.equal(state.ticketProducts[0].confirmed_quantity, null);
+  assert.notEqual(state.ticketProducts[0].stall_rate_snapshot, null);
+  assert.notEqual(state.ticketProducts[0].labor_rate_snapshot, null);
+  assert.equal(state.ticketProductFinancials.length, 0);
+  assert.equal(state.ticketWorkerPayments.length, 0);
+
   assert.equal(response.body.Qr.WorkerQrToken, "TKT-20260723-001");
   assert.equal(response.body.message, undefined);
   assert.equal(response.body.vehicle_job, undefined);
@@ -278,17 +389,57 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.match(gateFlexContents, /Rambutan/);
 });
 
-test("POST /api/gate/tickets returns waiting_unload status when Dispatch is false", async () => {
-  const response = await server.request("POST", "/api/gate/tickets", {
-    body: {
-      ...buildGateVehicleJobBody("006"),
-      Dispatch: false,
-    },
-    headers: await gateAuthHeaders(),
-  });
+test("POST /api/gate/tickets does not dispatch queued workers when Dispatch is false", async () => {
+  const worker = addWorker(9700);
 
-  assert.equal(response.status, 201);
-  assert.equal(response.body.Ticket.Status, "waiting_unload");
+  await workerQueue.enqueueWorker(
+    worker.id
+  );
+
+  const response = await server.request(
+    "POST",
+    "/api/gate/tickets",
+    {
+      body: {
+        ...buildGateVehicleJobBody("006"),
+        Dispatch: false,
+      },
+      headers: await gateAuthHeaders(),
+    }
+  );
+
+  const queueEntry =
+    await workerQueue.getWorkerQueueStatus(
+      worker.id
+    );
+
+  assert.equal(
+    response.status,
+    201
+  );
+
+  assert.equal(
+    response.body.Ticket.Status,
+    "waiting_unload"
+  );
+
+  // Gate ยังตอบจำนวน Worker ที่งานต้องการ
+  assert.equal(
+    response.body.WorkerCount,
+    3
+  );
+
+  // Dispatch=false ต้องยังไม่สร้าง Assignment
+  assert.equal(
+    state.assignments.length,
+    0
+  );
+
+  // Worker ต้องยังอยู่ใน FIFO queue
+  assert.equal(
+    queueEntry?.status,
+    "ready"
+  );
 });
 
 test("POST /api/gate/tickets dispatches a ready connected worker to the new Gate job", async () => {
@@ -314,6 +465,139 @@ test("POST /api/gate/tickets dispatches a ready connected worker to the new Gate
       (event) => event.accountId === worker.id && event.event === "WORKER_ASSIGNED"
     )
   );
+});
+
+test("POST /api/gate/tickets dispatches exactly the required FIFO workers", async () => {
+  const workers = Array.from(
+    { length: 8 },
+    (_, index) =>
+      addWorker(9801 + index)
+  );
+
+  // เข้า FIFO ตามลำดับ 9801 -> 9808
+  for (const worker of workers) {
+    await workerQueue.enqueueWorker(
+      worker.id
+    );
+  }
+
+  const body = {
+    ...buildGateVehicleJobBody("004"),
+
+    BoothCount: 2,
+
+    Booths: [
+      {
+        BoothCode: "STALL-004",
+
+        Products: [
+          {
+            ProductCode: "02020300",
+            PackageCode: "29",
+            Quantity: 180,
+          },
+        ],
+      },
+
+      {
+        BoothCode: "STALL-004-B",
+
+        Products: [
+          {
+            ProductCode: "02030103",
+            PackageCode: "19",
+            Quantity: 100,
+          },
+
+          {
+            ProductCode: "02011701",
+            PackageCode: "19",
+            Quantity: 80,
+          },
+        ],
+      },
+    ],
+  };
+
+  const response = await server.request(
+    "POST",
+    "/api/gate/tickets",
+    {
+      body,
+      headers: await gateAuthHeaders(),
+    }
+  );
+
+  /*
+   * Worker requirement:
+   *
+   * Rambutan 180 = 3
+   * Cherry   100 = 2
+   * Melon     80 = 2
+   *
+   * รวม = 7
+   */
+  assert.equal(
+    response.status,
+    201
+  );
+
+  assert.equal(
+    response.body.WorkerCount,
+    7
+  );
+
+  assert.equal(
+    state.vehicleJobs[0]
+      .workers_required,
+    7
+  );
+
+  // ต้องสร้าง Assignment เท่าจำนวนที่ Gate ต้องการ
+  assert.equal(
+    state.assignments.length,
+    7
+  );
+
+  // ต้องเป็น Worker 7 คนแรกตาม FIFO
+  assert.deepEqual(
+    state.assignments.map(
+      (assignment) =>
+        assignment.worker_account_id
+    ),
+    workers
+      .slice(0, 7)
+      .map((worker) => worker.id)
+  );
+
+  // Worker คนที่ 8 ต้องไม่ถูกดึงเกินจำนวน
+  const remainingWorker =
+    await workerQueue
+      .getWorkerQueueStatus(
+        workers[7].id
+      );
+
+  assert.equal(
+    remainingWorker?.status,
+    "ready"
+  );
+
+  // 7 คนแรกต้องถูก mark assigned
+  for (
+    const worker
+    of workers.slice(0, 7)
+  ) {
+    const queueEntry =
+      await workerQueue
+        .getWorkerQueueStatus(
+          worker.id
+        );
+
+    assert.equal(
+      queueEntry?.status,
+      "assigned"
+    );
+  }
 });
 
 test("POST /api/gate/tickets replays the same Gate request", async () => {
@@ -3917,6 +4201,13 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete sub
   ]);
   assert.equal(submittedItems[0].ticket_id, undefined);
 
+  // Worker ส่งยอดจริงแล้ว แต่ Vendor ยังไม่ Confirm
+  // จึงยังห้ามสร้าง Financial
+  assert.equal(state.ticketProductFinancials.length, 0);
+  assert.equal(state.ticketWorkerPayments.length, 0);
+  assert.equal(ticket.final_stall_amount ?? null, null);
+  assert.equal(ticket.financialized_at ?? null, null);
+
   const lineMessage = state.lineMessages[0] as {
     data?: {
       to?: string;
@@ -4052,6 +4343,9 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete sub
   assert.equal(ratingPromptMessage.name, "send-vendor-ticket-rating-prompt");
   assert.equal(ratingPromptMessage.data?.to, ticket.vendor_line_id);
   assert.equal(ratingFlex?.type, "flex");
+  // Rating Prompt ยังห้ามแสดงยอดเงินจริง
+  assert.doesNotMatch(ratingFlexContents, /34\.00 บาท/);
+  assert.doesNotMatch(ratingFlexContents, /สรุปค่าใช้บริการ/);
   assert.match(ratingPostback ?? "", /^token=.*&score=5$/);
   assert.match(ratingFlexContents, /"displayText":"5"/);
   assert.ok((ratingPostback ?? "").length <= 300);

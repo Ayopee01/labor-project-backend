@@ -46,7 +46,7 @@
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Authenticated account is not an admin.
+          description: Authenticated account is not an admin or lacks jobs:read permission.
           content:
             application/json:
               schema:

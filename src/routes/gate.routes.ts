@@ -21,8 +21,8 @@ router.post(
   }
 );
 
-// TODO: REMOVE BEFORE PRODUCTION
-// Route ไว้ทดสอบ Gate สำหรับดึงรายการตลาด แผงค้า สินค้า และแพ็กเกจ
+// TEST HELPER: ใช้สำหรับ Postman / Swagger / Gate integration testing
+// Route ดึงรายการตลาด แผงค้า สินค้า และแพ็กเกจสำหรับช่วยสร้าง Gate request
 router.get(
   "/options",
   gateClientAuthMiddleware,

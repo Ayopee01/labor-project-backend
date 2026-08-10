@@ -1067,8 +1067,8 @@ async function buildGateVehicleJobResponse(
   );
 }
 
-// TODO: REMOVE BEFORE PRODUCTION
-// Function ดึงตัวเลือก Market / Booth / Product / Package สำหรับหน้า Gate UI ทดสอบ
+// TEST HELPER: ใช้สำหรับ Postman / Swagger / Gate integration testing
+// Function ดึงตัวเลือก Market / Booth / Product / Package สำหรับช่วยสร้าง Gate request
 export async function getGateOptions(
   query: unknown
 ): Promise<GateOptionsResponse> {

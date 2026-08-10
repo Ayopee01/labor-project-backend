@@ -212,29 +212,37 @@ export async function markWorkerBreak(
   return setWorkerStatus(accountId, WORKER_WORK_STATUS.BREAK, null, breakUntil);
 }
 
-// Function จัดการ pop ready workers ใน Redis/BullMQ queue
+// Function จัดการ pop ready workers จาก Redis FIFO แบบ atomic
 export async function popReadyWorkers(limit: number): Promise<WorkerQueueEntryDto[]> {
   if (limit <= 0) {
     return [];
   }
 
-  const accountIds = await redis.zrange(
+  // ZPOPMIN เป็น atomic command
+  // ป้องกัน concurrent dispatch ดึง Worker คนเดียวกันออกจากคิวซ้ำ
+  const popped = await redis.zpopmin(
     REDIS_CONFIG.workerQueueKey,
-    0,
-    limit - 1
+    limit
   );
 
-  if (accountIds.length === 0) {
+  if (popped.length === 0) {
     return [];
   }
 
-  await redis.zrem(REDIS_CONFIG.workerQueueKey, ...accountIds);
+  // Redis ZPOPMIN คืนค่า:
+  // [member, score, member, score, ...]
+  const accountIds = popped.filter(
+    (_value, index) => index % 2 === 0
+  );
 
   const entries: WorkerQueueEntryDto[] = [];
 
   for (const accountIdValue of accountIds) {
     const accountId = Number(accountIdValue);
-    entries.push(await markWorkerAssigned(accountId));
+
+    entries.push(
+      await markWorkerAssigned(accountId)
+    );
   }
 
   return entries;

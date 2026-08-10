@@ -1,12 +1,55 @@
 ﻿paths:
+  /api/gate/options:
+    get:
+      tags:
+        - Gate - Test Helper
+      summary: Get Gate master options for Postman / Swagger testing.
+      description: >
+        Test helper protected by Gate Basic Auth.
+
+        Without MarketCode, the response returns available Markets and
+        Products with Packages. Booths is empty.
+
+        With MarketCode, the response returns the selected Market and
+        available Booths that can be used for Gate testing. Products is empty.
+
+        This endpoint does not return stall rates, labor rates,
+        worker payment, stall payment, or any calculated financial amount.
+
+        PackageWeight is master data used to help construct a valid
+        POST /api/gate/tickets request.
+      operationId: getGateOptions
+      security:
+        - gateBasicAuth: []
+      parameters:
+        - in: query
+          name: MarketCode
+          required: false
+          schema:
+            type: string
+          example: "1123"
+      responses:
+        "200":
+          description: Gate test helper options.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateOptionsResponse"
+        "401":
+          description: Missing or invalid Gate client credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/gate/tickets:
     post:
       tags:
         - Gate
       summary: Create a Gate ticket using Gate Client Credentials.
       description: >
-        Use HTTP Basic Auth where username is `ClientId` and password is
-        `ClientSecret`.
+        Use HTTP Basic Auth where username is ClientId and password is
+        ClientSecret.
 
         Gate sends one PascalCase request per TicketNo. One request can contain
         multiple booths using Booths[], and each booth can contain multiple
@@ -22,24 +65,25 @@
         Backend resolves ProductFullCode, ProductName, PackageName and
         PackageWeight from master_product using ProductCode + PackageCode.
 
-        Backend selects master_rate from the requested MarketCode and package
-        weight. If no market-specific rate is found, rate MarketCode `0000`
-        is used as fallback.
+        Gate Quantity is used only for operational worker requirement and
+        dispatch.
 
-        Required workers are calculated for every product using
-        master_product.range. WorkerCount for the VehicleJob is the maximum
-        required worker count from all products in the request.
+        Backend selects the applicable master_rate at Gate Create and stores
+        a rate snapshot internally on TicketProduct. The rate snapshot is not
+        returned as a calculated payment.
 
-        Stall payment is calculated separately for each booth. Product amounts
-        inside the booth are combined before the booth total is rounded up.
+        No financial amount is calculated at Gate Create.
 
-        Worker payment is calculated from the total labor fee of all products
-        in the order and divided by WorkerCount.
+        Stall payment, labor payment, worker payment, remainder and fund are
+        calculated only after the worker submits confirmed quantities and the
+        ticket is confirmed.
 
-        Backend returns Ticket, Market, Booths[], WorkerCount, WorkerPayment,
-        OrderRemainder and Qr.
+        WorkerCount in each Product is the Master worker requirement for that
+        product. Root WorkerCount is the total worker requirement used for
+        dispatch by the current business rule.
 
-        Each Booth item contains Products[] and StallPayment.
+        Backend returns only operational data:
+        Result, Ticket, Market, Booths, WorkerCount and Qr.
 
         The idempotency key is derived from TicketNo + MarketCode.
 
@@ -86,7 +130,7 @@
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Duplicate Gate ticket idempotency key payload mismatch, BoothCount limit/duplicate booth violation, missing active master_market/master_product/master_rate data, or missing active MarketCode + BoothCode LINE target mapping.
+          description: Duplicate Gate request, invalid master mapping, duplicate booth/product-package, or missing required Gate master data.
           content:
             application/json:
               schema:

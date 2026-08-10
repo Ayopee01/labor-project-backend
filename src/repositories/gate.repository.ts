@@ -179,8 +179,8 @@ export async function findActiveVendorLineTargetsByStall(
   return targets;
 }
 
-// TODO: REMOVE BEFORE PRODUCTION
-// Function ดึงรายการตลาดที่พร้อมใช้สำหรับ Gate UI
+// TEST HELPER: ใช้โดย GET /api/gate/options
+// Function ดึงรายการตลาดที่พร้อมใช้สำหรับ Gate integration testing
 export async function listGateMarketOptions(
   marketCode?: string,
   connection?: DbConnection
@@ -214,7 +214,7 @@ export async function listGateMarketOptions(
   });
 }
 
-// TODO: REMOVE BEFORE PRODUCTION
+// TEST HELPER: ใช้โดย GET /api/gate/options
 // Function ดึงรายการแผงของตลาดที่มี Vendor LINE mapping พร้อมใช้งาน
 export async function listGateBoothOptionsByMarketCode(
   marketCode: string,
@@ -270,8 +270,8 @@ export async function listGateBoothOptionsByMarketCode(
     }));
 }
 
-// TODO: REMOVE BEFORE PRODUCTION
-// Function ดึงรายการสินค้าและแพ็กเกจที่ยังใช้งานอยู่สำหรับ Gate UI
+// TEST HELPER: ใช้โดย GET /api/gate/options
+// Function ดึงรายการสินค้าและแพ็กเกจที่ยังใช้งานอยู่สำหรับ Gate integration testing
 export async function listGateProductPackageOptions(
   connection?: DbConnection
 ) {
