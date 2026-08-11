@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { verifyGateClientCredentials } from "../services/admin-settings.service";
+import { verifyGateClientCredentials } from "../services/shared/gate-client-auth.service";
 
 import ApiError from "../utils/api-error";
 

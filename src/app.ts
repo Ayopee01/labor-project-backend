@@ -2,11 +2,9 @@
 import cors from "cors";
 import express from "express";
 
+// Import
 import setupSwagger from "./docs/swagger";
-import {
-  normalizeApiRequestBody,
-  pascalCaseApiResponse,
-} from "./middlewares/api-case.middleware";
+import { normalizeApiRequestBody, pascalCaseApiResponse } from "./middlewares/api-case.middleware";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware";
 import adminAuditRoutes from "./routes/admin-audit.routes";
 import adminJobRoutes from "./routes/admin-jobs.routes";

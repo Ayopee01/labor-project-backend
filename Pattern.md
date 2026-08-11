@@ -16,6 +16,24 @@
 
 ## โครงสร้าง Layer
 
+Dependency & Ownership Rules:
+
+- `services/` = route/application services
+- `services/shared/` = shared business service / orchestration ที่ไม่มี route ของตัวเอง หรือ reuse หลาย flow
+- `repositories/` = route/application-specific data access หรือ read model/projection เฉพาะ route นั้น
+- `repositories/shared/` = reusable/shared domain data access ที่ถูกใช้ได้หลาย service, route, queue หรือ shared orchestration
+- Shared repository ไม่จำเป็นต้องมี Route คู่กัน และไม่ควรถูก re-export ผ่าน route repository เพียงเพื่อ compatibility
+- `utils/` = pure/helper/formatter/deterministic logic
+- `types/shared/` = reusable domain types/constants
+- Direction หลัก: `Route -> Application Service -> Shared Service -> Repository / Integration -> DB`
+- Pure Utils ถูกเรียกจาก layer ด้านบนได้ แต่ Utils ไม่ควร import Application Service
+- Ticket Completion, Ticket Financialization, Worker Attendance, Worker Push, Realtime Notification, Runtime Settings, และ Account Permission เป็น shared service เพราะไม่มี route ของตัวเอง หรือถูก reuse หลาย flow
+- WorkerAssignmentEvent เป็น Assignment domain concept ไม่ใช่ Admin Audit concept: type อยู่ที่ `types/shared/worker-assignment-event.type.ts` และ write repository อยู่ที่ `repositories/shared/worker-assignment-event.repository.ts`
+- Admin Audit repository query persisted facts เท่านั้น ส่วน historical timeout classification อยู่ใน Admin Audit service
+- Worker/Queue/Driver/Admin Jobs ต้อง import runtime settings จาก `services/shared/runtime-settings.service.ts`
+- Auth/Admin Settings ต้อง import account permission resolution จาก `services/shared/account-permission.service.ts`
+- Multi-transport realtime orchestration ต้องอยู่ที่ `services/shared/realtime-notification.service.ts`; `notifications.service.ts` ดูแล Admin SSE และ `worker.socket.ts` ดูแล Worker WebSocket
+
 ### routes
 
 Route มีหน้าที่รับ request และส่งต่อให้ service เท่านั้น
@@ -370,11 +388,11 @@ Response ของ service ควรสร้างให้ชัดใน serv
 
 ### Admin Settings Service
 
-- `admin-settings.service.ts` เป็นข้อยกเว้นที่ตั้งใจให้เป็น service กลางของ runtime settings และ permissions ได้
+- `admin-settings.service.ts` เป็น Admin Settings application service สำหรับ Admin Settings API, Gate Clients, roles, validation และ response shape
 - เหตุผลคือ runtime settings และ permissions ถูกใช้หลาย flow เช่น auth, worker, driver, admin jobs และ queue dispatch
-- Function กลางที่ service อื่นเรียกใช้ได้คือ `getRuntimeSettings`, `clearRuntimeSettingsCache`, และ `getAccountPermissions`
-- `mergeRuntimeSettings` และ cache runtime settings ให้อยู่ใน `admin-settings.service.ts` ได้ เพราะยังเป็น logic ของ setting โดยตรง
-- ไม่ต้องแยก `app-settings.service.ts` เพิ่ม ถ้า logic ยังเกี่ยวกับ setting/permission โดยตรงและอยู่ในขอบเขตของ Admin Settings
+- Function กลางที่ service อื่นเรียกใช้ได้ต้องอยู่ใน shared service เช่น `services/shared/runtime-settings.service.ts` และ `services/shared/account-permission.service.ts`
+- `mergeRuntimeSettings` และ cache runtime settings ให้อยู่ใน `services/shared/runtime-settings.service.ts`
+- ไม่ให้ Worker/Queue/Driver/Auth depend กับ `admin-settings.service.ts` เพื่อใช้ runtime settings หรือ permission resolution
 
 ### Repository Shared
 

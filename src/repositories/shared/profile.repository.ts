@@ -1,8 +1,7 @@
 // Import Library
-import { prisma } from "../../db/prisma";
-
 // Import Mappers
 import { mapProfile } from "./mappers";
+import { client, toAccountId } from "./repository-utils";
 
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
@@ -11,15 +10,7 @@ import type { ProfileDto } from "../../types/admin-workers.type";
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
-function client(connection?: DbConnection): DbConnection {
-  return connection ?? prisma;
-}
-
 // Function แปลง id เป็น account id แบบ number สำหรับ query DB
-function toAccountId(id: number | string): number {
-  return Number(id);
-}
-
 // Function ค้นหา ตาม account ID จาก DB
 export async function findByAccountId(
   accountId: number | string,

@@ -1,15 +1,11 @@
 // Import Library
 import type { Response } from "express";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
-import * as workerApplicationRepository from "../repositories/worker.repository";
-import { accountRepository } from "../repositories/worker.repository";
-import { sendWorkerPushNotificationByAccountIds } from "./shared/worker-push.service";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { NotificationAudience, NotificationClient, PublishRealtimeEventInput, RealtimeNotificationEvent, WorkerStatusChangedInput } from "../types/notifications.type";
-import type { DbConnection } from "../types/shared/common.type";
-import type { GateTicketDto, VehicleJobAssignmentDto, WorkerQueueEntryDto, WorkerSocketEventType } from "../types/worker.type";
+import type { NotificationAudience, NotificationClient, RealtimeNotificationEvent, WorkerStatusChangedInput } from "../types/notifications.type";
+import type { VehicleJobAssignmentDto, WorkerQueueEntryDto } from "../types/worker.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -103,69 +99,6 @@ export function publishNotification(event: RealtimeNotificationEvent): void {
     }
 
     writeSseEvent(client.response, event.type, payload);
-  }
-}
-
-// Function รวม worker ใน ticket และ admin ทั้งหมดที่ต้องรับ event ผลงาน
-export async function resolveTicketResultAudience(
-  ticket: GateTicketDto,
-  connection?: DbConnection
-): Promise<number[]> {
-  const [ticketWorkers, admins] = await Promise.all([
-    workerApplicationRepository.listTicketWorkers(ticket.id, connection),
-    accountRepository.listAdmins(connection),
-  ]);
-  const receiverIds = new Set<number>();
-
-  ticketWorkers.forEach((worker) => receiverIds.add(worker.worker_account_id));
-  admins.forEach((admin) => receiverIds.add(admin.id));
-
-  return Array.from(receiverIds);
-}
-
-// Function กระจาย event realtime event สำหรับ service กลาง
-export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
-  const payload = input.payload ?? {};
-
-  if (input.admin) {
-    publishNotification({
-      type: input.type,
-      title: input.title,
-      message: input.message,
-      payload,
-      audience: {
-        roles: ["admin"],
-      },
-    });
-  }
-
-  const workerAccountIds = [...new Set(input.worker_account_ids ?? [])];
-  const workerPayload = input.worker_payload ?? payload;
-
-  if (workerAccountIds.length > 0) {
-    void sendWorkerPushNotificationByAccountIds({
-      account_ids: workerAccountIds,
-      type: input.type,
-      title: input.title,
-      message: input.message,
-      payload: workerPayload,
-    }).catch((error) => {
-      console.error("Failed to send worker push notification.", error);
-    });
-  }
-
-  const { sendWorkerSocketEvent } =
-    require("../websockets/worker.socket") as typeof import("../websockets/worker.socket");
-
-  for (const workerAccountId of workerAccountIds) {
-    sendWorkerSocketEvent(
-      workerAccountId,
-      input.type as WorkerSocketEventType,
-      workerPayload,
-      {
-        push: false,
-      }
-    );
   }
 }
 

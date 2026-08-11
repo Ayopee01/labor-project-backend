@@ -5,7 +5,8 @@ import type { Duplex } from "stream";
 import { WebSocket, WebSocketServer } from "ws";
 
 // Import Dependencies
-import { accountRepository, profileRepository } from "../repositories/worker.repository";
+import * as accountRepository from "../repositories/shared/account.repository";
+import * as profileRepository from "../repositories/shared/profile.repository";
 import { findActiveByIdAndAccountId } from "../repositories/shared/session.repository";
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
 import { getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";

@@ -8,7 +8,7 @@ import { withTransaction } from "../db/prisma";
 import { enqueueLoggedLineMessage } from "../queues/notification-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import * as gateRepository from "../repositories/gate.repository";
-import * as workerApplicationRepository from "../repositories/worker.repository";
+import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import { publishNotification } from "./notifications.service";
 
 // Import Types
@@ -1042,11 +1042,11 @@ async function buildGateVehicleJobResponse(
   result: GateVehicleJobResult,
   preparation: LaborJobPreparation,
   connection?: Parameters<
-    typeof workerApplicationRepository.getVehicleJobDetail
+    typeof vehicleJobRepository.getVehicleJobDetail
   >[1]
 ): Promise<GateVehicleJobResponse> {
   const detail =
-    await workerApplicationRepository.getVehicleJobDetail(
+    await vehicleJobRepository.getVehicleJobDetail(
       vehicleJobId,
       connection
     );

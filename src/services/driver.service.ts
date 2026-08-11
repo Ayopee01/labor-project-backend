@@ -3,7 +3,7 @@ import { withTransaction } from "../db/prisma";
 import { VEHICLE_JOB_STATUS } from "../constants/job-status";
 import * as driverRepository from "../repositories/driver.repository";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
-import { getRuntimeSettings } from "./admin-settings.service";
+import { getRuntimeSettings } from "./shared/runtime-settings.service";
 import { publishNotification } from "./notifications.service";
 // Import Types
 import type { DriverJobReadyResponse, DriverSessionDto, DriverSessionResponse, DriverVehicleJobDetailResponse, DriverVehicleJobResponse } from "../types/driver.type";
@@ -189,4 +189,3 @@ export async function markDriverJobReady(
     worker_qr_token: detail.vehicle_job.worker_qr_token,
   };
 }
-

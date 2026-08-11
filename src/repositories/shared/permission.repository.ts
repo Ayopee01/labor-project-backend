@@ -1,19 +1,12 @@
-// Import Library
-import { prisma } from "../../db/prisma";
-
 // Import Config
 import { isAdminPermission } from "../../config/permission.config";
+import { client } from "./repository-utils";
 
 // Import Types
 import type { AdminPermission } from "../../config/permission.config";
 import type { DbConnection } from "../../types/shared/common.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
-
-// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
-function client(connection?: DbConnection): DbConnection {
-  return connection ?? prisma;
-}
 
 // Function จัดการ เป็น admin permission จาก DB
 function toAdminPermission(permission: string): AdminPermission | null {

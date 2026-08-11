@@ -1,6 +1,6 @@
 import { accountRepository, profileRepository, sessionRepository, workScheduleRepository } from "../repositories/auth.repository";
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
-import { getAccountPermissions } from "./admin-settings.service";
+import { getAccountPermissions } from "./shared/account-permission.service";
 import {
   registerWorkerPushToken as registerWorkerPushTokenForSession,
   registerWorkerPushTokenForAccount,

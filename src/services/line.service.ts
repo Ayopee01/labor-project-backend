@@ -6,8 +6,9 @@ import { enqueueLoggedLineMessage } from "../queues/notification-queue";
 import { returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
 import { removeVendorConfirmationTimeout } from "../queues/worker-queue";
 import * as lineRepository from "../repositories/line.repository";
-import * as workerApplicationRepository from "../repositories/worker.repository";
-import { publishRealtimeEvent } from "./notifications.service";
+import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
+import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
+import { publishRealtimeEvent } from "./shared/realtime-notification.service";
 import { applyVendorTicketCompletionResult } from "./shared/ticket-completion.service";
 import { TICKET_STATUS } from "../constants/job-status";
 // Import Types
@@ -239,12 +240,12 @@ export async function handleLineWebhook(
       }
 
       const ratingResult = await withTransaction(async (transaction) => {
-        const ticket = await workerApplicationRepository.findGateTicketForCompletion(
+        const ticket = await gateTicketRepository.findGateTicketForCompletion(
           tokenPayload.ticket_id,
           transaction
         );
         const vendorLineTargets = ticket
-          ? await workerApplicationRepository.listActiveVendorLineTargetsForTicket(
+          ? await gateTicketRepository.listActiveVendorLineTargetsForTicket(
             ticket.id,
             transaction
           )
@@ -262,7 +263,7 @@ export async function handleLineWebhook(
           return null;
         }
 
-        const submission = await workerApplicationRepository.findTicketCompletionSubmissionById(
+        const submission = await gateTicketRepository.findTicketCompletionSubmissionById(
           tokenPayload.submission_id,
           transaction
         );
@@ -286,8 +287,8 @@ export async function handleLineWebhook(
             },
             transaction
           ),
-          workerApplicationRepository.listTicketProducts(ticket.id, transaction),
-          workerApplicationRepository.getVehicleJobDetail(
+            gateTicketRepository.listTicketProducts(ticket.id, transaction),
+          vehicleJobRepository.getVehicleJobDetail(
             ticket.vehicle_job_id,
             transaction
           ),
@@ -358,12 +359,12 @@ export async function handleLineWebhook(
     }
 
     const result = await withTransaction(async (transaction) => {
-      const ticket = await workerApplicationRepository.findGateTicketForCompletion(
+      const ticket = await gateTicketRepository.findGateTicketForCompletion(
         tokenPayload.ticket_id,
         transaction
       );
       const vendorLineTargets = ticket
-        ? await workerApplicationRepository.listActiveVendorLineTargetsForTicket(
+        ? await gateTicketRepository.listActiveVendorLineTargetsForTicket(
           ticket.id,
           transaction
         )
@@ -380,14 +381,14 @@ export async function handleLineWebhook(
         return null;
       }
 
-      const submission = await workerApplicationRepository.findWaitingTicketCompletionSubmission(
+      const submission = await gateTicketRepository.findWaitingTicketCompletionSubmission(
         ticket.id,
         transaction
       );
 
       if (!submission || submission.id !== tokenPayload.submission_id) {
         const tokenSubmission =
-          await workerApplicationRepository.findTicketCompletionSubmissionById(
+          await gateTicketRepository.findTicketCompletionSubmissionById(
             tokenPayload.submission_id,
             transaction
           );
@@ -397,7 +398,7 @@ export async function handleLineWebhook(
           tokenSubmission.ticket_id === ticket.id &&
           ([TICKET_STATUS.COMPLETED, TICKET_STATUS.REJECT] as string[]).includes(tokenSubmission.status)
         ) {
-          const detail = await workerApplicationRepository.getVehicleJobDetail(
+          const detail = await vehicleJobRepository.getVehicleJobDetail(
             ticket.vehicle_job_id,
             transaction
           );

@@ -1,9 +1,7 @@
 // Import Library
-import { prisma } from "../../db/prisma";
-
 // Import Mappers
 import { mapAccount, sanitizeAccount } from "./mappers";
-import { requireMapped } from "./repository-utils";
+import { client, requireMapped, toAccountId } from "./repository-utils";
 
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
@@ -18,15 +16,7 @@ const ADMIN_ROLE = "admin";
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
-function client(connection?: DbConnection): DbConnection {
-  return connection ?? prisma;
-}
-
 // Function แปลง id เป็น account id แบบ number สำหรับ query DB
-function toAccountId(id: number | string): number {
-  return Number(id);
-}
-
 // Function ตรวจว่า account DTO จาก DB
 function isAccountDto(account: AccountDto | null): account is AccountDto {
   return account !== null;

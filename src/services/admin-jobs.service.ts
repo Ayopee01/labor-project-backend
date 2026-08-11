@@ -6,8 +6,9 @@ import { enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWo
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as adminJobsRepository from "../repositories/admin-jobs.repository";
-import { publishNotification, publishRealtimeEvent } from "./notifications.service";
-import { getRuntimeSettings } from "./admin-settings.service";
+import { publishNotification } from "./notifications.service";
+import { publishRealtimeEvent } from "./shared/realtime-notification.service";
+import { getRuntimeSettings } from "./shared/runtime-settings.service";
 import {
   buildVehicleOperationSummary,
   formatVehicleOperationItem,

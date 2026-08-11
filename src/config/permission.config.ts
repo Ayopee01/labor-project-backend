@@ -1,5 +1,6 @@
 /* -------------------------------------- Config -------------------------------------- */
 
+// Permission config สำหรับ admin user
 export const ADMIN_PERMISSIONS = [
   "settings:read",
   "settings:update",
@@ -22,14 +23,17 @@ export const ADMIN_PERMISSIONS = [
   "jobs:extend_deadline",
 ] as const;
 
+// Permission config สำหรับ admin user
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
 
+// Function ตรวจว่า Level admin
 export const ADMIN_PERMISSION_LEVELS = [
   "owner",
   "manager",
   "supervisor",
 ] as const;
 
+// Permission config สำหรับ admin user
 export type AdminPermissionLevel = (typeof ADMIN_PERMISSION_LEVELS)[number];
 
 /* -------------------------------------- Functions -------------------------------------- */

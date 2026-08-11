@@ -2,9 +2,10 @@
 import { Prisma } from "@prisma/client";
 
 // Import Dependencies
-import * as adminAuditRepository from "./admin-audit.repository";
+import * as workerAssignmentEventRepository from "./shared/worker-assignment-event.repository";
+import { withTransaction } from "../db/prisma";
 import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
-import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/admin-audit.type";
+import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import { mapAccount, mapGateTicket, mapMarketJob, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
@@ -554,6 +555,10 @@ export async function cancelVehicleJob(
   vehicleJobId: number,
   connection?: DbConnection
 ): Promise<VehicleJobDto> {
+  if (!connection) {
+    return withTransaction((transaction) => cancelVehicleJob(vehicleJobId, transaction));
+  }
+
   const db = client(connection);
   const now = new Date();
   const activeAssignments = await db.vehicleJobAssignment.findMany({
@@ -592,7 +597,7 @@ export async function cancelVehicleJob(
       status: ASSIGNMENT_STATUS.CANCELLED,
     },
   });
-  await adminAuditRepository.createWorkerAssignmentEventsOnce(
+  await workerAssignmentEventRepository.createManyOnce(
     activeAssignments.map((assignment) => ({
       assignment_id: assignment.id,
       worker_account_id: assignment.workerAccountId,
@@ -784,6 +789,10 @@ export async function cancelAssignment(
   assignmentId: number,
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto> {
+  if (!connection) {
+    return withTransaction((transaction) => cancelAssignment(assignmentId, transaction));
+  }
+
   const db = client(connection);
   const now = new Date();
 
@@ -798,7 +807,7 @@ export async function cancelAssignment(
           ASSIGNMENT_STATUS.CANCELLED,
       },
     });
-  await adminAuditRepository.createWorkerAssignmentEventOnce(
+  await workerAssignmentEventRepository.createOnce(
     {
       assignment_id: assignment.id,
       worker_account_id: assignment.workerAccountId,

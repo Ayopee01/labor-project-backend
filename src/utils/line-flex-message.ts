@@ -6,6 +6,7 @@ import type { LineFlexComponent, LineMessage } from "../types/line.type";
 
 // Import Utils
 import { findTicketMarket } from "./ticket-payload";
+import { BANGKOK_TIME_ZONE } from "./time";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -93,7 +94,7 @@ function formatBangkokDisplayDate(
   }
 
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Bangkok",
+    timeZone: BANGKOK_TIME_ZONE,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

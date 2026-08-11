@@ -4,7 +4,7 @@ import IORedis from "ioredis";
 
 // Import Config
 import { REDIS_CONFIG } from "../config/redis.config";
-import { getRuntimeSettings } from "../services/admin-settings.service";
+import { getRuntimeSettings } from "../services/shared/runtime-settings.service";
 import { getDelayUntil } from "../utils/time";
 
 // Import Types

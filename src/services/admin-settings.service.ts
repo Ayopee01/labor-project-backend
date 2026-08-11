@@ -1,38 +1,35 @@
 // Import Config
 import { randomBytes } from "crypto";
 import { ADMIN_PERMISSION_LEVELS, canManagePermissionLevel } from "../config/permission.config";
-import { RUNTIME_SETTING_KEYS } from "../config/runtime.config";
-import type { RuntimeSettingKey } from "../config/runtime.config";
 // Import Dependencies
 import { withTransaction } from "../db/prisma";
-import { accountRepository, gateClientRepository, listSettings, permissionRepository, sessionRepository, upsertSettings } from "../repositories/admin-settings.repository";
+import { accountRepository } from "../repositories/admin-settings.repository";
+import * as gateClientRepository from "../repositories/shared/gate-client.repository";
+import * as permissionRepository from "../repositories/shared/permission.repository";
+import * as sessionRepository from "../repositories/shared/session.repository";
+import { upsertSettings } from "../repositories/shared/system-setting.repository";
+import { getAccountPermissions } from "./shared/account-permission.service";
+import { clearRuntimeSettingsCache, getRuntimeSettings } from "./shared/runtime-settings.service";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { DbConnection } from "../types/shared/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
-import type { AccountPermissionsResponse, AdminRoleListResponse, RuntimeSettingsResponse } from "../types/admin-settings.type";
-import type { GateClientDto, GateClientListResponse, GateClientMutationResponse, GateClientSecretResponse, PublicGateClient } from "../types/admin-settings.type";
+import type { AccountPermissionsResponse } from "../types/shared/account-permission.type";
+import type { AdminRoleListResponse, RuntimeSettingsResponse } from "../types/admin-settings.type";
+import type { GateClientDto, PublicGateClient } from "../types/shared/gate-client.type";
+import type { GateClientListResponse, GateClientMutationResponse, GateClientSecretResponse } from "../types/admin-settings.type";
 // Import Validation
 import { parseId, parseWithSchema } from "../validation/parser";
-import { createAdminAccountBodySchema, createGateClientBodySchema, runtimeSettingsSchema, updateAccountPermissionsBodySchema, updateGateClientBodySchema, updateSystemSettingsBodySchema } from "../validation/schemas";
+import { createAdminAccountBodySchema, createGateClientBodySchema, updateAccountPermissionsBodySchema, updateGateClientBodySchema, updateSystemSettingsBodySchema } from "../validation/schemas";
 // Import Utils
 import ApiError from "../utils/api-error";
-import { hashPassword, verifyPassword } from "../utils/password";
+import { hashPassword } from "../utils/password";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-const SETTINGS_CACHE_TTL_MS = 30 * 1000;
 const GATE_SECRET_PREFIX = "gate_live_";
 const GENERATED_CLIENT_ID_PREFIX = "gate_";
 const GENERATED_CLIENT_ID_BYTES = 8;
 const GENERATED_SECRET_BYTES = 32;
-
-let cachedSettings:
-  | {
-      expiresAt: number;
-      value: RuntimeSettingsResponse;
-    }
-  | null = null;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -215,56 +212,8 @@ async function assertCanReadAdminPermissions(
 }
 
 // Function จัดการ merge runtime settings ใน service flow
-function mergeRuntimeSettings(
-  storedSettings: { key: string; value: string }[]
-): RuntimeSettingsResponse {
-  const rawSettings: Partial<Record<RuntimeSettingKey, unknown>> = {};
-
-  for (const setting of storedSettings) {
-    if (RUNTIME_SETTING_KEYS.includes(setting.key as RuntimeSettingKey)) {
-      rawSettings[setting.key as RuntimeSettingKey] = setting.value;
-    }
-  }
-
-  const missingKeys = RUNTIME_SETTING_KEYS.filter(
-    (key) => rawSettings[key] === undefined
-  );
-
-  if (missingKeys.length > 0) {
-    throw new ApiError(
-      500,
-      "SYSTEM_SETTINGS_NOT_CONFIGURED",
-      "System settings are not fully configured.",
-      {
-        missing_settings: missingKeys,
-      }
-    );
-  }
-
-  return parseWithSchema(runtimeSettingsSchema, rawSettings);
-}
-
 // Function จัดการ clear runtime settings cache ใน service flow
-function clearRuntimeSettingsCache(): void {
-  cachedSettings = null;
-}
-
 // Function ดึง runtime settings ใน service flow
-export async function getRuntimeSettings(): Promise<RuntimeSettingsResponse> {
-  if (cachedSettings && cachedSettings.expiresAt > Date.now()) {
-    return cachedSettings.value;
-  }
-
-  const settings = mergeRuntimeSettings(await listSettings());
-
-  cachedSettings = {
-    expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS,
-    value: settings,
-  };
-
-  return settings;
-}
-
 // Function ดึงรายการ system settings ใน service flow
 export async function listSystemSettings(): Promise<RuntimeSettingsResponse> {
   return getRuntimeSettings();
@@ -371,29 +320,6 @@ export async function rotateGateClientSecret(
   };
 }
 
-// Function ตรวจสอบ Gate client credentials ใน service flow
-export async function verifyGateClientCredentials(
-  clientId: string,
-  clientSecret: string
-): Promise<PublicGateClient | null> {
-  const client = await gateClientRepository.findByClientId(clientId);
-
-  if (!client || client.status !== "active") {
-    return null;
-  }
-
-  if (!(await verifyPassword(clientSecret, client.secret_hash))) {
-    return null;
-  }
-
-  await gateClientRepository.updateLastUsedAt(client.client_id);
-
-  return toPublicGateClient({
-    ...client,
-    last_used_at: new Date().toISOString(),
-  });
-}
-
 // Function ดึงรายการ roles ใน service flow
 export async function listRoles(): Promise<AdminRoleListResponse> {
   const admins = await accountRepository.listAdmins();
@@ -466,19 +392,6 @@ export async function createAdminAccount(
 }
 
 // Function ดึง account permissions ใน service flow
-export async function getAccountPermissions(
-  account: AccountDto,
-  connection?: DbConnection
-): Promise<AccountPermissionsResponse> {
-  return {
-    account_id: account.id,
-    role: account.role,
-    status: account.status,
-    permission_level: account.permission_level,
-    permissions: await permissionRepository.listByAccountId(account.id, connection),
-  };
-}
-
 // Function ดึง admin user permissions ใน service flow
 export async function getAdminUserPermissions(
   accountIdParam: unknown,

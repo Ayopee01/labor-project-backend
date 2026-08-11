@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS } from "../config/permission.config";
 import { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 import { ACCOUNT_ROLES } from "../types/admin-workers.type";
-import { GATE_CLIENT_STATUSES } from "../types/admin-settings.type";
+import { GATE_CLIENT_STATUSES } from "../types/shared/gate-client.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import { WORKER_NATIONALITIES, WORKER_SHIRT_TYPES } from "../utils/worker-code";
 

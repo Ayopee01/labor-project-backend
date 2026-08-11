@@ -1,7 +1,10 @@
-import * as workerApplicationRepository from "../../repositories/worker.repository";
+import * as profileRepository from "../../repositories/shared/profile.repository";
+import * as assignmentRepository from "../../repositories/shared/vehicle-job-assignment.repository";
+import * as gateTicketRepository from "../../repositories/shared/gate-ticket.repository";
+import * as vehicleJobRepository from "../../repositories/shared/vehicle-job.repository";
 import { finalizeTicketFinancials } from "./ticket-financial.service";
 import { ASSIGNMENT_STATUS } from "../../constants/job-status";
-import { resolveTicketResultAudience } from "../notifications.service";
+import { resolveTicketResultAudience } from "./realtime-notification.service";
 
 import type { DbConnection } from "../../types/shared/common.type";
 import type { VendorTicketCompletionAction, VendorTicketCompletionFlowResult } from "../../types/line.type";
@@ -21,13 +24,13 @@ export async function applyVendorTicketCompletionResult(input: {
 }): Promise<VendorTicketCompletionFlowResult> {
   const isConfirmed = input.action === "confirm";
   const updated = isConfirmed
-    ? await workerApplicationRepository.confirmTicketCompletion(
+    ? await gateTicketRepository.confirmTicketCompletion(
       input.ticket.id,
       input.submission.id,
       input.connection,
       input.resolvedByLineUserId
     )
-    : await workerApplicationRepository.rejectTicketCompletion(
+    : await gateTicketRepository.rejectTicketCompletion(
       input.ticket.id,
       input.submission.id,
       input.rejectReason,
@@ -43,27 +46,27 @@ export async function applyVendorTicketCompletionResult(input: {
     : null;
 
   const completedVehicleJob = isConfirmed
-    ? await workerApplicationRepository.closeCompletedVehicleJobIfReady(
+    ? await vehicleJobRepository.closeCompletedVehicleJobIfReady(
       updated.ticket.vehicle_job_id,
       input.connection
     )
     : null;
   const nextTicket = isConfirmed && !completedVehicleJob
-    ? await workerApplicationRepository.activateNextTicketIfReady(
+    ? await vehicleJobRepository.activateNextTicketIfReady(
       updated.ticket.vehicle_job_id,
       input.connection
     )
     : null;
 
   if (isConfirmed && !completedVehicleJob) {
-    await workerApplicationRepository.markVehicleAssignmentsWorking(
+    await assignmentRepository.markVehicleAssignmentsWorking(
       updated.ticket.vehicle_job_id,
       input.connection
     );
   }
 
   if (!isConfirmed) {
-    await workerApplicationRepository.markVehicleAssignmentsRejected(
+    await assignmentRepository.markVehicleAssignmentsRejected(
       updated.ticket.vehicle_job_id,
       input.connection
     );
@@ -71,14 +74,14 @@ export async function applyVendorTicketCompletionResult(input: {
 
   const [receiverAccountIds, products, detail] = await Promise.all([
     resolveTicketResultAudience(updated.ticket, input.connection),
-    workerApplicationRepository.listTicketProducts(updated.ticket.id, input.connection),
-    workerApplicationRepository.getVehicleJobDetail(
+    gateTicketRepository.listTicketProducts(updated.ticket.id, input.connection),
+    vehicleJobRepository.getVehicleJobDetail(
       updated.ticket.vehicle_job_id,
       input.connection
     ),
   ]);
   const completedWorkerCodes = completedVehicleJob
-    ? await workerApplicationRepository.profileRepository.findWorkerCodesByAccountIds(
+    ? await profileRepository.findWorkerCodesByAccountIds(
       completedVehicleJob.completed_worker_account_ids,
       input.connection
     )

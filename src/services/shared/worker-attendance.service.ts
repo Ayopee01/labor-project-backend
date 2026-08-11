@@ -3,6 +3,7 @@ import { getWorkerBreakCount, scheduleWorkerShiftEnd } from "../../queues/worker
 
 // Import Repositories
 import * as workerApplicationRepository from "../../repositories/worker.repository";
+import * as workerShiftAttendanceRepository from "../../repositories/shared/worker-shift-attendance.repository";
 
 // Import Types
 import type { AccountDto, WorkScheduleDto } from "../../types/admin-workers.type";
@@ -77,7 +78,7 @@ export async function markWorkerAttendanceOnline(
   shiftInstanceKey: string,
   connection?: DbConnection
 ): Promise<void> {
-  await workerApplicationRepository.workerShiftAttendanceRepository.markWorkerShiftOnline(
+  await workerShiftAttendanceRepository.markWorkerShiftOnline(
     {
       account_id: account.id,
       worker_code: account.username,
@@ -96,7 +97,7 @@ export async function closeWorkerAttendanceShift(
   reason: WorkerShiftCloseReason,
   connection?: DbConnection
 ): Promise<void> {
-  await workerApplicationRepository.workerShiftAttendanceRepository.closeWorkerShift(
+  await workerShiftAttendanceRepository.closeWorkerShift(
     {
       account_id: account.id,
       worker_code: account.username,

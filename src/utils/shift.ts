@@ -1,6 +1,7 @@
 // Import Dependencies
 import type { ShiftWaitInfo, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import ApiError from "./api-error";
+import { BANGKOK_TIME_ZONE } from "./time";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -22,8 +23,6 @@ const SHIFT_PRESETS = {
     shift_name: NIGHT_SHIFT,
   },
 } as const;
-
-const BANGKOK_TIME_ZONE = "Asia/Bangkok";
 
 const bangkokTimeFormatter = new Intl.DateTimeFormat("en-GB", {
   timeZone: BANGKOK_TIME_ZONE,

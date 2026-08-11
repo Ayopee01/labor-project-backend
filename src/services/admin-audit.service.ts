@@ -3,7 +3,7 @@ import * as adminAuditRepository from "../repositories/admin-audit.repository";
 import { ASSIGNMENT_STATUS } from "../constants/job-status";
 import {
   WORKER_ASSIGNMENT_EVENT_TYPE,
-} from "../types/admin-audit.type";
+} from "../types/shared/worker-assignment-event.type";
 import { parseWithSchema } from "../validation/parser";
 import { adminAuditWorkerPerformanceQuerySchema } from "../validation/schemas";
 import {
@@ -16,8 +16,8 @@ import type {
   AdminAuditWorkerPerformanceQuery,
   AdminAuditWorkerPerformanceRecord,
   AdminAuditWorkerPerformanceResponse,
-  WorkerAssignmentEventType,
 } from "../types/admin-audit.type";
+import type { WorkerAssignmentEventType } from "../types/shared/worker-assignment-event.type";
 import type { WorkerPerformanceAssignmentRow } from "../repositories/admin-audit.repository";
 
 interface WorkerMetricAccumulator {
@@ -33,6 +33,22 @@ interface WorkerMetricAccumulator {
 
 function hasEvent(row: WorkerPerformanceAssignmentRow, eventType: WorkerAssignmentEventType): boolean {
   return row.event_types.includes(eventType);
+}
+
+function isHistoricalAcceptTimeout(
+  row: Pick<WorkerPerformanceAssignmentRow, "status" | "accepted_at">
+): boolean {
+  return row.status === ASSIGNMENT_STATUS.TIMEOUT && row.accepted_at === null;
+}
+
+function isHistoricalScanTimeout(
+  row: Pick<WorkerPerformanceAssignmentRow, "status" | "accepted_at" | "scanned_at">
+): boolean {
+  return (
+    row.status === ASSIGNMENT_STATUS.TIMEOUT &&
+    row.accepted_at !== null &&
+    row.scanned_at === null
+  );
 }
 
 function calculateAcceptRate(acceptedCount: number, acceptTimeoutCount: number): string | null {
@@ -171,14 +187,14 @@ function aggregateRows(rows: WorkerPerformanceAssignmentRow[]): AdminAuditWorker
 
     if (
       hasEvent(row, WORKER_ASSIGNMENT_EVENT_TYPE.ACCEPT_TIMEOUT) ||
-      adminAuditRepository.classifyHistoricalAcceptTimeout(row)
+      isHistoricalAcceptTimeout(row)
     ) {
       metric.accept_timeout_job_count += 1;
     }
 
     if (
       hasEvent(row, WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT) ||
-      adminAuditRepository.classifyHistoricalScanTimeout(row)
+      isHistoricalScanTimeout(row)
     ) {
       metric.scan_timeout_job_count += 1;
     }

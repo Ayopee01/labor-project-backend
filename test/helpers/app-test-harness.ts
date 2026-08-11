@@ -3196,6 +3196,9 @@ const adminSettingsRepositoryMock = {
       }
     },
   },
+};
+
+const systemSettingRepositoryMock = {
   listSettings: async () => [],
   upsertSettings: async () => { },
 };
@@ -3829,6 +3832,69 @@ function patchModuleLoader(): void {
       return workerApplicationRepositoryMock;
     }
 
+    if (
+      request === "../repositories/shared/vehicle-job-assignment.repository" ||
+      request === "../../repositories/shared/vehicle-job-assignment.repository"
+    ) {
+      return workerApplicationRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/vehicle-job.repository" ||
+      request === "../../repositories/shared/vehicle-job.repository"
+    ) {
+      return workerApplicationRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/account.repository" ||
+      request === "../../repositories/shared/account.repository"
+    ) {
+      return workerApplicationRepositoryMock.accountRepository;
+    }
+
+    if (
+      request === "../repositories/shared/profile.repository" ||
+      request === "../../repositories/shared/profile.repository"
+    ) {
+      return workerApplicationRepositoryMock.profileRepository;
+    }
+
+    if (
+      request === "../repositories/shared/work-schedule.repository" ||
+      request === "../../repositories/shared/work-schedule.repository"
+    ) {
+      return workerApplicationRepositoryMock.workScheduleRepository;
+    }
+
+    if (
+      request === "../repositories/shared/worker-shift-attendance.repository" ||
+      request === "../../repositories/shared/worker-shift-attendance.repository"
+    ) {
+      return workerApplicationRepositoryMock.workerShiftAttendanceRepository;
+    }
+
+    if (
+      request === "../repositories/shared/gate-ticket.repository" ||
+      request === "../../repositories/shared/gate-ticket.repository"
+    ) {
+      return workerApplicationRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/ticket-financial.repository" ||
+      request === "../../repositories/shared/ticket-financial.repository"
+    ) {
+      return workerApplicationRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/ticket-worker.repository" ||
+      request === "../../repositories/shared/ticket-worker.repository"
+    ) {
+      return workerApplicationRepositoryMock;
+    }
+
     if (request === "../repositories/admin-jobs.repository") {
       return adminJobsRepositoryMock;
     }
@@ -3857,10 +3923,35 @@ function patchModuleLoader(): void {
     }
 
     if (request === "../repositories/admin-settings.repository") {
-      return {
-        ...adminSettingsRepositoryMock,
-        gateClientRepository: gateClientRepositoryMock,
-      };
+      return adminSettingsRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/gate-client.repository" ||
+      request === "../../repositories/shared/gate-client.repository"
+    ) {
+      return gateClientRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/system-setting.repository" ||
+      request === "../../repositories/shared/system-setting.repository"
+    ) {
+      return systemSettingRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/permission.repository" ||
+      request === "../../repositories/shared/permission.repository"
+    ) {
+      return adminSettingsRepositoryMock.permissionRepository;
+    }
+
+    if (
+      request === "../repositories/shared/session.repository" ||
+      request === "../../repositories/shared/session.repository"
+    ) {
+      return adminSettingsRepositoryMock.sessionRepository;
     }
 
     if (request === "../services/admin-settings.service" || request === "./admin-settings.service") {
@@ -3891,6 +3982,46 @@ function patchModuleLoader(): void {
         getAccountPermissions: async (account: AccountRecord) => ({
           account_id: account.id,
           role: account.role,
+          permission_level: account.permission_level,
+          permissions: state.adminPermissions.get(account.id) ?? [],
+        }),
+      };
+    }
+
+    if (
+      request === "./shared/runtime-settings.service" ||
+      request === "../services/shared/runtime-settings.service" ||
+      request === "../../services/shared/runtime-settings.service"
+    ) {
+      return {
+        clearRuntimeSettingsCache: () => undefined,
+        getRuntimeSettings: async () => ({
+          worker_accept_deadline_seconds: 60,
+          worker_accept_timeout_limit: 3,
+          worker_scan_deadline_minutes: 15,
+          worker_scan_warning_before_minutes: 2,
+          worker_scan_team_remaining_minutes: 5,
+          worker_break_duration_minutes: 15,
+          worker_break_limit: 4,
+          worker_break_count_ttl_hours: 48,
+          worker_presence_stale_seconds: 90,
+          vendor_confirm_timeout_hours: 24,
+          vendor_reconfirm_timeout_hours: 4,
+          driver_session_ttl_hours: 24,
+        }),
+      };
+    }
+
+    if (
+      request === "./shared/account-permission.service" ||
+      request === "../services/shared/account-permission.service" ||
+      request === "../../services/shared/account-permission.service"
+    ) {
+      return {
+        getAccountPermissions: async (account: AccountRecord) => ({
+          account_id: account.id,
+          role: account.role,
+          status: account.status,
           permission_level: account.permission_level,
           permissions: state.adminPermissions.get(account.id) ?? [],
         }),
@@ -3936,6 +4067,38 @@ function patchModuleLoader(): void {
             roles: ["admin"],
           },
         }),
+      };
+    }
+
+    if (
+      request === "./realtime-notification.service" ||
+      request === "./shared/realtime-notification.service" ||
+      request === "../services/shared/realtime-notification.service" ||
+      request === "../../services/shared/realtime-notification.service"
+    ) {
+      return {
+        publishRealtimeEvent: (event: unknown) => state.realtimeEvents.push(event),
+        resolveTicketResultAudience: async (ticket: { id: number }) => {
+          const ticketWorkerIds = state.ticketWorkers
+            .filter((worker) => worker.ticket_id === ticket.id)
+            .map((worker) => worker.worker_account_id);
+          const adminIds = Array.from(state.authAccountsById.values())
+            .filter((account) => account.role === "admin")
+            .map((account) => account.id);
+
+          return [...new Set([...ticketWorkerIds, ...adminIds])];
+        },
+      };
+    }
+
+    if (
+      request === "./shared/worker-assignment-event.repository" ||
+      request === "../repositories/shared/worker-assignment-event.repository" ||
+      request === "../../repositories/shared/worker-assignment-event.repository"
+    ) {
+      return {
+        createOnce: adminAuditRepositoryMock.createWorkerAssignmentEventOnce,
+        createManyOnce: adminAuditRepositoryMock.createWorkerAssignmentEventsOnce,
       };
     }
 

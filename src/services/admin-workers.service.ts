@@ -1,10 +1,11 @@
 import { withTransaction } from "../db/prisma";
 import { enqueueWorker, getWorkerBreakCount, getWorkerPresence, getWorkerPresences, getWorkerQueueStatus, getWorkerQueueStatuses, getWorkerReadyQueueRanks, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, removeWorkerBreakReturn, scheduleWorkerBreakReturn } from "../queues/worker-queue";
 import { accountRepository, profileRepository, sessionRepository, workScheduleRepository } from "../repositories/admin-workers.repository";
-import * as workerApplicationRepository from "../repositories/worker.repository";
+import * as assignmentRepository from "../repositories/shared/vehicle-job-assignment.repository";
+import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
-import { getRuntimeSettings } from "./admin-settings.service";
+import { getRuntimeSettings } from "./shared/runtime-settings.service";
 import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { DbConnection } from "../types/shared/common.type";
@@ -32,7 +33,7 @@ async function buildWorkerAssignmentSocketPayload(
     return null;
   }
 
-  const vehicleJob = await workerApplicationRepository.findVehicleJobById(
+  const vehicleJob = await vehicleJobRepository.findVehicleJobById(
     assignment.vehicle_job_id
   );
 
@@ -758,7 +759,7 @@ async function getAdminWorkerStatus(idParam: unknown): Promise<AdminWorkerStatus
     profileRepository.findByAccountId(account.id),
     workScheduleRepository.findCurrentByAccountId(account.id),
     getWorkerQueueStatus(account.id),
-    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
+    assignmentRepository.findCurrentAssignmentByWorker(account.id),
     getWorkerPresence(account.id),
     getWorkerReadyQueueRanks([account.id]),
   ]);
@@ -788,7 +789,7 @@ export async function listAdminWorkerStatuses(): Promise<{
     getWorkerPresences(accountIds),
     Promise.all(
       accountIds.map((accountId) =>
-        workerApplicationRepository.findCurrentAssignmentByWorker(accountId)
+        assignmentRepository.findCurrentAssignmentByWorker(accountId)
       )
     ),
     profileRepository.findByAccountIds(accountIds),
@@ -895,7 +896,7 @@ export async function forceAdminWorkerStatus(
 
   const [queueEntry, currentAssignment, currentSchedule] = await Promise.all([
     getWorkerQueueStatus(account.id),
-    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
+    assignmentRepository.findCurrentAssignmentByWorker(account.id),
     workScheduleRepository.findCurrentByAccountId(account.id),
   ]);
 
@@ -963,7 +964,7 @@ export async function forceAdminWorkerStatus(
   const [latest, latestQueue, latestAssignment] = await Promise.all([
     getAdminWorkerStatus(account.id),
     getWorkerQueueStatus(account.id),
-    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
+    assignmentRepository.findCurrentAssignmentByWorker(account.id),
   ]);
   const latestAssignmentPayload = await buildWorkerAssignmentSocketPayload(
     latestAssignment

@@ -8,9 +8,18 @@ import { dispatchReadyWorkers, handleAssignmentAcceptTimeout } from "../queues/w
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as lineRepository from "../repositories/line.repository";
 import * as workerApplicationRepository from "../repositories/worker.repository";
-import { accountRepository, workScheduleRepository } from "../repositories/worker.repository";
-import { publishNotification, publishRealtimeEvent, resolveTicketResultAudience } from "./notifications.service";
-import { getRuntimeSettings } from "./admin-settings.service";
+import * as accountRepository from "../repositories/shared/account.repository";
+import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
+import * as profileRepository from "../repositories/shared/profile.repository";
+import * as assignmentRepository from "../repositories/shared/vehicle-job-assignment.repository";
+import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
+import * as ticketWorkerRepository from "../repositories/shared/ticket-worker.repository";
+import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
+import * as workerShiftAttendanceRepository from "../repositories/shared/worker-shift-attendance.repository";
+import { publishNotification } from "./notifications.service";
+import { resolveTicketResultAudience } from "./shared/realtime-notification.service";
+import { publishRealtimeEvent } from "./shared/realtime-notification.service";
+import { getRuntimeSettings } from "./shared/runtime-settings.service";
 import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import {
   buildWorkerDailySummary,
@@ -23,7 +32,7 @@ import type { AccessTokenPayload } from "../types/auth.type";
 import type { LineMessage } from "../types/line.type";
 import type { TicketProductConfirmationInput, GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
-import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/admin-audit.type";
+import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import type { DbConnection } from "../types/shared/common.type";
 import { ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS } from "../constants/job-status";
 // Import Validation
@@ -219,11 +228,11 @@ function parseAssignmentReference(value: unknown): string {
 async function findWorkerAssignmentByReference(
   value: unknown,
   workerAccountId: number,
-  connection?: Parameters<typeof workerApplicationRepository.findAssignmentByIdAndWorker>[2]
+  connection?: Parameters<typeof assignmentRepository.findAssignmentByIdAndWorker>[2]
 ): Promise<VehicleJobAssignmentDto | null> {
   const reference = parseAssignmentReference(value);
 
-  return workerApplicationRepository.findCurrentAssignmentByVehicleJobRefAndWorker(
+  return assignmentRepository.findCurrentAssignmentByVehicleJobRefAndWorker(
     reference,
     workerAccountId,
     connection
@@ -234,7 +243,7 @@ async function findWorkerAssignmentByReference(
 async function findGateTicketForCompletionByTicketAndBooth(
   ticketNoParam: unknown,
   boothCodeParam: unknown,
-  connection?: Parameters<typeof workerApplicationRepository.findGateTicketForCompletion>[1]
+  connection?: Parameters<typeof gateTicketRepository.findGateTicketForCompletion>[1]
 ): Promise<GateTicketDto | null> {
   const ticketNo = String(ticketNoParam ?? "").trim();
   const boothCode = String(boothCodeParam ?? "").trim();
@@ -247,7 +256,7 @@ async function findGateTicketForCompletionByTicketAndBooth(
     throw new ApiError(400, "INVALID_BOOTH_CODE", "BoothCode is invalid.");
   }
 
-  return workerApplicationRepository.findGateTicketForCompletionByTicketNoAndBoothCode(
+  return gateTicketRepository.findGateTicketForCompletionByTicketNoAndBoothCode(
     ticketNo,
     boothCode,
     connection
@@ -392,17 +401,17 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
   const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
 
   return withTransaction(async (transaction) => {
-    const currentAssignment = await workerApplicationRepository.findCurrentAssignmentByWorker(
+    const currentAssignment = await assignmentRepository.findCurrentAssignmentByWorker(
       account.id,
       transaction
     );
 
     if (currentAssignment) {
-      await workerApplicationRepository.closeCompletedVehicleJobIfReady(
+      await vehicleJobRepository.closeCompletedVehicleJobIfReady(
         currentAssignment.vehicle_job_id,
         transaction
       );
-      const refreshedAssignment = await workerApplicationRepository.findCurrentAssignmentByWorker(
+      const refreshedAssignment = await assignmentRepository.findCurrentAssignmentByWorker(
         account.id,
         transaction
       );
@@ -418,7 +427,7 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
 
     const currentQueueEntry = await getWorkerQueueStatus(account.id);
     const isReturningFromBreak = currentQueueEntry?.status === WORKER_WORK_STATUS.BREAK;
-    const attendance = await workerApplicationRepository.workerShiftAttendanceRepository.findByWorkerAndShift(
+    const attendance = await workerShiftAttendanceRepository.findByWorkerAndShift(
       {
         account_id: account.id,
         shift_instance_key: shiftInstanceKey,
@@ -455,7 +464,7 @@ export async function workerOnline(auth?: AccessTokenPayload): Promise<WorkerOnl
     await dispatchReadyWorkers(transaction);
 
     const latestQueueEntry = await getWorkerQueueStatus(account.id);
-    const latestAssignment = await workerApplicationRepository.findCurrentAssignmentByWorker(
+    const latestAssignment = await assignmentRepository.findCurrentAssignmentByWorker(
       account.id,
       transaction
     );
@@ -496,7 +505,7 @@ export async function workerOffline(auth?: AccessTokenPayload): Promise<WorkerOn
   const [currentSchedule, currentQueueEntry, currentAssignment] = await Promise.all([
     workScheduleRepository.findCurrentByAccountId(account.id),
     getWorkerQueueStatus(account.id),
-    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
+    assignmentRepository.findCurrentAssignmentByWorker(account.id),
   ]);
 
   if (currentQueueEntry?.status === WORKER_WORK_STATUS.BREAK && currentSchedule) {
@@ -568,7 +577,7 @@ export async function workerBreak(auth?: AccessTokenPayload): Promise<WorkerBrea
   const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
   const [queueEntry, currentAssignment, currentBreakCount] = await Promise.all([
     getWorkerQueueStatus(account.id),
-    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
+    assignmentRepository.findCurrentAssignmentByWorker(account.id),
     getWorkerBreakCount(account.id, shiftInstanceKey),
   ]);
 
@@ -645,10 +654,10 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
   const account = await requireWorker(auth);
 
   const [profile, currentSchedule, queueEntry, currentAssignment] = await Promise.all([
-    workerApplicationRepository.profileRepository.findByAccountId(account.id),
+    profileRepository.findByAccountId(account.id),
     workScheduleRepository.findCurrentByAccountId(account.id),
     getWorkerQueueStatus(account.id),
-    workerApplicationRepository.findCurrentAssignmentByWorker(account.id),
+    assignmentRepository.findCurrentAssignmentByWorker(account.id),
   ]);
   const schedule = formatScheduleWithShift(currentSchedule);
   const status = resolveWorkerWorkStatus(queueEntry, currentAssignment);
@@ -687,8 +696,8 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
     )
   ) {
     const [detail, team] = await Promise.all([
-      workerApplicationRepository.getVehicleJobDetail(currentAssignment.vehicle_job_id),
-      workerApplicationRepository.listVehicleJobAssignmentTeam(currentAssignment.vehicle_job_id),
+      vehicleJobRepository.getVehicleJobDetail(currentAssignment.vehicle_job_id),
+      assignmentRepository.listVehicleJobAssignmentTeam(currentAssignment.vehicle_job_id),
     ]);
 
     if (detail) {
@@ -802,7 +811,7 @@ export async function acceptWorkerAssignment(
     assignment.accept_deadline_at &&
     new Date(assignment.accept_deadline_at).getTime() <= Date.now()
   ) {
-    const vehicleJob = await workerApplicationRepository.findVehicleJobById(
+    const vehicleJob = await vehicleJobRepository.findVehicleJobById(
       assignment.vehicle_job_id
     );
     const workerCode = account.username;
@@ -847,7 +856,7 @@ export async function acceptWorkerAssignment(
   if (currentSchedule) {
     const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
 
-    await workerApplicationRepository.workerShiftAttendanceRepository.resetAcceptTimeoutStreak({
+    await workerShiftAttendanceRepository.resetAcceptTimeoutStreak({
       account_id: account.id,
       worker_code: account.username,
       schedule: currentSchedule,
@@ -856,7 +865,7 @@ export async function acceptWorkerAssignment(
   }
   const settings = await getRuntimeSettings();
 
-  const acceptedAssignment = await workerApplicationRepository.acceptAssignment(
+  const acceptedAssignment = await assignmentRepository.acceptAssignment(
     assignment.id,
     buildDeadline(settings.worker_scan_deadline_minutes * 60 * 1000)
   );
@@ -871,8 +880,8 @@ export async function acceptWorkerAssignment(
     acceptedAssignment.scan_deadline_at
   );
   const [vehicleJobDetail, team] = await Promise.all([
-    workerApplicationRepository.getVehicleJobDetail(acceptedAssignment.vehicle_job_id),
-    workerApplicationRepository.listVehicleJobAssignmentTeam(acceptedAssignment.vehicle_job_id),
+    vehicleJobRepository.getVehicleJobDetail(acceptedAssignment.vehicle_job_id),
+    assignmentRepository.listVehicleJobAssignmentTeam(acceptedAssignment.vehicle_job_id),
   ]);
 
   if (!vehicleJobDetail) {
@@ -939,11 +948,11 @@ export async function scanWorkerAssignment(
     }
 
     if (isScanDeadlineExpired(assignment.scan_deadline_at)) {
-      const vehicleJob = await workerApplicationRepository.findVehicleJobById(
+      const vehicleJob = await vehicleJobRepository.findVehicleJobById(
         assignment.vehicle_job_id,
         transaction
       );
-      const timedOutAssignment = await workerApplicationRepository.timeoutAssignment(
+      const timedOutAssignment = await assignmentRepository.timeoutAssignment(
         assignment.id,
         WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT,
         transaction
@@ -956,7 +965,7 @@ export async function scanWorkerAssignment(
       };
     }
 
-    const vehicleJob = await workerApplicationRepository.findVehicleJobById(
+    const vehicleJob = await vehicleJobRepository.findVehicleJobById(
       assignment.vehicle_job_id,
       transaction
     );
@@ -965,17 +974,17 @@ export async function scanWorkerAssignment(
       throw new ApiError(400, "INVALID_WORKER_QR", "Worker QR token is invalid.");
     }
 
-    const scannedAssignment = await workerApplicationRepository.scanAssignment(
+    const scannedAssignment = await assignmentRepository.scanAssignment(
       assignment.id,
       transaction
     );
-    const scannedCount = await workerApplicationRepository.countScannedAssignments(
+    const scannedCount = await assignmentRepository.countScannedAssignments(
       assignment.vehicle_job_id,
       transaction
     );
 
     if (scannedCount >= vehicleJob.workers_required) {
-      await workerApplicationRepository.markVehicleJobInProgress(
+      await vehicleJobRepository.markVehicleJobInProgress(
         assignment.vehicle_job_id,
         transaction
       );
@@ -984,7 +993,7 @@ export async function scanWorkerAssignment(
     const shortenedAssignments: VehicleJobAssignmentDto[] = [];
 
     if (vehicleJob.workers_required > 1 && scannedCount === 1) {
-      const remainingAssignments = await workerApplicationRepository.listAcceptedAssignmentsByVehicleJob(
+      const remainingAssignments = await assignmentRepository.listAcceptedAssignmentsByVehicleJob(
         assignment.vehicle_job_id,
         assignment.id,
         transaction
@@ -993,7 +1002,7 @@ export async function scanWorkerAssignment(
 
       for (const remainingAssignment of remainingAssignments) {
         shortenedAssignments.push(
-          await workerApplicationRepository.updateAssignmentScanDeadline(
+          await assignmentRepository.updateAssignmentScanDeadline(
             remainingAssignment.id,
             teamScanDeadline,
             transaction
@@ -1143,7 +1152,7 @@ async function completeResolvedWorkerTicket(
       throw new ApiError(404, "TICKET_NOT_FOUND", "Ticket not found.");
     }
 
-    const vendorLineTargets = await workerApplicationRepository.listActiveVendorLineTargetsForTicket(
+    const vendorLineTargets = await gateTicketRepository.listActiveVendorLineTargetsForTicket(
       ticket.id,
       transaction
     );
@@ -1160,7 +1169,7 @@ async function completeResolvedWorkerTicket(
       throw new ApiError(409, "TICKET_ALREADY_CLOSED", "Ticket is already closed.");
     }
 
-    const readiness = await workerApplicationRepository.getVehicleWorkReadiness(
+    const readiness = await vehicleJobRepository.getVehicleWorkReadiness(
       ticket.vehicle_job_id,
       transaction
     );
@@ -1175,12 +1184,11 @@ async function completeResolvedWorkerTicket(
     }
 
     const ticketWorkers =
-      await workerApplicationRepository
-        .syncTicketWorkersFromVehicleAssignments(
-          ticket.id,
-          ticket.vehicle_job_id,
-          transaction
-        );
+      await ticketWorkerRepository.syncTicketWorkersFromVehicleAssignments(
+        ticket.id,
+        ticket.vehicle_job_id,
+        transaction
+      );
 
     // ตรวจสอบว่า Worker ที่ส่งยอดยังเป็นสมาชิกที่ทำงานอยู่ใน Ticket/Booth นี้
     const isTicketWorker =
@@ -1198,14 +1206,14 @@ async function completeResolvedWorkerTicket(
       );
     }
 
-    const products = await workerApplicationRepository.listTicketProducts(
+    const products = await gateTicketRepository.listTicketProducts(
       ticket.id,
       transaction
     );
 
     validateTicketCompletionItems(products, input.items);
 
-    const canSubmit = await workerApplicationRepository.markTicketDelivered(
+    const canSubmit = await gateTicketRepository.markTicketDelivered(
       ticket.id,
       transaction
     );
@@ -1226,21 +1234,21 @@ async function completeResolvedWorkerTicket(
       );
     }
 
-    const submission = await workerApplicationRepository.createTicketCompletionSubmission(
+    const submission = await gateTicketRepository.createTicketCompletionSubmission(
       ticket.id,
       account.id,
       transaction
     );
-    await workerApplicationRepository.markVehicleAssignmentsDelivered(
+    await assignmentRepository.markVehicleAssignmentsDelivered(
       ticket.vehicle_job_id,
       transaction
     );
-    const confirmedProducts = await workerApplicationRepository.updateTicketProductConfirmations(
+    const confirmedProducts = await gateTicketRepository.updateTicketProductConfirmations(
       ticket.id,
       input.items,
       transaction
     );
-    const waitingTicket = await workerApplicationRepository.findGateTicketForCompletion(
+    const waitingTicket = await gateTicketRepository.findGateTicketForCompletion(
       ticket.id,
       transaction
     );
@@ -1301,7 +1309,7 @@ async function completeResolvedWorkerTicket(
       reason: "ticket_delivered_after_shift_end",
     });
   }
-  const detail = await workerApplicationRepository.getVehicleJobDetail(result.ticket.vehicle_job_id);
+  const detail = await vehicleJobRepository.getVehicleJobDetail(result.ticket.vehicle_job_id);
   const linePostbackData = await buildVendorCompletionPostbackData(
     result.ticket,
     result.submission

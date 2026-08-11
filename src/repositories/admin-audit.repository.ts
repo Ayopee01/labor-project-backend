@@ -1,14 +1,8 @@
-import { Prisma } from "@prisma/client";
-
-import { ASSIGNMENT_STATUS } from "../constants/job-status";
 import { client } from "./shared/repository-utils";
-import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/admin-audit.type";
+import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 
 import type { DbConnection } from "../types/shared/common.type";
-import type {
-  WorkerAssignmentEventType,
-  WorkerAssignmentEventWriteInput,
-} from "../types/admin-audit.type";
+import type { WorkerAssignmentEventType } from "../types/shared/worker-assignment-event.type";
 
 export interface WorkerPerformanceAssignmentRow {
   assignment_id: number;
@@ -19,43 +13,6 @@ export interface WorkerPerformanceAssignmentRow {
   accepted_at: Date | null;
   scanned_at: Date | null;
   event_types: WorkerAssignmentEventType[];
-}
-
-export async function createWorkerAssignmentEventOnce(
-  input: WorkerAssignmentEventWriteInput,
-  connection?: DbConnection
-): Promise<void> {
-  const db = client(connection);
-
-  try {
-    await db.workerAssignmentEvent.create({
-      data: {
-        assignmentId: input.assignment_id,
-        workerAccountId: input.worker_account_id,
-        vehicleJobId: input.vehicle_job_id,
-        eventType: input.event_type,
-        occurredAt: input.occurred_at ?? new Date(),
-        metadata: input.metadata
-          ? (input.metadata as Prisma.InputJsonValue)
-          : Prisma.JsonNull,
-      },
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return;
-    }
-
-    throw error;
-  }
-}
-
-export async function createWorkerAssignmentEventsOnce(
-  inputs: WorkerAssignmentEventWriteInput[],
-  connection?: DbConnection
-): Promise<void> {
-  for (const input of inputs) {
-    await createWorkerAssignmentEventOnce(input, connection);
-  }
 }
 
 export async function listWorkerPerformanceAssignmentRows(
@@ -115,18 +72,4 @@ export async function listWorkerPerformanceAssignmentRows(
         )
       ),
   }));
-}
-
-export function classifyHistoricalAcceptTimeout(row: Pick<WorkerPerformanceAssignmentRow, "status" | "accepted_at">): boolean {
-  return row.status === ASSIGNMENT_STATUS.TIMEOUT && row.accepted_at === null;
-}
-
-export function classifyHistoricalScanTimeout(
-  row: Pick<WorkerPerformanceAssignmentRow, "status" | "accepted_at" | "scanned_at">
-): boolean {
-  return (
-    row.status === ASSIGNMENT_STATUS.TIMEOUT &&
-    row.accepted_at !== null &&
-    row.scanned_at === null
-  );
 }

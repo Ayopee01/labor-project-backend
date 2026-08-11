@@ -1,6 +1,6 @@
 // Import Types
 import type { AccessTokenPayload, SessionDto } from "../auth.type";
-import type { PublicGateClient } from "../admin-settings.type";
+import type { PublicGateClient } from "../shared/gate-client.type";
 import type { DriverSessionDto } from "../driver.type";
 
 /* -------------------------------------- Type Declarations -------------------------------------- */

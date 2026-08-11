@@ -1,6 +1,6 @@
 import type { WorkerStatusResponse } from "../types/worker.type";
 
-const BANGKOK_TIME_ZONE = "Asia/Bangkok";
+export const BANGKOK_TIME_ZONE = "Asia/Bangkok";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /* -------------------------------------- Functions -------------------------------------- */
