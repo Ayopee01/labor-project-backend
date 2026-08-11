@@ -1,9 +1,14 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
-import { accountRepository, profileRepository, workerPushTokenRepository } from "../../repositories/auth.repository";
+import * as accountRepository from "../../repositories/shared/account.repository";
+import * as profileRepository from "../../repositories/shared/profile.repository";
+import * as workerPushTokenRepository from "../../repositories/shared/worker-push-token.repository";
 import type { AccessTokenPayload, SessionDto } from "../../types/auth.type";
 import type { DbConnection } from "../../types/shared/common.type";
-import type { WorkerPushEventInput, WorkerPushRegistrationResponse } from "../../types/notifications.type";
+import type {
+  WorkerPushEventInput,
+  WorkerPushRegistrationResponse,
+} from "../../types/notifications.type";
 import { parseWithSchema } from "../../validation/parser";
 import { workerPushTokenBodySchema } from "../../validation/schemas";
 import ApiError from "../../utils/api-error";
@@ -40,8 +45,8 @@ function isFirebaseConfigured(): boolean {
 
   firebaseConfigured = Boolean(
     process.env.FIREBASE_PROJECT_ID &&
-      process.env.FIREBASE_CLIENT_EMAIL &&
-      getFirebasePrivateKey()
+    process.env.FIREBASE_CLIENT_EMAIL &&
+    getFirebasePrivateKey(),
   );
 
   return firebaseConfigured;
@@ -94,22 +99,28 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 // Function ตรวจ auth payload ให้เป็น token ของ Worker ที่ active ก่อนลงทะเบียน push token
 function isWorkerAuth(auth?: AccessTokenPayload): auth is AccessTokenPayload {
-  return Boolean(auth && auth.role === "worker" && auth.account_id && auth.session_id);
+  return Boolean(
+    auth && auth.role === "worker" && auth.account_id && auth.session_id,
+  );
 }
 
 // Function ลงทะเบียนหรือ refresh FCM token จาก API ของ Worker Mobile ที่ auth แล้ว
 export async function registerWorkerPushToken(
   auth: AccessTokenPayload | undefined,
   session: SessionDto | undefined,
-  body: unknown
+  body: unknown,
 ): Promise<WorkerPushRegistrationResponse> {
-  if (!isWorkerAuth(auth) || !session || session.account_id !== auth.account_id) {
+  if (
+    !isWorkerAuth(auth) ||
+    !session ||
+    session.account_id !== auth.account_id
+  ) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
   }
 
   const input = parseWithSchema(workerPushTokenBodySchema, body);
   const deviceId = input.device_id ?? session.device_id;
-  const account = await accountRepository.findById(auth.account_id);
+  const account = await accountRepository.findUserById(auth.account_id);
 
   if (!account || account.role !== "worker" || account.status !== "active") {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -134,44 +145,50 @@ export async function registerWorkerPushToken(
 }
 
 // Function ลงทะเบียน FCM token ตอน auth login/force-login เมื่อ Mobile ส่ง token มา
-export async function registerWorkerPushTokenForAccount(input: {
-  worker_code: string;
-  session_id: number;
-  device_id: string;
-  platform?: string | null;
-  fcm_token?: string | null;
-}, connection?: DbConnection): Promise<void> {
+export async function registerWorkerPushTokenForAccount(
+  input: {
+    worker_code: string;
+    session_id: number;
+    device_id: string;
+    platform?: string | null;
+    fcm_token?: string | null;
+  },
+  connection?: DbConnection,
+): Promise<void> {
   if (!input.fcm_token) {
     return;
   }
 
-  await workerPushTokenRepository.upsertWorkerPushToken({
-    worker_code: input.worker_code,
-    session_id: input.session_id,
-    device_id: input.device_id,
-    platform: input.platform,
-    fcm_token: input.fcm_token,
-  }, connection);
+  await workerPushTokenRepository.upsertWorkerPushToken(
+    {
+      worker_code: input.worker_code,
+      session_id: input.session_id,
+      device_id: input.device_id,
+      platform: input.platform,
+      fcm_token: input.fcm_token,
+    },
+    connection,
+  );
 }
 
 // Function เพิกถอน push token ที่ active ทั้งหมดของ session เมื่อ session ถูกเพิกถอน
 export async function revokeWorkerPushTokensBySession(
   sessionId: number,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<void> {
   await workerPushTokenRepository.revokeBySessionId(sessionId, connection);
 }
 
 // Function ส่ง FCM push notification ตาม WorkerCode และ revoke token ที่ใช้ไม่ได้
 async function sendWorkerPushNotification(
-  input: WorkerPushEventInput
+  input: WorkerPushEventInput,
 ): Promise<void> {
   if (!ensureFirebaseApp()) {
     return;
   }
 
   const tokens = await workerPushTokenRepository.listActiveTokensByWorkerCodes(
-    input.worker_codes
+    input.worker_codes,
   );
 
   if (tokens.length === 0) {
@@ -215,8 +232,9 @@ export async function sendWorkerPushNotificationByAccountIds(input: {
   message: string;
   payload?: Record<string, unknown>;
 }): Promise<void> {
-  const workerCodes = (await profileRepository.findWorkerCodesByAccountIds(input.account_ids))
-    .filter((workerCode): workerCode is string => Boolean(workerCode));
+  const workerCodes = (
+    await profileRepository.findWorkerCodesByAccountIds(input.account_ids)
+  ).filter((workerCode): workerCode is string => Boolean(workerCode));
 
   await sendWorkerPushNotification({
     worker_codes: workerCodes,

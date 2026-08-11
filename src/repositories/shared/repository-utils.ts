@@ -20,15 +20,11 @@ export function toId(id: number | string): number {
 }
 
 // Function แปลง id เป็น account id แบบ number สำหรับ query DB
-export function toAccountId(id: number | string): number {
-  return toId(id);
-}
-
 // Function ตรวจสอบและดึง mapped จาก DB
 export function requireMapped<T>(
   record: T | null | undefined,
   subject: string,
-  action: string
+  action: string,
 ): T {
   if (!record) {
     throw new Error(`${subject} ${action} did not return a record.`);

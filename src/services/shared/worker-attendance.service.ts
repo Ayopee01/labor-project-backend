@@ -1,17 +1,23 @@
 // Import Queues
-import { getWorkerBreakCount, scheduleWorkerShiftEnd } from "../../queues/worker-queue";
+import {
+  getWorkerBreakCount,
+  scheduleWorkerShiftEnd,
+} from "../../queues/worker-queue";
 
 // Import Repositories
 import * as workerApplicationRepository from "../../repositories/worker.repository";
 import * as workerShiftAttendanceRepository from "../../repositories/shared/worker-shift-attendance.repository";
 
 // Import Types
-import type { AccountDto, WorkScheduleDto } from "../../types/admin-workers.type";
+import type {
+  AccountDto,
+  WorkScheduleDto,
+} from "../../types/admin-workers.type";
 import type { DbConnection } from "../../types/shared/common.type";
-import type { WorkerShiftCloseReason, WorkerStatusResponse } from "../../types/worker.type";
-
-// Import Config
-import { ASSIGNMENT_STATUS } from "../../constants/job-status";
+import type {
+  WorkerShiftCloseReason,
+  WorkerStatusResponse,
+} from "../../types/worker.type";
 
 // Import Utils
 import {
@@ -26,38 +32,41 @@ import { buildBangkokDateRange, formatBangkokDate } from "../../utils/time";
 export async function buildWorkerDailySummary(
   accountId: number,
   schedule: WorkScheduleDto | null,
-  connection?: Parameters<typeof workerApplicationRepository.listWorkerAssignmentHistoryByDate>[3]
-): Promise<Pick<WorkerStatusResponse, "today_job_count" | "break_count_used" | "completed_job_count">> {
+  connection?: Parameters<
+    typeof workerApplicationRepository.getWorkerDailyAssignmentCounts
+  >[3],
+): Promise<
+  Pick<
+    WorkerStatusResponse,
+    "today_job_count" | "break_count_used" | "completed_job_count"
+  >
+> {
   const today = formatBangkokDate();
   const { startAt, endAt } = buildBangkokDateRange(today);
-  const shiftInstanceKey = schedule ? buildWorkScheduleShiftInstanceKey(schedule) : null;
-  const [assignmentHistory, breakCountUsed] = await Promise.all([
-    workerApplicationRepository.listWorkerAssignmentHistoryByDate(
+  const shiftInstanceKey = schedule
+    ? buildWorkScheduleShiftInstanceKey(schedule)
+    : null;
+  const [assignmentCounts, breakCountUsed] = await Promise.all([
+    workerApplicationRepository.getWorkerDailyAssignmentCounts(
       accountId,
       startAt,
       endAt,
-      connection
+      connection,
     ),
     shiftInstanceKey ? getWorkerBreakCount(accountId, shiftInstanceKey) : 0,
   ]);
-  const completedJobCount = assignmentHistory.filter(({ assignment }) =>
-    assignment.status === ASSIGNMENT_STATUS.COMPLETED || Boolean(assignment.completed_at)
-  ).length;
-  const todayJobCount = assignmentHistory.filter(
-    ({ assignment }) => assignment.status !== ASSIGNMENT_STATUS.TIMEOUT
-  ).length;
 
   return {
-    today_job_count: todayJobCount,
+    today_job_count: assignmentCounts.today_job_count,
     break_count_used: breakCountUsed,
-    completed_job_count: completedJobCount,
+    completed_job_count: assignmentCounts.completed_job_count,
   };
 }
 
 // Function ตั้ง job ปิดกะ worker เมื่อเวลาสิ้นสุดกะยังอยู่ในอนาคต
 export async function scheduleWorkerShiftEndIfNeeded(
   accountId: number,
-  schedule: WorkScheduleDto
+  schedule: WorkScheduleDto,
 ): Promise<void> {
   const delayMs = getWorkScheduleShiftEndDelayMs(schedule);
 
@@ -66,7 +75,7 @@ export async function scheduleWorkerShiftEndIfNeeded(
       accountId,
       schedule.id,
       delayMs,
-      buildWorkScheduleShiftInstanceKey(schedule)
+      buildWorkScheduleShiftInstanceKey(schedule),
     );
   }
 }
@@ -76,7 +85,7 @@ export async function markWorkerAttendanceOnline(
   account: AccountDto,
   schedule: WorkScheduleDto,
   shiftInstanceKey: string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<void> {
   await workerShiftAttendanceRepository.markWorkerShiftOnline(
     {
@@ -85,7 +94,7 @@ export async function markWorkerAttendanceOnline(
       schedule,
       shift_instance_key: shiftInstanceKey,
     },
-    connection
+    connection,
   );
 }
 
@@ -95,7 +104,7 @@ export async function closeWorkerAttendanceShift(
   schedule: WorkScheduleDto,
   shiftInstanceKey: string,
   reason: WorkerShiftCloseReason,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<void> {
   await workerShiftAttendanceRepository.closeWorkerShift(
     {
@@ -105,6 +114,6 @@ export async function closeWorkerAttendanceShift(
       shift_instance_key: shiftInstanceKey,
       reason,
     },
-    connection
+    connection,
   );
 }

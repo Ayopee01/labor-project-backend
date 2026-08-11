@@ -1,8 +1,11 @@
 // Import Library
 // Import Mappers
 import { mapSchedule } from "./mappers";
-import { findActiveWorkSchedule, findNextWorkSchedule } from "../../utils/shift";
-import { client, toAccountId } from "./repository-utils";
+import {
+  findActiveWorkSchedule,
+  findNextWorkSchedule,
+} from "../../utils/shift";
+import { client, toId } from "./repository-utils";
 
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
@@ -15,7 +18,7 @@ import type { WorkScheduleDto } from "../../types/admin-workers.type";
 // Function ค้นหา current ตาม account ID จาก DB
 export async function findCurrentByAccountId(
   accountId: number | string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<WorkScheduleDto | null> {
   const schedules = await listCurrentByAccountId(accountId, connection);
 
@@ -25,7 +28,7 @@ export async function findCurrentByAccountId(
 // Function ค้นหา ตาม ID จาก DB
 export async function findById(
   scheduleId: number,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<WorkScheduleDto | null> {
   const db = client(connection);
   const schedule = await db.account.findUnique({
@@ -40,12 +43,12 @@ export async function findById(
 // Function ดึงรายการ current ตาม account ID จาก DB
 export async function listCurrentByAccountId(
   accountId: number | string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<WorkScheduleDto[]> {
   const db = client(connection);
   const account = await db.account.findUnique({
     where: {
-      id: toAccountId(accountId),
+      id: toId(accountId),
       role: "worker",
     },
   });

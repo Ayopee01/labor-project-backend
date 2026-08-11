@@ -1,7 +1,5 @@
-import {
-  mapVehicleJob,
-  mapVehicleJobAssignment,
-} from "./shared/mappers";
+import { ASSIGNMENT_STATUS } from "../constants/job-status";
+import { mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
 
 import type { DbConnection } from "../types/shared/common.type";
@@ -12,11 +10,61 @@ import type {
 
 /* -------------------------------------- Functions -------------------------------------- */
 
+export async function getWorkerDailyAssignmentCounts(
+  workerAccountId: number,
+  startAt: Date,
+  endAt: Date,
+  connection?: DbConnection,
+): Promise<{
+  today_job_count: number;
+  completed_job_count: number;
+}> {
+  const db = client(connection);
+  const [todayJobCount, completedJobCount] = await Promise.all([
+    db.vehicleJobAssignment.count({
+      where: {
+        workerAccountId,
+        createdAt: {
+          gte: startAt,
+          lt: endAt,
+        },
+        status: {
+          not: ASSIGNMENT_STATUS.TIMEOUT,
+        },
+      },
+    }),
+    db.vehicleJobAssignment.count({
+      where: {
+        workerAccountId,
+        createdAt: {
+          gte: startAt,
+          lt: endAt,
+        },
+        OR: [
+          {
+            status: ASSIGNMENT_STATUS.COMPLETED,
+          },
+          {
+            completedAt: {
+              not: null,
+            },
+          },
+        ],
+      },
+    }),
+  ]);
+
+  return {
+    today_job_count: todayJobCount,
+    completed_job_count: completedJobCount,
+  };
+}
+
 export async function listWorkerAssignmentHistoryByDate(
   workerAccountId: number,
   startAt: Date,
   endAt: Date,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<WorkerAssignmentHistoryItemDto[]> {
   const db = client(connection);
   const assignments = await db.vehicleJobAssignment.findMany({
@@ -59,13 +107,10 @@ export async function listWorkerAssignmentHistoryByDate(
   });
 
   return assignments.map((assignment) => ({
-    assignment: requireDto(
-      mapVehicleJobAssignment(assignment),
-      "assignment"
-    ),
+    assignment: requireDto(mapVehicleJobAssignment(assignment), "assignment"),
     vehicle_job: requireDto(
       mapVehicleJob(assignment.vehicleJob),
-      "vehicle job"
+      "vehicle job",
     ),
     markets: assignment.vehicleJob.marketJobs.map((market) => ({
       marketCode: market.marketCode,
@@ -90,7 +135,7 @@ export async function listWorkerEarningsSummaryRows(
   workerAccountId: number,
   startAt: Date,
   endAt: Date,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<WorkerEarningsSummaryResponse["details"]> {
   const db = client(connection);
   const rows = await db.ticketWorker.findMany({

@@ -1,8 +1,11 @@
 // Import Dependencies
 import { VEHICLE_JOB_STATUS } from "../constants/job-status";
 import { mapDriverSession, mapVehicleJob } from "./shared/mappers";
-import { client, createRandomToken, requireDto } from "./shared/repository-utils";
-export { findVehicleJobById, findVehicleJobByRef, getVehicleJobDetail } from "./shared/vehicle-job.repository";
+import {
+  client,
+  createRandomToken,
+  requireDto,
+} from "./shared/repository-utils";
 
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
@@ -14,7 +17,7 @@ import type { VehicleJobDto } from "../types/worker.type";
 // Function ค้นหา vehicle job ตาม driver QR token จาก DB
 export async function findVehicleJobByDriverQrToken(
   qrToken: string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<VehicleJobDto | null> {
   const db = client(connection);
   const vehicleJob = await db.vehicleJob.findUnique({
@@ -30,7 +33,7 @@ export async function findVehicleJobByDriverQrToken(
 export async function createDriverSession(
   vehicleJobId: number,
   expiresAt: Date,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<DriverSessionDto> {
   const db = client(connection);
   const session = await db.driverSession.create({
@@ -48,7 +51,7 @@ export async function createDriverSession(
 export async function findActiveDriverSessionByToken(
   sessionToken: string,
   now = new Date(),
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<DriverSessionDto | null> {
   const db = client(connection);
   const session = await db.driverSession.findFirst({
@@ -67,7 +70,7 @@ export async function findActiveDriverSessionByToken(
 // Function อัปเดตสถานะ vehicle job ready จาก DB
 export async function markVehicleJobReady(
   vehicleJobId: number,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<VehicleJobDto> {
   const db = client(connection);
   const vehicleJob = await db.vehicleJob.update({

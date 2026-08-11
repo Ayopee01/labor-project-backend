@@ -1,5 +1,6 @@
 import type { RuntimeSettings } from "../config/runtime.config";
-import type { AccountStatus } from "./admin-workers.type";
+import type { AccountStatus } from "./shared/account.type";
+import type { SystemSettingDto } from "./shared/system-setting.type";
 import type {
   GateClientCreateInput,
   GateClientDto,
@@ -7,14 +8,6 @@ import type {
   PublicGateClient,
 } from "./shared/gate-client.type";
 import type { AccountPermissionsResponse } from "./shared/account-permission.type";
-
-export interface SystemSettingDto {
-  key: string;
-  value: string;
-  updated_by: number | null;
-  created_at: string;
-  updated_at: string;
-}
 
 export type RuntimeSettingsResponse = RuntimeSettings;
 

@@ -2,10 +2,25 @@
 import { Prisma } from "@prisma/client";
 
 import { withTransaction } from "../db/prisma";
-import { enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning } from "../queues/worker-queue";
+import {
+  enqueueWorkersAtFront,
+  getWorkerQueueStatus,
+  markWorkerAssigned,
+  markWorkerOpenApp,
+  removeAssignmentTimeout,
+  removeScanTimeout,
+  removeScanWarning,
+  scheduleAssignmentTimeout,
+  scheduleScanTimeout,
+  scheduleScanWarning,
+} from "../queues/worker-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as adminJobsRepository from "../repositories/admin-jobs.repository";
+import * as assignmentRepository from "../repositories/shared/vehicle-job-assignment.repository";
+import * as profileRepository from "../repositories/shared/profile.repository";
+import * as ticketWorkerRepository from "../repositories/shared/ticket-worker.repository";
+import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import { publishNotification } from "./notifications.service";
 import { publishRealtimeEvent } from "./shared/realtime-notification.service";
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
@@ -14,15 +29,52 @@ import {
   formatVehicleOperationItem,
 } from "../utils/admin-job-operations.formatter";
 // Import Types
-import type { AdminVehicleJobFinancialResponse, AdminVehicleJobFinancialRecord, AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminJobCancelResponse, AdminMarketJobActionResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobListItemResponse, AdminVehicleJobOperationListResponse } from "../types/admin-jobs.type";
-import type { GateTicketDto, MarketJobDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleJobDto } from "../types/worker.type";
+import type {
+  AdminVehicleJobFinancialResponse,
+  AdminVehicleJobFinancialRecord,
+  AdminAssignmentResponse,
+  AdminAssignWorkersResponse,
+  AdminCancelAssignmentResponse,
+  AdminCancelVehicleJobAndRequeueResponse,
+  AdminExtendScanDeadlineResponse,
+  AdminJobCancelResponse,
+  AdminMarketJobActionResponse,
+  AdminScanDeadlineAssignmentResponse,
+  AdminStallJobActionResponse,
+  AdminVehicleJobActionResponse,
+  AdminVehicleJobHistoryItemResponse,
+  AdminVehicleJobListItemResponse,
+  AdminVehicleJobOperationListResponse,
+} from "../types/admin-jobs.type";
+import type {
+  GateTicketDto,
+  MarketJobDto,
+  TicketProductDto,
+  VehicleJobAssignmentDto,
+  VehicleJobDetailResponse,
+  VehicleJobDto,
+} from "../types/worker.type";
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
-import { adminAssignWorkersBodySchema, adminCancelBodySchema, adminExtendScanDeadlineBodySchema, adminJobCancelBodySchema, adminVehicleJobListQuerySchema, adminVehicleJobOperationsQuerySchema } from "../validation/schemas";
+import {
+  adminAssignWorkersBodySchema,
+  adminCancelBodySchema,
+  adminExtendScanDeadlineBodySchema,
+  adminJobCancelBodySchema,
+  adminVehicleJobListQuerySchema,
+  adminVehicleJobOperationsQuerySchema,
+} from "../validation/schemas";
 // Import Utils
 import ApiError from "../utils/api-error";
-import { ACTIVE_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES } from "../constants/job-status";
-import { buildBangkokDateSpanRange, buildDeadline, getDelayUntil } from "../utils/time";
+import {
+  ACTIVE_ASSIGNMENT_STATUSES,
+  TERMINAL_JOB_STATUSES,
+} from "../constants/job-status";
+import {
+  buildBangkokDateSpanRange,
+  buildDeadline,
+  getDelayUntil,
+} from "../utils/time";
 import { buildWorkerAssignedPayload } from "../utils/worker-payload";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 
@@ -40,7 +92,9 @@ function parseReference(value: unknown, code: string, message: string): string {
 }
 
 // Function จัดรูปแบบ public vehicle job list item ใน service flow
-function formatPublicVehicleJobListItem(vehicleJob: VehicleJobDto): AdminVehicleJobListItemResponse {
+function formatPublicVehicleJobListItem(
+  vehicleJob: VehicleJobDto,
+): AdminVehicleJobListItemResponse {
   return {
     ticketNo: vehicleJob.ticketNo,
     gate_transaction_ref: vehicleJob.gate_transaction_ref,
@@ -57,7 +111,7 @@ function formatPublicVehicleJobListItem(vehicleJob: VehicleJobDto): AdminVehicle
 // Function จัดรูปแบบ vehicle job action response ใน service flow
 function formatVehicleJobActionResponse(
   message: string,
-  vehicleJob: VehicleJobDto
+  vehicleJob: VehicleJobDto,
 ): AdminVehicleJobActionResponse {
   return {
     message,
@@ -79,7 +133,9 @@ function formatPublicProduct(product: TicketProductDto) {
 }
 
 // Function จัดรูปแบบ public ticket ใน service flow
-function formatPublicTicket(ticket: GateTicketDto & { products?: TicketProductDto[] }) {
+function formatPublicTicket(
+  ticket: GateTicketDto & { products?: TicketProductDto[] },
+) {
   return {
     boothCode: ticket.boothCode,
     boothName: ticket.boothName,
@@ -111,7 +167,7 @@ function formatPublicMarket(market: MarketJobDto) {
 function formatMarketJobActionResponse(
   message: string,
   market: MarketJobDto,
-  vehicleJob: VehicleJobDto | null
+  vehicleJob: VehicleJobDto | null,
 ): AdminMarketJobActionResponse {
   return {
     message,
@@ -126,7 +182,7 @@ function formatStallJobActionResponse(
   message: string,
   ticket: GateTicketDto,
   vehicleJob: VehicleJobDto | null,
-  marketJob: MarketJobDto | null
+  marketJob: MarketJobDto | null,
 ): AdminStallJobActionResponse {
   return {
     message,
@@ -140,7 +196,7 @@ function formatStallJobActionResponse(
 
 // Function จัดรูปแบบ public vehicle job history detail ใน service flow
 function formatPublicVehicleJobHistoryDetail(
-  detail: VehicleJobDetailResponse
+  detail: VehicleJobDetailResponse,
 ): AdminVehicleJobHistoryItemResponse {
   return {
     vehicle_job: {
@@ -161,7 +217,7 @@ function formatPublicVehicleJobHistoryDetail(
 // Function จัดสถานะ Financial ระดับ VehicleJob
 function resolveVehicleJobFinancialStatus(
   boothCount: number,
-  financializedBoothCount: number
+  financializedBoothCount: number,
 ): AdminVehicleJobFinancialResponse["financial_status"] {
   if (financializedBoothCount === 0) {
     return "PENDING";
@@ -176,7 +232,7 @@ function resolveVehicleJobFinancialStatus(
 
 // Function จัดรูปแบบ Product Financial สำหรับ Admin
 function formatAdminFinancialProduct(
-  product: AdminVehicleJobFinancialRecord["tickets"][number]["products"][number]
+  product: AdminVehicleJobFinancialRecord["tickets"][number]["products"][number],
 ): AdminVehicleJobFinancialResponse["booths"][number]["products"][number] {
   const financial = product.financial;
 
@@ -190,7 +246,8 @@ function formatAdminFinancialProduct(
     quantity: product.quantity.toFixed(2),
     confirmed_quantity: product.confirmedQuantity?.toFixed(2) ?? null,
     rate_snapshot: {
-      package_weight_snapshot: product.packageWeightSnapshot?.toFixed(2) ?? null,
+      package_weight_snapshot:
+        product.packageWeightSnapshot?.toFixed(2) ?? null,
       rate_id_snapshot: product.rateIdSnapshot,
       source_rate_id_snapshot: product.sourceRateIdSnapshot,
       rate_market_code: product.rateMarketCode,
@@ -204,15 +261,15 @@ function formatAdminFinancialProduct(
     },
     financial: financial
       ? {
-        stall_fee_raw: financial.stallFeeRaw.toFixed(4),
-        stall_fee_rounded: financial.stallFeeRounded.toFixed(2),
-        labor_fee_raw: financial.laborFeeRaw.toFixed(4),
-        product_charge: financial.productCharge.toFixed(2),
-        worker_count: financial.workerCount,
-        worker_payout_total: financial.workerPayoutTotal.toFixed(2),
-        fund_amount: financial.fundAmount.toFixed(4),
-        finalized_at: financial.finalizedAt.toISOString(),
-      }
+          stall_fee_raw: financial.stallFeeRaw.toFixed(4),
+          stall_fee_rounded: financial.stallFeeRounded.toFixed(2),
+          labor_fee_raw: financial.laborFeeRaw.toFixed(4),
+          product_charge: financial.productCharge.toFixed(2),
+          worker_count: financial.workerCount,
+          worker_payout_total: financial.workerPayoutTotal.toFixed(2),
+          fund_amount: financial.fundAmount.toFixed(4),
+          finalized_at: financial.finalizedAt.toISOString(),
+        }
       : null,
     workers:
       financial?.workerPayments.map((payment) => ({
@@ -229,7 +286,7 @@ function formatAdminFinancialProduct(
 
 // Function จัดรูปแบบ Booth Financial สำหรับ Admin
 function formatAdminFinancialBooth(
-  ticket: AdminVehicleJobFinancialRecord["tickets"][number]
+  ticket: AdminVehicleJobFinancialRecord["tickets"][number],
 ): AdminVehicleJobFinancialResponse["booths"][number] {
   let laborFeeRaw = new Prisma.Decimal(0);
   let workerPayoutTotal = new Prisma.Decimal(0);
@@ -241,14 +298,16 @@ function formatAdminFinancialBooth(
     }
 
     laborFeeRaw = laborFeeRaw.plus(product.financial.laborFeeRaw);
-    workerPayoutTotal = workerPayoutTotal.plus(product.financial.workerPayoutTotal);
+    workerPayoutTotal = workerPayoutTotal.plus(
+      product.financial.workerPayoutTotal,
+    );
     fundAmount = fundAmount.plus(product.financial.fundAmount);
   }
 
   const workers = ticket.workers.map((ticketWorker) => {
     const totalAmount = ticketWorker.payments.reduce(
       (total, payment) => total.plus(payment.finalAmount),
-      new Prisma.Decimal(0)
+      new Prisma.Decimal(0),
     );
 
     return {
@@ -284,14 +343,17 @@ function formatAdminFinancialBooth(
 // Function ตรวจสอบและดึง vehicle job ตาม ref ใน service flow
 async function requireVehicleJobByRef(
   idParam: unknown,
-  connection?: Parameters<typeof adminJobsRepository.findVehicleJobByRef>[1]
+  connection?: Parameters<typeof vehicleJobRepository.findVehicleJobByRef>[1],
 ): Promise<VehicleJobDto> {
   const ticketNo = parseReference(
     idParam,
     "INVALID_VEHICLE_JOB_REF",
-    "Ticket no is invalid."
+    "Ticket no is invalid.",
   );
-  const vehicleJob = await adminJobsRepository.findVehicleJobByRef(ticketNo, connection);
+  const vehicleJob = await vehicleJobRepository.findVehicleJobByRef(
+    ticketNo,
+    connection,
+  );
 
   if (!vehicleJob) {
     throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
@@ -303,14 +365,17 @@ async function requireVehicleJobByRef(
 // Function ตรวจสอบและดึง market job ตาม ref ใน service flow
 async function requireMarketJobByRef(
   idParam: unknown,
-  connection?: Parameters<typeof adminJobsRepository.findMarketJobByRef>[1]
+  connection?: Parameters<typeof adminJobsRepository.findMarketJobByRef>[1],
 ): Promise<MarketJobDto> {
   const marketCode = parseReference(
     idParam,
     "INVALID_MARKET_JOB_REF",
-    "Market code is invalid."
+    "Market code is invalid.",
   );
-  const marketJob = await adminJobsRepository.findMarketJobByRef(marketCode, connection);
+  const marketJob = await adminJobsRepository.findMarketJobByRef(
+    marketCode,
+    connection,
+  );
 
   if (!marketJob) {
     throw new ApiError(404, "MARKET_JOB_NOT_FOUND", "Market job not found.");
@@ -322,14 +387,17 @@ async function requireMarketJobByRef(
 // Function ตรวจสอบและดึง stall job ตาม ref ใน service flow
 async function requireStallJobByRef(
   idParam: unknown,
-  connection?: Parameters<typeof adminJobsRepository.findGateTicketByRef>[1]
+  connection?: Parameters<typeof adminJobsRepository.findGateTicketByRef>[1],
 ): Promise<GateTicketDto> {
   const boothCode = parseReference(
     idParam,
     "INVALID_STALL_JOB_REF",
-    "Booth code is invalid."
+    "Booth code is invalid.",
   );
-  const ticket = await adminJobsRepository.findGateTicketByRef(boothCode, connection);
+  const ticket = await adminJobsRepository.findGateTicketByRef(
+    boothCode,
+    connection,
+  );
 
   if (!ticket) {
     throw new ApiError(404, "STALL_JOB_NOT_FOUND", "Stall job not found.");
@@ -339,16 +407,20 @@ async function requireStallJobByRef(
 }
 
 // Function จัดการ assignment queue priority at ใน service flow
-function assignmentQueuePriorityAt(assignment: VehicleJobAssignmentDto): number {
+function assignmentQueuePriorityAt(
+  assignment: VehicleJobAssignmentDto,
+): number {
   const value = assignment.accepted_at ?? assignment.created_at;
-  const timestamp = value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+  const timestamp = value
+    ? new Date(value).getTime()
+    : Number.POSITIVE_INFINITY;
 
   return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
 }
 
 // Function เรียง assignments สำหรับ admin cancel requeue ใน service flow
 function sortAssignmentsForAdminCancelRequeue(
-  assignments: VehicleJobAssignmentDto[]
+  assignments: VehicleJobAssignmentDto[],
 ): VehicleJobAssignmentDto[] {
   return [...assignments].sort((left, right) => {
     const leftPriorityAt = assignmentQueuePriorityAt(left);
@@ -365,7 +437,9 @@ function sortAssignmentsForAdminCancelRequeue(
 // Function ต่อเวลา deadline ใน service flow
 function extendDeadline(currentDeadline: string | null, minutes: number): Date {
   const now = Date.now();
-  const currentTime = currentDeadline ? new Date(currentDeadline).getTime() : now;
+  const currentTime = currentDeadline
+    ? new Date(currentDeadline).getTime()
+    : now;
   const baseTime = Math.max(now, currentTime);
 
   return new Date(baseTime + minutes * 60 * 1000);
@@ -384,10 +458,10 @@ function isScanDeadlineActive(scanDeadlineAt: string | null): boolean {
 
 // Function สร้าง scan deadline assignment responses ใน service flow
 async function buildScanDeadlineAssignmentResponses(
-  assignments: VehicleJobAssignmentDto[]
+  assignments: VehicleJobAssignmentDto[],
 ): Promise<AdminScanDeadlineAssignmentResponse[]> {
-  const workerCodeMap = await adminJobsRepository.profileRepository.findWorkerCodeMapByAccountIds(
-    assignments.map((assignment) => assignment.worker_account_id)
+  const workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
+    assignments.map((assignment) => assignment.worker_account_id),
   );
 
   return assignments.map((assignment) => ({
@@ -400,10 +474,10 @@ async function buildScanDeadlineAssignmentResponses(
 // Function สร้าง admin assignment responses ใน service flow
 async function buildAdminAssignmentResponses(
   ticketNo: string,
-  assignments: VehicleJobAssignmentDto[]
+  assignments: VehicleJobAssignmentDto[],
 ): Promise<AdminAssignmentResponse[]> {
-  const workerCodeMap = await adminJobsRepository.profileRepository.findWorkerCodeMapByAccountIds(
-    assignments.map((assignment) => assignment.worker_account_id)
+  const workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
+    assignments.map((assignment) => assignment.worker_account_id),
   );
 
   return assignments.map((assignment) => ({
@@ -418,10 +492,11 @@ async function buildAdminAssignmentResponses(
 }
 
 // Function ดึงรายการ vehicle job worker IDs ใน service flow
-async function listVehicleJobWorkerIds(vehicleJobId: number): Promise<number[]> {
-  const assignments = await adminJobsRepository.listActiveAssignmentsByVehicleJob(
-    vehicleJobId
-  );
+async function listVehicleJobWorkerIds(
+  vehicleJobId: number,
+): Promise<number[]> {
+  const assignments =
+    await adminJobsRepository.listActiveAssignmentsByVehicleJob(vehicleJobId);
 
   return [
     ...new Set(assignments.map((assignment) => assignment.worker_account_id)),
@@ -430,7 +505,9 @@ async function listVehicleJobWorkerIds(vehicleJobId: number): Promise<number[]> 
 
 // Function ดึงรายการ stall job worker IDs ใน service flow
 async function listStallJobWorkerIds(ticket: GateTicketDto): Promise<number[]> {
-  const ticketWorkers = await adminJobsRepository.listTicketWorkers(ticket.id);
+  const ticketWorkers = await ticketWorkerRepository.listTicketWorkers(
+    ticket.id,
+  );
 
   if (ticketWorkers.length > 0) {
     return [
@@ -443,27 +520,24 @@ async function listStallJobWorkerIds(ticket: GateTicketDto): Promise<number[]> {
 
 // Function ดึง Financial breakdown ของ VehicleJob สำหรับ Admin
 export async function getVehicleJobFinancials(
-  ticketNoParam: unknown
+  ticketNoParam: unknown,
 ): Promise<AdminVehicleJobFinancialResponse> {
   const ticketNo = parseReference(
     ticketNoParam,
     "INVALID_VEHICLE_JOB_REF",
-    "Ticket no is invalid."
+    "Ticket no is invalid.",
   );
 
-  const vehicleJob = await adminJobsRepository.findVehicleJobFinancialByRef(ticketNo);
+  const vehicleJob =
+    await adminJobsRepository.findVehicleJobFinancialByRef(ticketNo);
 
   if (!vehicleJob) {
-    throw new ApiError(
-      404,
-      "VEHICLE_JOB_NOT_FOUND",
-      "Vehicle job not found."
-    );
+    throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
   }
 
   const booths = vehicleJob.tickets.map(formatAdminFinancialBooth);
   const financializedBoothCount = vehicleJob.tickets.filter(
-    (ticket) => ticket.financializedAt !== null
+    (ticket) => ticket.financializedAt !== null,
   ).length;
 
   let finalStallAmount = new Prisma.Decimal(0);
@@ -478,7 +552,7 @@ export async function getVehicleJobFinancials(
 
     laborFeeRaw = laborFeeRaw.plus(booth.summary.labor_fee_raw);
     workerPayoutTotal = workerPayoutTotal.plus(
-      booth.summary.worker_payout_total
+      booth.summary.worker_payout_total,
     );
     fundAmount = fundAmount.plus(booth.summary.fund_amount);
   }
@@ -493,7 +567,7 @@ export async function getVehicleJobFinancials(
     },
     financial_status: resolveVehicleJobFinancialStatus(
       vehicleJob.tickets.length,
-      financializedBoothCount
+      financializedBoothCount,
     ),
     summary: {
       booth_count: vehicleJob.tickets.length,
@@ -551,7 +625,7 @@ export async function listVehicleJobs(query: unknown): Promise<{
 
 // Function ดึงรายการ vehicle job operations ใน service flow
 export async function listVehicleJobOperations(
-  query: unknown
+  query: unknown,
 ): Promise<AdminVehicleJobOperationListResponse> {
   const filters = parseWithSchema(adminVehicleJobOperationsQuerySchema, query);
   const dateFrom = filters.date ?? filters.date_from;
@@ -598,14 +672,13 @@ export async function listVehicleJobOperations(
 // Function ยกเลิก vehicle job ใน service flow
 async function cancelVehicleJob(
   idParam: unknown,
-  body: unknown
+  body: unknown,
 ): Promise<AdminVehicleJobActionResponse> {
   const existingVehicleJob = await requireVehicleJobByRef(idParam);
   const vehicleJobId = existingVehicleJob.id;
   parseWithSchema(adminCancelBodySchema, body ?? {});
-  const activeAssignments = await adminJobsRepository.listActiveAssignmentsByVehicleJob(
-    vehicleJobId
-  );
+  const activeAssignments =
+    await adminJobsRepository.listActiveAssignmentsByVehicleJob(vehicleJobId);
 
   const vehicleJob = await withTransaction(async (transaction) => {
     return adminJobsRepository.cancelVehicleJob(vehicleJobId, transaction);
@@ -616,18 +689,22 @@ async function cancelVehicleJob(
       removeAssignmentTimeout(assignment.id),
       removeScanTimeout(assignment.id),
       removeScanWarning(assignment.id),
-    ])
+    ]),
   );
   await Promise.all(
     activeAssignments.map((assignment) =>
-      markWorkerOpenApp(assignment.worker_account_id)
-    )
+      markWorkerOpenApp(assignment.worker_account_id),
+    ),
   );
   activeAssignments.forEach((assignment) => {
-    sendWorkerSocketEvent(assignment.worker_account_id, "ASSIGNMENT_CANCELLED", {
-      ticketNo: vehicleJob.ticketNo,
-      reason: "vehicle_job_cancelled",
-    });
+    sendWorkerSocketEvent(
+      assignment.worker_account_id,
+      "ASSIGNMENT_CANCELLED",
+      {
+        ticketNo: vehicleJob.ticketNo,
+        reason: "vehicle_job_cancelled",
+      },
+    );
   });
   publishRealtimeEvent({
     type: "VEHICLE_JOB_CANCELLED",
@@ -644,27 +721,26 @@ async function cancelVehicleJob(
     },
     admin: true,
     worker_account_ids: activeAssignments.map(
-      (assignment) => assignment.worker_account_id
+      (assignment) => assignment.worker_account_id,
     ),
   });
 
   return formatVehicleJobActionResponse(
     "Vehicle job cancelled successfully.",
-    vehicleJob
+    vehicleJob,
   );
 }
 
 // Function ยกเลิก vehicle job และ requeue ใน service flow
 async function cancelVehicleJobAndRequeue(
   idParam: unknown,
-  body: unknown
+  body: unknown,
 ): Promise<AdminCancelVehicleJobAndRequeueResponse> {
   const existingVehicleJob = await requireVehicleJobByRef(idParam);
   const vehicleJobId = existingVehicleJob.id;
   parseWithSchema(adminCancelBodySchema, body ?? {});
-  const activeAssignments = await adminJobsRepository.listActiveAssignmentsByVehicleJob(
-    vehicleJobId
-  );
+  const activeAssignments =
+    await adminJobsRepository.listActiveAssignmentsByVehicleJob(vehicleJobId);
 
   const vehicleJob = await withTransaction(async (transaction) => {
     return adminJobsRepository.cancelVehicleJob(vehicleJobId, transaction);
@@ -675,12 +751,13 @@ async function cancelVehicleJobAndRequeue(
       removeAssignmentTimeout(assignment.id),
       removeScanTimeout(assignment.id),
       removeScanWarning(assignment.id),
-    ])
+    ]),
   );
 
-  const sortedAssignments = sortAssignmentsForAdminCancelRequeue(activeAssignments);
+  const sortedAssignments =
+    sortAssignmentsForAdminCancelRequeue(activeAssignments);
   const requeuedWorkerIds = sortedAssignments.map(
-    (assignment) => assignment.worker_account_id
+    (assignment) => assignment.worker_account_id,
   );
 
   await enqueueWorkersAtFront(requeuedWorkerIds);
@@ -715,7 +792,8 @@ async function cancelVehicleJobAndRequeue(
     payload: {
       ticketNo: vehicleJob.ticketNo,
       status: vehicleJob.status,
-      requeued_worker_codes: await adminJobsRepository.profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
+      requeued_worker_codes:
+        await profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
     },
     audience: {
       roles: ["admin"],
@@ -726,12 +804,15 @@ async function cancelVehicleJobAndRequeue(
     message: "Vehicle job cancelled and workers requeued successfully.",
     ticketNo: vehicleJob.ticketNo,
     status: vehicleJob.status,
-    requeued_worker_codes: await adminJobsRepository.profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
+    requeued_worker_codes:
+      await profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
   };
 }
 
 // Function ยกเลิก job ใน service flow
-export async function cancelJob(body: unknown): Promise<AdminJobCancelResponse> {
+export async function cancelJob(
+  body: unknown,
+): Promise<AdminJobCancelResponse> {
   const input = parseWithSchema(adminJobCancelBodySchema, body);
   const cancelBody = {
     reason: input.reason,
@@ -757,7 +838,7 @@ export async function cancelJob(body: unknown): Promise<AdminJobCancelResponse> 
 // Function จัดการ vehicle job workers ใน service flow
 export async function assignVehicleJobWorkers(
   idParam: unknown,
-  body: unknown
+  body: unknown,
 ): Promise<AdminAssignWorkersResponse> {
   const existingVehicleJob = await requireVehicleJobByRef(idParam);
   const vehicleJobId = existingVehicleJob.id;
@@ -766,76 +847,94 @@ export async function assignVehicleJobWorkers(
   const settings = await getRuntimeSettings();
   const acceptDeadlineMs = settings.worker_accept_deadline_seconds * 1000;
 
-  const { assignments, vehicleJob } = await withTransaction(async (transaction) => {
-    const vehicleJob = await requireVehicleJobByRef(idParam, transaction);
+  const { assignments, vehicleJob } = await withTransaction(
+    async (transaction) => {
+      const vehicleJob = await requireVehicleJobByRef(idParam, transaction);
 
-    if (TERMINAL_JOB_STATUSES.includes(vehicleJob.status)) {
-      throw new ApiError(409, "VEHICLE_JOB_CLOSED", "Vehicle job is already closed.");
-    }
-
-    const createdAssignments: VehicleJobAssignmentDto[] = [];
-
-    for (const workerCode of workerCodes) {
-      const worker = await adminJobsRepository.findWorkerByCode(workerCode, transaction);
-
-      if (!worker) {
-        throw new ApiError(404, "WORKER_NOT_FOUND", `Worker ${workerCode} not found.`);
-      }
-
-      const currentAssignment = await adminJobsRepository.findCurrentAssignmentByWorker(
-        worker.id,
-        transaction
-      );
-
-      if (worker.status !== "active") {
-        throw new ApiError(403, "WORKER_NOT_ACTIVE", `Worker ${workerCode} is not active.`);
-      }
-
-      if (currentAssignment) {
+      if (TERMINAL_JOB_STATUSES.includes(vehicleJob.status)) {
         throw new ApiError(
           409,
-          "WORKER_HAS_ACTIVE_ASSIGNMENT",
-          `Worker ${workerCode} already has an active assignment.`
+          "VEHICLE_JOB_CLOSED",
+          "Vehicle job is already closed.",
         );
       }
 
-      const queueEntry = await getWorkerQueueStatus(worker.id);
+      const createdAssignments: VehicleJobAssignmentDto[] = [];
 
-      if (queueEntry?.status !== WORKER_WORK_STATUS.READY) {
-        throw new ApiError(
-          409,
-          "WORKER_NOT_READY",
-          `Worker ${workerCode} must be ready in queue before admin can assign a job.`
+      for (const workerCode of workerCodes) {
+        const worker = await adminJobsRepository.findWorkerByCode(
+          workerCode,
+          transaction,
         );
+
+        if (!worker) {
+          throw new ApiError(
+            404,
+            "WORKER_NOT_FOUND",
+            `Worker ${workerCode} not found.`,
+          );
+        }
+
+        const currentAssignment =
+          await assignmentRepository.findCurrentAssignmentByWorker(
+            worker.id,
+            transaction,
+          );
+
+        if (worker.status !== "active") {
+          throw new ApiError(
+            403,
+            "WORKER_NOT_ACTIVE",
+            `Worker ${workerCode} is not active.`,
+          );
+        }
+
+        if (currentAssignment) {
+          throw new ApiError(
+            409,
+            "WORKER_HAS_ACTIVE_ASSIGNMENT",
+            `Worker ${workerCode} already has an active assignment.`,
+          );
+        }
+
+        const queueEntry = await getWorkerQueueStatus(worker.id);
+
+        if (queueEntry?.status !== WORKER_WORK_STATUS.READY) {
+          throw new ApiError(
+            409,
+            "WORKER_NOT_READY",
+            `Worker ${workerCode} must be ready in queue before admin can assign a job.`,
+          );
+        }
+
+        const assignment = await assignmentRepository.createAssignment(
+          vehicleJobId,
+          worker.id,
+          buildDeadline(acceptDeadlineMs),
+          transaction,
+        );
+
+        createdAssignments.push(assignment);
       }
 
-      const assignment = await adminJobsRepository.createAssignment(
-        vehicleJobId,
-        worker.id,
-        buildDeadline(acceptDeadlineMs),
-        transaction
-      );
-
-      createdAssignments.push(assignment);
-    }
-
-    return {
-      assignments: createdAssignments,
-      vehicleJob,
-    };
-  });
+      return {
+        assignments: createdAssignments,
+        vehicleJob,
+      };
+    },
+  );
 
   for (const assignment of assignments) {
     await markWorkerAssigned(assignment.worker_account_id);
     await scheduleAssignmentTimeout(
       assignment.id,
       assignment.worker_account_id,
-      acceptDeadlineMs
+      acceptDeadlineMs,
     );
     sendWorkerSocketEvent(
       assignment.worker_account_id,
       "WORKER_ASSIGNED",
-      buildWorkerAssignedPayload(assignment, vehicleJob)
+      buildWorkerAssignedPayload(assignment, vehicleJob),
     );
   }
   publishNotification({
@@ -845,7 +944,10 @@ export async function assignVehicleJobWorkers(
     payload: {
       ticketNo: vehicleJob.ticketNo,
       worker_codes: workerCodes,
-      assignments: await buildAdminAssignmentResponses(vehicleJob.ticketNo, assignments),
+      assignments: await buildAdminAssignmentResponses(
+        vehicleJob.ticketNo,
+        assignments,
+      ),
     },
     audience: {
       roles: ["admin"],
@@ -855,7 +957,10 @@ export async function assignVehicleJobWorkers(
   return {
     message: "Workers assigned successfully.",
     ticketNo: vehicleJob.ticketNo,
-    assignments: await buildAdminAssignmentResponses(vehicleJob.ticketNo, assignments),
+    assignments: await buildAdminAssignmentResponses(
+      vehicleJob.ticketNo,
+      assignments,
+    ),
   };
 }
 
@@ -863,34 +968,43 @@ export async function assignVehicleJobWorkers(
 export async function cancelAssignment(
   idParam: unknown,
   workerCodeParam: unknown,
-  body: unknown
+  body: unknown,
 ): Promise<AdminCancelAssignmentResponse> {
   const ticketNo = parseReference(
     idParam,
     "INVALID_VEHICLE_JOB_REF",
-    "Ticket no is invalid."
+    "Ticket no is invalid.",
   );
   const workerCode = parseReference(
     workerCodeParam,
     "INVALID_WORKER_CODE",
-    "Worker code is invalid."
+    "Worker code is invalid.",
   );
   parseWithSchema(adminCancelBodySchema, body ?? {});
-  const assignment = await adminJobsRepository.findActiveAssignmentByVehicleJobRefAndWorkerCode(
-    ticketNo,
-    workerCode
-  );
+  const assignment =
+    await adminJobsRepository.findActiveAssignmentByVehicleJobRefAndWorkerCode(
+      ticketNo,
+      workerCode,
+    );
 
   if (!assignment) {
     throw new ApiError(404, "ASSIGNMENT_NOT_FOUND", "Assignment not found.");
   }
 
   if (!ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)) {
-    throw new ApiError(409, "ASSIGNMENT_NOT_ACTIVE", "Assignment is not active.");
+    throw new ApiError(
+      409,
+      "ASSIGNMENT_NOT_ACTIVE",
+      "Assignment is not active.",
+    );
   }
 
-  const vehicleJob = await adminJobsRepository.findVehicleJobById(assignment.vehicle_job_id);
-  const cancelledAssignment = await withTransaction(async (transaction) => adminJobsRepository.cancelAssignment(assignment.id, transaction));
+  const vehicleJob = await vehicleJobRepository.findVehicleJobById(
+    assignment.vehicle_job_id,
+  );
+  const cancelledAssignment = await withTransaction(async (transaction) =>
+    adminJobsRepository.cancelAssignment(assignment.id, transaction),
+  );
 
   await removeAssignmentTimeout(assignment.id);
   await removeScanTimeout(assignment.id);
@@ -923,11 +1037,10 @@ export async function cancelAssignment(
   };
 }
 
-
 // Function ต่อเวลา vehicle job scan deadline ใน service flow
 export async function extendVehicleJobScanDeadline(
   idParam: unknown,
-  body: unknown
+  body: unknown,
 ): Promise<AdminExtendScanDeadlineResponse> {
   const vehicleJob = await requireVehicleJobByRef(idParam);
   const vehicleJobId = vehicleJob.id;
@@ -936,7 +1049,7 @@ export async function extendVehicleJobScanDeadline(
   const assignments = (
     await adminJobsRepository.listAcceptedAssignmentsByVehicleJob(
       vehicleJobId,
-      input.worker_codes
+      input.worker_codes,
     )
   ).filter((assignment) => isScanDeadlineActive(assignment.scan_deadline_at));
 
@@ -944,7 +1057,7 @@ export async function extendVehicleJobScanDeadline(
     throw new ApiError(
       404,
       "ACCEPTED_ASSIGNMENTS_NOT_FOUND",
-      "No active accepted assignments found for scan deadline extension."
+      "No active accepted assignments found for scan deadline extension.",
     );
   }
 
@@ -954,29 +1067,26 @@ export async function extendVehicleJobScanDeadline(
     updatedAssignments.push(
       await adminJobsRepository.extendAssignmentScanDeadline(
         assignment.id,
-        extendDeadline(assignment.scan_deadline_at, input.minutes)
-      )
+        extendDeadline(assignment.scan_deadline_at, input.minutes),
+      ),
     );
   }
   await Promise.all(
-    updatedAssignments.flatMap((assignment) =>
-      [
-        scheduleScanTimeout(
-          assignment.id,
-          assignment.worker_account_id,
-          getDelayUntil(assignment.scan_deadline_at)
-        ),
-        scheduleScanWarning(
-          assignment.id,
-          assignment.worker_account_id,
-          assignment.scan_deadline_at
-        ),
-      ]
-    )
+    updatedAssignments.flatMap((assignment) => [
+      scheduleScanTimeout(
+        assignment.id,
+        assignment.worker_account_id,
+        getDelayUntil(assignment.scan_deadline_at),
+      ),
+      scheduleScanWarning(
+        assignment.id,
+        assignment.worker_account_id,
+        assignment.scan_deadline_at,
+      ),
+    ]),
   );
-  const assignmentResponses = await buildScanDeadlineAssignmentResponses(
-    updatedAssignments
-  );
+  const assignmentResponses =
+    await buildScanDeadlineAssignmentResponses(updatedAssignments);
   publishRealtimeEvent({
     type: "ASSIGNMENT_SCAN_DEADLINE_EXTENDED",
     title: "Scan deadline extended",
@@ -995,7 +1105,7 @@ export async function extendVehicleJobScanDeadline(
     },
     admin: true,
     worker_account_ids: updatedAssignments.map(
-      (assignment) => assignment.worker_account_id
+      (assignment) => assignment.worker_account_id,
     ),
   });
 
@@ -1010,7 +1120,7 @@ export async function extendVehicleJobScanDeadline(
 // Function ยกเลิก market job ใน service flow
 async function cancelMarketJob(
   idParam: unknown,
-  body: unknown
+  body: unknown,
 ): Promise<AdminMarketJobActionResponse> {
   const existingMarketJob = await requireMarketJobByRef(idParam);
   const marketJobId = existingMarketJob.id;
@@ -1019,8 +1129,8 @@ async function cancelMarketJob(
   const marketJob = await withTransaction(async (transaction) => {
     return adminJobsRepository.cancelMarketJob(marketJobId, transaction);
   });
-  const vehicleJob = await adminJobsRepository.findVehicleJobById(
-    marketJob.vehicle_job_id
+  const vehicleJob = await vehicleJobRepository.findVehicleJobById(
+    marketJob.vehicle_job_id,
   );
   publishRealtimeEvent({
     type: "MARKET_JOB_CANCELLED",
@@ -1043,14 +1153,14 @@ async function cancelMarketJob(
   return formatMarketJobActionResponse(
     "Market job cancelled successfully.",
     marketJob,
-    vehicleJob
+    vehicleJob,
   );
 }
 
 // Function ยกเลิก stall job ใน service flow
 async function cancelStallJob(
   idParam: unknown,
-  body: unknown
+  body: unknown,
 ): Promise<AdminStallJobActionResponse> {
   const existingTicket = await requireStallJobByRef(idParam);
   const ticketId = existingTicket.id;
@@ -1059,11 +1169,11 @@ async function cancelStallJob(
   const ticket = await withTransaction(async (transaction) => {
     return adminJobsRepository.cancelGateTicket(ticketId, transaction);
   });
-  const vehicleJob = await adminJobsRepository.findVehicleJobById(
-    ticket.vehicle_job_id
+  const vehicleJob = await vehicleJobRepository.findVehicleJobById(
+    ticket.vehicle_job_id,
   );
   const marketJob = await adminJobsRepository.findMarketJobById(
-    ticket.market_job_id
+    ticket.market_job_id,
   );
   publishRealtimeEvent({
     type: "STALL_JOB_CANCELLED",
@@ -1091,6 +1201,6 @@ async function cancelStallJob(
     "Stall job cancelled successfully.",
     ticket,
     vehicleJob,
-    marketJob
+    marketJob,
   );
 }

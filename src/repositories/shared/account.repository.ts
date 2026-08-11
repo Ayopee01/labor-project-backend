@@ -1,7 +1,7 @@
 // Import Library
 // Import Mappers
 import { mapAccount, sanitizeAccount } from "./mappers";
-import { client, requireMapped, toAccountId } from "./repository-utils";
+import { client, requireMapped, toId } from "./repository-utils";
 
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
@@ -25,12 +25,12 @@ function isAccountDto(account: AccountDto | null): account is AccountDto {
 // Function ค้นหา ตาม ID จาก DB
 export async function findById(
   id: number | string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto | null> {
   const db = client(connection);
   const account = await db.account.findUnique({
     where: {
-      id: toAccountId(id),
+      id: toId(id),
     },
   });
 
@@ -40,12 +40,12 @@ export async function findById(
 // Function ค้นหา user ตาม ID จาก DB
 export async function findUserById(
   id: number | string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto | null> {
   const db = client(connection);
   const account = await db.account.findFirst({
     where: {
-      id: toAccountId(id),
+      id: toId(id),
       role: WORKER_ROLE,
     },
   });
@@ -54,7 +54,9 @@ export async function findUserById(
 }
 
 // Function ดึงรายการ admins จาก DB
-export async function listAdmins(connection?: DbConnection): Promise<AccountDto[]> {
+export async function listAdmins(
+  connection?: DbConnection,
+): Promise<AccountDto[]> {
   const db = client(connection);
   const accounts = await db.account.findMany({
     where: {
@@ -72,31 +74,35 @@ export async function listAdmins(connection?: DbConnection): Promise<AccountDto[
 export async function updatePassword(
   id: number | string,
   passwordHash: string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto> {
   const db = client(connection);
   const updatedAccount = await db.account.update({
     where: {
-      id: toAccountId(id),
+      id: toId(id),
     },
     data: {
       passwordHash,
     },
   });
 
-  return requireMapped(mapAccount(updatedAccount), "Account", "password update");
+  return requireMapped(
+    mapAccount(updatedAccount),
+    "Account",
+    "password update",
+  );
 }
 
 // Function อัปเดต status จาก DB
 export async function updateStatus(
   id: number | string,
   status: string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto> {
   const db = client(connection);
   const updatedAccount = await db.account.update({
     where: {
-      id: toAccountId(id),
+      id: toId(id),
     },
     data: {
       status,
@@ -107,7 +113,9 @@ export async function updateStatus(
 }
 
 // Function ดึงรายการ all users จาก DB
-export async function listAllUsers(connection?: DbConnection): Promise<AccountDto[]> {
+export async function listAllUsers(
+  connection?: DbConnection,
+): Promise<AccountDto[]> {
   const db = client(connection);
   const accounts = await db.account.findMany({
     where: {

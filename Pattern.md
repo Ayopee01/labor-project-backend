@@ -18,6 +18,9 @@
 
 Dependency & Ownership Rules:
 
+- VehicleJob lifecycle orchestration belongs in `services/shared/vehicle-job-lifecycle.service.ts`. Repositories may expose low-level state reads/writes, but should not own multi-domain lifecycle decisions such as activating the next ticket or closing a completed vehicle job.
+- Hot summary endpoints should use DB aggregate/count queries instead of loading full detail/history when only totals are required. Keep full detail loading for detail/history endpoints.
+- Route repositories should not re-export shared repositories as compatibility or convenience facades. Import the repository that owns the data access directly.
 - `services/` = route/application services
 - `services/shared/` = shared business service / orchestration ที่ไม่มี route ของตัวเอง หรือ reuse หลาย flow
 - `repositories/` = route/application-specific data access หรือ read model/projection เฉพาะ route นั้น

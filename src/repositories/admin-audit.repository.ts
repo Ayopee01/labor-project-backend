@@ -1,8 +1,14 @@
+import { Prisma } from "@prisma/client";
+
 import { client } from "./shared/repository-utils";
+import { ASSIGNMENT_STATUS } from "../constants/job-status";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 
 import type { DbConnection } from "../types/shared/common.type";
-import type { WorkerAssignmentEventType } from "../types/shared/worker-assignment-event.type";
+import type {
+  AdminAuditWorkerPerformanceQuery,
+  AdminAuditWorkerPerformanceRecord,
+} from "../types/admin-audit.type";
 
 export interface WorkerPerformanceAssignmentRow {
   assignment_id: number;
@@ -12,64 +18,157 @@ export interface WorkerPerformanceAssignmentRow {
   status: string;
   accepted_at: Date | null;
   scanned_at: Date | null;
-  event_types: WorkerAssignmentEventType[];
+  event_types: string[];
 }
 
-export async function listWorkerPerformanceAssignmentRows(
+export interface WorkerPerformanceResult {
+  total: number;
+  data: AdminAuditWorkerPerformanceRecord[];
+}
+
+type WorkerPerformanceSortBy = NonNullable<
+  AdminAuditWorkerPerformanceQuery["sort_by"]
+>;
+
+const WORKER_PERFORMANCE_SORT_SQL: Record<WorkerPerformanceSortBy, Prisma.Sql> =
+  {
+    accept_rate: Prisma.sql`accept_rate_numeric`,
+    total_assigned: Prisma.sql`total_assigned_job_count`,
+    accepted: Prisma.sql`accepted_job_count`,
+    accept_timeout: Prisma.sql`accept_timeout_job_count`,
+    scan_timeout: Prisma.sql`scan_timeout_job_count`,
+    completed: Prisma.sql`completed_job_count`,
+    admin_cancelled: Prisma.sql`admin_cancelled_job_count`,
+    worker_code: Prisma.sql`worker_code`,
+  };
+
+function buildWorkerPerformanceOrderBy(
+  sortBy: WorkerPerformanceSortBy,
+  sortOrder: "asc" | "desc",
+): Prisma.Sql {
+  const sortColumn = WORKER_PERFORMANCE_SORT_SQL[sortBy];
+
+  if (sortBy === "worker_code") {
+    return sortOrder === "asc"
+      ? Prisma.sql`${sortColumn} ASC`
+      : Prisma.sql`${sortColumn} DESC`;
+  }
+
+  const metricSort =
+    sortOrder === "asc"
+      ? Prisma.sql`${sortColumn} ASC NULLS LAST`
+      : Prisma.sql`${sortColumn} DESC NULLS LAST`;
+
+  return Prisma.sql`${metricSort}, opportunity_count DESC, completed_job_count DESC, worker_code ASC`;
+}
+
+function toNumber(value: unknown): number {
+  return Number(value ?? 0);
+}
+
+function mapWorkerPerformanceRecord(
+  row: Record<string, unknown>,
+): AdminAuditWorkerPerformanceRecord {
+  return {
+    worker_code: String(row.worker_code),
+    full_name: String(row.full_name),
+    total_assigned_job_count: toNumber(row.total_assigned_job_count),
+    accepted_job_count: toNumber(row.accepted_job_count),
+    accept_timeout_job_count: toNumber(row.accept_timeout_job_count),
+    scan_timeout_job_count: toNumber(row.scan_timeout_job_count),
+    completed_job_count: toNumber(row.completed_job_count),
+    admin_cancelled_job_count: toNumber(row.admin_cancelled_job_count),
+    accept_rate:
+      row.accept_rate === null || row.accept_rate === undefined
+        ? null
+        : Number(row.accept_rate).toFixed(2),
+  };
+}
+
+export async function listWorkerPerformance(
   filters: {
     startAt: Date;
     endAt: Date;
     worker_code?: string;
+    page: number;
+    limit: number;
+    sort_by: WorkerPerformanceSortBy;
+    sort_order: "asc" | "desc";
   },
-  connection?: DbConnection
-): Promise<WorkerPerformanceAssignmentRow[]> {
+  connection?: DbConnection,
+): Promise<WorkerPerformanceResult> {
   const db = client(connection);
-  const assignments = await db.vehicleJobAssignment.findMany({
-    where: {
-      createdAt: {
-        gte: filters.startAt,
-        lt: filters.endAt,
-      },
-      ...(filters.worker_code && {
-        worker: {
-          username: filters.worker_code,
-        },
-      }),
-    },
-    orderBy: [
-      {
-        worker: {
-          username: "asc",
-        },
-      },
-      {
-        id: "asc",
-      },
-    ],
-    include: {
-      worker: true,
-      events: {
-        select: {
-          eventType: true,
-        },
-      },
-    },
-  });
+  const offset = (filters.page - 1) * filters.limit;
+  const workerFilter = filters.worker_code
+    ? Prisma.sql`AND a.username = ${filters.worker_code}`
+    : Prisma.empty;
+  const orderBy = buildWorkerPerformanceOrderBy(
+    filters.sort_by,
+    filters.sort_order,
+  );
+  const rows = await db.$queryRaw<Array<Record<string, unknown>>>`
+    WITH assignment_events AS (
+      SELECT
+        assignment_id,
+        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.ACCEPTED}) AS has_accepted,
+        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.ACCEPT_TIMEOUT}) AS has_accept_timeout,
+        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT}) AS has_scan_timeout,
+        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.COMPLETED}) AS has_completed,
+        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED}) AS has_admin_cancelled
+      FROM worker_assignment_events
+      GROUP BY assignment_id
+    ),
+    assignment_metrics AS (
+      SELECT
+        a.username AS worker_code,
+        a.full_name,
+        COUNT(*)::int AS total_assigned_job_count,
+        SUM(CASE WHEN vja.accepted_at IS NOT NULL OR COALESCE(ae.has_accepted, false) THEN 1 ELSE 0 END)::int AS accepted_job_count,
+        SUM(CASE WHEN COALESCE(ae.has_accept_timeout, false) OR (vja.status = ${ASSIGNMENT_STATUS.TIMEOUT} AND vja.accepted_at IS NULL) THEN 1 ELSE 0 END)::int AS accept_timeout_job_count,
+        SUM(CASE WHEN COALESCE(ae.has_scan_timeout, false) OR (vja.status = ${ASSIGNMENT_STATUS.TIMEOUT} AND vja.accepted_at IS NOT NULL AND vja.scanned_at IS NULL) THEN 1 ELSE 0 END)::int AS scan_timeout_job_count,
+        SUM(CASE WHEN vja.status = ${ASSIGNMENT_STATUS.COMPLETED} OR COALESCE(ae.has_completed, false) THEN 1 ELSE 0 END)::int AS completed_job_count,
+        SUM(CASE WHEN vja.status = ${ASSIGNMENT_STATUS.CANCELLED} OR COALESCE(ae.has_admin_cancelled, false) THEN 1 ELSE 0 END)::int AS admin_cancelled_job_count
+      FROM vehicle_job_assignments vja
+      JOIN accounts a ON a.id = vja.worker_account_id
+      LEFT JOIN assignment_events ae ON ae.assignment_id = vja.id
+      WHERE vja.created_at >= ${filters.startAt}
+        AND vja.created_at < ${filters.endAt}
+        ${workerFilter}
+      GROUP BY a.username, a.full_name
+    ),
+    records AS (
+      SELECT
+        *,
+        accepted_job_count + accept_timeout_job_count AS opportunity_count,
+        CASE
+          WHEN accepted_job_count + accept_timeout_job_count = 0 THEN NULL
+          ELSE ROUND((accepted_job_count::numeric / (accepted_job_count + accept_timeout_job_count)::numeric) * 100, 2)
+        END AS accept_rate_numeric
+      FROM assignment_metrics
+    ),
+    counted AS (
+      SELECT COUNT(*)::int AS total FROM records
+    )
+    SELECT
+      records.worker_code,
+      records.full_name,
+      records.total_assigned_job_count,
+      records.accepted_job_count,
+      records.accept_timeout_job_count,
+      records.scan_timeout_job_count,
+      records.completed_job_count,
+      records.admin_cancelled_job_count,
+      records.accept_rate_numeric AS accept_rate,
+      counted.total
+    FROM records
+    CROSS JOIN counted
+    ORDER BY ${orderBy}
+    LIMIT ${filters.limit}
+    OFFSET ${offset}
+  `;
 
-  return assignments.map((assignment) => ({
-    assignment_id: assignment.id,
-    worker_account_id: assignment.workerAccountId,
-    worker_code: assignment.worker.username,
-    full_name: assignment.worker.fullName,
-    status: assignment.status,
-    accepted_at: assignment.acceptedAt,
-    scanned_at: assignment.scannedAt,
-    event_types: assignment.events
-      .map((event) => event.eventType)
-      .filter((eventType): eventType is WorkerAssignmentEventType =>
-        Object.values(WORKER_ASSIGNMENT_EVENT_TYPE).includes(
-          eventType as WorkerAssignmentEventType
-        )
-      ),
-  }));
+  return {
+    total: rows[0] ? toNumber(rows[0].total) : 0,
+    data: rows.map(mapWorkerPerformanceRecord),
+  };
 }

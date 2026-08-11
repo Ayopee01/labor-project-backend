@@ -1,7 +1,7 @@
 import { client } from "./repository-utils";
 
 import type { DbConnection } from "../../types/shared/common.type";
-import type { SystemSettingDto } from "../../types/admin-settings.type";
+import type { SystemSettingDto } from "../../types/shared/system-setting.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -22,7 +22,7 @@ function mapSystemSetting(record: {
 }
 
 export async function listSettings(
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<SystemSettingDto[]> {
   const db = client(connection);
   const settings = await db.systemSetting.findMany({
@@ -37,7 +37,7 @@ export async function listSettings(
 export async function upsertSettings(
   settings: Record<string, string>,
   updatedBy?: number | null,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<void> {
   const db = client(connection);
 

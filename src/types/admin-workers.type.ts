@@ -1,4 +1,5 @@
 import type { WorkerWorkStatus } from "./shared/worker-status.type";
+import type { AccountStatus } from "./shared/account.type";
 
 export const ACCOUNT_ROLES = ["admin", "worker"] as const;
 export const ACCOUNT_SOURCES = ["internal", "master_sync"] as const;
@@ -6,7 +7,7 @@ export const ACCOUNT_SOURCES = ["internal", "master_sync"] as const;
 export type AccountRole = (typeof ACCOUNT_ROLES)[number];
 export type AccountSource = (typeof ACCOUNT_SOURCES)[number];
 
-export type AccountStatus = string;
+export type { AccountStatus };
 
 export type WorkerNationality = "Myanmar" | "Cambodia";
 
@@ -48,7 +49,11 @@ export interface AccountDto {
 
 export type SafeAccountDto = Omit<
   AccountDto,
-  "password_hash" | "source" | "master_worker_id" | "master_updated_at" | "synced_at"
+  | "password_hash"
+  | "source"
+  | "master_worker_id"
+  | "master_updated_at"
+  | "synced_at"
 >;
 
 // Type DTO profile ของ worker โดย field profile ถูกเก็บบน accounts หลังรวมตาราง
@@ -134,7 +139,9 @@ export interface ProfileCreateInput {
   shirt_number?: string | null;
 }
 
-export type ProfileUpdateInput = Partial<Omit<ProfileCreateInput, "account_id">>;
+export type ProfileUpdateInput = Partial<
+  Omit<ProfileCreateInput, "account_id">
+>;
 
 export type ProfileDataInput = ProfileCreateInput | ProfileUpdateInput;
 
