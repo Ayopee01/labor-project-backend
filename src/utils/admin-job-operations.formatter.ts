@@ -1,24 +1,9 @@
 // Import Types
 import type { VehicleJobOperationRecord } from "../types/admin-jobs.type";
-import type {
-  AdminVehicleJobOperationItemResponse,
-  AdminVehicleJobOperationMarketResponse,
-  AdminVehicleJobOperationMarketSummaryResponse,
-  AdminVehicleJobOperationSummaryResponse,
-  AdminVehicleJobOperationWorkerSummaryResponse,
-  VehicleOperationStatus,
-} from "../types/admin-jobs.type";
+import type { AdminVehicleJobOperationItemResponse, AdminVehicleJobOperationMarketResponse, AdminVehicleJobOperationMarketSummaryResponse, AdminVehicleJobOperationSummaryResponse, AdminVehicleJobOperationWorkerSummaryResponse, VehicleOperationStatus} from "../types/admin-jobs.type";
 
 // Import Config
-import {
-  ACTIVE_ASSIGNMENT_STATUSES,
-  ASSIGNMENT_STATUS,
-  SCANNED_ASSIGNMENT_STATUSES,
-  TERMINAL_JOB_STATUSES,
-  TICKET_STATUS,
-  VEHICLE_JOB_STATUS,
-  VEHICLE_OPERATION_STATUS,
-} from "../constants/job-status";
+import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, SCANNED_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS, VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 
 // Import Utils
 import { findActiveWorkSchedule, formatScheduleWithShift } from "../utils/shift";

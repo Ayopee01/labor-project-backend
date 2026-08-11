@@ -322,6 +322,8 @@ export const workerAssignmentHistoryQuerySchema = z.object({
   date: dateString,
 });
 
+export const workerEarningsSummaryQuerySchema = z.object({}).strict();
+
 export const adminVehicleJobListQuerySchema = z
   .object({
     date: optionalDateString,
@@ -367,6 +369,62 @@ export const adminVehicleJobOperationsQuerySchema = z
     ),
   })
   .superRefine((input, context) => {
+    if (
+      input.date_from &&
+      input.date_to &&
+      input.date_from > input.date_to
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["date_to"],
+        message: "date_to must be greater than or equal to date_from.",
+      });
+    }
+  });
+
+const adminAuditWorkerPerformanceSortByValues = [
+  "accept_rate",
+  "total_assigned",
+  "accepted",
+  "accept_timeout",
+  "scan_timeout",
+  "completed",
+  "admin_cancelled",
+  "worker_code",
+] as const;
+
+export const adminAuditWorkerPerformanceQuerySchema = z
+  .object({
+    worker_code: optionalTrimmedString,
+    date_from: optionalDateString,
+    date_to: optionalDateString,
+    page: z.preprocess(
+      emptyStringToUndefined,
+      z.coerce.number().int().min(1).default(1)
+    ),
+    limit: z.preprocess(
+      emptyStringToUndefined,
+      z.coerce.number().int().min(1).max(100).default(20)
+    ),
+    sort_by: z.preprocess(
+      emptyStringToUndefined,
+      z.enum(adminAuditWorkerPerformanceSortByValues).optional()
+    ),
+    sort_order: z.preprocess(
+      emptyStringToUndefined,
+      z.enum(["asc", "desc"]).optional()
+    ),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (Boolean(input.date_from) !== Boolean(input.date_to)) {
+      context.addIssue({
+        code: "custom",
+        path: input.date_from ? ["date_to"] : ["date_from"],
+        message: "date_from and date_to must be sent together.",
+      });
+    }
+
     if (
       input.date_from &&
       input.date_to &&
@@ -453,7 +511,7 @@ export const updateSystemSettingsBodySchema = z
   .object({
     driver_session_ttl_hours: z.coerce.number().int().positive().max(168).optional(),
     worker_accept_deadline_seconds: z.coerce.number().int().positive().max(600).optional(),
-    worker_accept_timeout_limit: z.coerce.number().int().positive().max(20).optional(),
+    worker_accept_timeout_limit: z.coerce.number().int().positive().optional(),
     worker_scan_deadline_minutes: z.coerce.number().int().positive().max(240).optional(),
     worker_scan_warning_before_minutes: z.coerce.number().int().positive().max(240).optional(),
     worker_scan_team_remaining_minutes: z.coerce.number().int().positive().max(240).optional(),

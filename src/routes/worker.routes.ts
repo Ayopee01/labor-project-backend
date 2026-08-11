@@ -74,6 +74,21 @@ router.get(
   }
 );
 
+router.get(
+  "/me/earnings/summary",
+  async (req, res, next) => {
+    try {
+      const result = await workerService.getWorkerEarningsSummary(
+        req.query,
+        req.auth
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.post(
   "/me/assignments/:ticketNo/accept",
   async (req, res, next) => {

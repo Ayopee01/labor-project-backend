@@ -6,10 +6,8 @@ import { enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWo
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as adminJobsRepository from "../repositories/admin-jobs.repository";
-import { publishNotification } from "./notifications.service";
-import { publishRealtimeEvent } from "../utils/realtime-event";
+import { publishNotification, publishRealtimeEvent } from "./notifications.service";
 import { getRuntimeSettings } from "./admin-settings.service";
-import { getWorkerCodeMapByAccountIds, getWorkerCodesByAccountIds } from "../utils/worker-identity";
 import {
   buildVehicleOperationSummary,
   formatVehicleOperationItem,
@@ -24,7 +22,7 @@ import { adminAssignWorkersBodySchema, adminCancelBodySchema, adminExtendScanDea
 import ApiError from "../utils/api-error";
 import { ACTIVE_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES } from "../constants/job-status";
 import { buildBangkokDateSpanRange, buildDeadline, getDelayUntil } from "../utils/time";
-import { buildWorkerAssignedPayload } from "../utils/worker-assignment-event";
+import { buildWorkerAssignedPayload } from "../utils/worker-payload";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -387,7 +385,7 @@ function isScanDeadlineActive(scanDeadlineAt: string | null): boolean {
 async function buildScanDeadlineAssignmentResponses(
   assignments: VehicleJobAssignmentDto[]
 ): Promise<AdminScanDeadlineAssignmentResponse[]> {
-  const workerCodeMap = await getWorkerCodeMapByAccountIds(
+  const workerCodeMap = await adminJobsRepository.profileRepository.findWorkerCodeMapByAccountIds(
     assignments.map((assignment) => assignment.worker_account_id)
   );
 
@@ -403,7 +401,7 @@ async function buildAdminAssignmentResponses(
   ticketNo: string,
   assignments: VehicleJobAssignmentDto[]
 ): Promise<AdminAssignmentResponse[]> {
-  const workerCodeMap = await getWorkerCodeMapByAccountIds(
+  const workerCodeMap = await adminJobsRepository.profileRepository.findWorkerCodeMapByAccountIds(
     assignments.map((assignment) => assignment.worker_account_id)
   );
 
@@ -716,7 +714,7 @@ async function cancelVehicleJobAndRequeue(
     payload: {
       ticketNo: vehicleJob.ticketNo,
       status: vehicleJob.status,
-      requeued_worker_codes: await getWorkerCodesByAccountIds(requeuedWorkerIds),
+      requeued_worker_codes: await adminJobsRepository.profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
     },
     audience: {
       roles: ["admin"],
@@ -727,7 +725,7 @@ async function cancelVehicleJobAndRequeue(
     message: "Vehicle job cancelled and workers requeued successfully.",
     ticketNo: vehicleJob.ticketNo,
     status: vehicleJob.status,
-    requeued_worker_codes: await getWorkerCodesByAccountIds(requeuedWorkerIds),
+    requeued_worker_codes: await adminJobsRepository.profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
   };
 }
 
@@ -1095,4 +1093,3 @@ async function cancelStallJob(
     marketJob
   );
 }
-

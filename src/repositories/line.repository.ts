@@ -181,39 +181,17 @@ export async function updateMessageDeliveryLogStatus(
 }
 
 // Function สร้างหรืออัปเดตคะแนนความพึงพอใจหนึ่งคะแนนต่อ ticket และ LINE user
-export async function upsertTicketRating(
-  input: {
-    ticket_id: number;
-    submission_id: number;
-    line_user_id: string;
-    target_type?: string | null;
-    score: number;
-  },
-  connection?: DbConnection
-): Promise<TicketRatingDto> {
-  const db = client(connection);
-  const rating = await db.ticketRating.upsert({
-    where: {
-      ticketId_lineUserId: {
-        ticketId: input.ticket_id,
-        lineUserId: input.line_user_id,
-      },
-    },
-    update: {
-      submissionId: input.submission_id,
-      targetType: input.target_type ?? null,
-      score: input.score,
-      ratedAt: new Date(),
-    },
-    create: {
-      ticketId: input.ticket_id,
-      submissionId: input.submission_id,
-      lineUserId: input.line_user_id,
-      targetType: input.target_type ?? null,
-      score: input.score,
-    },
-  });
-
+function mapTicketRating(rating: {
+  id: number;
+  ticketId: number;
+  submissionId: number;
+  lineUserId: string;
+  targetType: string | null;
+  score: number;
+  ratedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}): TicketRatingDto {
   return {
     id: rating.id,
     ticket_id: rating.ticketId,
@@ -225,4 +203,48 @@ export async function upsertTicketRating(
     created_at: rating.createdAt.toISOString(),
     updated_at: rating.updatedAt.toISOString(),
   };
+}
+
+export async function upsertTicketRating(
+  input: {
+    ticket_id: number;
+    submission_id: number;
+    line_user_id: string;
+    target_type?: string | null;
+    score: number;
+  },
+  connection?: DbConnection
+): Promise<TicketRatingDto> {
+  const db = client(connection);
+
+  try {
+    return mapTicketRating(
+      await db.ticketRating.create({
+        data: {
+          ticketId: input.ticket_id,
+          submissionId: input.submission_id,
+          lineUserId: input.line_user_id,
+          targetType: input.target_type ?? null,
+          score: input.score,
+        },
+      })
+    );
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const existingRating = await db.ticketRating.findUnique({
+        where: {
+          ticketId: input.ticket_id,
+        },
+      });
+
+      if (existingRating) {
+        return mapTicketRating(existingRating);
+      }
+    }
+
+    throw error;
+  }
 }

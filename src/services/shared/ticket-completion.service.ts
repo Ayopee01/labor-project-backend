@@ -1,15 +1,14 @@
-import * as workerApplicationRepository from "../repositories/worker.repository";
-import { finalizeTicketFinancials } from "../services/ticket-financial.service";
-import { ASSIGNMENT_STATUS } from "../constants/job-status";
-import { buildTicketResultAudience } from "./ticket-audience";
-import { getWorkerCodesByAccountIds } from "./worker-identity";
+import * as workerApplicationRepository from "../../repositories/worker.repository";
+import { finalizeTicketFinancials } from "./ticket-financial.service";
+import { ASSIGNMENT_STATUS } from "../../constants/job-status";
+import { resolveTicketResultAudience } from "../notifications.service";
 
-import type { DbConnection } from "../types/shared/common.type";
-import type { VendorTicketCompletionAction, VendorTicketCompletionFlowResult } from "../types/line.type";
+import type { DbConnection } from "../../types/shared/common.type";
+import type { VendorTicketCompletionAction, VendorTicketCompletionFlowResult } from "../../types/line.type";
 import type {
   GateTicketDto,
   TicketCompletionSubmissionDto,
-} from "../types/worker.type";
+} from "../../types/worker.type";
 
 // Function ประมวลผล confirm/reject จาก vendor และเตรียม payload realtime กลาง
 export async function applyVendorTicketCompletionResult(input: {
@@ -71,7 +70,7 @@ export async function applyVendorTicketCompletionResult(input: {
   }
 
   const [receiverAccountIds, products, detail] = await Promise.all([
-    buildTicketResultAudience(updated.ticket, input.connection),
+    resolveTicketResultAudience(updated.ticket, input.connection),
     workerApplicationRepository.listTicketProducts(updated.ticket.id, input.connection),
     workerApplicationRepository.getVehicleJobDetail(
       updated.ticket.vehicle_job_id,
@@ -79,7 +78,7 @@ export async function applyVendorTicketCompletionResult(input: {
     ),
   ]);
   const completedWorkerCodes = completedVehicleJob
-    ? await getWorkerCodesByAccountIds(
+    ? await workerApplicationRepository.profileRepository.findWorkerCodesByAccountIds(
       completedVehicleJob.completed_worker_account_ids,
       input.connection
     )

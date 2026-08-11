@@ -16,7 +16,7 @@ import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
 import { buildWorkScheduleShiftInstanceKey, findActiveWorkSchedule, formatScheduleWithShift, isTimeInWorkSchedule, resolveShiftNoFromStartTime, resolveShiftPreset } from "../utils/shift";
 import { buildDeadline, formatBangkokDate } from "../utils/time";
-import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
+import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 import { buildWorkerCode } from "../utils/worker-code";
 import { resolveWorkerWorkStatus } from "../utils/worker-status";
 import { ASSIGNMENT_STATUS } from "../constants/job-status";

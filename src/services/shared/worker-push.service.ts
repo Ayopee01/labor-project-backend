@@ -1,13 +1,12 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
-import { accountRepository, workerPushTokenRepository } from "../repositories/auth.repository";
-import { getWorkerCodesByAccountIds } from "./worker-identity";
-import type { AccessTokenPayload, SessionDto } from "../types/auth.type";
-import type { DbConnection } from "../types/shared/common.type";
-import type { WorkerPushEventInput, WorkerPushRegistrationResponse } from "../types/notifications.type";
-import { parseWithSchema } from "../validation/parser";
-import { workerPushTokenBodySchema } from "../validation/schemas";
-import ApiError from "./api-error";
+import { accountRepository, profileRepository, workerPushTokenRepository } from "../../repositories/auth.repository";
+import type { AccessTokenPayload, SessionDto } from "../../types/auth.type";
+import type { DbConnection } from "../../types/shared/common.type";
+import type { WorkerPushEventInput, WorkerPushRegistrationResponse } from "../../types/notifications.type";
+import { parseWithSchema } from "../../validation/parser";
+import { workerPushTokenBodySchema } from "../../validation/schemas";
+import ApiError from "../../utils/api-error";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -216,7 +215,7 @@ export async function sendWorkerPushNotificationByAccountIds(input: {
   message: string;
   payload?: Record<string, unknown>;
 }): Promise<void> {
-  const workerCodes = (await getWorkerCodesByAccountIds(input.account_ids))
+  const workerCodes = (await profileRepository.findWorkerCodesByAccountIds(input.account_ids))
     .filter((workerCode): workerCode is string => Boolean(workerCode));
 
   await sendWorkerPushNotification({

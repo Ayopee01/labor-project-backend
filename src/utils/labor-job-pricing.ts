@@ -214,15 +214,6 @@ export function packageWeightToDecimal(packageWeight: number): Prisma.Decimal {
 }
 
 // Function calculates the final stall charge for one product using Method A.
-//
-// Method A:
-// 1. stallFeeRaw     = quantity × stallRate
-// 2. stallFeeRounded = CEIL(stallFeeRaw)
-// 3. laborFeeRaw     = quantity × laborRate
-// 4. productCharge   = CEIL(stallFeeRounded + laborFeeRaw)
-//
-// Each product must be calculated and rounded independently
-// before productCharge values are summed into the booth total.
 export function calculateProductStallCharge(
   input: ProductStallChargeCalculationInput
 ): ProductStallChargeCalculation {

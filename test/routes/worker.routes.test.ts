@@ -23,7 +23,7 @@ let server: TestServer;
 let password: typeof import("../../src/utils/password");
 let workerQueue: typeof import("../../src/queues/worker-queue");
 let workerDispatch: typeof import("../../src/queues/worker-dispatch");
-let ticketFinancialService: typeof import("../../src/services/ticket-financial.service");
+let ticketFinancialService: typeof import("../../src/services/shared/ticket-financial.service");
 
 /* -------------------------------------- Test Helpers -------------------------------------- */
 
@@ -112,6 +112,66 @@ async function loginJobAdmin(accountId: number): Promise<{ token: string }> {
   return {
     token: login.body.access_token,
   };
+}
+
+function bangkokDateKey(value = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return `${year}-${month}-${day}`;
+}
+
+function bangkokDateToUtcIso(date: string, hour = 1): string {
+  return new Date(`${date}T${String(hour).padStart(2, "0")}:00:00.000+07:00`).toISOString();
+}
+
+function addAuditAssignment(input: {
+  id: number;
+  workerId: number;
+  vehicleJobId: number;
+  createdAt: string;
+  status?: string;
+  acceptedAt?: string | null;
+  scannedAt?: string | null;
+  completedAt?: string | null;
+  events?: string[];
+}) {
+  const assignment = {
+    id: input.id,
+    vehicle_job_id: input.vehicleJobId,
+    worker_account_id: input.workerId,
+    status: input.status ?? "PENDING",
+    accept_deadline_at: null,
+    scan_deadline_at: null,
+    accepted_at: input.acceptedAt ?? null,
+    scanned_at: input.scannedAt ?? null,
+    completed_at: input.completedAt ?? null,
+    created_at: input.createdAt,
+    updated_at: input.completedAt ?? input.createdAt,
+  };
+
+  state.assignments.push(assignment);
+  for (const eventType of input.events ?? []) {
+    state.workerAssignmentEvents.push({
+      id: state.nextWorkerAssignmentEventId++,
+      assignment_id: assignment.id,
+      worker_account_id: assignment.worker_account_id,
+      vehicle_job_id: assignment.vehicle_job_id,
+      event_type: eventType,
+      occurred_at: assignment.updated_at,
+      metadata: null,
+      created_at: assignment.updated_at,
+    });
+  }
+
+  return assignment;
 }
 
 /* -------------------------------------- Test Lifecycle -------------------------------------- */
@@ -459,6 +519,14 @@ test("POST /api/gate/tickets dispatches a ready connected worker to the new Gate
   assert.equal(state.assignments.length, 1);
   assert.equal(state.assignments[0].vehicle_job_id, state.vehicleJobs[0].id);
   assert.equal(state.assignments[0].worker_account_id, worker.id);
+  assert.equal(
+    state.workerAssignmentEvents.filter(
+      (event) =>
+        event.assignment_id === state.assignments[0].id &&
+        event.event_type === "ASSIGNED"
+    ).length,
+    1
+  );
   assert.equal(queueEntry?.status, "assigned");
   assert.ok(
     state.socketEvents.some(
@@ -1457,6 +1525,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
     ticket_id: ticket.id,
     worker_account_id: firstWorker.id,
     status: "WORKING",
+    final_earning_amount: null,
     joined_at: scannedAt,
     cancelled_at: null,
     completed_at: null,
@@ -1467,6 +1536,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
     ticket_id: ticket.id,
     worker_account_id: secondWorker.id,
     status: "WORKING",
+    final_earning_amount: null,
     joined_at: scannedAt,
     cancelled_at: null,
     completed_at: null,
@@ -1493,6 +1563,14 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   assert.equal(
     cancelledAssignment.status,
     "CANCELLED"
+  );
+  assert.equal(
+    state.workerAssignmentEvents.filter(
+      (event) =>
+        event.assignment_id === cancelledAssignment.id &&
+        event.event_type === "ADMIN_CANCELLED"
+    ).length,
+    1
   );
   assert.equal(
     cancelledTicketWorker.status,
@@ -1695,6 +1773,21 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   );
 
   // ตรวจผ่าน Admin Financial API อีกชั้น
+  assert.equal(
+    firstTicketWorker.final_earning_amount,
+    "5.00"
+  );
+
+  assert.equal(
+    replacementTicketWorker.final_earning_amount,
+    "5.00"
+  );
+
+  assert.equal(
+    cancelledTicketWorker.final_earning_amount ?? null,
+    null
+  );
+
   const financialResponse = await server.request(
     "GET",
     `/api/admin/vehicle-jobs/${job.ticketNo}/financials`,
@@ -2245,36 +2338,27 @@ test("admin cancel on next booth preserves worker earnings from completed booth"
   );
 
   assert.equal(
-    historyItem.earnings.total_amount,
-    "12.00"
-  );
-
-  assert.equal(
     historyResponse.body.total_earnings,
-    "12.00"
+    undefined
   );
 
   assert.equal(
-    historyItem.earnings.booths.length,
-    2
+    historyItem.earnings,
+    undefined
   );
 
   const firstBoothEarning =
-    historyItem.earnings.booths.find(
-      (booth: {
-        ticket_id: number;
-      }) =>
-        booth.ticket_id ===
-        firstTicket.id
+    state.ticketWorkers.find(
+      (ticketWorker) =>
+        ticketWorker.ticket_id === firstTicket.id &&
+        ticketWorker.worker_account_id === worker.id
     );
 
   const secondBoothEarning =
-    historyItem.earnings.booths.find(
-      (booth: {
-        ticket_id: number;
-      }) =>
-        booth.ticket_id ===
-        secondTicket.id
+    state.ticketWorkers.find(
+      (ticketWorker) =>
+        ticketWorker.ticket_id === secondTicket.id &&
+        ticketWorker.worker_account_id === worker.id
     );
 
   assert.ok(
@@ -2287,46 +2371,24 @@ test("admin cancel on next booth preserves worker earnings from completed booth"
 
   // Booth 1 = เงินเก่าต้องอยู่ครบ
   assert.equal(
-    firstBoothEarning.membership_status,
+    firstBoothEarning.status,
     "COMPLETED"
   );
 
   assert.equal(
-    firstBoothEarning.amount,
+    firstBoothEarning.final_earning_amount,
     "12.00"
-  );
-
-  assert.equal(
-    firstBoothEarning.products.length,
-    2
-  );
-
-  assert.equal(
-    firstBoothEarning.products[0]
-      .final_amount,
-    "9.00"
-  );
-
-  assert.equal(
-    firstBoothEarning.products[1]
-      .final_amount,
-    "3.00"
   );
 
   // Booth 2 = Cancel แล้วจึงไม่มีเงิน
   assert.equal(
-    secondBoothEarning.membership_status,
+    secondBoothEarning.status,
     "CANCELLED"
   );
 
   assert.equal(
-    secondBoothEarning.amount,
-    "0.00"
-  );
-
-  assert.equal(
-    secondBoothEarning.products.length,
-    0
+    secondBoothEarning.final_earning_amount ?? null,
+    null
   );
 
   /* -------------------------------------- Admin Financial API -------------------------------------- */
@@ -3360,12 +3422,17 @@ test("GET /api/workers/me/status does not count TIMEOUT assignments", async () =
   assert.equal(response.body.completed_job_count, 1);
 });
 
-test("GET /api/workers/me/assignments/history returns scan audit fields and timeout reason", async () => {
+test("GET /api/workers/me/assignments/history returns job summary without financial fields", async () => {
   const { token, worker } = await loginWorker(111);
   const acceptTimeoutJob = addDispatchableJob(1110, 1);
   const scanTimeoutJob = addDispatchableJob(1111, 1);
+  const completedJob = addDispatchableJob(1112, 1);
+  addTicketForVehicleJob(acceptTimeoutJob.id, 11100);
+  addTicketForVehicleJob(scanTimeoutJob.id, 11110);
+  addTicketForVehicleJob(completedJob.id, 11120);
   const acceptTimeoutAssignment = addPendingAssignment(11101, acceptTimeoutJob.id, worker.id);
   const scanTimeoutAssignment = addPendingAssignment(11102, scanTimeoutJob.id, worker.id);
+  const completedAssignment = addPendingAssignment(11103, completedJob.id, worker.id);
 
   acceptTimeoutAssignment.status = "TIMEOUT";
   acceptTimeoutAssignment.accept_deadline_at = "2026-07-24T02:01:00.000Z";
@@ -3378,6 +3445,10 @@ test("GET /api/workers/me/assignments/history returns scan audit fields and time
   scanTimeoutAssignment.scanned_at = null;
   scanTimeoutAssignment.created_at = "2026-07-24T02:00:30.000Z";
   scanTimeoutAssignment.updated_at = "2026-07-24T02:15:30.000Z";
+  completedAssignment.status = "COMPLETED";
+  completedAssignment.completed_at = "2026-07-24T03:00:00.000Z";
+  completedAssignment.created_at = "2026-07-24T02:30:00.000Z";
+  completedAssignment.updated_at = "2026-07-24T03:00:00.000Z";
 
   const response = await server.request("GET", "/api/workers/me/assignments/history?date=2026-07-24", {
     token,
@@ -3385,33 +3456,168 @@ test("GET /api/workers/me/assignments/history returns scan audit fields and time
 
   assert.equal(response.status, 200);
   assert.equal(response.body.date, "2026-07-24");
-  assert.equal(response.body.total_earnings, "0.00");
-  assert.equal(response.body.data.length, 2);
-  assert.deepEqual(response.body.data[0].earnings, { total_amount: "0.00", booths: [], });
-  assert.deepEqual(response.body.data[1].earnings, { total_amount: "0.00", booths: [], });
+  assert.deepEqual(response.body.summary, {
+    jobCount: 3,
+    acceptTimeoutJobCount: 1,
+    completed_job_count: 1,
+  });
+  assert.equal(response.body.total_earnings, undefined);
+  assert.equal(response.body.data.length, 3);
   assert.deepEqual(Object.keys(response.body.data[0]).sort(), [
-    "accept_deadline_at",
-    "accepted_at",
-    "completed_at",
-    "created_at",
-    "earnings",
-    "gate_transaction_ref",
     "license_plate",
-    "scan_deadline_at",
-    "scanned_at",
+    "markets",
     "status",
     "ticketNo",
-    "timeout_reason",
-    "updated_at",
   ]);
-  assert.equal(response.body.data[0].ticketNo, scanTimeoutJob.ticketNo);
-  assert.equal(response.body.data[0].status, "TIMEOUT");
-  assert.equal(response.body.data[0].timeout_reason, "scan_timeout");
-  assert.equal(response.body.data[0].scan_deadline_at, "2026-07-24T02:15:30.000Z");
-  assert.equal(response.body.data[0].scanned_at, null);
-  assert.equal(response.body.data[1].ticketNo, acceptTimeoutJob.ticketNo);
-  assert.equal(response.body.data[1].timeout_reason, "accept_timeout");
-  assert.equal(response.body.data[1].scan_deadline_at, null);
+  assert.equal(response.body.data[0].ticketNo, completedJob.ticketNo);
+  assert.equal(response.body.data[0].status, "COMPLETED");
+  assert.equal(response.body.data[0].markets[0].booths[0].rating, null);
+  assert.equal(response.body.data[0].markets[0].booths[0].products[0].confirmed_quantity, null);
+  assert.equal(response.body.data[1].ticketNo, scanTimeoutJob.ticketNo);
+  assert.equal(response.body.data[1].status, "TIMEOUT");
+  assert.equal(response.body.data[2].ticketNo, acceptTimeoutJob.ticketNo);
+});
+
+test("GET /api/workers/me/earnings/summary returns latest 15 completed days from persisted booth earnings", async () => {
+  const { token, worker } = await loginWorker(112);
+  const otherWorker = addWorker(212, await password.hashPassword("Worker@123456"));
+  const todayBangkok = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const todayStart = new Date(`${todayBangkok}T00:00:00.000+07:00`);
+  const atBangkokNoon = (dayOffset: number) =>
+    new Date(todayStart.getTime() + dayOffset * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000);
+  const formatDisplayDate = (value: Date) =>
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(value);
+  const yesterday = atBangkokNoon(-1);
+  const today = atBangkokNoon(0);
+  const tooOld = atBangkokNoon(-16);
+  const job = addDispatchableJob(1120, 1);
+  const firstTicket = addTicketForVehicleJob(job.id, 11200);
+  const secondTicket = addTicketForVehicleJob(job.id, 11201);
+  const todayTicket = addTicketForVehicleJob(addDispatchableJob(1121, 1).id, 11210);
+  const oldTicket = addTicketForVehicleJob(addDispatchableJob(1122, 1).id, 11220);
+  const now = new Date().toISOString();
+
+  for (const ticket of [firstTicket, secondTicket]) {
+    ticket.status = "COMPLETED";
+    ticket.completed_at = yesterday.toISOString();
+    ticket.financialized_at = yesterday.toISOString();
+  }
+
+  todayTicket.status = "COMPLETED";
+  todayTicket.completed_at = today.toISOString();
+  todayTicket.financialized_at = today.toISOString();
+  oldTicket.status = "COMPLETED";
+  oldTicket.completed_at = tooOld.toISOString();
+  oldTicket.financialized_at = tooOld.toISOString();
+
+  state.ticketWorkers.push(
+    {
+      id: state.nextTicketWorkerId++,
+      ticket_id: firstTicket.id,
+      worker_account_id: worker.id,
+      status: "COMPLETED",
+      final_earning_amount: "150.00",
+      joined_at: now,
+      cancelled_at: null,
+      completed_at: yesterday.toISOString(),
+    },
+    {
+      id: state.nextTicketWorkerId++,
+      ticket_id: secondTicket.id,
+      worker_account_id: worker.id,
+      status: "COMPLETED",
+      final_earning_amount: "25.50",
+      joined_at: now,
+      cancelled_at: null,
+      completed_at: yesterday.toISOString(),
+    },
+    {
+      id: state.nextTicketWorkerId++,
+      ticket_id: firstTicket.id,
+      worker_account_id: otherWorker.id,
+      status: "COMPLETED",
+      final_earning_amount: "999.00",
+      joined_at: now,
+      cancelled_at: null,
+      completed_at: yesterday.toISOString(),
+    },
+    {
+      id: state.nextTicketWorkerId++,
+      ticket_id: todayTicket.id,
+      worker_account_id: worker.id,
+      status: "COMPLETED",
+      final_earning_amount: "300.00",
+      joined_at: now,
+      cancelled_at: null,
+      completed_at: today.toISOString(),
+    },
+    {
+      id: state.nextTicketWorkerId++,
+      ticket_id: oldTicket.id,
+      worker_account_id: worker.id,
+      status: "COMPLETED",
+      final_earning_amount: "400.00",
+      joined_at: now,
+      cancelled_at: null,
+      completed_at: tooOld.toISOString(),
+    }
+  );
+
+  const response = await server.request("GET", "/api/workers/me/earnings/summary", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.period.dayCount, 15);
+  assert.equal(response.body.daily.length, 15);
+  assert.equal(response.body.total_earnings, "175.50");
+  assert.equal(response.body.details.length, 2);
+  assert.deepEqual(
+    response.body.details.map((detail: { boothCode: string; earnings: string }) => ({
+      boothCode: detail.boothCode,
+      earnings: detail.earnings,
+    })),
+    [
+      {
+        boothCode: firstTicket.boothCode,
+        earnings: "150.00",
+      },
+      {
+        boothCode: secondTicket.boothCode,
+        earnings: "25.50",
+      },
+    ]
+  );
+
+  const yesterdayDaily = response.body.daily.find(
+    (item: { date: string }) => item.date === formatDisplayDate(yesterday)
+  );
+  const todayDaily = response.body.daily.find(
+    (item: { date: string }) => item.date === formatDisplayDate(today)
+  );
+
+  assert.equal(yesterdayDaily?.earnings, "175.50");
+  assert.equal(todayDaily, undefined);
+  assert.equal(
+    response.body.daily
+      .reduce(
+        (total: number, item: { earnings: string }) =>
+          total + Number(item.earnings),
+        0
+      )
+      .toFixed(2),
+    response.body.total_earnings
+  );
 });
 
 test("POST /api/workers/me/offline returns queue exit success status", async () => {
@@ -3599,7 +3805,13 @@ test("GET /api/workers/me/status returns open_app when worker is not ready yet",
 
 test("GET /api/workers/me/status maps pending assignment to assigned", async () => {
   const { token, worker } = await loginWorker(109);
-  addPendingAssignment(10901, 1090, worker.id);
+  const teammate = addWorker(209, await password.hashPassword("Worker@123456"));
+  const job = addDispatchableJob(1090, 2);
+  addTicketForVehicleJob(job.id, 10900);
+  addPendingAssignment(10901, job.id, worker.id);
+  const teammateAssignment = addPendingAssignment(10902, job.id, teammate.id);
+  teammateAssignment.status = "SCANNED";
+  teammateAssignment.scanned_at = "2026-07-24T02:10:00.000Z";
 
   const response = await server.request("GET", "/api/workers/me/status", {
     token,
@@ -3607,6 +3819,28 @@ test("GET /api/workers/me/status maps pending assignment to assigned", async () 
 
   assert.equal(response.status, 200);
   assert.equal(response.body.status, "assigned");
+  assert.equal(response.body.currentJob.ticketNo, job.ticketNo);
+  assert.equal(response.body.currentJob.license_plate, job.license_plate);
+  assert.equal(response.body.currentJob.vehicle_type, job.vehicle_type);
+  assert.equal(response.body.currentJob.markets[0].marketCode, `MARKET-${job.id}`);
+  assert.equal(response.body.currentJob.markets[0].booths[0].boothCode, "STALL-10900");
+  assert.equal(response.body.currentJob.markets[0].booths[0].products[0].quantity, "10");
+  assert.deepEqual(
+    response.body.currentJob.team.map((member: { scan_status: string; scanned_at: string | null }) => ({
+      scan_status: member.scan_status,
+      scanned_at: member.scanned_at,
+    })),
+    [
+      {
+        scan_status: "not_scanned",
+        scanned_at: null,
+      },
+      {
+        scan_status: "scanned",
+        scanned_at: "2026-07-24T02:10:00.000Z",
+      },
+    ]
+  );
 });
 
 test("GET /api/workers/me/status maps scanned assignment to working", async () => {
@@ -3970,6 +4204,14 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr scans correct QR", 
   assert.equal(response.body.ticketNo, job.ticketNo);
   assert.equal(response.body.worker_qr_token, job.ticketNo);
   assert.equal(job.status, "WORKING");
+  assert.equal(
+    state.workerAssignmentEvents.filter(
+      (event) =>
+        event.assignment_id === assignment.id &&
+        event.event_type === "SCANNED"
+    ).length,
+    1
+  );
 });
 
 test("POST /api/workers/me/assignments/:ticketNo/check-in-qr shortens remaining team scan window from settings", async () => {
@@ -4507,6 +4749,14 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
   assert.equal(submission.status, "COMPLETED");
   assert.equal(assignment.status, "COMPLETED");
   assert.equal(job.status, "COMPLETED");
+  assert.equal(
+    state.workerAssignmentEvents.filter(
+      (event) =>
+        event.assignment_id === assignment.id &&
+        event.event_type === "COMPLETED"
+    ).length,
+    1
+  );
 
   assert.equal(ticket.final_stall_amount, "34.00");
   assert.ok(ticket.completed_at);
@@ -4570,21 +4820,20 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
 
   assert.ok(historyItem);
 
-  assert.equal(historyItem.earnings.total_amount, "12.00");
-  assert.equal(historyResponse.body.total_earnings, "12.00");
+  assert.equal(historyItem.earnings, undefined);
+  assert.equal(historyResponse.body.total_earnings, undefined);
 
-  assert.equal(historyItem.earnings.booths.length, 1);
+  const boothHistory = historyItem.markets[0].booths[0];
+  const boothEarning = state.ticketWorkers.find(
+    (ticketWorker) =>
+      ticketWorker.ticket_id === ticket.id &&
+      ticketWorker.worker_account_id === worker.id
+  );
 
-  const boothEarning = historyItem.earnings.booths[0];
-
-  assert.equal(boothEarning.ticket_id, ticket.id);
-  assert.equal(boothEarning.boothCode, ticket.boothCode);
-  assert.equal(boothEarning.membership_status, "COMPLETED");
-  assert.equal(boothEarning.amount, "12.00");
-  assert.equal(boothEarning.products.length, 2);
-
-  assert.equal(boothEarning.products[0].final_amount, "9.00");
-  assert.equal(boothEarning.products[1].final_amount, "3.00");
+  assert.equal(boothHistory.boothCode, ticket.boothCode);
+  assert.equal(boothHistory.products.length, 2);
+  assert.equal(boothEarning?.status, "COMPLETED");
+  assert.equal(boothEarning?.final_earning_amount, "12.00");
 });
 
 test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows resubmit", async () => {
@@ -4834,5 +5083,327 @@ test("break return moves worker to open_app when WebSocket is still disconnected
     Number(warningNotification.payload?.remaining_seconds) > 0 &&
     Number(warningNotification.payload?.remaining_seconds) <= 120,
     true
+  );
+});
+
+test("GET /api/admin/audit/workers/performance aggregates today's Bangkok assignment cohort", async () => {
+  const { token } = await loginJobAdmin(12001);
+  const today = bangkokDateKey();
+  const todayAt = bangkokDateToUtcIso(today, 1);
+  const yesterdayAt = new Date(new Date(`${today}T00:00:00.000+07:00`).getTime() - 60_000).toISOString();
+  const workerA = addWorker(12002, "hash");
+  const workerB = addWorker(12003, "hash");
+  const workerNull = addWorker(12004, "hash");
+  addDispatchableJob(120020, 1);
+  addDispatchableJob(120030, 1);
+  addDispatchableJob(120040, 1);
+
+  addAuditAssignment({
+    id: 1200201,
+    workerId: workerA.id,
+    vehicleJobId: 120020,
+    createdAt: todayAt,
+    status: "COMPLETED",
+    acceptedAt: todayAt,
+    scannedAt: todayAt,
+    completedAt: todayAt,
+    events: ["ACCEPTED", "COMPLETED"],
+  });
+  addAuditAssignment({
+    id: 1200202,
+    workerId: workerA.id,
+    vehicleJobId: 120020,
+    createdAt: todayAt,
+    status: "TIMEOUT",
+  });
+  addAuditAssignment({
+    id: 1200203,
+    workerId: workerA.id,
+    vehicleJobId: 120020,
+    createdAt: todayAt,
+    status: "TIMEOUT",
+    acceptedAt: todayAt,
+    events: ["SCAN_TIMEOUT"],
+  });
+  addAuditAssignment({
+    id: 1200301,
+    workerId: workerB.id,
+    vehicleJobId: 120030,
+    createdAt: todayAt,
+    status: "COMPLETED",
+    acceptedAt: todayAt,
+    scannedAt: todayAt,
+    completedAt: todayAt,
+  });
+  addAuditAssignment({
+    id: 1200302,
+    workerId: workerB.id,
+    vehicleJobId: 120030,
+    createdAt: todayAt,
+    status: "ACCEPTED",
+    acceptedAt: todayAt,
+  });
+  addAuditAssignment({
+    id: 1200401,
+    workerId: workerNull.id,
+    vehicleJobId: 120040,
+    createdAt: todayAt,
+    status: "CANCELLED",
+    events: ["ADMIN_CANCELLED"],
+  });
+  addAuditAssignment({
+    id: 1200999,
+    workerId: workerB.id,
+    vehicleJobId: 120030,
+    createdAt: yesterdayAt,
+    status: "TIMEOUT",
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/audit/workers/performance",
+    { token }
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.period, {
+    date_from: today,
+    date_to: today,
+    timezone: "Asia/Bangkok",
+  });
+  assert.deepEqual(response.body.pagination, {
+    page: 1,
+    limit: 20,
+    total: 3,
+    totalPages: 1,
+  });
+  assert.equal(response.body.data[0].worker_code, workerB.username);
+  assert.equal(response.body.data[0].acceptRate, "100.00");
+  assert.equal(response.body.data[1].worker_code, workerA.username);
+  assert.equal(response.body.data[1].totalAssignedJobCount, 3);
+  assert.equal(response.body.data[1].acceptedJobCount, 2);
+  assert.equal(response.body.data[1].acceptTimeoutJobCount, 1);
+  assert.equal(response.body.data[1].scanTimeoutJobCount, 1);
+  assert.equal(response.body.data[1].completed_job_count, 1);
+  assert.equal(response.body.data[1].acceptRate, "66.67");
+  assert.equal(response.body.data[2].worker_code, workerNull.username);
+  assert.equal(response.body.data[2].adminCancelledJobCount, 1);
+  assert.equal(response.body.data[2].acceptRate, null);
+  assert.equal("issue_count" in response.body.data[0], false);
+  assert.equal("completionRate" in response.body.data[0], false);
+  assert.equal("earnings" in response.body.data[0], false);
+});
+
+test("GET /api/admin/audit/workers/performance supports date range, worker filter, sorting, and pagination after aggregate", async () => {
+  const { token } = await loginJobAdmin(12101);
+  const workerA = addWorker(12102, "hash");
+  const workerB = addWorker(12103, "hash");
+  const workerNoHistory = addWorker(12104, "hash");
+  addDispatchableJob(121020, 1);
+  addDispatchableJob(121030, 1);
+  const rangeAt = bangkokDateToUtcIso("2026-08-15", 10);
+  const outsideAt = bangkokDateToUtcIso("2026-09-01", 1);
+
+  addAuditAssignment({
+    id: 1210201,
+    workerId: workerA.id,
+    vehicleJobId: 121020,
+    createdAt: rangeAt,
+    status: "TIMEOUT",
+  });
+  addAuditAssignment({
+    id: 1210202,
+    workerId: workerA.id,
+    vehicleJobId: 121020,
+    createdAt: rangeAt,
+    status: "TIMEOUT",
+    acceptedAt: rangeAt,
+  });
+  addAuditAssignment({
+    id: 1210301,
+    workerId: workerB.id,
+    vehicleJobId: 121030,
+    createdAt: rangeAt,
+    status: "COMPLETED",
+    acceptedAt: rangeAt,
+    completedAt: rangeAt,
+  });
+  addAuditAssignment({
+    id: 1210302,
+    workerId: workerB.id,
+    vehicleJobId: 121030,
+    createdAt: outsideAt,
+    status: "COMPLETED",
+    acceptedAt: outsideAt,
+    completedAt: outsideAt,
+  });
+
+  const filtered = await server.request(
+    "GET",
+    `/api/admin/audit/workers/performance?worker_code=${workerA.username}&date_from=2026-08-01&date_to=2026-08-31`,
+    { token }
+  );
+
+  assert.equal(filtered.status, 200);
+  assert.equal(filtered.body.pagination.total, 1);
+  assert.equal(filtered.body.data[0].worker_code, workerA.username);
+  assert.equal(filtered.body.data[0].totalAssignedJobCount, 2);
+  assert.equal(filtered.body.data[0].scanTimeoutJobCount, 1);
+  assert.equal(filtered.body.data[0].acceptRate, "50.00");
+
+  const sorted = await server.request(
+    "GET",
+    "/api/admin/audit/workers/performance?date_from=2026-08-01&date_to=2026-08-31&sort_by=total_assigned&sort_order=asc&page=1&limit=1",
+    { token }
+  );
+
+  assert.equal(sorted.status, 200);
+  assert.equal(sorted.body.pagination.total, 2);
+  assert.equal(sorted.body.pagination.totalPages, 2);
+  assert.equal(sorted.body.data.length, 1);
+  assert.notEqual(sorted.body.data[0].worker_code, workerNoHistory.username);
+});
+
+test("GET /api/admin/audit/workers/performance validates date pairs and sort whitelist", async () => {
+  const { token } = await loginJobAdmin(12201);
+
+  for (const query of [
+    "date_from=2026-08-01",
+    "date_to=2026-08-31",
+    "date_from=2026-09-01&date_to=2026-08-31",
+    "sort_by=issue_count",
+    "sort_order=sideways",
+  ]) {
+    const response = await server.request(
+      "GET",
+      `/api/admin/audit/workers/performance?${query}`,
+      { token }
+    );
+
+    assert.equal(response.status, 400);
+    assert.equal(response.body.code, "VALIDATION_ERROR");
+  }
+});
+
+test("GET /api/admin/audit/workers/performance requires admin jobs:read permission", async () => {
+  const unauthenticated = await server.request(
+    "GET",
+    "/api/admin/audit/workers/performance"
+  );
+
+  assert.equal(unauthenticated.status, 401);
+
+  const workerLogin = await loginWorker(12301);
+  const workerResponse = await server.request(
+    "GET",
+    "/api/admin/audit/workers/performance",
+    { token: workerLogin.token }
+  );
+
+  assert.equal(workerResponse.status, 403);
+
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(12302, passwordHash);
+  state.adminPermissions.set(admin.id, []);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: admin.username,
+      password: "Admin@123456",
+    },
+  });
+
+  assert.equal(login.status, 200);
+  const forbidden = await server.request(
+    "GET",
+    "/api/admin/audit/workers/performance",
+    { token: login.body.access_token }
+  );
+
+  assert.equal(forbidden.status, 403);
+});
+
+test("worker assignment audit events are immutable and distinguish accept timeout from scan timeout", async () => {
+  const { token, worker } = await loginWorker(12401);
+  const acceptTimeoutJob = addDispatchableJob(124010, 1);
+  const scanTimeoutJob = addDispatchableJob(124020, 1);
+  state.connectedWorkers.add(worker.id);
+  addPendingAssignment(1240101, acceptTimeoutJob.id, worker.id, -1000);
+  const scanAssignment = addPendingAssignment(1240201, scanTimeoutJob.id, worker.id);
+
+  const acceptTimeoutResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${acceptTimeoutJob.ticketNo}/accept`,
+    { token }
+  );
+
+  assert.equal(acceptTimeoutResponse.status, 409);
+  assert.equal(
+    state.workerAssignmentEvents.filter(
+      (event) =>
+        event.assignment_id === 1240101 &&
+        event.event_type === "ACCEPT_TIMEOUT"
+    ).length,
+    1
+  );
+  assert.equal(
+    state.workerAssignmentEvents.some(
+      (event) =>
+        event.assignment_id === 1240101 &&
+        event.event_type === "SCAN_TIMEOUT"
+    ),
+    false
+  );
+
+  const acceptResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${scanTimeoutJob.ticketNo}/accept`,
+    { token }
+  );
+
+  assert.equal(acceptResponse.status, 200);
+  scanAssignment.scan_deadline_at = new Date(Date.now() - 1000).toISOString();
+  const scanTimeoutResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${scanTimeoutJob.ticketNo}/check-in-qr`,
+    {
+      token,
+      body: {
+        qr_token: scanTimeoutJob.worker_qr_token,
+      },
+    }
+  );
+
+  assert.equal(scanTimeoutResponse.status, 409);
+  assert.equal(
+    state.workerAssignmentEvents.filter(
+      (event) =>
+        event.assignment_id === scanAssignment.id &&
+        event.event_type === "ACCEPTED"
+    ).length,
+    1
+  );
+  assert.equal(
+    state.workerAssignmentEvents.filter(
+      (event) =>
+        event.assignment_id === scanAssignment.id &&
+        event.event_type === "SCAN_TIMEOUT"
+    ).length,
+    1
+  );
+  assert.equal(
+    state.workerAssignmentEvents.some(
+      (event) =>
+        event.assignment_id === scanAssignment.id &&
+        event.event_type === "ACCEPT_TIMEOUT"
+    ),
+    false
+  );
+  assert.equal(
+    state.workerAssignmentEvents.some(
+      (event) =>
+        event.assignment_id === scanAssignment.id &&
+        event.event_type === "ADMIN_CANCELLED"
+    ),
+    false
   );
 });

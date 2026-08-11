@@ -2,7 +2,9 @@
 import { Prisma } from "@prisma/client";
 
 // Import Dependencies
+import * as adminAuditRepository from "./admin-audit.repository";
 import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/admin-audit.type";
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import { mapAccount, mapGateTicket, mapMarketJob, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
@@ -554,6 +556,17 @@ export async function cancelVehicleJob(
 ): Promise<VehicleJobDto> {
   const db = client(connection);
   const now = new Date();
+  const activeAssignments = await db.vehicleJobAssignment.findMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: ACTIVE_ASSIGNMENT_STATUSES,
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
 
   await db.ticketWorker.updateMany({
     where: {
@@ -579,6 +592,19 @@ export async function cancelVehicleJob(
       status: ASSIGNMENT_STATUS.CANCELLED,
     },
   });
+  await adminAuditRepository.createWorkerAssignmentEventsOnce(
+    activeAssignments.map((assignment) => ({
+      assignment_id: assignment.id,
+      worker_account_id: assignment.workerAccountId,
+      vehicle_job_id: assignment.vehicleJobId,
+      event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED,
+      occurred_at: now,
+      metadata: {
+        source: "admin_vehicle_job_cancel",
+      },
+    })),
+    connection
+  );
 
   const vehicleJob = await db.vehicleJob.update({
     where: {
@@ -772,6 +798,19 @@ export async function cancelAssignment(
           ASSIGNMENT_STATUS.CANCELLED,
       },
     });
+  await adminAuditRepository.createWorkerAssignmentEventOnce(
+    {
+      assignment_id: assignment.id,
+      worker_account_id: assignment.workerAccountId,
+      vehicle_job_id: assignment.vehicleJobId,
+      event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED,
+      occurred_at: now,
+      metadata: {
+        source: "admin_assignment_cancel",
+      },
+    },
+    connection
+  );
 
   await db.ticketWorker.updateMany({
     where: {
@@ -832,4 +871,3 @@ export async function extendAssignmentScanDeadline(
 
   return requireDto(mapVehicleJobAssignment(assignment), "assignment extend scan");
 }
-

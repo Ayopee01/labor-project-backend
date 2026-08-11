@@ -155,6 +155,28 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/earnings/summary:
+    get:
+      tags:
+        - Worker Application
+      summary: Get the current worker persisted earnings summary for the latest 15 completed Bangkok calendar days.
+      description: No query parameters are accepted. The current Bangkok calendar day is excluded. Details.Earnings is read directly from persisted TicketWorker.finalEarningAmount.
+      operationId: getWorkerEarningsSummary
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker earnings summary for the latest 15 completed calendar days.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerEarningsSummaryResponse"
+        "400":
+          description: Query parameters are not supported.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/workers/me/assignments/{ticketNo}/accept:
     post:
       tags:

@@ -10,7 +10,7 @@ import { findActiveByIdAndAccountId } from "../repositories/shared/session.repos
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
 import { getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";
 import { publishNotification } from "../services/notifications.service";
-import { sendWorkerPushNotificationByAccountIds } from "../utils/worker-push";
+import { sendWorkerPushNotificationByAccountIds } from "../services/shared/worker-push.service";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
 
 // Import Types
@@ -20,7 +20,7 @@ import type { WorkerSocket, WorkerSocketEventOptions, WorkerSocketEventType, Wor
 // Import Utils
 import ApiError from "../utils/api-error";
 import { verifyAccessToken } from "../utils/jwt";
-import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
+import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 
 /* -------------------------------------- Config -------------------------------------- */
 

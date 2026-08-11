@@ -2,7 +2,7 @@
   /api/gate/options:
     get:
       tags:
-        - Gate - Test Helper
+        - Gate
       summary: Get Gate master options for Postman / Swagger testing.
       description: >
         Test helper protected by Gate Basic Auth.

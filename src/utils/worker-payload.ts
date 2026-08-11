@@ -1,7 +1,23 @@
-import type { VehicleJobAssignmentDto, WorkerQueueEntryDto } from "../types/worker.type";
+import type { VehicleJobAssignmentDto, VehicleJobDto, WorkerQueueEntryDto } from "../types/worker.type";
 import { resolveWorkerWorkStatus } from "./worker-status";
 
 /* -------------------------------------- Functions -------------------------------------- */
+
+// Function สร้าง worker assigned payload สำหรับ helper กลาง
+export function buildWorkerAssignedPayload(
+  assignment: VehicleJobAssignmentDto,
+  vehicleJob: VehicleJobDto
+) {
+  return {
+    ticketNo: vehicleJob.ticketNo,
+    gate_transaction_ref: vehicleJob.gate_transaction_ref,
+    worker_qr_token: vehicleJob.worker_qr_token,
+    assignment: {
+      created_at: assignment.created_at,
+      accept_deadline_at: assignment.accept_deadline_at,
+    },
+  };
+}
 
 // Function สร้าง worker queue socket payload สำหรับ helper กลาง
 export function buildWorkerQueueSocketPayload(

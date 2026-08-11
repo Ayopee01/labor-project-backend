@@ -37,6 +37,7 @@ model Account {
   createdAccounts            Account[]                    @relation("AccountCreatedBy")
   sessions                   UserSession[]
   jobAssignments             VehicleJobAssignment[]       @relation("AssignmentWorker")
+  workerAssignmentEvents     WorkerAssignmentEvent[]      @relation("WorkerAssignmentEventWorker")
   shiftAttendances           WorkerShiftAttendance[]      @relation("WorkerShiftAttendanceAccount")
   permissions                AccountPermission[]
   ticketWorkers              TicketWorker[]
@@ -146,11 +147,12 @@ model VehicleJob {
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  gateRequests   GateRequestLog[]
-  marketJobs     MarketJob[]
-  tickets        GateTicket[]
-  driverSessions DriverSession[]
-  assignments    VehicleJobAssignment[]
+  gateRequests     GateRequestLog[]
+  marketJobs       MarketJob[]
+  tickets          GateTicket[]
+  driverSessions   DriverSession[]
+  assignments      VehicleJobAssignment[]
+  assignmentEvents WorkerAssignmentEvent[]
 
   @@index([status])
   @@map("vehicle_jobs")
@@ -194,7 +196,7 @@ model GateTicket {
   products              TicketProduct[]
   workers               TicketWorker[]
   completionSubmissions TicketCompletionSubmission[]
-  ratings               TicketRating[]
+  rating                TicketRating?
   lineActionTokens      LineActionToken[]
 
   @@unique([marketJobId, boothCode])
@@ -319,18 +321,19 @@ model MasterRate {
 }
 
 model TicketWorker {
-  id              Int                   @id @default(autoincrement())
-  ticketId        Int                   @map("ticket_id")
-  workerAccountId Int                   @map("worker_account_id")
-  status          String                @default("WORKING") @db.VarChar(30)
-  joinedAt        DateTime              @default(now()) @map("joined_at") @db.Timestamp(3)
-  cancelledAt     DateTime?             @map("cancelled_at") @db.Timestamp(3)
-  completedAt     DateTime?             @map("completed_at") @db.Timestamp(3)
-  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamp(3)
-  ticket          GateTicket            @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  worker          Account               @relation(fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  payments        TicketWorkerPayment[]
+  id                 Int                   @id @default(autoincrement())
+  ticketId           Int                   @map("ticket_id")
+  workerAccountId    Int                   @map("worker_account_id")
+  status             String                @default("WORKING") @db.VarChar(30)
+  finalEarningAmount Decimal?              @map("final_earning_amount") @db.Decimal(18, 2)
+  joinedAt           DateTime              @default(now()) @map("joined_at") @db.Timestamp(3)
+  cancelledAt        DateTime?             @map("cancelled_at") @db.Timestamp(3)
+  completedAt        DateTime?             @map("completed_at") @db.Timestamp(3)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamp(3)
+  ticket             GateTicket            @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  worker             Account               @relation(fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payments           TicketWorkerPayment[]
 
   @@unique([ticketId, workerAccountId])
   @@index([workerAccountId, status])
@@ -394,7 +397,7 @@ model TicketRating {
   ticket     GateTicket                 @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   submission TicketCompletionSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([ticketId, lineUserId])
+  @@unique([ticketId])
   @@index([submissionId])
   @@index([score])
   @@map("ticket_ratings")
@@ -516,12 +519,36 @@ model VehicleJobAssignment {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  vehicleJob VehicleJob @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  worker     Account    @relation("AssignmentWorker", fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vehicleJob VehicleJob              @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  worker     Account                 @relation("AssignmentWorker", fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  events     WorkerAssignmentEvent[]
 
   @@index([workerAccountId, status])
   @@index([vehicleJobId, status])
   @@map("vehicle_job_assignments")
+}
+
+model WorkerAssignmentEvent {
+  id              Int      @id @default(autoincrement())
+  assignmentId    Int      @map("assignment_id")
+  workerAccountId Int      @map("worker_account_id")
+  vehicleJobId    Int      @map("vehicle_job_id")
+  eventType       String   @map("event_type") @db.VarChar(30)
+  occurredAt      DateTime @map("occurred_at") @db.Timestamp(3)
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+
+  assignment VehicleJobAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  worker     Account              @relation("WorkerAssignmentEventWorker", fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vehicleJob VehicleJob           @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([assignmentId, eventType])
+  @@index([workerAccountId, occurredAt])
+  @@index([workerAccountId, eventType, occurredAt])
+  @@index([assignmentId, occurredAt])
+  @@index([vehicleJobId])
+  @@index([eventType, occurredAt])
+  @@map("worker_assignment_events")
 }
 
 model UserSession {

@@ -34,6 +34,7 @@ export type AccountRecord = {
   email?: string | null;
   phone?: string | null;
   permission_level?: string | null;
+  shirt_number?: string | null;
 };
 
 export type GateClientRecord = {
@@ -61,6 +62,17 @@ export type AssignmentRecord = {
   completed_at?: string | null;
   created_at?: string;
   updated_at?: string;
+};
+
+type WorkerAssignmentEventRecord = {
+  id: number;
+  assignment_id: number;
+  worker_account_id: number;
+  vehicle_job_id: number;
+  event_type: string;
+  occurred_at: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 };
 
 type VehicleJobRecord = {
@@ -151,6 +163,7 @@ type TicketWorkerRecord = {
   ticket_id: number;
   worker_account_id: number;
   status: string;
+  final_earning_amount?: string | null;
   joined_at: string;
   cancelled_at: string | null;
   completed_at: string | null;
@@ -290,7 +303,7 @@ let appModule: typeof import("../../src/app") | null = null;
 let workerQueueModule: typeof import("../../src/queues/worker-queue") | null = null;
 let workerDispatchModule: typeof import("../../src/queues/worker-dispatch") | null = null;
 let passwordModule: typeof import("../../src/utils/password") | null = null;
-let ticketFinancialModule: typeof import("../../src/services/ticket-financial.service") | null = null;
+let ticketFinancialModule: typeof import("../../src/services/shared/ticket-financial.service") | null = null;
 
 export const state = {
   connectedWorkers: new Set<number>(),
@@ -311,6 +324,7 @@ export const state = {
   schedules: new Map<number, unknown>(),
   vehicleJobs: [] as VehicleJobRecord[],
   assignments: [] as AssignmentRecord[],
+  workerAssignmentEvents: [] as WorkerAssignmentEventRecord[],
   gateTickets: [] as GateTicketRecord[],
 
   ticketProducts: [] as TicketProductRecord[],
@@ -336,6 +350,7 @@ export const state = {
   queueJobs: new Map<string, Map<string, { data: unknown; removed: boolean }>>(),
   workerProcessors: new Map<string, (job: { data: unknown }) => Promise<void>>(),
   nextAssignmentId: 1,
+  nextWorkerAssignmentEventId: 1,
   nextSessionId: 1,
   nextTicketWorkerId: 1,
   nextTicketProductFinancialId: 1,
@@ -726,6 +741,34 @@ function todaySchedule(accountId: number) {
   };
 }
 
+function recordWorkerAssignmentEventOnce(
+  assignment: AssignmentRecord,
+  eventType: string,
+  metadata: Record<string, unknown> | null = null,
+  occurredAt = new Date().toISOString()
+): void {
+  const existing = state.workerAssignmentEvents.find(
+    (event) =>
+      event.assignment_id === assignment.id &&
+      event.event_type === eventType
+  );
+
+  if (existing) {
+    return;
+  }
+
+  state.workerAssignmentEvents.push({
+    id: state.nextWorkerAssignmentEventId++,
+    assignment_id: assignment.id,
+    worker_account_id: assignment.worker_account_id,
+    vehicle_job_id: assignment.vehicle_job_id,
+    event_type: eventType,
+    occurred_at: occurredAt,
+    metadata,
+    created_at: new Date().toISOString(),
+  });
+}
+
 // Function รีเซ็ต route test state สำหรับ test
 export function resetRouteTestState(): void {
   FakeRedis.hashes.clear();
@@ -741,6 +784,7 @@ export function resetRouteTestState(): void {
   state.schedules.clear();
   state.vehicleJobs.length = 0;
   state.assignments.length = 0;
+  state.workerAssignmentEvents.length = 0;
   state.gateTickets.length = 0;
   state.ticketProducts.length = 0;
   state.ticketWorkers.length = 0;
@@ -765,6 +809,7 @@ export function resetRouteTestState(): void {
   state.queueJobs.set(process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string, new Map());
   state.queueJobs.set(process.env.BULLMQ_WORKER_BREAK_RETURN_QUEUE as string, new Map());
   state.nextAssignmentId = 1;
+  state.nextWorkerAssignmentEventId = 1;
   state.nextSessionId = 1;
   state.nextTicketWorkerId = 1;
   state.nextTicketProductFinancialId = 1;
@@ -1071,6 +1116,20 @@ const workerApplicationRepositoryMock = {
       accountIds
         .map((accountId) => state.profiles.get(accountId) ?? null)
         .filter((profile): profile is NonNullable<typeof profile> => profile !== null),
+    findWorkerCodeByAccountId: async (accountId: number) =>
+      (state.profiles.get(accountId) as { worker_code?: string } | undefined)?.worker_code ?? null,
+    findWorkerCodeMapByAccountIds: async (accountIds: number[]) =>
+      new Map(
+        accountIds.map((accountId) => [
+          accountId,
+          (state.profiles.get(accountId) as { worker_code?: string } | undefined)?.worker_code ?? null,
+        ])
+      ),
+    findWorkerCodesByAccountIds: async (accountIds: number[]) =>
+      accountIds.map(
+        (accountId) =>
+          (state.profiles.get(accountId) as { worker_code?: string } | undefined)?.worker_code ?? null
+      ),
   },
   workScheduleRepository: {
     findCurrentByAccountId: async (accountId: number) =>
@@ -1311,6 +1370,7 @@ const workerApplicationRepositoryMock = {
     workerAccountId: number,
     acceptDeadlineAt: Date
   ) => {
+    const now = new Date().toISOString();
     const assignment = {
       id: state.nextAssignmentId++,
       vehicle_job_id: vehicleJobId,
@@ -1318,9 +1378,20 @@ const workerApplicationRepositoryMock = {
       status: "PENDING",
       accept_deadline_at: acceptDeadlineAt.toISOString(),
       scan_deadline_at: null,
+      accepted_at: null,
+      scanned_at: null,
+      completed_at: null,
+      created_at: now,
+      updated_at: now,
     };
 
     state.assignments.push(assignment);
+    recordWorkerAssignmentEventOnce(
+      assignment,
+      "ASSIGNED",
+      null,
+      assignment.created_at
+    );
 
     return assignment;
   },
@@ -1359,7 +1430,7 @@ const workerApplicationRepositoryMock = {
         assignment.worker_account_id === workerAccountId &&
         ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
     ) ?? null,
-  timeoutAssignment: async (assignmentId: number) => {
+  timeoutAssignment: async (assignmentId: number, eventType = "ACCEPT_TIMEOUT") => {
     const assignment = state.assignments.find((item) => item.id === assignmentId);
 
     if (!assignment) {
@@ -1368,6 +1439,7 @@ const workerApplicationRepositoryMock = {
 
     assignment.status = "TIMEOUT";
     assignment.updated_at = new Date().toISOString();
+    recordWorkerAssignmentEventOnce(assignment, eventType, null, assignment.updated_at);
     return assignment;
   },
   acceptAssignment: async (assignmentId: number, scanDeadlineAt: Date) => {
@@ -1381,6 +1453,7 @@ const workerApplicationRepositoryMock = {
     assignment.scan_deadline_at = scanDeadlineAt.toISOString();
     assignment.accepted_at = new Date().toISOString();
     assignment.updated_at = assignment.accepted_at;
+    recordWorkerAssignmentEventOnce(assignment, "ACCEPTED", null, assignment.accepted_at);
     return assignment;
   },
   listAcceptedAssignmentsByVehicleJob: async (
@@ -1419,6 +1492,7 @@ const workerApplicationRepositoryMock = {
     assignment.status = "SCANNED";
     assignment.scanned_at = new Date().toISOString();
     assignment.updated_at = assignment.scanned_at;
+    recordWorkerAssignmentEventOnce(assignment, "SCANNED", null, assignment.scanned_at);
     return assignment;
   },
   countScannedAssignments: async (vehicleJobId: number) =>
@@ -1453,8 +1527,10 @@ const workerApplicationRepositoryMock = {
         return {
           full_name: worker?.full_name ?? `Worker ${assignment.worker_account_id}`,
           worker_code: profile?.worker_code ?? null,
+          shirt_number: worker?.shirt_number ?? null,
           image_url: profile?.image_url ?? null,
           scan_status: scanStatus,
+          scanned_at: assignment.scanned_at ?? null,
         };
       }),
   markVehicleJobInProgress: async (vehicleJobId: number) => {
@@ -1526,87 +1602,116 @@ const workerApplicationRepositoryMock = {
             updated_at: assignment.created_at ?? new Date().toISOString(),
           };
 
-        const ticketWorkers = state.ticketWorkers.filter((ticketWorker) => {
-          if (ticketWorker.worker_account_id !== workerAccountId) {
-            return false;
-          }
-
-          const ticket = state.gateTickets.find(
-            (item) => item.id === ticketWorker.ticket_id
-          );
-
-          return ticket?.vehicle_job_id === assignment.vehicle_job_id;
-        });
-
-        let totalAmount = new Prisma.Decimal(0);
-
-        const booths = ticketWorkers.map((ticketWorker) => {
-          const ticket = state.gateTickets.find(
-            (item) => item.id === ticketWorker.ticket_id
-          );
-
-          if (!ticket) {
-            throw new Error("Ticket not found for worker history.");
-          }
-
-          const payments = state.ticketWorkerPayments.filter(
-            (payment) => payment.ticket_worker_id === ticketWorker.id
-          );
-
-          let boothAmount = new Prisma.Decimal(0);
-
-          const products = payments.map((payment) => {
-            const financial = state.ticketProductFinancials.find(
-              (item) => item.id === payment.ticket_product_financial_id
+        const tickets = state.gateTickets
+          .filter((ticket) => ticket.vehicle_job_id === assignment.vehicle_job_id)
+          .sort((left, right) => left.id - right.id);
+        const markets = [...new Set(tickets.map((ticket) => ticket.market_job_id))]
+          .map((marketJobId) => {
+            const marketTickets = tickets.filter(
+              (ticket) => ticket.market_job_id === marketJobId
             );
-
-            if (!financial) {
-              throw new Error(
-                "Ticket product financial not found for worker history."
-              );
-            }
-
-            const product = state.ticketProducts.find(
-              (item) => item.id === financial.ticket_product_id
-            );
-
-            if (!product) {
-              throw new Error("Ticket product not found for worker history.");
-            }
-
-            boothAmount = boothAmount.plus(payment.final_amount);
+            const firstTicket = marketTickets[0];
 
             return {
-              productCode: product.productCode,
-              packageCode: product.packageCode,
-              productName: product.productName,
-              packageName: product.packageName,
-              confirmed_quantity: new Prisma.Decimal(
-                financial.confirmed_quantity
-              ).toFixed(2),
-              final_amount: new Prisma.Decimal(payment.final_amount).toFixed(2),
+              marketCode: firstTicket?.marketCode ?? `MARKET-${marketJobId}`,
+              marketName: firstTicket?.marketName ?? `Market ${marketJobId}`,
+              booths: marketTickets.map((ticket) => {
+                const rating = state.ticketRatings.find(
+                  (item) => item.ticket_id === ticket.id
+                );
+
+                return {
+                  boothCode: ticket.boothCode,
+                  boothName: ticket.boothName,
+                  products: state.ticketProducts
+                    .filter((product) => product.ticket_id === ticket.id)
+                    .sort((left, right) => left.id - right.id)
+                    .map((product) => ({
+                      productCode: product.productCode,
+                      productName: product.productName,
+                      packageCode: product.packageCode,
+                      packageName: product.packageName,
+                      confirmed_quantity: product.confirmed_quantity === null
+                        ? null
+                        : new Prisma.Decimal(product.confirmed_quantity).toFixed(2),
+                    })),
+                  rating: rating?.score ?? null,
+                };
+              }),
             };
           });
-
-          totalAmount = totalAmount.plus(boothAmount);
-
-          return {
-            ticket_id: ticket.id,
-            boothCode: ticket.boothCode,
-            boothName: ticket.boothName,
-            membership_status: ticketWorker.status,
-            amount: boothAmount.toFixed(2),
-            products,
-          };
-        });
 
         return {
           assignment,
           vehicle_job: vehicleJob,
-          earnings: {
-            total_amount: totalAmount.toFixed(2),
-            booths,
-          },
+          markets,
+        };
+      }),
+  listWorkerEarningsSummaryRows: async (
+    workerAccountId: number,
+    startAt: Date,
+    endAt: Date
+  ) =>
+    state.ticketWorkers
+      .filter((ticketWorker) => {
+        if (
+          ticketWorker.worker_account_id !== workerAccountId ||
+          ticketWorker.final_earning_amount === null ||
+          ticketWorker.final_earning_amount === undefined
+        ) {
+          return false;
+        }
+
+        const ticket = state.gateTickets.find(
+          (item) => item.id === ticketWorker.ticket_id
+        );
+        const completedAt = ticket?.completed_at
+          ? new Date(ticket.completed_at)
+          : null;
+
+        return Boolean(
+          ticket?.financialized_at &&
+          completedAt &&
+          completedAt >= startAt &&
+          completedAt < endAt
+        );
+      })
+      .sort((left, right) => {
+        const leftTicket = state.gateTickets.find((item) => item.id === left.ticket_id);
+        const rightTicket = state.gateTickets.find((item) => item.id === right.ticket_id);
+
+        return (
+          new Date(rightTicket?.completed_at ?? 0).getTime() -
+          new Date(leftTicket?.completed_at ?? 0).getTime()
+        ) || left.id - right.id;
+      })
+      .map((ticketWorker) => {
+        const ticket = state.gateTickets.find(
+          (item) => item.id === ticketWorker.ticket_id
+        );
+
+        if (!ticket) {
+          throw new Error("Ticket not found for worker earnings summary.");
+        }
+
+        const vehicleJob = state.vehicleJobs.find(
+          (job) => job.id === ticket.vehicle_job_id
+        );
+
+        if (!vehicleJob) {
+          throw new Error("Vehicle job not found for worker earnings summary.");
+        }
+
+        return {
+          completed_at: ticket.completed_at ?? "",
+          ticketNo: vehicleJob.ticketNo,
+          license_plate: vehicleJob.license_plate,
+          booth_count: vehicleJob.booth_count,
+          marketCode: ticket.marketCode ?? `MARKET-${ticket.market_job_id}`,
+          marketName: ticket.marketName ?? `Market ${ticket.market_job_id}`,
+          boothCode: ticket.boothCode,
+          boothName: ticket.boothName,
+          earnings: new Prisma.Decimal(ticketWorker.final_earning_amount ?? 0).toFixed(2),
         };
       }),
 
@@ -1689,6 +1794,7 @@ const workerApplicationRepositoryMock = {
             ticket_id: ticketId,
             worker_account_id: workerAccountId,
             status: "WORKING",
+            final_earning_amount: null,
             joined_at: now,
             cancelled_at: null,
             completed_at: null,
@@ -1708,6 +1814,9 @@ const workerApplicationRepositoryMock = {
             null;
 
           ticketWorker.completed_at =
+            null;
+
+          ticketWorker.final_earning_amount =
             null;
         }
       }
@@ -1733,6 +1842,9 @@ const workerApplicationRepositoryMock = {
             now;
 
           worker.completed_at =
+            null;
+
+          worker.final_earning_amount =
             null;
         });
 
@@ -2014,7 +2126,15 @@ const workerApplicationRepositoryMock = {
           .sort(
             (left, right) =>
               left.id - right.id
-          );
+          )
+          .map((worker) => ({
+            ...worker,
+            finalEarningAmount:
+              worker.final_earning_amount === undefined ||
+                worker.final_earning_amount === null
+                ? null
+                : new Prisma.Decimal(worker.final_earning_amount),
+          }));
 
       return {
         id:
@@ -2134,6 +2254,22 @@ const workerApplicationRepositoryMock = {
     },
 
   // Functionบันทึกยอดรวมและเวลาที่ Financialize Ticket
+  updateTicketWorkerFinalEarningAmounts:
+    async (
+      amountsByTicketWorkerId: Map<number, Prisma.Decimal>
+    ): Promise<void> => {
+      for (const [ticketWorkerId, finalEarningAmount] of amountsByTicketWorkerId) {
+        const ticketWorker =
+          state.ticketWorkers.find((item) => item.id === ticketWorkerId);
+
+        if (!ticketWorker) {
+          throw new Error("Ticket worker not found for final earning update.");
+        }
+
+        ticketWorker.final_earning_amount = finalEarningAmount.toFixed(2);
+      }
+    },
+
   markGateTicketFinancialized:
     async (
       ticketId: number,
@@ -2191,6 +2327,8 @@ const workerApplicationRepositoryMock = {
     activeAssignments.forEach((assignment) => {
       assignment.status = "COMPLETED";
       assignment.completed_at = now;
+      assignment.updated_at = now;
+      recordWorkerAssignmentEventOnce(assignment, "COMPLETED", null, now);
     });
 
     return {
@@ -2751,6 +2889,20 @@ const authRepositoryMock = {
       accountIds
         .map((accountId) => state.profiles.get(accountId) ?? null)
         .filter((profile): profile is NonNullable<typeof profile> => profile !== null),
+    findWorkerCodeByAccountId: async (accountId: number) =>
+      (state.profiles.get(accountId) as { worker_code?: string } | undefined)?.worker_code ?? null,
+    findWorkerCodeMapByAccountIds: async (accountIds: number[]) =>
+      new Map(
+        accountIds.map((accountId) => [
+          accountId,
+          (state.profiles.get(accountId) as { worker_code?: string } | undefined)?.worker_code ?? null,
+        ])
+      ),
+    findWorkerCodesByAccountIds: async (accountIds: number[]) =>
+      accountIds.map(
+        (accountId) =>
+          (state.profiles.get(accountId) as { worker_code?: string } | undefined)?.worker_code ?? null
+      ),
   },
   workScheduleRepository: {
     findCurrentByAccountId: async (accountId: number) =>
@@ -3133,6 +3285,7 @@ const gateClientRepositoryMock = {
 
 // Mock repository สำหรับ Admin VehicleJob Financial route test
 const adminJobsRepositoryMock = {
+  profileRepository: workerApplicationRepositoryMock.profileRepository,
   findVehicleJobByRef: async (ticketNo: string) =>
     state.vehicleJobs.find(
       (job) => job.ticketNo === ticketNo
@@ -3177,6 +3330,12 @@ const adminJobsRepositoryMock = {
     };
 
     state.assignments.push(assignment);
+    recordWorkerAssignmentEventOnce(
+      assignment,
+      "ASSIGNED",
+      null,
+      assignment.created_at
+    );
 
     return assignment;
   },
@@ -3220,6 +3379,14 @@ const adminJobsRepositoryMock = {
 
     assignment.status = "CANCELLED";
     assignment.updated_at = now;
+    recordWorkerAssignmentEventOnce(
+      assignment,
+      "ADMIN_CANCELLED",
+      {
+        source: "admin_assignment_cancel",
+      },
+      now
+    );
 
     state.ticketWorkers
       .filter((ticketWorker) => {
@@ -3520,6 +3687,109 @@ const adminJobsRepositoryMock = {
   },
 };
 
+const adminAuditRepositoryMock = {
+  createWorkerAssignmentEventOnce: async (input: {
+    assignment_id: number;
+    worker_account_id: number;
+    vehicle_job_id: number;
+    event_type: string;
+    occurred_at?: Date;
+    metadata?: Record<string, unknown> | null;
+  }) => {
+    const assignment = state.assignments.find(
+      (item) => item.id === input.assignment_id
+    );
+
+    if (!assignment) {
+      throw new Error("Assignment not found for audit event.");
+    }
+
+    recordWorkerAssignmentEventOnce(
+      assignment,
+      input.event_type,
+      input.metadata ?? null,
+      input.occurred_at?.toISOString() ?? new Date().toISOString()
+    );
+  },
+  createWorkerAssignmentEventsOnce: async (
+    inputs: Array<{
+      assignment_id: number;
+      worker_account_id: number;
+      vehicle_job_id: number;
+      event_type: string;
+      occurred_at?: Date;
+      metadata?: Record<string, unknown> | null;
+    }>
+  ) => {
+    for (const input of inputs) {
+      await adminAuditRepositoryMock.createWorkerAssignmentEventOnce(input);
+    }
+  },
+  listWorkerPerformanceAssignmentRows: async (filters: {
+    startAt: Date;
+    endAt: Date;
+    worker_code?: string;
+  }) =>
+    state.assignments
+      .filter((assignment) => {
+        const createdAt = new Date(assignment.created_at ?? new Date().toISOString());
+        const worker =
+          state.workers.get(assignment.worker_account_id) ??
+          state.authAccountsById.get(assignment.worker_account_id);
+
+        return (
+          createdAt >= filters.startAt &&
+          createdAt < filters.endAt &&
+          (!filters.worker_code || worker?.username === filters.worker_code)
+        );
+      })
+      .sort((left, right) => {
+        const leftWorker =
+          state.workers.get(left.worker_account_id) ??
+          state.authAccountsById.get(left.worker_account_id);
+        const rightWorker =
+          state.workers.get(right.worker_account_id) ??
+          state.authAccountsById.get(right.worker_account_id);
+
+        return (
+          (leftWorker?.username ?? "").localeCompare(rightWorker?.username ?? "") ||
+          left.id - right.id
+        );
+      })
+      .map((assignment) => {
+        const worker =
+          state.workers.get(assignment.worker_account_id) ??
+          state.authAccountsById.get(assignment.worker_account_id);
+
+        if (!worker) {
+          throw new Error("Worker not found for audit performance row.");
+        }
+
+        return {
+          assignment_id: assignment.id,
+          worker_account_id: assignment.worker_account_id,
+          worker_code: worker.username,
+          full_name: worker.full_name,
+          status: assignment.status,
+          accepted_at: assignment.accepted_at ? new Date(assignment.accepted_at) : null,
+          scanned_at: assignment.scanned_at ? new Date(assignment.scanned_at) : null,
+          event_types: state.workerAssignmentEvents
+            .filter((event) => event.assignment_id === assignment.id)
+            .map((event) => event.event_type),
+        };
+      }),
+  classifyHistoricalAcceptTimeout: (row: { status: string; accepted_at: Date | null }) =>
+    row.status === "TIMEOUT" && row.accepted_at === null,
+  classifyHistoricalScanTimeout: (row: {
+    status: string;
+    accepted_at: Date | null;
+    scanned_at: Date | null;
+  }) =>
+    row.status === "TIMEOUT" &&
+    row.accepted_at !== null &&
+    row.scanned_at === null,
+};
+
 /* -------------------------------------- Module Loader Patch -------------------------------------- */
 
 // Function ตั้งค่า module loader จำลองสำหรับ route test
@@ -3552,7 +3822,10 @@ function patchModuleLoader(): void {
       };
     }
 
-    if (request === "../repositories/worker.repository") {
+    if (
+      request === "../repositories/worker.repository" ||
+      request === "../../repositories/worker.repository"
+    ) {
       return workerApplicationRepositoryMock;
     }
 
@@ -3560,13 +3833,21 @@ function patchModuleLoader(): void {
       return adminJobsRepositoryMock;
     }
 
+    if (request === "../repositories/admin-audit.repository") {
+      return adminAuditRepositoryMock;
+    }
+
     if (request === "../repositories/gate.repository") {
       return gateRepositoryMock;
     }
 
-    if (request === "../repositories/auth.repository") {
+    if (
+      request === "../repositories/auth.repository" ||
+      request === "../../repositories/auth.repository"
+    ) {
       return {
         ...authRepositoryMock,
+        profileRepository: authRepositoryMock.profileRepository,
         workerPushTokenRepository: workerPushTokenRepositoryMock,
       };
     }
@@ -3616,9 +3897,24 @@ function patchModuleLoader(): void {
       };
     }
 
-    if (request === "../services/notifications.service" || request === "./notifications.service") {
+    if (
+      request === "../services/notifications.service" ||
+      request === "./notifications.service" ||
+      request === "../notifications.service"
+    ) {
       return {
         publishNotification: (event: unknown) => state.notifications.push(event),
+        publishRealtimeEvent: (event: unknown) => state.realtimeEvents.push(event),
+        resolveTicketResultAudience: async (ticket: { id: number }) => {
+          const ticketWorkerIds = state.ticketWorkers
+            .filter((worker) => worker.ticket_id === ticket.id)
+            .map((worker) => worker.worker_account_id);
+          const adminIds = Array.from(state.authAccountsById.values())
+            .filter((account) => account.role === "admin")
+            .map((account) => account.id);
+
+          return [...new Set([...ticketWorkerIds, ...adminIds])];
+        },
         publishAdminWorkerStatusChanged: (event: {
           title: string;
           message: string;
@@ -3640,12 +3936,6 @@ function patchModuleLoader(): void {
             roles: ["admin"],
           },
         }),
-      };
-    }
-
-    if (request === "../utils/realtime-event") {
-      return {
-        publishRealtimeEvent: (event: unknown) => state.realtimeEvents.push(event),
       };
     }
 
@@ -3728,14 +4018,13 @@ function patchModuleLoader(): void {
           score: number;
         }) => {
           const now = new Date().toISOString();
-          let rating = state.ticketRatings.find(
+          const rating = state.ticketRatings.find(
             (item) =>
-              item.ticket_id === input.ticket_id &&
-              item.line_user_id === input.line_user_id
+              item.ticket_id === input.ticket_id
           );
 
           if (!rating) {
-            rating = {
+            const newRating = {
               id: state.nextRatingId++,
               ticket_id: input.ticket_id,
               submission_id: input.submission_id,
@@ -3746,15 +4035,10 @@ function patchModuleLoader(): void {
               created_at: now,
               updated_at: now,
             };
-            state.ticketRatings.push(rating);
-            return rating;
+            state.ticketRatings.push(newRating);
+            return newRating;
           }
 
-          rating.submission_id = input.submission_id;
-          rating.target_type = input.target_type ?? null;
-          rating.score = input.score;
-          rating.rated_at = now;
-          rating.updated_at = now;
           return rating;
         },
       };
@@ -3790,7 +4074,7 @@ export async function getWorkerDispatch() {
 // Function ดึง Ticket Financial service สำหรับ test
 export async function getTicketFinancialService() {
   patchModuleLoader();
-  ticketFinancialModule ??= await import("../../src/services/ticket-financial.service");
+  ticketFinancialModule ??= await import("../../src/services/shared/ticket-financial.service");
   return ticketFinancialModule;
 }
 

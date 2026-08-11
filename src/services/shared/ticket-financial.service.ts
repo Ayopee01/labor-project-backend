@@ -2,20 +2,20 @@
 import { Prisma } from "@prisma/client";
 
 // Import Dependencies
-import * as workerApplicationRepository from "../repositories/worker.repository";
+import * as workerApplicationRepository from "../../repositories/worker.repository";
 
 // Import Types
-import type { DbConnection } from "../types/shared/common.type";
+import type { DbConnection } from "../../types/shared/common.type";
 
 // Import Config
-import { TICKET_STATUS } from "../constants/job-status";
+import { TICKET_STATUS } from "../../constants/job-status";
 
 // Import Utils
-import ApiError from "../utils/api-error";
+import ApiError from "../../utils/api-error";
 import {
     calculateProductStallCharge,
     calculateProductWorkerPayment,
-} from "../utils/labor-job-pricing";
+} from "../../utils/labor-job-pricing";
 
 /* -------------------------------------- Types -------------------------------------- */
 
@@ -154,6 +154,21 @@ export async function finalizeTicketFinancials(
             );
         }
 
+        const hasMissingWorkerEarning =
+            context.workers.some(
+                (worker) =>
+                    worker.finalEarningAmount ===
+                    null
+            );
+
+        if (hasMissingWorkerEarning) {
+            throw new ApiError(
+                500,
+                "TICKET_FINANCIAL_STATE_INVALID",
+                "Financialized ticket has completed worker without final earning amount."
+            );
+        }
+
         return {
             ticketId:
                 context.id,
@@ -237,6 +252,20 @@ export async function finalizeTicketFinancials(
     let finalStallAmount =
         new Prisma.Decimal(0);
 
+    const finalEarningByTicketWorkerId =
+        new Map<number, Prisma.Decimal>();
+
+    for (
+        const worker
+        of context.workers
+    ) {
+        finalEarningByTicketWorkerId
+            .set(
+                worker.id,
+                new Prisma.Decimal(0)
+            );
+    }
+
     for (
         const product
         of context.products
@@ -308,6 +337,41 @@ export async function finalizeTicketFinancials(
                 actualWorkerCount,
             });
 
+        const workerPayments =
+            context.workers.map(
+                (worker) => {
+                    const finalAmount =
+                        workerPayment
+                            .finalAmountPerWorker;
+                    const currentTotal =
+                        finalEarningByTicketWorkerId
+                            .get(worker.id) ??
+                        new Prisma.Decimal(0);
+
+                    finalEarningByTicketWorkerId
+                        .set(
+                            worker.id,
+                            currentTotal
+                                .plus(finalAmount)
+                        );
+
+                    return {
+                        ticketWorkerId:
+                            worker.id,
+
+                        rawAmount:
+                            workerPayment
+                                .rawAmountPerWorker,
+
+                        remainderAmount:
+                            workerPayment
+                                .remainderAmountPerWorker,
+
+                        finalAmount,
+                    };
+                }
+            );
+
         await workerApplicationRepository
             .createTicketProductFinancial(
                 {
@@ -343,25 +407,7 @@ export async function finalizeTicketFinancials(
 
                     finalizedAt,
 
-                    workerPayments:
-                        context.workers.map(
-                            (worker) => ({
-                                ticketWorkerId:
-                                    worker.id,
-
-                                rawAmount:
-                                    workerPayment
-                                        .rawAmountPerWorker,
-
-                                remainderAmount:
-                                    workerPayment
-                                        .remainderAmountPerWorker,
-
-                                finalAmount:
-                                    workerPayment
-                                        .finalAmountPerWorker,
-                            })
-                        ),
+                    workerPayments,
                 },
                 connection
             );
@@ -373,6 +419,12 @@ export async function finalizeTicketFinancials(
                 stallCharge.productCharge
             );
     }
+
+    await workerApplicationRepository
+        .updateTicketWorkerFinalEarningAmounts(
+            finalEarningByTicketWorkerId,
+            connection
+        );
 
     await workerApplicationRepository
         .markGateTicketFinancialized(

@@ -5,7 +5,7 @@ import {
   registerWorkerPushToken as registerWorkerPushTokenForSession,
   registerWorkerPushTokenForAccount,
   revokeWorkerPushTokensBySession,
-} from "../utils/worker-push";
+} from "./shared/worker-push.service";
 import { withTransaction } from "../db/prisma";
 import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto } from "../types/auth.type";
 import type { DbConnection } from "../types/shared/common.type";

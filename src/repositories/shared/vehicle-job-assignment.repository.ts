@@ -1,5 +1,7 @@
 // Import Dependencies
 import { ACTIVE_ASSIGNMENT_STATUSES } from "../../constants/job-status";
+import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../../types/admin-audit.type";
+import * as adminAuditRepository from "../admin-audit.repository";
 import { mapVehicleJobAssignment } from "./mappers";
 import { client, requireDto } from "./repository-utils";
 
@@ -41,6 +43,16 @@ export async function createAssignment(
       acceptDeadlineAt,
     },
   });
+  await adminAuditRepository.createWorkerAssignmentEventOnce(
+    {
+      assignment_id: assignment.id,
+      worker_account_id: assignment.workerAccountId,
+      vehicle_job_id: assignment.vehicleJobId,
+      event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ASSIGNED,
+      occurred_at: assignment.createdAt,
+    },
+    connection
+  );
 
   return requireDto(mapVehicleJobAssignment(assignment), "assignment create");
 }

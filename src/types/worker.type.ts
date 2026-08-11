@@ -168,6 +168,7 @@ export interface TicketWorkerDto {
   ticket_id: number;
   worker_account_id: number;
   status: string;
+  final_earning_amount: string | null;
   joined_at: string;
   cancelled_at: string | null;
   completed_at: string | null;
@@ -245,6 +246,7 @@ export interface WorkerStatusResponse {
   work_start_date: string | null;
   phone: string | null;
   shift: WorkerStatusShift | null;
+  current_job?: WorkerCurrentJobResponse | null;
   break_until?: string;
   remaining_break_time?: WorkerStatusRemainingBreakTime;
 }
@@ -301,32 +303,91 @@ export interface WorkerAssignmentEarningsDto {
 export interface WorkerAssignmentHistoryItemDto {
   assignment: VehicleJobAssignmentDto;
   vehicle_job: VehicleJobDto;
-  earnings: WorkerAssignmentEarningsDto;
+  markets: WorkerAssignmentHistoryMarketDto[];
 }
 
 // Type response ประวัติ assignment ที่ส่งให้ Worker Mobile
 export interface WorkerAssignmentHistoryItemResponse {
   ticketNo: string;
-  gate_transaction_ref: string;
   license_plate: string;
   status: string;
-  accept_deadline_at: string | null;
-  scan_deadline_at: string | null;
-  accepted_at: string | null;
-  scanned_at: string | null;
-  completed_at: string | null;
-  timeout_reason: string | null;
-  earnings: WorkerAssignmentEarningsDto;
-  created_at: string;
-  updated_at: string;
+  markets: WorkerAssignmentHistoryMarketDto[];
+}
+
+export interface WorkerAssignmentHistoryProductDto {
+  productCode: string;
+  productName: string;
+  packageCode: string;
+  packageName: string;
+  confirmed_quantity: string | null;
+}
+
+export interface WorkerAssignmentHistoryBoothDto {
+  boothCode: string;
+  boothName: string | null;
+  products: WorkerAssignmentHistoryProductDto[];
+  rating: number | null;
+}
+
+export interface WorkerAssignmentHistoryMarketDto {
+  marketCode: string;
+  marketName: string;
+  booths: WorkerAssignmentHistoryBoothDto[];
+}
+
+export interface WorkerAssignmentHistoryResponse {
+  date: string;
+  summary: {
+    job_count: number;
+    accept_timeout_job_count: number;
+    completed_job_count: number;
+  };
+  data: WorkerAssignmentHistoryItemResponse[];
 }
 
 // Type สมาชิกทีมที่แสดงตอน worker รับงาน
 export interface WorkerAssignmentTeamMemberDto {
   full_name: string;
   worker_code: string | null;
+  shirt_number?: string | null;
   image_url: string | null;
   scan_status: string;
+  scanned_at?: string | null;
+}
+
+export interface WorkerCurrentJobProductResponse {
+  productCode: string;
+  productName: string;
+  packageCode: string;
+  packageName: string;
+  quantity: string;
+}
+
+export interface WorkerCurrentJobBoothResponse {
+  boothCode: string;
+  boothName: string | null;
+  products: WorkerCurrentJobProductResponse[];
+}
+
+export interface WorkerCurrentJobMarketResponse {
+  marketCode: string;
+  marketName: string;
+  booths: WorkerCurrentJobBoothResponse[];
+}
+
+export interface WorkerCurrentJobTeamMemberResponse {
+  shirt_number: string | null;
+  full_name: string;
+  scan_status: "scanned" | "not_scanned";
+  scanned_at: string | null;
+}
+
+export interface WorkerCurrentJobResponse {
+  ticketNo: string;
+  license_plate: string;
+  vehicle_type: string | null;
+  markets: WorkerCurrentJobMarketResponse[];
+  team: WorkerCurrentJobTeamMemberResponse[];
 }
 
 // Type สินค้าใน assignment ที่ worker ต้องเห็น
@@ -365,6 +426,30 @@ export interface WorkerAssignmentCheckInResponse {
   worker_code: string | null;
   ticketNo: string;
   worker_qr_token: string;
+}
+
+export interface WorkerEarningsSummaryResponse {
+  period: {
+    from_date: string;
+    to_date: string;
+    day_count: number;
+  };
+  total_earnings: string;
+  daily: Array<{
+    date: string;
+    earnings: string;
+  }>;
+  details: Array<{
+    completed_at: string;
+    ticketNo: string;
+    license_plate: string;
+    booth_count: number;
+    marketCode: string;
+    marketName: string;
+    boothCode: string;
+    boothName: string | null;
+    earnings: string;
+  }>;
 }
 
 // Type response รายละเอียดงานรถพร้อมตลาด แผง และสินค้า

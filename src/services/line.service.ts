@@ -7,8 +7,8 @@ import { returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
 import { removeVendorConfirmationTimeout } from "../queues/worker-queue";
 import * as lineRepository from "../repositories/line.repository";
 import * as workerApplicationRepository from "../repositories/worker.repository";
-import { publishRealtimeEvent } from "../utils/realtime-event";
-import { applyVendorTicketCompletionResult } from "../utils/ticket-completion-flow";
+import { publishRealtimeEvent } from "./notifications.service";
+import { applyVendorTicketCompletionResult } from "./shared/ticket-completion.service";
 import { TICKET_STATUS } from "../constants/job-status";
 // Import Types
 import type { LineMessage, LineWebhookEvent, VendorTicketAction, VendorTicketActionTokenPayload } from "../types/line.type";

@@ -3058,16 +3058,58 @@
           items:
             $ref: "#/components/schemas/WorkerAssignmentEarningProduct"
 
-    WorkerAssignmentEarnings:
+    WorkerAssignmentHistoryProduct:
       type: object
       properties:
-        total_amount:
+        productCode:
           type: string
-          example: "12.00"
+          example: "02020300"
+        productName:
+          type: string
+          example: Product A
+        packageCode:
+          type: string
+          example: "29"
+        packageName:
+          type: string
+          example: Box
+        confirmed_quantity:
+          type: string
+          nullable: true
+          example: "10.00"
+    WorkerAssignmentHistoryBooth:
+      type: object
+      properties:
+        boothCode:
+          type: string
+          example: LX01
+        boothName:
+          type: string
+          nullable: true
+          example: Booth A
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentHistoryProduct"
+        rating:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          example: 5
+    WorkerAssignmentHistoryMarket:
+      type: object
+      properties:
+        marketCode:
+          type: string
+          example: "1110"
+        marketName:
+          type: string
+          example: Market A
         booths:
           type: array
           items:
-            $ref: "#/components/schemas/WorkerAssignmentEarningBooth"
+            $ref: "#/components/schemas/WorkerAssignmentHistoryBooth"
 
     WorkerAssignmentHistoryItem:
       type: object
@@ -3075,52 +3117,16 @@
         ticketNo:
           type: string
           example: TKT-20260723-000125
-        gate_transaction_ref:
-          type: string
-          example: GATE-REQ-001
         license_plate:
           type: string
           example: ABC-1234
         status:
           type: string
           example: COMPLETED
-        accept_deadline_at:
-          type: string
-          format: date-time
-          nullable: true
-          description: Deadline for accepting the assignment.
-        scan_deadline_at:
-          type: string
-          format: date-time
-          nullable: true
-          description: Deadline for QR check-in after the worker accepted the assignment.
-        accepted_at:
-          type: string
-          format: date-time
-          nullable: true
-        scanned_at:
-          type: string
-          format: date-time
-          nullable: true
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        timeout_reason:
-          type: string
-          nullable: true
-          enum:
-            - accept_timeout
-            - scan_timeout
-          description: Present when status is TIMEOUT. accept_timeout means the worker did not accept in time; scan_timeout means the worker accepted but did not scan QR in time.
-        earnings:
-          $ref: "#/components/schemas/WorkerAssignmentEarnings"
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentHistoryMarket"
     WorkerAssignmentHistoryResponse:
       type: object
       properties:
@@ -3128,14 +3134,253 @@
           type: string
           format: date
           example: "2026-08-07"
-        total_earnings:
-          type: string
-          example: "12.00"
-          description: Total persisted worker earnings for all assignments in the selected date.
+        summary:
+          type: object
+          properties:
+            job_count:
+              type: integer
+              example: 5
+            accept_timeout_job_count:
+              type: integer
+              example: 1
+            completed_job_count:
+              type: integer
+              example: 3
         data:
           type: array
           items:
             $ref: "#/components/schemas/WorkerAssignmentHistoryItem"
+    WorkerCurrentJobProduct:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        productName:
+          type: string
+          example: Product A
+        packageCode:
+          type: string
+          example: "29"
+        packageName:
+          type: string
+          example: Box
+        quantity:
+          type: string
+          description: Gate operational quantity, not ConfirmedQuantity.
+          example: "180.00"
+    WorkerCurrentJobBooth:
+      type: object
+      properties:
+        boothCode:
+          type: string
+          example: LX01
+        boothName:
+          type: string
+          nullable: true
+          example: Booth A
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerCurrentJobProduct"
+    WorkerCurrentJobMarket:
+      type: object
+      properties:
+        marketCode:
+          type: string
+          example: "1110"
+        marketName:
+          type: string
+          example: Market A
+        booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerCurrentJobBooth"
+    WorkerCurrentJobTeamMember:
+      type: object
+      properties:
+        shirt_number:
+          type: string
+          nullable: true
+          example: "001"
+        full_name:
+          type: string
+          example: Worker A
+        scan_status:
+          type: string
+          enum:
+            - scanned
+            - not_scanned
+          example: scanned
+        scanned_at:
+          type: string
+          format: date-time
+          nullable: true
+    WorkerCurrentJob:
+      type: object
+      properties:
+        ticketNo:
+          type: string
+          example: TKT-20260810-001
+        license_plate:
+          type: string
+          example: ABC-1234
+        vehicle_type:
+          type: string
+          nullable: true
+          example: Truck
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerCurrentJobMarket"
+        team:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerCurrentJobTeamMember"
+    WorkerEarningsSummaryResponse:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            from_date:
+              type: string
+              example: 27/07/2026
+            to_date:
+              type: string
+              example: 10/08/2026
+            day_count:
+              type: integer
+              example: 15
+        total_earnings:
+          type: string
+          example: "4850.00"
+        daily:
+          type: array
+          description: Always 15 records, oldest to latest, with zero-filled days.
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                example: 27/07/2026
+              earnings:
+                type: string
+                example: "250.00"
+        details:
+          type: array
+          description: One record per Worker x Booth finalized earning, newest CompletedAt first.
+          items:
+            type: object
+            properties:
+              completed_at:
+                type: string
+                example: 10/08/2026 18:42:15
+              ticketNo:
+                type: string
+                example: TKT-20260810-001
+              license_plate:
+                type: string
+                example: ABC-1234
+              booth_count:
+                type: integer
+                example: 2
+              marketCode:
+                type: string
+                example: "1110"
+              marketName:
+                type: string
+                example: Market A
+              boothCode:
+                type: string
+                example: LX01
+              boothName:
+                type: string
+                nullable: true
+                example: Booth A
+              earnings:
+                type: string
+                description: Persisted TicketWorker.finalEarningAmount.
+                example: "150.00"
+    AdminAuditWorkerPerformancePeriod:
+      type: object
+      properties:
+        date_from:
+          type: string
+          format: date
+          example: "2026-08-11"
+        date_to:
+          type: string
+          format: date
+          example: "2026-08-11"
+        timezone:
+          type: string
+          example: Asia/Bangkok
+    AdminAuditWorkerPerformancePagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: Number of workers matching the selected period/filter after aggregation.
+          example: 2
+        total_pages:
+          type: integer
+          example: 1
+    AdminAuditWorkerPerformanceItem:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          example: "001"
+        full_name:
+          type: string
+          example: Worker A
+        total_assigned_job_count:
+          type: integer
+          description: Count of assignments created for the worker in the selected Bangkok business-date period.
+          example: 12
+        accepted_job_count:
+          type: integer
+          description: Count of assignments accepted by the worker. Later scan timeout, completion, or admin cancel still count as accepted.
+          example: 10
+        accept_timeout_job_count:
+          type: integer
+          description: Count of assignments where the worker missed the accept deadline.
+          example: 2
+        scan_timeout_job_count:
+          type: integer
+          description: Count of accepted assignments where the worker missed the QR scan deadline.
+          example: 1
+        completed_job_count:
+          type: integer
+          description: Count of assignments that ended as COMPLETED.
+          example: 8
+        admin_cancelled_job_count:
+          type: integer
+          description: Count of assignments cancelled by Admin operations.
+          example: 1
+        accept_rate:
+          type: string
+          nullable: true
+          description: AcceptedJobCount / (AcceptedJobCount + AcceptTimeoutJobCount) * 100. Null when there is no decided accept opportunity.
+          example: "83.33"
+    AdminAuditWorkerPerformanceResponse:
+      type: object
+      properties:
+        period:
+          $ref: "#/components/schemas/AdminAuditWorkerPerformancePeriod"
+        pagination:
+          $ref: "#/components/schemas/AdminAuditWorkerPerformancePagination"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAuditWorkerPerformanceItem"
     WorkerStatusResponse:
       type: object
       properties:
@@ -3187,6 +3432,11 @@
           example: 081-234-5678
         shift:
           $ref: "#/components/schemas/ProfileCardShift"
+        current_job:
+          allOf:
+            - $ref: "#/components/schemas/WorkerCurrentJob"
+          nullable: true
+          description: Present for assigned and working statuses. Not included for open_app, ready, or break.
         break_until:
           type: string
           format: date-time

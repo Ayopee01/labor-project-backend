@@ -8,6 +8,7 @@ import {
   pascalCaseApiResponse,
 } from "./middlewares/api-case.middleware";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware";
+import adminAuditRoutes from "./routes/admin-audit.routes";
 import adminJobRoutes from "./routes/admin-jobs.routes";
 import adminSettingsRoutes from "./routes/admin-settings.routes";
 import adminWorkersRoutes from "./routes/admin-workers.routes";
@@ -42,6 +43,7 @@ app.use("/uploads", express.static("uploads"));
 app.use("/", systemRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/admin/users", adminWorkersRoutes);
+app.use("/api/admin", adminAuditRoutes);
 app.use("/api/admin", adminSettingsRoutes);
 app.use("/api/admin", adminJobRoutes);
 app.use("/api/gate", gateRoutes);

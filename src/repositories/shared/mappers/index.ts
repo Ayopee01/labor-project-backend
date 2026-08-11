@@ -272,6 +272,7 @@ export function mapTicketWorker(record: TicketWorker | null): TicketWorkerDto | 
     ticket_id: record.ticketId,
     worker_account_id: record.workerAccountId,
     status: record.status,
+    final_earning_amount: record.finalEarningAmount?.toFixed(2) ?? null,
     joined_at: toIsoString(record.joinedAt),
     cancelled_at: record.cancelledAt
       ? toIsoString(record.cancelledAt)

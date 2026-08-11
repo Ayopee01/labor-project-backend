@@ -2,6 +2,7 @@
 import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import * as workScheduleRepository from "./shared/work-schedule.repository";
+import * as adminAuditRepository from "./admin-audit.repository";
 import { Prisma } from "@prisma/client";
 import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS, WORKING_ASSIGNMENT_STATUSES, TICKET_WORKER_STATUS } from "../constants/job-status";
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct, mapTicketWorker, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
@@ -12,8 +13,10 @@ export { listTicketWorkers } from "./shared/ticket-worker.repository";
 
 // Import Types
 import type { WorkerShiftAttendance } from "@prisma/client";
+import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/admin-audit.type";
 import type { DbConnection } from "../types/shared/common.type";
-import type { CompletedVehicleJobResult, CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VendorLineTargetDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentEarningsDto, WorkerAssignmentTeamMemberDto, WorkerShiftAttendanceKeyInput, WorkerShiftAttendanceWriteInput, WorkerShiftCloseReason } from "../types/worker.type";
+import type { WorkerAssignmentEventType } from "../types/admin-audit.type";
+import type { CompletedVehicleJobResult, CurrentTicketProgressDto, GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, TicketWorkerDto, VendorLineTargetDto, VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentHistoryItemDto, WorkerAssignmentTeamMemberDto, WorkerEarningsSummaryResponse, WorkerShiftAttendanceKeyInput, WorkerShiftAttendanceWriteInput, WorkerShiftCloseReason } from "../types/worker.type";
 
 // Function สร้าง shift snapshot จาก DB
 function buildShiftSnapshot(input: WorkerShiftAttendanceWriteInput) {
@@ -428,8 +431,10 @@ export async function listVehicleJobAssignmentTeam(
     return {
       full_name: assignment.worker.fullName,
       worker_code: assignment.worker.username,
+      shirt_number: assignment.worker.shirtNumber ?? null,
       image_url: assignment.worker.imageUrl ?? null,
       scan_status: buildAssignmentScanStatus(assignmentDto),
+      scanned_at: assignmentDto.scanned_at,
     };
   });
 }
@@ -455,92 +460,32 @@ export async function listWorkerAssignmentHistoryByDate(
       createdAt: "desc",
     },
     include: {
-      vehicleJob: true,
-    },
-  });
-
-  if (assignments.length === 0) {
-    return [];
-  }
-
-  const vehicleJobIds = [
-    ...new Set(assignments.map((assignment) => assignment.vehicleJobId)),
-  ];
-
-  const ticketWorkers = await db.ticketWorker.findMany({
-    where: {
-      workerAccountId,
-      ticket: {
-        vehicleJobId: {
-          in: vehicleJobIds,
-        },
-      },
-    },
-    orderBy: {
-      id: "asc",
-    },
-    include: {
-      ticket: true,
-      payments: {
-        orderBy: {
-          id: "asc",
-        },
+      vehicleJob: {
         include: {
-          productFinancial: {
+          marketJobs: {
+            orderBy: {
+              id: "asc",
+            },
             include: {
-              product: true,
+              tickets: {
+                orderBy: {
+                  id: "asc",
+                },
+                include: {
+                  products: {
+                    orderBy: {
+                      id: "asc",
+                    },
+                  },
+                  rating: true,
+                },
+              },
             },
           },
         },
       },
     },
   });
-
-  const earningsByVehicleJobId = new Map<number, WorkerAssignmentEarningsDto>();
-
-  for (const vehicleJobId of vehicleJobIds) {
-    const vehicleTicketWorkers = ticketWorkers.filter(
-      (ticketWorker) => ticketWorker.ticket.vehicleJobId === vehicleJobId
-    );
-
-    let totalAmount = new Prisma.Decimal(0);
-
-    const booths = vehicleTicketWorkers.map((ticketWorker) => {
-      let boothAmount = new Prisma.Decimal(0);
-
-      const products = ticketWorker.payments.map((payment) => {
-        boothAmount = boothAmount.plus(payment.finalAmount);
-
-        const financial = payment.productFinancial;
-        const product = financial.product;
-
-        return {
-          productCode: product.productCode,
-          packageCode: product.packageCode,
-          productName: product.productName,
-          packageName: product.packageName,
-          confirmed_quantity: financial.confirmedQuantity.toFixed(2),
-          final_amount: payment.finalAmount.toFixed(2),
-        };
-      });
-
-      totalAmount = totalAmount.plus(boothAmount);
-
-      return {
-        ticket_id: ticketWorker.ticket.id,
-        boothCode: ticketWorker.ticket.boothCode,
-        boothName: ticketWorker.ticket.boothName,
-        membership_status: ticketWorker.status,
-        amount: boothAmount.toFixed(2),
-        products,
-      };
-    });
-
-    earningsByVehicleJobId.set(vehicleJobId, {
-      total_amount: totalAmount.toFixed(2),
-      booths,
-    });
-  }
 
   return assignments.map((assignment) => ({
     assignment: requireDto(
@@ -551,10 +496,78 @@ export async function listWorkerAssignmentHistoryByDate(
       mapVehicleJob(assignment.vehicleJob),
       "vehicle job"
     ),
-    earnings: earningsByVehicleJobId.get(assignment.vehicleJobId) ?? {
-      total_amount: "0.00",
-      booths: [],
+    markets: assignment.vehicleJob.marketJobs.map((market) => ({
+      marketCode: market.marketCode,
+      marketName: market.marketName,
+      booths: market.tickets.map((ticket) => ({
+        boothCode: ticket.boothCode,
+        boothName: ticket.boothName,
+        products: ticket.products.map((product) => ({
+          productCode: product.productCode,
+          productName: product.productName,
+          packageCode: product.packageCode,
+          packageName: product.packageName,
+          confirmed_quantity: product.confirmedQuantity?.toFixed(2) ?? null,
+        })),
+        rating: ticket.rating?.score ?? null,
+      })),
+    })),
+  }));
+}
+
+export async function listWorkerEarningsSummaryRows(
+  workerAccountId: number,
+  startAt: Date,
+  endAt: Date,
+  connection?: DbConnection
+): Promise<WorkerEarningsSummaryResponse["details"]> {
+  const db = client(connection);
+  const rows = await db.ticketWorker.findMany({
+    where: {
+      workerAccountId,
+      finalEarningAmount: {
+        not: null,
+      },
+      ticket: {
+        completedAt: {
+          gte: startAt,
+          lt: endAt,
+        },
+        financializedAt: {
+          not: null,
+        },
+      },
     },
+    orderBy: [
+      {
+        ticket: {
+          completedAt: "desc",
+        },
+      },
+      {
+        id: "asc",
+      },
+    ],
+    include: {
+      ticket: {
+        include: {
+          vehicleJob: true,
+          marketJob: true,
+        },
+      },
+    },
+  });
+
+  return rows.map((row) => ({
+    completed_at: row.ticket.completedAt?.toISOString() ?? "",
+    ticketNo: row.ticket.vehicleJob.ticketNo,
+    license_plate: row.ticket.vehicleJob.licensePlate,
+    booth_count: row.ticket.vehicleJob.boothCount,
+    marketCode: row.ticket.marketJob.marketCode,
+    marketName: row.ticket.marketJob.marketName,
+    boothCode: row.ticket.boothCode,
+    boothName: row.ticket.boothName,
+    earnings: row.finalEarningAmount?.toFixed(2) ?? "0.00",
   }));
 }
 
@@ -607,16 +620,27 @@ export async function acceptAssignment(
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto> {
   const db = client(connection);
+  const acceptedAt = new Date();
   const assignment = await db.vehicleJobAssignment.update({
     where: {
       id: assignmentId,
     },
     data: {
       status: ASSIGNMENT_STATUS.ACCEPTED,
-      acceptedAt: new Date(),
+      acceptedAt,
       scanDeadlineAt,
     },
   });
+  await adminAuditRepository.createWorkerAssignmentEventOnce(
+    {
+      assignment_id: assignment.id,
+      worker_account_id: assignment.workerAccountId,
+      vehicle_job_id: assignment.vehicleJobId,
+      event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ACCEPTED,
+      occurred_at: acceptedAt,
+    },
+    connection
+  );
 
   return requireDto(mapVehicleJobAssignment(assignment), "assignment accept");
 }
@@ -672,9 +696,14 @@ export async function updateAssignmentScanDeadline(
 // Function จัดการ timeout assignment จาก DB
 export async function timeoutAssignment(
   assignmentId: number,
+  eventType: Extract<
+    WorkerAssignmentEventType,
+    "ACCEPT_TIMEOUT" | "SCAN_TIMEOUT"
+  >,
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto> {
   const db = client(connection);
+  const occurredAt = new Date();
   const assignment = await db.vehicleJobAssignment.update({
     where: {
       id: assignmentId,
@@ -683,6 +712,16 @@ export async function timeoutAssignment(
       status: ASSIGNMENT_STATUS.TIMEOUT,
     },
   });
+  await adminAuditRepository.createWorkerAssignmentEventOnce(
+    {
+      assignment_id: assignment.id,
+      worker_account_id: assignment.workerAccountId,
+      vehicle_job_id: assignment.vehicleJobId,
+      event_type: eventType,
+      occurred_at: occurredAt,
+    },
+    connection
+  );
 
   return requireDto(mapVehicleJobAssignment(assignment), "assignment timeout");
 }
@@ -693,15 +732,26 @@ export async function scanAssignment(
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto> {
   const db = client(connection);
+  const scannedAt = new Date();
   const assignment = await db.vehicleJobAssignment.update({
     where: {
       id: assignmentId,
     },
     data: {
       status: ASSIGNMENT_STATUS.SCANNED,
-      scannedAt: new Date(),
+      scannedAt,
     },
   });
+  await adminAuditRepository.createWorkerAssignmentEventOnce(
+    {
+      assignment_id: assignment.id,
+      worker_account_id: assignment.workerAccountId,
+      vehicle_job_id: assignment.vehicleJobId,
+      event_type: WORKER_ASSIGNMENT_EVENT_TYPE.SCANNED,
+      occurred_at: scannedAt,
+    },
+    connection
+  );
 
   return requireDto(mapVehicleJobAssignment(assignment), "assignment scan");
 }
@@ -945,6 +995,7 @@ export async function syncTicketWorkersFromVehicleAssignments(
         status: TICKET_WORKER_STATUS.WORKING,
         cancelledAt: null,
         completedAt: null,
+        finalEarningAmount: null,
       },
     });
   }
@@ -967,6 +1018,7 @@ export async function syncTicketWorkersFromVehicleAssignments(
       status: TICKET_WORKER_STATUS.CANCELLED,
       cancelledAt: now,
       completedAt: null,
+      finalEarningAmount: null,
     },
   });
 
@@ -1280,6 +1332,24 @@ export async function createTicketProductFinancial(
 }
 
 // Functionปิด Financialization ของ Ticket
+export async function updateTicketWorkerFinalEarningAmounts(
+  amountsByTicketWorkerId: Map<number, Prisma.Decimal>,
+  connection?: DbConnection
+): Promise<void> {
+  const db = client(connection);
+
+  for (const [ticketWorkerId, finalEarningAmount] of amountsByTicketWorkerId) {
+    await db.ticketWorker.update({
+      where: {
+        id: ticketWorkerId,
+      },
+      data: {
+        finalEarningAmount,
+      },
+    });
+  }
+}
+
 export async function markGateTicketFinancialized(
   ticketId: number,
   finalStallAmount: Prisma.Decimal,
@@ -1416,6 +1486,8 @@ export async function closeCompletedVehicleJobIfReady(
   );
 
   if (completedAssignmentIds.length > 0) {
+    const completedAt = new Date();
+
     await db.vehicleJobAssignment.updateMany({
       where: {
         id: {
@@ -1424,9 +1496,19 @@ export async function closeCompletedVehicleJobIfReady(
       },
       data: {
         status: ASSIGNMENT_STATUS.COMPLETED,
-        completedAt: new Date(),
+        completedAt,
       },
     });
+    await adminAuditRepository.createWorkerAssignmentEventsOnce(
+      activeAssignments.map((assignment) => ({
+        assignment_id: assignment.id,
+        worker_account_id: assignment.workerAccountId,
+        vehicle_job_id: assignment.vehicleJobId,
+        event_type: WORKER_ASSIGNMENT_EVENT_TYPE.COMPLETED,
+        occurred_at: completedAt,
+      })),
+      connection
+    );
   }
 
   return {
@@ -1489,4 +1571,3 @@ export async function rejectTicketCompletion(
     ),
   };
 }
-

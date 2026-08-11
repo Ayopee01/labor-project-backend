@@ -226,8 +226,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Admin username/password only.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. Call GET /api/auth/me after login to fetch admin profile data, permissions, and latest activity."
           },
@@ -275,8 +281,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone from worker creation, DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
@@ -324,8 +336,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone, DeviceId, and DeviceName. FcmToken is intentionally omitted in this example.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Use this when Mobile has not received an FCM token from Firebase SDK yet. After login succeeds and Firebase SDK returns the token, call POST /api/auth/push-token with FcmToken and Platform."
           },
@@ -371,8 +389,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login/confirm-force",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login", "confirm-force"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login",
+                "confirm-force"
+              ]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName, optional FcmToken, optional Platform\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken. If FcmToken is sent, backend revokes the old session push token and stores the new token for this WorkerCode. If Mobile does not have an FCM token yet, omit it here and call POST /api/auth/push-token after Firebase SDK returns the token."
           },
@@ -406,8 +431,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/push-token",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "push-token"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "push-token"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -456,8 +487,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/refresh",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "refresh"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/refresh\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: RefreshToken\nNotes: Returns a new AccessToken and RefreshToken."
           },
@@ -477,8 +514,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/logout",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "logout"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -501,8 +544,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "me"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -539,8 +588,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/me/password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "me", "password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me",
+                "password"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -621,8 +677,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/users",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "users"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -645,8 +707,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "users"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -688,8 +756,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{workerCode}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "users", "{{workerCode}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{workerCode}}"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -727,8 +802,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{workerCode}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "users", "{{workerCode}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{workerCode}}"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -766,8 +848,16 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{workerCode}}/password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "users", "{{workerCode}}", "password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{workerCode}}",
+                "password"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -794,8 +884,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/jobs/workers/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "jobs", "workers", "status"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "jobs",
+                "workers",
+                "status"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -831,7 +929,9 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/jobs/workers/{{workerCode}}/status/force",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "admin",
@@ -876,8 +976,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/jobs/cancel",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "jobs", "cancel"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "jobs",
+                "cancel"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -917,8 +1024,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/operations?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&operation_status=",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "vehicle-jobs", "operations"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "operations"
+              ],
               "query": [
                 {
                   "key": "date_from",
@@ -990,8 +1104,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/history?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&status=",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "vehicle-jobs", "history"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "history"
+              ],
               "query": [
                 {
                   "key": "date_from",
@@ -1043,7 +1164,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/financials",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "admin",
@@ -1098,7 +1221,9 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/assign-workers",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "admin",
@@ -1141,7 +1266,9 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/scan-deadline/extend",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "admin",
@@ -1185,7 +1312,9 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/workers/{{workerCode}}/assignment/cancel",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "admin",
@@ -1207,6 +1336,153 @@
       ]
     },
     {
+      "name": "Admin Audit",
+      "item": [
+        {
+          "name": "Worker Performance - Today",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "description": "Admin Audit worker performance for today using Asia/Bangkok business date.",
+            "url": {
+              "raw": "{{base_url}}/api/admin/audit/workers/performance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "audit",
+                "workers",
+                "performance"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Worker Performance - Worker Today",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "description": "Admin Audit worker performance for one worker today.",
+            "url": {
+              "raw": "{{base_url}}/api/admin/audit/workers/performance?worker_code=001",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "audit",
+                "workers",
+                "performance"
+              ],
+              "query": [
+                {
+                  "key": "worker_code",
+                  "value": "001"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Worker Performance - Date Range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "description": "Admin Audit worker performance for a Bangkok date range.",
+            "url": {
+              "raw": "{{base_url}}/api/admin/audit/workers/performance?date_from=2026-08-01&date_to=2026-08-31",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "audit",
+                "workers",
+                "performance"
+              ],
+              "query": [
+                {
+                  "key": "date_from",
+                  "value": "2026-08-01"
+                },
+                {
+                  "key": "date_to",
+                  "value": "2026-08-31"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Worker Performance - Worker Date Range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "description": "Admin Audit worker performance for one worker in a Bangkok date range.",
+            "url": {
+              "raw": "{{base_url}}/api/admin/audit/workers/performance?worker_code=001&date_from=2026-08-01&date_to=2026-08-31",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "audit",
+                "workers",
+                "performance"
+              ],
+              "query": [
+                {
+                  "key": "worker_code",
+                  "value": "001"
+                },
+                {
+                  "key": "date_from",
+                  "value": "2026-08-01"
+                },
+                {
+                  "key": "date_to",
+                  "value": "2026-08-31"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Admin Settings",
       "item": [
         {
@@ -1222,8 +1498,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/settings",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "settings"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "settings"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1259,8 +1541,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/settings",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "settings"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "settings"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1282,8 +1570,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/roles",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "roles"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "roles"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1305,8 +1599,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/gate-clients",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "gate-clients"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "gate-clients"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1355,8 +1655,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/gate-clients",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "gate-clients"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "gate-clients"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1392,8 +1698,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/gate-clients/{{gateClientId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "gate-clients", "{{gateClientId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "gate-clients",
+                "{{gateClientId}}"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1427,7 +1740,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/gate-clients/{{gateClientId}}/secret/rotate",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "admin",
@@ -1483,8 +1798,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/admins",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "admins"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "admins"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1506,7 +1827,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{adminUserId}}/permissions",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "admin",
@@ -1549,7 +1872,9 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/users/{{adminUserId}}/permissions",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "admin",
@@ -1630,8 +1955,14 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/gate/options",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "gate", "options"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "gate",
+                "options"
+              ]
             },
             "auth": {
               "type": "basic",
@@ -1712,8 +2043,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/gate/tickets",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "gate", "tickets"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "gate",
+                "tickets"
+              ]
             },
             "auth": {
               "type": "basic",
@@ -1774,8 +2111,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/driver/qr-sessions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "driver", "qr-sessions"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "driver",
+                "qr-sessions"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1797,8 +2140,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/driver/jobs/current",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "driver", "jobs", "current"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "driver",
+                "jobs",
+                "current"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1820,8 +2170,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/driver/jobs/{{ticketNo}}/ready",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "driver", "jobs", "{{ticketNo}}", "ready"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "driver",
+                "jobs",
+                "{{ticketNo}}",
+                "ready"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1849,8 +2207,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/online",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "workers", "me", "online"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "online"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1872,8 +2237,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/offline",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "workers", "me", "offline"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "offline"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1895,8 +2267,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/break",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "workers", "me", "break"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "break"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -1918,15 +2297,23 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "workers", "me", "status"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "status"
+              ]
             },
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, working, break. When Status is break, response also includes BreakUntil and RemainingBreakTime with TotalSeconds, Minutes, Seconds, and Text."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, working, break. When Status is break, response includes BreakUntil and RemainingBreakTime. When Status is assigned or working, response includes CurrentJob with TicketNo, LicensePlate, VehicleType, Markets[].Booths[].Products[] using Gate Quantity, and Team[].ShirtNumber/FullName/ScanStatus/ScannedAt."
           },
-          "response": []
+          "response": [],
+          "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, working, break. When Status is break, response includes BreakUntil and RemainingBreakTime. When Status is assigned or working, response includes CurrentJob with TicketNo, LicensePlate, VehicleType, Markets[].Booths[].Products[] using Gate Quantity, and Team[].ShirtNumber/FullName/ScanStatus/ScannedAt."
         },
         {
           "name": "GET /api/workers/me/assignments/history",
@@ -1941,8 +2328,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "workers", "me", "assignments", "history"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "assignments",
+                "history"
+              ],
               "query": [
                 {
                   "key": "date",
@@ -1954,9 +2349,10 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nAuth: Worker access token\nQuery: date required, YYYY-MM-DD\nBody: None\nResponse: Date, TotalEarnings, and Data[]. Each assignment includes audit fields plus Earnings.TotalAmount and Earnings.Booths[].Products[].FinalAmount when persisted TicketWorkerPayment records exist.\nEarnings source: TicketWorkerPayment.FinalAmount only. It does not use Gate Quantity, current MasterRate, FinalStallAmount, or required worker count. Cancelled booth membership may appear with zero earnings. TIMEOUT assignments have zero earnings.\nNotes: The date is interpreted in Asia/Bangkok time and filters by assignment CreatedAt."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nAuth: Worker access token\nQuery: date required, YYYY-MM-DD\nBody: None\nResponse: Date, Summary.JobCount, Summary.AcceptTimeoutJobCount, Summary.CompletedJobCount, and Data[]. Each assignment includes TicketNo, LicensePlate, Status, Markets[].Booths[].Products[].ConfirmedQuantity, and Rating as a single integer 1-5 or null. No earnings, TotalEarnings, booth amount, product FinalAmount, or worker payment breakdown are returned. The date is interpreted in Asia/Bangkok time and filters by assignment CreatedAt."
           },
-          "response": []
+          "response": [],
+          "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nAuth: Worker access token\nQuery: date required, YYYY-MM-DD\nBody: None\nResponse: Date, Summary.JobCount, Summary.AcceptTimeoutJobCount, Summary.CompletedJobCount, and Data[]. Each assignment includes TicketNo, LicensePlate, Status, Markets[].Booths[].Products[].ConfirmedQuantity, and Rating as a single integer 1-5 or null. No earnings, TotalEarnings, booth amount, product FinalAmount, or worker payment breakdown are returned. The date is interpreted in Asia/Bangkok time and filters by assignment CreatedAt."
         },
         {
           "name": "POST /api/workers/me/assignments/:ticketNo/accept",
@@ -1987,7 +2383,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/accept",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "workers",
@@ -2031,7 +2429,9 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/check-in-qr",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "workers",
@@ -2087,7 +2487,9 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/tickets/{{boothCode}}/complete",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "workers",
@@ -2105,6 +2507,35 @@
             "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/tickets/{{boothCode}}/complete\nAuth: Worker access token\nBody: Items required. Send every ProductCode + PackageCode in the ticket with ConfirmedQuantity counted by the worker.\nFinancial boundary: This request only records confirmed actual quantities and starts vendor confirmation. It must not create final financial records before vendor confirm or timeout auto-confirm.\nNotes: {{ticketNo}} is the TicketNo from the accepted/check-in assignment and {{boothCode}} is the BoothCode from that accepted job payload. Backend resolves each product by ProductCode + PackageCode. The response does not expose LINE postback tokens. Vendor confirm completes financialization; vendor reject returns the ticket to REJECT for resubmission."
           },
           "response": []
+        },
+        {
+          "name": "GET /api/workers/me/earnings/summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/earnings/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "earnings",
+                "summary"
+              ]
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/earnings/summary\nAuth: Worker access token\nQuery: None\nBody: None\nResponse: Period.FromDate/ToDate/DayCount, TotalEarnings, Daily[15], and Details. Backend returns latest 15 completed Bangkok calendar days and excludes the current day. Details.Earnings is read from persisted TicketWorker.FinalEarningAmount."
+          },
+          "response": [],
+          "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/earnings/summary\nAuth: Worker access token\nQuery: None\nBody: None\nResponse: Period.FromDate/ToDate/DayCount, TotalEarnings, Daily[15], and Details. Backend returns latest 15 completed Bangkok calendar days and excludes the current day. Details.Earnings is read from persisted TicketWorker.FinalEarningAmount."
         }
       ]
     },
@@ -2129,8 +2560,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/events",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "events"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "events"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -2166,8 +2603,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/line/webhook",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "line", "webhook"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "webhook"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -2198,8 +2641,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/line/webhook",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "line", "webhook"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "webhook"
+              ]
             },
             "auth": {
               "type": "noauth"
@@ -2230,8 +2679,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/line/webhook",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "line", "webhook"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "webhook"
+              ]
             },
             "auth": {
               "type": "noauth"

@@ -9,35 +9,33 @@ import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/wo
 import * as lineRepository from "../repositories/line.repository";
 import * as workerApplicationRepository from "../repositories/worker.repository";
 import { accountRepository, workScheduleRepository } from "../repositories/worker.repository";
-import { publishNotification } from "./notifications.service";
-import { publishRealtimeEvent } from "../utils/realtime-event";
+import { publishNotification, publishRealtimeEvent, resolveTicketResultAudience } from "./notifications.service";
 import { getRuntimeSettings } from "./admin-settings.service";
 import { publishAdminWorkerStatusChanged } from "./notifications.service";
-import { buildTicketResultAudience } from "../utils/ticket-audience";
 import {
-  buildRemainingBreakTime,
   buildWorkerDailySummary,
   closeWorkerAttendanceShift,
   markWorkerAttendanceOnline,
   scheduleWorkerShiftEndIfNeeded,
-} from "../utils/worker-attendance";
+} from "./shared/worker-attendance.service";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { LineMessage } from "../types/line.type";
-import type { TicketProductConfirmationInput, GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
+import type { TicketProductConfirmationInput, GateTicketDto, TicketCompletionResponse, TicketCompletionSubmissionDto, TicketProductDto, VehicleJobAssignmentDto, VehicleJobDetailResponse, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
+import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/admin-audit.type";
 import type { DbConnection } from "../types/shared/common.type";
 import { ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS } from "../constants/job-status";
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
-import { workerAssignmentHistoryQuerySchema, workerScanBodySchema, workerTicketCompleteBodySchema } from "../validation/schemas";
+import { workerAssignmentHistoryQuerySchema, workerEarningsSummaryQuerySchema, workerScanBodySchema, workerTicketCompleteBodySchema } from "../validation/schemas";
 // Import Utils
 import ApiError from "../utils/api-error";
 import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
-import { buildBangkokDateRange, buildDeadline, getDelayUntil } from "../utils/time";
+import { buildBangkokDateRange, buildDeadline, buildLatestCompletedBangkokDateRange, buildRemainingBreakTime, formatBangkokDate, formatBangkokDisplayDate, formatBangkokDisplayDateTime, getDelayUntil } from "../utils/time";
 import { buildVendorCompletionReviewFlexMessage } from "../utils/line-flex-message";
 import { buildWorkerTicketPayload } from "../utils/ticket-payload";
-import { buildWorkerQueueSocketPayload } from "../utils/worker-queue-payload";
+import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 import { resolveWorkerWorkStatus } from "../utils/worker-status";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -71,7 +69,12 @@ function buildWorkerAssignmentAcceptResponse(
 ): WorkerAssignmentAcceptResponse {
   return {
     license_plate: detail.vehicle_job.license_plate,
-    team,
+    team: team.map((member) => ({
+      full_name: member.full_name,
+      worker_code: member.worker_code,
+      image_url: member.image_url,
+      scan_status: member.scan_status,
+    })),
     markets: detail.markets.map((market) => ({
       marketName: market.marketName,
       stall_count: market.tickets.length,
@@ -94,27 +97,48 @@ function buildWorkerAssignmentAcceptResponse(
 function buildWorkerAssignmentHistoryItemResponse(
   item: WorkerAssignmentHistoryItemDto
 ): WorkerAssignmentHistoryItemResponse {
-  const timeoutReason = item.assignment.status !== ASSIGNMENT_STATUS.TIMEOUT
-    ? null
-    : item.assignment.accepted_at
-      ? "scan_timeout"
-      : "accept_timeout";
-
   return {
     ticketNo: item.vehicle_job.ticketNo,
-    gate_transaction_ref: item.vehicle_job.gate_transaction_ref,
     license_plate: item.vehicle_job.license_plate,
     status: item.assignment.status,
-    accept_deadline_at: item.assignment.accept_deadline_at,
-    scan_deadline_at: item.assignment.scan_deadline_at,
-    accepted_at: item.assignment.accepted_at,
-    scanned_at: item.assignment.scanned_at,
-    completed_at: item.assignment.completed_at,
-    timeout_reason: timeoutReason,
-    earnings: item.earnings,
-    created_at: item.assignment.created_at,
-    updated_at: item.assignment.updated_at,
+    markets: item.markets,
   };
+}
+
+function buildWorkerCurrentJobResponse(
+  detail: VehicleJobDetailResponse,
+  team: WorkerAssignmentTeamMemberDto[]
+): WorkerCurrentJobResponse {
+  return {
+    ticketNo: detail.vehicle_job.ticketNo,
+    license_plate: detail.vehicle_job.license_plate,
+    vehicle_type: detail.vehicle_job.vehicle_type,
+    markets: detail.markets.map((market) => ({
+      marketCode: market.marketCode,
+      marketName: market.marketName,
+      booths: market.tickets.map((ticket) => ({
+        boothCode: ticket.boothCode,
+        boothName: ticket.boothName,
+        products: ticket.products.map((product) => ({
+          productCode: product.productCode,
+          productName: product.productName,
+          packageCode: product.packageCode,
+          packageName: product.packageName,
+          quantity: product.quantity,
+        })),
+      })),
+    })),
+    team: team.map((member) => ({
+      shirt_number: member.shirt_number ?? null,
+      full_name: member.full_name,
+      scan_status: member.scanned_at ? "scanned" : "not_scanned",
+      scanned_at: member.scanned_at ?? null,
+    })),
+  };
+}
+
+function toBangkokDateKey(value: Date | string): string {
+  return formatBangkokDate(value instanceof Date ? value : new Date(value));
 }
 
 // Function สร้าง assignment accepted socket payload ใน service flow
@@ -655,6 +679,23 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
     response.remaining_break_time = remainingBreakTime;
   }
 
+  if (
+    currentAssignment &&
+    (
+      status === WORKER_WORK_STATUS.ASSIGNED ||
+      status === WORKER_WORK_STATUS.WORKING
+    )
+  ) {
+    const [detail, team] = await Promise.all([
+      workerApplicationRepository.getVehicleJobDetail(currentAssignment.vehicle_job_id),
+      workerApplicationRepository.listVehicleJobAssignmentTeam(currentAssignment.vehicle_job_id),
+    ]);
+
+    if (detail) {
+      response.current_job = buildWorkerCurrentJobResponse(detail, team);
+    }
+  }
+
   return response;
 }
 
@@ -662,11 +703,7 @@ export async function getWorkerStatus(auth?: AccessTokenPayload): Promise<Worker
 export async function listWorkerAssignmentHistory(
   query: unknown,
   auth?: AccessTokenPayload
-): Promise<{
-  date: string;
-  total_earnings: string;
-  data: WorkerAssignmentHistoryItemResponse[];
-}> {
+): Promise<WorkerAssignmentHistoryResponse> {
   const account = await requireWorker(auth);
   const input = parseWithSchema(workerAssignmentHistoryQuerySchema, query);
   const { startAt, endAt } = buildBangkokDateRange(input.date);
@@ -677,15 +714,71 @@ export async function listWorkerAssignmentHistory(
     endAt
   );
 
-  const totalEarnings = history.reduce(
-    (total, item) => total.plus(item.earnings.total_amount),
-    new Prisma.Decimal(0)
-  );
-
   return {
     date: input.date,
-    total_earnings: totalEarnings.toFixed(2),
+    summary: {
+      job_count: history.length,
+      accept_timeout_job_count: history.filter(
+        (item) =>
+          item.assignment.status === ASSIGNMENT_STATUS.TIMEOUT &&
+          item.assignment.accepted_at === null
+      ).length,
+      completed_job_count: history.filter(
+        (item) => item.assignment.status === ASSIGNMENT_STATUS.COMPLETED
+      ).length,
+    },
     data: history.map(buildWorkerAssignmentHistoryItemResponse),
+  };
+}
+
+export async function getWorkerEarningsSummary(
+  query: unknown,
+  auth?: AccessTokenPayload
+): Promise<WorkerEarningsSummaryResponse> {
+  const account = await requireWorker(auth);
+  parseWithSchema(workerEarningsSummaryQuerySchema, query);
+
+  const dayCount = 15;
+  const { startAt, endAt, dates } = buildLatestCompletedBangkokDateRange(dayCount);
+  const rows = await workerApplicationRepository.listWorkerEarningsSummaryRows(
+    account.id,
+    startAt,
+    endAt
+  );
+  const dailyEarnings = new Map(
+    dates.map((date) => [date, new Prisma.Decimal(0)])
+  );
+  let totalEarnings = new Prisma.Decimal(0);
+
+  const details = rows.map((row) => {
+    const earnings = new Prisma.Decimal(row.earnings);
+    const dateKey = toBangkokDateKey(row.completed_at);
+
+    totalEarnings = totalEarnings.plus(earnings);
+    dailyEarnings.set(
+      dateKey,
+      (dailyEarnings.get(dateKey) ?? new Prisma.Decimal(0)).plus(earnings)
+    );
+
+    return {
+      ...row,
+      completed_at: formatBangkokDisplayDateTime(row.completed_at),
+      earnings: earnings.toFixed(2),
+    };
+  });
+
+  return {
+    period: {
+      from_date: formatBangkokDisplayDate(startAt),
+      to_date: formatBangkokDisplayDate(new Date(endAt.getTime() - 1)),
+      day_count: dayCount,
+    },
+    total_earnings: totalEarnings.toFixed(2),
+    daily: dates.map((date) => ({
+      date: formatBangkokDisplayDate(new Date(`${date}T00:00:00.000+07:00`)),
+      earnings: (dailyEarnings.get(date) ?? new Prisma.Decimal(0)).toFixed(2),
+    })),
+    details,
   };
 }
 
@@ -852,6 +945,7 @@ export async function scanWorkerAssignment(
       );
       const timedOutAssignment = await workerApplicationRepository.timeoutAssignment(
         assignment.id,
+        WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT,
         transaction
       );
 
@@ -1150,7 +1244,7 @@ async function completeResolvedWorkerTicket(
       ticket.id,
       transaction
     );
-    const receiverAccountIds = await buildTicketResultAudience(
+    const receiverAccountIds = await resolveTicketResultAudience(
       ticket,
       transaction
     );
@@ -1279,4 +1373,3 @@ async function completeResolvedWorkerTicket(
     ...responsePayload,
   };
 }
-
