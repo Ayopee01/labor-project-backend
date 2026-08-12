@@ -373,6 +373,60 @@ test("GET /api/admin/audit/workers/performance supports date range, worker filte
   assert.notEqual(sorted.body.data[0].worker_code, workerNoHistory.username);
 });
 
+test("GET /api/admin/audit/workers/performance keeps total on empty pages beyond the last page", async () => {
+  const { token } = await loginJobAdmin(12401);
+  const date = "2026-08-20";
+  const createdAt = bangkokDateToUtcIso(date, 9);
+
+  for (let index = 0; index < 25; index += 1) {
+    const worker = addWorker(12402 + index, "hash");
+    const vehicleJobId = 124020 + index;
+
+    addDispatchableJob(vehicleJobId, 1);
+    addAuditAssignment({
+      id: 1240200 + index,
+      workerId: worker.id,
+      vehicleJobId,
+      createdAt,
+      status: "COMPLETED",
+      acceptedAt: createdAt,
+      scannedAt: createdAt,
+      completedAt: createdAt,
+      events: ["ACCEPTED", "COMPLETED"],
+    });
+  }
+
+  const pageTwo = await server.request(
+    "GET",
+    `/api/admin/audit/workers/performance?date_from=${date}&date_to=${date}&page=2&limit=20`,
+    { token },
+  );
+
+  assert.equal(pageTwo.status, 200);
+  assert.deepEqual(pageTwo.body.pagination, {
+    page: 2,
+    limit: 20,
+    total: 25,
+    totalPages: 2,
+  });
+  assert.equal(pageTwo.body.data.length, 5);
+
+  const pageThree = await server.request(
+    "GET",
+    `/api/admin/audit/workers/performance?date_from=${date}&date_to=${date}&page=3&limit=20`,
+    { token },
+  );
+
+  assert.equal(pageThree.status, 200);
+  assert.deepEqual(pageThree.body.pagination, {
+    page: 3,
+    limit: 20,
+    total: 25,
+    totalPages: 2,
+  });
+  assert.deepEqual(pageThree.body.data, []);
+});
+
 test("GET /api/admin/audit/workers/performance validates date pairs and sort whitelist", async () => {
   const { token } = await loginJobAdmin(12201);
 
@@ -430,4 +484,3 @@ test("GET /api/admin/audit/workers/performance requires admin jobs:read permissi
 
   assert.equal(forbidden.status, 403);
 });
-

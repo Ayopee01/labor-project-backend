@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 // Import Dependencies
 import type { ErrorLike, ErrorResponse } from "../types/shared/common.type";
 import ApiError from "../utils/api-error";
+import { logger } from "../utils/logger";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -80,18 +81,33 @@ function buildErrorResponse(error: ApiError): ErrorResponse {
   return response;
 }
 
+function shouldIncludeErrorDetails(error: ApiError): boolean {
+  return process.env.NODE_ENV !== "production" || error.statusCode < 500;
+}
+
 // Function จัดการ error handler สำหรับ Express middleware
 export function errorHandler(
   error: unknown,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void {
   const normalized = normalizeError(error);
-  const response = buildErrorResponse(normalized);
+  const response = shouldIncludeErrorDetails(normalized)
+    ? buildErrorResponse(normalized)
+    : {
+        statusCode: normalized.statusCode,
+        code: normalized.code,
+        message: "Unexpected server error.",
+      };
 
   if (normalized.statusCode >= 500) {
-    console.error(error);
+    logger.error("Request failed.", {
+      requestId: req.requestId,
+      method: req.method,
+      path: req.path,
+      error,
+    });
   }
 
   res.status(normalized.statusCode).json(response);

@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
+  "packageManager": "npm@11.1.0",
+  "engines": {
+    "node": "22.14.0",
+    "npm": "11.1.0"
+  },
   "scripts": {
     "start": "node dist/index.js",
     "dev": "tsx watch index.ts",
@@ -18,9 +23,9 @@
     "docker:tunnel:quick": "docker compose --profile tunnel-quick up cloudflared-quick",
     "docker:tunnel": "docker compose --profile tunnel up cloudflared",
     "test": "npm run test:unit && npm run test:routes",
-    "test:unit": "node --import tsx --test test/unit/utilities/utils.test.ts test/unit/permissions/permission-config.test.ts test/unit/admin-workers/worker-code.test.ts",
-    "test:routes": "node --import tsx --test test/routes/auth.routes.test.ts && node --import tsx --test test/routes/admin-settings.routes.test.ts && node --import tsx --test test/routes/gate.routes.test.ts && node --import tsx --test test/routes/line.routes.test.ts && node --import tsx --test test/routes/admin-jobs.routes.test.ts && node --import tsx --test test/routes/admin-audit.routes.test.ts && node --import tsx --test test/routes/worker.routes.test.ts",
-    "test:integration": "node --import tsx --test test/integration/database/services.integration.test.ts",
+    "test:unit": "node --import tsx --test test/unit/utilities/utils.test.ts test/unit/permissions/permission-config.test.ts test/unit/admin-workers/worker-code.test.ts test/unit/production/env-logger.test.ts",
+    "test:routes": "node --import tsx --test test/routes/system.routes.test.ts && node --import tsx --test test/routes/auth.routes.test.ts && node --import tsx --test test/routes/admin-settings.routes.test.ts && node --import tsx --test test/routes/gate.routes.test.ts && node --import tsx --test test/routes/line.routes.test.ts && node --import tsx --test test/routes/admin-jobs.routes.test.ts && node --import tsx --test test/routes/admin-audit.routes.test.ts && node --import tsx --test test/routes/worker.routes.test.ts",
+    "test:integration": "node --import tsx --test test/integration/database/services.integration.test.ts && node --import tsx --test test/integration/database/admin-audit.integration.test.ts",
     "test:p0": "npm run test:unit && npm run test:routes",
     "test:all": "npm run test:unit && npm run test:routes && npm run test:integration"
   },
@@ -40,6 +45,7 @@
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
+    "prisma": "7.8.0",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",
     "ws": "^8.21.0",
@@ -54,7 +60,6 @@
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "@types/ws": "^8.18.1",
-    "prisma": "^7.8.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   },

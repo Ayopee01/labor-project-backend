@@ -19,7 +19,6 @@ export function toId(id: number | string): number {
   return Number(id);
 }
 
-// Function แปลง id เป็น account id แบบ number สำหรับ query DB
 // Function ตรวจสอบและดึง mapped จาก DB
 export function requireMapped<T>(
   record: T | null | undefined,

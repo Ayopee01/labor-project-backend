@@ -8,6 +8,7 @@ import {
 import { withTransaction } from "../../db/prisma";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../../types/shared/worker-assignment-event.type";
 import * as ticketWorkerRepository from "../../repositories/shared/ticket-worker.repository";
+import * as assignmentRepository from "../../repositories/shared/vehicle-job-assignment.repository";
 import * as vehicleJobRepository from "../../repositories/shared/vehicle-job.repository";
 import * as workerAssignmentEventRepository from "../../repositories/shared/worker-assignment-event.repository";
 
@@ -176,7 +177,7 @@ export async function closeCompletedVehicleJobIfReady(
   if (completedAssignmentIds.length > 0) {
     const completedAt = new Date();
 
-    await vehicleJobRepository.completeAssignments(
+    await assignmentRepository.completeAssignments(
       completedAssignmentIds,
       completedAt,
       connection,

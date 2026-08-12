@@ -14,6 +14,7 @@ declare global {
       driverSession?: DriverSessionDto;
       gateClient?: PublicGateClient;
       rawBody?: string;
+      requestId?: string;
     }
   }
 }

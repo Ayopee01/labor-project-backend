@@ -3,7 +3,10 @@ import { mapAccount } from "./shared/mappers";
 import { client, requireMapped, toId } from "./shared/repository-utils";
 
 import type { DbConnection } from "../types/shared/common.type";
-import type { AccountCreateInput, AccountDto } from "../types/admin-workers.type";
+import type {
+  AccountCreateInput,
+  AccountDto,
+} from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -11,18 +14,14 @@ const ADMIN_ROLE = "admin";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-function toAccountId(id: number | string): number {
-  return toId(id);
-}
-
 async function findAdminById(
   id: number | string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto | null> {
   const db = client(connection);
   const account = await db.account.findFirst({
     where: {
-      id: toAccountId(id),
+      id: toId(id),
       role: ADMIN_ROLE,
     },
   });
@@ -32,7 +31,7 @@ async function findAdminById(
 
 async function usernameExists(
   username: string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<boolean> {
   const db = client(connection);
   const account = await db.account.findUnique({
@@ -68,7 +67,7 @@ function buildAdminAccountCreateData(account: AccountCreateInput) {
 
 async function createAdmin(
   account: AccountCreateInput,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto> {
   const db = client(connection);
   const createdAccount = await db.account.create({
@@ -81,19 +80,23 @@ async function createAdmin(
 async function updatePermissionLevel(
   id: number | string,
   permissionLevel?: string | null,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto> {
   const db = client(connection);
   const updatedAccount = await db.account.update({
     where: {
-      id: toAccountId(id),
+      id: toId(id),
     },
     data: {
       permissionLevel: permissionLevel ?? null,
     },
   });
 
-  return requireMapped(mapAccount(updatedAccount), "Account", "permission level update");
+  return requireMapped(
+    mapAccount(updatedAccount),
+    "Account",
+    "permission level update",
+  );
 }
 
 const adminSettingsAccountRepository = {

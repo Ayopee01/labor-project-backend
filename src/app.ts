@@ -6,6 +6,12 @@ import express from "express";
 import setupSwagger from "./docs/swagger";
 import { normalizeApiRequestBody, pascalCaseApiResponse } from "./middlewares/api-case.middleware";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware";
+import { requestIdMiddleware } from "./middlewares/request-id.middleware";
+import { requestLoggerMiddleware } from "./middlewares/request-logger.middleware";
+import {
+  rateLimitMiddleware,
+  securityHeadersMiddleware,
+} from "./middlewares/security.middleware";
 import adminAuditRoutes from "./routes/admin-audit.routes";
 import adminJobRoutes from "./routes/admin-jobs.routes";
 import adminSettingsRoutes from "./routes/admin-settings.routes";
@@ -20,7 +26,15 @@ import workerRoutes from "./routes/worker.routes";
 
 const app = express();
 
+if (process.env.TRUST_PROXY === "true") {
+  app.set("trust proxy", 1);
+}
+
 // Middleware
+app.use(requestIdMiddleware);
+app.use(requestLoggerMiddleware);
+app.use(securityHeadersMiddleware);
+app.use(rateLimitMiddleware);
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN,

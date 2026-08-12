@@ -21,6 +21,7 @@ import type { WorkerSocket, WorkerSocketEventOptions, WorkerSocketEventType, Wor
 // Import Utils
 import ApiError from "../utils/api-error";
 import { verifyAccessToken } from "../utils/jwt";
+import { logger } from "../utils/logger";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 
 /* -------------------------------------- Config -------------------------------------- */
@@ -37,6 +38,8 @@ const WORKER_SOCKET_DISCONNECT_GRACE_MS = Number(
 const workerSockets = new Map<number, Set<WorkerSocket>>();
 
 const disconnectTimers = new Map<number, NodeJS.Timeout>();
+let workerWebSocketServer: WebSocketServer | null = null;
+let heartbeatInterval: NodeJS.Timeout | null = null;
 
 // Config event ของ Worker WebSocket ที่ต้องส่ง FCM push เพิ่มด้วย
 const PUSH_WORKER_SOCKET_EVENTS = new Set<WorkerSocketEventType>([
@@ -183,7 +186,7 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
     findCurrentAssignmentByWorker(accountId),
     getWorkerQueueStatus(accountId),
     profileRepository.findByAccountId(accountId).catch((error) => {
-      console.error("Failed to load worker profile for disconnect event.", error);
+      logger.error("Failed to load worker profile for disconnect event.", { error });
       return null;
     }),
   ]);
@@ -227,7 +230,7 @@ export function sendWorkerSocketEvent(
       message: options.pushMessage ?? buildWorkerPushMessage(type, payload),
       payload,
     }).catch((error) => {
-      console.error("Failed to send worker push notification.", error);
+      logger.error("Failed to send worker push notification.", { error });
     });
   }
 
@@ -324,7 +327,7 @@ export function isWorkerSocketConnected(accountId: number): boolean {
 // Function ส่ง worker connected event ใน Worker WebSocket
 async function sendWorkerConnectedEvent(accountId: number): Promise<void> {
   const profile = await profileRepository.findByAccountId(accountId).catch((error) => {
-    console.error("Failed to load worker profile for WebSocket connection.", error);
+    logger.error("Failed to load worker profile for WebSocket connection.", { error });
     return null;
   });
 
@@ -338,6 +341,7 @@ export function setupWorkerWebSocket(server: Server): void {
   const webSocketServer = new WebSocketServer({
     noServer: true,
   });
+  workerWebSocketServer = webSocketServer;
 
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url || "", "http://localhost");
@@ -379,7 +383,7 @@ export function setupWorkerWebSocket(server: Server): void {
     }
   );
 
-  setInterval(() => {
+  heartbeatInterval = setInterval(() => {
     webSocketServer.clients.forEach((socket) => {
       const workerSocket = socket as WorkerSocket;
 
@@ -392,4 +396,36 @@ export function setupWorkerWebSocket(server: Server): void {
       workerSocket.ping();
     });
   }, 30000);
+}
+
+export function closeWorkerWebSocketServer(): Promise<void> {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+
+  for (const timer of disconnectTimers.values()) {
+    clearTimeout(timer);
+  }
+  disconnectTimers.clear();
+
+  const server = workerWebSocketServer;
+  workerWebSocketServer = null;
+
+  if (!server) {
+    return Promise.resolve();
+  }
+
+  server.clients.forEach((socket) => socket.close());
+
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
 }

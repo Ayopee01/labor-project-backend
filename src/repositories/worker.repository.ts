@@ -1,4 +1,3 @@
-import { ASSIGNMENT_STATUS } from "../constants/job-status";
 import { mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
 
@@ -9,56 +8,6 @@ import type {
 } from "../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
-
-export async function getWorkerDailyAssignmentCounts(
-  workerAccountId: number,
-  startAt: Date,
-  endAt: Date,
-  connection?: DbConnection,
-): Promise<{
-  today_job_count: number;
-  completed_job_count: number;
-}> {
-  const db = client(connection);
-  const [todayJobCount, completedJobCount] = await Promise.all([
-    db.vehicleJobAssignment.count({
-      where: {
-        workerAccountId,
-        createdAt: {
-          gte: startAt,
-          lt: endAt,
-        },
-        status: {
-          not: ASSIGNMENT_STATUS.TIMEOUT,
-        },
-      },
-    }),
-    db.vehicleJobAssignment.count({
-      where: {
-        workerAccountId,
-        createdAt: {
-          gte: startAt,
-          lt: endAt,
-        },
-        OR: [
-          {
-            status: ASSIGNMENT_STATUS.COMPLETED,
-          },
-          {
-            completedAt: {
-              not: null,
-            },
-          },
-        ],
-      },
-    }),
-  ]);
-
-  return {
-    today_job_count: todayJobCount,
-    completed_job_count: completedJobCount,
-  };
-}
 
 export async function listWorkerAssignmentHistoryByDate(
   workerAccountId: number,

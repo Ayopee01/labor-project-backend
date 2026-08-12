@@ -2,13 +2,26 @@ import * as accountRepository from "./shared/account.repository";
 import * as profileRepository from "./shared/profile.repository";
 import * as sessionRepository from "./shared/session.repository";
 import * as workScheduleRepository from "./shared/work-schedule.repository";
-import { prisma } from "../db/prisma";
 import { mapAccount, mapProfile, mapSchedule } from "./shared/mappers";
-import { requireMapped, toId } from "./shared/repository-utils";
+import { client, requireMapped, toId } from "./shared/repository-utils";
 
 import type { Prisma } from "@prisma/client";
 import type { DbConnection } from "../types/shared/common.type";
-import type { AccountCreateInput, AccountDto, ProfileCreateInput, ProfileCreateData, ProfileData, ProfileDataInput, ProfileDto, ProfileUpdateInput, UserAccountUpdateInput, UserListFilters, WorkScheduleCreateInput, WorkScheduleDto, WorkScheduleUpdateInput } from "../types/admin-workers.type";
+import type {
+  AccountCreateInput,
+  AccountDto,
+  ProfileCreateInput,
+  ProfileCreateData,
+  ProfileData,
+  ProfileDataInput,
+  ProfileDto,
+  ProfileUpdateInput,
+  UserAccountUpdateInput,
+  UserListFilters,
+  WorkScheduleCreateInput,
+  WorkScheduleDto,
+  WorkScheduleUpdateInput,
+} from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -19,16 +32,6 @@ const DEFAULT_ACCOUNT_STATUS = "active";
 const SEARCH_MODE = "insensitive" as const;
 
 /* -------------------------------------- Functions -------------------------------------- */
-
-// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
-function client(connection?: DbConnection): DbConnection {
-  return connection ?? prisma;
-}
-
-// Function แปลง id เป็น account id แบบ number สำหรับ query DB
-function toAccountId(id: number | string): number {
-  return toId(id);
-}
 
 // Function ตรวจว่า account DTO จาก DB
 function isAccountDto(account: AccountDto | null): account is AccountDto {
@@ -72,7 +75,9 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
 }
 
 // Function สร้าง user where จาก DB
-function buildUserWhere(filters: Partial<UserListFilters> = {}): Prisma.AccountWhereInput {
+function buildUserWhere(
+  filters: Partial<UserListFilters> = {},
+): Prisma.AccountWhereInput {
   const where: Prisma.AccountWhereInput = {
     role: WORKER_ROLE,
   };
@@ -89,7 +94,9 @@ function buildUserWhere(filters: Partial<UserListFilters> = {}): Prisma.AccountW
 }
 
 // Function สร้าง user identifier where จาก DB
-function buildUserIdentifierWhere(identifier: string): Prisma.AccountWhereInput {
+function buildUserIdentifierWhere(
+  identifier: string,
+): Prisma.AccountWhereInput {
   return {
     role: WORKER_ROLE,
     username: identifier,
@@ -99,21 +106,23 @@ function buildUserIdentifierWhere(identifier: string): Prisma.AccountWhereInput 
 // Function สร้าง username exists where จาก DB
 function buildUsernameExistsWhere(
   username: string,
-  exceptAccountId?: number | string | null
+  exceptAccountId?: number | string | null,
 ): Prisma.AccountWhereInput {
   return {
     username,
     ...(exceptAccountId !== undefined &&
       exceptAccountId !== null && {
         id: {
-          not: toAccountId(exceptAccountId),
+          not: toId(exceptAccountId),
         },
       }),
   };
 }
 
 // Function สร้าง account create data จาก DB
-function buildAccountCreateData(account: AccountCreateInput): Prisma.AccountUncheckedCreateInput {
+function buildAccountCreateData(
+  account: AccountCreateInput,
+): Prisma.AccountUncheckedCreateInput {
   return {
     username: account.username,
     passwordHash: account.password_hash,
@@ -141,7 +150,9 @@ function buildAccountCreateData(account: AccountCreateInput): Prisma.AccountUnch
 }
 
 // Function สร้าง user account update data จาก DB
-function buildUserAccountUpdateData(fields: UserAccountUpdateInput): Prisma.AccountUpdateInput {
+function buildUserAccountUpdateData(
+  fields: UserAccountUpdateInput,
+): Prisma.AccountUpdateInput {
   const data: Prisma.AccountUpdateInput = {};
 
   if (fields.username !== undefined) {
@@ -195,7 +206,9 @@ function buildProfileData(profile: ProfileDataInput): ProfileData {
 }
 
 // Function สร้าง profile create data จาก DB
-function buildProfileCreateData(profile: ProfileCreateInput): ProfileCreateData {
+function buildProfileCreateData(
+  profile: ProfileCreateInput,
+): ProfileCreateData {
   return {
     imageUrl: profile.image_url,
     nationality: profile.nationality,
@@ -207,7 +220,7 @@ function buildProfileCreateData(profile: ProfileCreateInput): ProfileCreateData 
 
 // Function สร้าง schedule create data จาก DB
 function buildScheduleCreateData(
-  schedule: WorkScheduleCreateInput
+  schedule: WorkScheduleCreateInput,
 ): Prisma.AccountUncheckedUpdateInput {
   return {
     shiftNo: schedule.shift_no ?? 1,
@@ -219,7 +232,7 @@ function buildScheduleCreateData(
 
 // Function สร้าง schedule update data จาก DB
 function buildScheduleUpdateData(
-  schedule: WorkScheduleUpdateInput
+  schedule: WorkScheduleUpdateInput,
 ): Prisma.AccountUncheckedUpdateInput {
   return {
     ...(schedule.shift_no !== undefined && { shiftNo: schedule.shift_no }),
@@ -233,7 +246,7 @@ function buildScheduleUpdateData(
 async function usernameExists(
   username: string,
   exceptAccountId?: number | string | null,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<boolean> {
   const db = client(connection);
   const account = await db.account.findFirst({
@@ -249,7 +262,7 @@ async function usernameExists(
 // Function สร้าง create จาก DB
 async function create(
   account: AccountCreateInput,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto> {
   const db = client(connection);
   const createdAccount = await db.account.create({
@@ -262,7 +275,7 @@ async function create(
 // Function ดึงรายการ users จาก DB
 async function listUsers(
   filters: UserListFilters,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto[]> {
   const db = client(connection);
   const accounts = await db.account.findMany({
@@ -285,7 +298,7 @@ async function listUsers(
 // Function นับ users จาก DB
 async function countUsers(
   filters: UserListFilters,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<number> {
   const db = client(connection);
 
@@ -297,7 +310,7 @@ async function countUsers(
 // Function ค้นหา user ตาม identifier จาก DB
 async function findUserByIdentifier(
   identifier: string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto | null> {
   const db = client(connection);
   const account = await db.account.findFirst({
@@ -311,12 +324,12 @@ async function findUserByIdentifier(
 async function updateUserAccount(
   id: number | string,
   fields: UserAccountUpdateInput,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto> {
   const db = client(connection);
   const updatedAccount = await db.account.update({
     where: {
-      id: toAccountId(id),
+      id: toId(id),
     },
     data: buildUserAccountUpdateData(fields),
   });
@@ -328,31 +341,35 @@ async function updateUserAccount(
 async function updatePassword(
   id: number | string,
   passwordHash: string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto> {
   const db = client(connection);
   const updatedAccount = await db.account.update({
     where: {
-      id: toAccountId(id),
+      id: toId(id),
     },
     data: {
       passwordHash,
     },
   });
 
-  return requireMapped(mapAccount(updatedAccount), "Account", "password update");
+  return requireMapped(
+    mapAccount(updatedAccount),
+    "Account",
+    "password update",
+  );
 }
 
 // Function อัปเดต status จาก DB
 async function updateStatus(
   id: number | string,
   status: string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<AccountDto> {
   const db = client(connection);
   const updatedAccount = await db.account.update({
     where: {
-      id: toAccountId(id),
+      id: toId(id),
     },
     data: {
       status,
@@ -366,7 +383,7 @@ async function updateStatus(
 async function workerCodeExists(
   workerCode: string,
   exceptAccountId?: number | string | null,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<boolean> {
   const db = client(connection);
   const account = await db.account.findFirst({
@@ -376,7 +393,7 @@ async function workerCodeExists(
       ...(exceptAccountId !== undefined &&
         exceptAccountId !== null && {
           id: {
-            not: toAccountId(exceptAccountId),
+            not: toId(exceptAccountId),
           },
         }),
     },
@@ -392,7 +409,7 @@ async function workerCodeExists(
 async function shirtNumberExists(
   shirtNumber: string,
   exceptAccountId?: number | string | null,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<boolean> {
   const db = client(connection);
   const account = await db.account.findFirst({
@@ -402,7 +419,7 @@ async function shirtNumberExists(
       ...(exceptAccountId !== undefined &&
         exceptAccountId !== null && {
           id: {
-            not: toAccountId(exceptAccountId),
+            not: toId(exceptAccountId),
           },
         }),
     },
@@ -417,12 +434,12 @@ async function shirtNumberExists(
 // Function สร้าง profile จาก DB
 async function createProfile(
   profile: ProfileCreateInput,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<ProfileDto> {
   const db = client(connection);
   const updatedAccount = await db.account.update({
     where: {
-      id: toAccountId(profile.account_id),
+      id: toId(profile.account_id),
     },
     data: {
       ...buildProfileCreateData(profile),
@@ -436,12 +453,12 @@ async function createProfile(
 async function updateProfileByAccountId(
   accountId: number | string,
   profile: ProfileUpdateInput,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<ProfileDto> {
   const db = client(connection);
   const updatedAccount = await db.account.update({
     where: {
-      id: toAccountId(accountId),
+      id: toId(accountId),
     },
     data: buildProfileData(profile),
   });
@@ -452,12 +469,12 @@ async function updateProfileByAccountId(
 // Function สร้าง work schedule จาก DB
 async function createWorkSchedule(
   schedule: WorkScheduleCreateInput,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<WorkScheduleDto> {
   const db = client(connection);
   const updatedAccount = await db.account.update({
     where: {
-      id: toAccountId(schedule.account_id),
+      id: toId(schedule.account_id),
     },
     data: buildScheduleCreateData(schedule),
   });
@@ -469,12 +486,12 @@ async function createWorkSchedule(
 async function updateCurrentWorkScheduleByAccountId(
   accountId: number | string,
   schedule: WorkScheduleUpdateInput,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<WorkScheduleDto | null> {
   const db = client(connection);
   const currentSchedule = await db.account.findFirst({
     where: {
-      id: toAccountId(accountId),
+      id: toId(accountId),
       role: WORKER_ROLE,
       shiftNo: {
         not: null,
@@ -506,17 +523,17 @@ async function updateCurrentWorkScheduleByAccountId(
 async function deleteOtherWorkSchedulesByAccountId(
   accountId: number | string,
   keepScheduleId: number | string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<void> {
   const db = client(connection);
 
-  if (toAccountId(accountId) === Number(keepScheduleId)) {
+  if (toId(accountId) === Number(keepScheduleId)) {
     return;
   }
 
   await db.account.updateMany({
     where: {
-      id: toAccountId(accountId),
+      id: toId(accountId),
     },
     data: {
       shiftNo: null,
@@ -529,13 +546,13 @@ async function deleteOtherWorkSchedulesByAccountId(
 // Function ลบ current work schedules ตาม account ID จาก DB
 async function deleteCurrentWorkSchedulesByAccountId(
   accountId: number | string,
-  connection?: DbConnection
+  connection?: DbConnection,
 ): Promise<void> {
   const db = client(connection);
 
   await db.account.updateMany({
     where: {
-      id: toAccountId(accountId),
+      id: toId(accountId),
     },
     data: {
       shiftNo: null,

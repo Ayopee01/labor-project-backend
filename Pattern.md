@@ -21,6 +21,9 @@ Dependency & Ownership Rules:
 - VehicleJob lifecycle orchestration belongs in `services/shared/vehicle-job-lifecycle.service.ts`. Repositories may expose low-level state reads/writes, but should not own multi-domain lifecycle decisions such as activating the next ticket or closing a completed vehicle job.
 - Hot summary endpoints should use DB aggregate/count queries instead of loading full detail/history when only totals are required. Keep full detail loading for detail/history endpoints.
 - Route repositories should not re-export shared repositories as compatibility or convenience facades. Import the repository that owns the data access directly.
+- Shared services should not depend on route/application-specific repositories. If a shared service needs persisted data, use the shared repository that owns that entity, or let the route/application service compose the route-specific projection outside the shared service.
+- Repository mutation ownership should follow the persisted entity being changed. For example, `VehicleJobAssignment` state mutations belong in the vehicle job assignment repository, while vehicle job lifecycle orchestration belongs in the shared lifecycle service.
+- Important raw SQL read models should have real DB integration coverage. Route tests with mocked repositories can validate API contract and service wiring, but they do not prove SQL syntax, CTE scope, pagination, or database aggregate semantics.
 - `services/` = route/application services
 - `services/shared/` = shared business service / orchestration ที่ไม่มี route ของตัวเอง หรือ reuse หลาย flow
 - `repositories/` = route/application-specific data access หรือ read model/projection เฉพาะ route นั้น
@@ -420,3 +423,10 @@ Response ของ service ควรสร้างให้ชัดใน serv
 5. Import ที่เพิ่มจำเป็นจริงหรือไม่
 6. ถ้าแก้ TypeScript logic ให้รัน `npm run build`
 7. ถ้าแก้ behavior ให้รัน `npm test`
+## Production Operations Pattern
+
+- Production builds use immutable Docker images tagged by commit SHA.
+- Application secrets must be provided at runtime by server env or a secret manager; never bake secrets into Docker images, compose files, workflows, or source.
+- Production Prisma migrations use `npm run db:deploy` / `prisma migrate deploy` only.
+- Liveness and readiness are separate operational contracts: `/health` checks process liveness, `/ready` checks dependencies.
+- Deployment runbooks and server-specific setup belong in `docs/deployment.md` and `docs/production-runbook.md`, not in this architecture pattern file.

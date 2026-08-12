@@ -3,10 +3,16 @@ import { createServer } from "http";
 
 dotenv.config({ quiet: true });
 
+const { assertRuntimeEnv } = require("./src/config/env.config");
+
+assertRuntimeEnv();
+
 const { default: app } = require("./src/app");
 const { startAssignmentTimeoutProcessing } = require("./src/queues/worker-dispatch");
 const { startNotificationWorkers } = require("./src/queues/notification-queue");
+const { registerGracefulShutdown } = require("./src/runtime/shutdown");
 const { setupWorkerWebSocket } = require("./src/websockets/worker.socket");
+const { logger } = require("./src/utils/logger");
 
 const PORT = process.env.PORT || 8080;
 const server = createServer(app);
@@ -14,7 +20,8 @@ const server = createServer(app);
 startAssignmentTimeoutProcessing();
 startNotificationWorkers();
 setupWorkerWebSocket(server);
+registerGracefulShutdown(server);
 
 server.listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
+  logger.info("Server started.", { port: PORT });
 });

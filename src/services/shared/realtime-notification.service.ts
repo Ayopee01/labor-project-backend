@@ -3,6 +3,7 @@ import * as accountRepository from "../../repositories/shared/account.repository
 import * as ticketWorkerRepository from "../../repositories/shared/ticket-worker.repository";
 import { sendWorkerPushNotificationByAccountIds } from "./worker-push.service";
 import { sendWorkerSocketEvent } from "../../websockets/worker.socket";
+import { logger } from "../../utils/logger";
 
 import type { PublishRealtimeEventInput } from "../../types/notifications.type";
 import type { DbConnection } from "../../types/shared/common.type";
@@ -34,7 +35,7 @@ export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
       message: input.message,
       payload: workerPayload,
     }).catch((error) => {
-      console.error("Failed to send worker push notification.", error);
+      logger.error("Failed to send worker push notification.", { error });
     });
   }
 

@@ -24,6 +24,7 @@ import { gateVehicleJobBodySchema } from "../validation/schemas";
 // Import Utils
 import ApiError from "../utils/api-error";
 import { calculateRequiredWorkerCount, decimalToWeightString, packageWeightToDecimal, parseMasterProductRange } from "../utils/labor-job-pricing";
+import { logger } from "../utils/logger";
 
 // Import Flex Message Builder
 import { buildGateTicketCreatedFlexMessage } from "../utils/line-flex-message";
@@ -1201,7 +1202,7 @@ export async function createVehicleJobFromGate(
         input
       )
     ) {
-      console.warn(
+      logger.warn(
         "Gate request payload mismatch",
         {
           gate_transaction_ref:
@@ -1366,10 +1367,9 @@ export async function createVehicleJobFromGate(
         }
       );
     } catch (error) {
-      console.error(
-        "Gate ticket was created but worker dispatch failed.",
-        error
-      );
+      logger.error("Gate ticket was created but worker dispatch failed.", {
+        error,
+      });
     }
   }
 
@@ -1417,10 +1417,9 @@ export async function createVehicleJobFromGate(
       response
     );
   } catch (error) {
-    console.error(
-      "Gate ticket was created but vendor notification failed.",
-      error
-    );
+    logger.error("Gate ticket was created but vendor notification failed.", {
+      error,
+    });
   }
 
   return response;

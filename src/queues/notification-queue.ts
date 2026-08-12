@@ -3,6 +3,7 @@ import { Queue, Worker, type Job } from "bullmq";
 import type { Prisma } from "@prisma/client";
 // Import Config
 import { REDIS_CONFIG } from "../config/redis.config";
+import { logger } from "../utils/logger";
 // Import Repositories
 import * as lineRepository from "../repositories/line.repository";
 // Import Types
@@ -121,6 +122,16 @@ export function startNotificationWorkers(): void {
   );
 
   lineWorker.on("failed", (_job, error) => {
-    console.error("LINE message job failed.", error);
+    logger.error("LINE message job failed.", { error });
   });
+}
+
+// Function ปิด BullMQ LINE queue connection สำหรับ graceful shutdown
+export async function closeNotificationQueueConnections(): Promise<void> {
+  if (lineWorker) {
+    await lineWorker.close();
+    lineWorker = null;
+  }
+
+  await lineMessageQueue.close();
 }

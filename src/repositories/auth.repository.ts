@@ -1,11 +1,9 @@
 import * as accountRepository from "./shared/account.repository";
-import * as profileRepository from "./shared/profile.repository";
 import * as sessionRepository from "./shared/session.repository";
-import * as workScheduleRepository from "./shared/work-schedule.repository";
-import { prisma } from "../db/prisma";
 import { mapAccount, mapSession } from "./shared/mappers";
 import {
   buildRevokeData,
+  client,
   requireMapped,
   toId,
 } from "./shared/repository-utils";
@@ -25,7 +23,7 @@ async function findByUsername(
   username: string,
   connection?: DbConnection,
 ): Promise<AccountDto | null> {
-  const account = await (connection ?? prisma).account.findUnique({
+  const account = await client(connection).account.findUnique({
     where: {
       username,
     },
@@ -69,7 +67,7 @@ async function findActiveById(
   connection?: DbConnection,
 ): Promise<SessionDto | null> {
   return mapSession(
-    await (connection ?? prisma).userSession.findFirst({
+    await client(connection).userSession.findFirst({
       where: {
         id: toId(sessionId),
         isActive: true,
@@ -88,7 +86,7 @@ async function createPending(
 ): Promise<SessionDto> {
   return requireMapped(
     mapSession(
-      await (connection ?? prisma).userSession.create({
+      await client(connection).userSession.create({
         data: buildPendingSessionData(session),
       }),
     ),
@@ -105,7 +103,7 @@ async function updateRefreshTokenHash(
 ): Promise<SessionDto> {
   return requireMapped(
     mapSession(
-      await (connection ?? prisma).userSession.update({
+      await client(connection).userSession.update({
         where: {
           id: toId(sessionId),
         },
@@ -122,7 +120,7 @@ async function revoke(
   sessionId: number | string,
   connection?: DbConnection,
 ): Promise<SessionDto | null> {
-  const db = connection ?? prisma;
+  const db = client(connection);
   const activeSession = await db.userSession.findFirst({
     where: {
       id: toId(sessionId),
@@ -154,7 +152,5 @@ const authSessionRepository = {
 
 export {
   authAccountRepository as accountRepository,
-  profileRepository,
   authSessionRepository as sessionRepository,
-  workScheduleRepository,
 };

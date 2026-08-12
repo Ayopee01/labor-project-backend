@@ -1,4 +1,6 @@
-import { accountRepository, profileRepository, sessionRepository, workScheduleRepository } from "../repositories/auth.repository";
+import { accountRepository, sessionRepository } from "../repositories/auth.repository";
+import * as profileRepository from "../repositories/shared/profile.repository";
+import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
 import { getAccountPermissions } from "./shared/account-permission.service";
 import {

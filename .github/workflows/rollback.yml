@@ -1,0 +1,75 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: GitHub environment to roll back.
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      image_sha:
+        description: Previously published 40-character commit SHA.
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rollback-${{ inputs.target_environment }}
+  cancel-in-progress: false
+
+jobs:
+  image-metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      image_repository: ${{ steps.image.outputs.image_repository }}
+    steps:
+      - name: Normalize GHCR repository
+        id: image
+        env:
+          GITHUB_REPOSITORY_VALUE: ${{ github.repository }}
+        run: |
+          IMAGE_REPOSITORY="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY_VALUE" | tr '[:upper:]' '[:lower:]')"
+          echo "image_repository=$IMAGE_REPOSITORY" >> "$GITHUB_OUTPUT"
+
+  validate-rollback:
+    needs: image-metadata
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      release_sha: ${{ steps.image.outputs.release_sha }}
+      app_image: ${{ steps.image.outputs.app_image }}
+    steps:
+      - name: Validate rollback image SHA
+        id: image
+        env:
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        run: |
+          if ! printf '%s' "$IMAGE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "image_sha must be a full 40-character Git SHA." >&2
+            exit 1
+          fi
+          echo "release_sha=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
+          echo "app_image=${{ needs.image-metadata.outputs.image_repository }}:sha-$IMAGE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Verify rollback image exists
+        env:
+          APP_IMAGE: ${{ steps.image.outputs.app_image }}
+        run: docker manifest inspect "$APP_IMAGE" >/dev/null
+
+  rollback:
+    needs: validate-rollback
+    uses: ./.github/workflows/deploy-ssh.yml
+    with:
+      environment_name: ${{ inputs.target_environment }}
+      app_image: ${{ needs.validate-rollback.outputs.app_image }}
+      release_sha: ${{ needs.validate-rollback.outputs.release_sha }}
+      run_migrations: false

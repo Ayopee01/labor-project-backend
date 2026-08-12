@@ -5,7 +5,7 @@ import {
 } from "../../queues/worker-queue";
 
 // Import Repositories
-import * as workerApplicationRepository from "../../repositories/worker.repository";
+import * as assignmentRepository from "../../repositories/shared/vehicle-job-assignment.repository";
 import * as workerShiftAttendanceRepository from "../../repositories/shared/worker-shift-attendance.repository";
 
 // Import Types
@@ -33,7 +33,7 @@ export async function buildWorkerDailySummary(
   accountId: number,
   schedule: WorkScheduleDto | null,
   connection?: Parameters<
-    typeof workerApplicationRepository.getWorkerDailyAssignmentCounts
+    typeof assignmentRepository.getWorkerDailyAssignmentCounts
   >[3],
 ): Promise<
   Pick<
@@ -47,7 +47,7 @@ export async function buildWorkerDailySummary(
     ? buildWorkScheduleShiftInstanceKey(schedule)
     : null;
   const [assignmentCounts, breakCountUsed] = await Promise.all([
-    workerApplicationRepository.getWorkerDailyAssignmentCounts(
+    assignmentRepository.getWorkerDailyAssignmentCounts(
       accountId,
       startAt,
       endAt,

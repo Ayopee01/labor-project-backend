@@ -319,28 +319,3 @@ export async function updateVehicleJobStatus(
 
   return requireDto(mapVehicleJob(vehicleJob), "vehicle job status update");
 }
-
-export async function completeAssignments(
-  assignmentIds: number[],
-  completedAt: Date,
-  connection?: DbConnection,
-): Promise<number> {
-  if (assignmentIds.length === 0) {
-    return 0;
-  }
-
-  const db = client(connection);
-  const result = await db.vehicleJobAssignment.updateMany({
-    where: {
-      id: {
-        in: assignmentIds,
-      },
-    },
-    data: {
-      status: "COMPLETED",
-      completedAt,
-    },
-  });
-
-  return result.count;
-}

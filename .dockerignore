@@ -1,10 +1,15 @@
 node_modules
 dist
+coverage
 .git
+.github
 .env
+.env.*
+!.env.example
 *.log
 npm-debug.log*
-Dockerfile
-docker-compose.yml
 .codex
 .agents
+test
+tmp
+*.tmp

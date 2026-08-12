@@ -27,6 +27,14 @@ function verifyLineSignature(rawBody: string | undefined, signature: unknown): v
   const secret = process.env.LINE_CHANNEL_SECRET;
 
   if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new ApiError(
+        503,
+        "LINE_WEBHOOK_NOT_CONFIGURED",
+        "LINE webhook is not configured."
+      );
+    }
+
     return;
   }
 

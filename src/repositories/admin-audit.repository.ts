@@ -85,6 +85,70 @@ function mapWorkerPerformanceRecord(
   };
 }
 
+function buildWorkerPerformanceRecordsCte(filters: {
+  startAt: Date;
+  endAt: Date;
+  worker_code?: string;
+}): Prisma.Sql {
+  const workerFilter = filters.worker_code
+    ? Prisma.sql`AND a.username = ${filters.worker_code}`
+    : Prisma.empty;
+
+  return Prisma.sql`
+    WITH cohort AS (
+      SELECT
+        vja.id AS assignment_id,
+        vja.worker_account_id,
+        vja.vehicle_job_id,
+        vja.status,
+        vja.accepted_at,
+        vja.scanned_at
+      FROM vehicle_job_assignments vja
+      JOIN accounts a ON a.id = vja.worker_account_id
+      WHERE vja.created_at >= ${filters.startAt}
+        AND vja.created_at < ${filters.endAt}
+        ${workerFilter}
+    ),
+    assignment_events AS (
+      SELECT
+        event.assignment_id,
+        bool_or(event.event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.ACCEPTED}) AS has_accepted,
+        bool_or(event.event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.ACCEPT_TIMEOUT}) AS has_accept_timeout,
+        bool_or(event.event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT}) AS has_scan_timeout,
+        bool_or(event.event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.COMPLETED}) AS has_completed,
+        bool_or(event.event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED}) AS has_admin_cancelled
+      FROM worker_assignment_events event
+      JOIN cohort ON cohort.assignment_id = event.assignment_id
+      GROUP BY event.assignment_id
+    ),
+    assignment_metrics AS (
+      SELECT
+        a.username AS worker_code,
+        a.full_name,
+        COUNT(*)::int AS total_assigned_job_count,
+        SUM(CASE WHEN cohort.accepted_at IS NOT NULL OR COALESCE(ae.has_accepted, false) THEN 1 ELSE 0 END)::int AS accepted_job_count,
+        SUM(CASE WHEN COALESCE(ae.has_accept_timeout, false) OR (cohort.status = ${ASSIGNMENT_STATUS.TIMEOUT} AND cohort.accepted_at IS NULL) THEN 1 ELSE 0 END)::int AS accept_timeout_job_count,
+        SUM(CASE WHEN COALESCE(ae.has_scan_timeout, false) OR (cohort.status = ${ASSIGNMENT_STATUS.TIMEOUT} AND cohort.accepted_at IS NOT NULL AND cohort.scanned_at IS NULL) THEN 1 ELSE 0 END)::int AS scan_timeout_job_count,
+        SUM(CASE WHEN cohort.status = ${ASSIGNMENT_STATUS.COMPLETED} OR COALESCE(ae.has_completed, false) THEN 1 ELSE 0 END)::int AS completed_job_count,
+        SUM(CASE WHEN COALESCE(ae.has_admin_cancelled, false) THEN 1 ELSE 0 END)::int AS admin_cancelled_job_count
+      FROM cohort
+      JOIN accounts a ON a.id = cohort.worker_account_id
+      LEFT JOIN assignment_events ae ON ae.assignment_id = cohort.assignment_id
+      GROUP BY a.username, a.full_name
+    ),
+    records AS (
+      SELECT
+        *,
+        accepted_job_count + accept_timeout_job_count AS opportunity_count,
+        CASE
+          WHEN accepted_job_count + accept_timeout_job_count = 0 THEN NULL
+          ELSE ROUND((accepted_job_count::numeric / (accepted_job_count + accept_timeout_job_count)::numeric) * 100, 2)
+        END AS accept_rate_numeric
+      FROM assignment_metrics
+    )
+  `;
+}
+
 export async function listWorkerPerformance(
   filters: {
     startAt: Date;
@@ -99,56 +163,18 @@ export async function listWorkerPerformance(
 ): Promise<WorkerPerformanceResult> {
   const db = client(connection);
   const offset = (filters.page - 1) * filters.limit;
-  const workerFilter = filters.worker_code
-    ? Prisma.sql`AND a.username = ${filters.worker_code}`
-    : Prisma.empty;
   const orderBy = buildWorkerPerformanceOrderBy(
     filters.sort_by,
     filters.sort_order,
   );
-  const rows = await db.$queryRaw<Array<Record<string, unknown>>>`
-    WITH assignment_events AS (
-      SELECT
-        assignment_id,
-        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.ACCEPTED}) AS has_accepted,
-        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.ACCEPT_TIMEOUT}) AS has_accept_timeout,
-        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT}) AS has_scan_timeout,
-        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.COMPLETED}) AS has_completed,
-        bool_or(event_type = ${WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED}) AS has_admin_cancelled
-      FROM worker_assignment_events
-      GROUP BY assignment_id
-    ),
-    assignment_metrics AS (
-      SELECT
-        a.username AS worker_code,
-        a.full_name,
-        COUNT(*)::int AS total_assigned_job_count,
-        SUM(CASE WHEN vja.accepted_at IS NOT NULL OR COALESCE(ae.has_accepted, false) THEN 1 ELSE 0 END)::int AS accepted_job_count,
-        SUM(CASE WHEN COALESCE(ae.has_accept_timeout, false) OR (vja.status = ${ASSIGNMENT_STATUS.TIMEOUT} AND vja.accepted_at IS NULL) THEN 1 ELSE 0 END)::int AS accept_timeout_job_count,
-        SUM(CASE WHEN COALESCE(ae.has_scan_timeout, false) OR (vja.status = ${ASSIGNMENT_STATUS.TIMEOUT} AND vja.accepted_at IS NOT NULL AND vja.scanned_at IS NULL) THEN 1 ELSE 0 END)::int AS scan_timeout_job_count,
-        SUM(CASE WHEN vja.status = ${ASSIGNMENT_STATUS.COMPLETED} OR COALESCE(ae.has_completed, false) THEN 1 ELSE 0 END)::int AS completed_job_count,
-        SUM(CASE WHEN vja.status = ${ASSIGNMENT_STATUS.CANCELLED} OR COALESCE(ae.has_admin_cancelled, false) THEN 1 ELSE 0 END)::int AS admin_cancelled_job_count
-      FROM vehicle_job_assignments vja
-      JOIN accounts a ON a.id = vja.worker_account_id
-      LEFT JOIN assignment_events ae ON ae.assignment_id = vja.id
-      WHERE vja.created_at >= ${filters.startAt}
-        AND vja.created_at < ${filters.endAt}
-        ${workerFilter}
-      GROUP BY a.username, a.full_name
-    ),
-    records AS (
-      SELECT
-        *,
-        accepted_job_count + accept_timeout_job_count AS opportunity_count,
-        CASE
-          WHEN accepted_job_count + accept_timeout_job_count = 0 THEN NULL
-          ELSE ROUND((accepted_job_count::numeric / (accepted_job_count + accept_timeout_job_count)::numeric) * 100, 2)
-        END AS accept_rate_numeric
-      FROM assignment_metrics
-    ),
-    counted AS (
+  const recordsCte = buildWorkerPerformanceRecordsCte(filters);
+  const [countRows, rows] = await Promise.all([
+    db.$queryRaw<Array<{ total: number }>>`
+      ${recordsCte}
       SELECT COUNT(*)::int AS total FROM records
-    )
+    `,
+    db.$queryRaw<Array<Record<string, unknown>>>`
+      ${recordsCte}
     SELECT
       records.worker_code,
       records.full_name,
@@ -158,17 +184,16 @@ export async function listWorkerPerformance(
       records.scan_timeout_job_count,
       records.completed_job_count,
       records.admin_cancelled_job_count,
-      records.accept_rate_numeric AS accept_rate,
-      counted.total
+      records.accept_rate_numeric AS accept_rate
     FROM records
-    CROSS JOIN counted
     ORDER BY ${orderBy}
     LIMIT ${filters.limit}
     OFFSET ${offset}
-  `;
+    `,
+  ]);
 
   return {
-    total: rows[0] ? toNumber(rows[0].total) : 0,
+    total: countRows[0] ? toNumber(countRows[0].total) : 0,
     data: rows.map(mapWorkerPerformanceRecord),
   };
 }

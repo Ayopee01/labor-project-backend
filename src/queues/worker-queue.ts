@@ -6,6 +6,7 @@ import IORedis from "ioredis";
 import { REDIS_CONFIG } from "../config/redis.config";
 import { getRuntimeSettings } from "../services/shared/runtime-settings.service";
 import { getDelayUntil } from "../utils/time";
+import { logger } from "../utils/logger";
 
 // Import Types
 import type { AssignmentTimeoutJobData, WorkerPresenceDto, WorkerQueueEntryDto, WorkerScheduleJobData } from "../types/worker.type";
@@ -639,7 +640,7 @@ export function startAssignmentTimeoutWorker(
   );
 
   timeoutWorker.on("failed", (_job, error) => {
-    console.error("Assignment timeout job failed.", error);
+    logger.error("Assignment timeout job failed.", { error });
   });
 }
 
@@ -662,7 +663,7 @@ export function startWorkerBreakReturnWorker(
   );
 
   breakReturnWorker.on("failed", (_job, error) => {
-    console.error("Worker break return job failed.", error);
+    logger.error("Worker break return job failed.", { error });
   });
 }
 

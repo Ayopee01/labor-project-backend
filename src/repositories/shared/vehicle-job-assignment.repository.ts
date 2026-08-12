@@ -38,6 +38,56 @@ export async function countActiveAssignments(
   });
 }
 
+export async function getWorkerDailyAssignmentCounts(
+  workerAccountId: number,
+  startAt: Date,
+  endAt: Date,
+  connection?: DbConnection,
+): Promise<{
+  today_job_count: number;
+  completed_job_count: number;
+}> {
+  const db = client(connection);
+  const [todayJobCount, completedJobCount] = await Promise.all([
+    db.vehicleJobAssignment.count({
+      where: {
+        workerAccountId,
+        createdAt: {
+          gte: startAt,
+          lt: endAt,
+        },
+        status: {
+          not: ASSIGNMENT_STATUS.TIMEOUT,
+        },
+      },
+    }),
+    db.vehicleJobAssignment.count({
+      where: {
+        workerAccountId,
+        createdAt: {
+          gte: startAt,
+          lt: endAt,
+        },
+        OR: [
+          {
+            status: ASSIGNMENT_STATUS.COMPLETED,
+          },
+          {
+            completedAt: {
+              not: null,
+            },
+          },
+        ],
+      },
+    }),
+  ]);
+
+  return {
+    today_job_count: todayJobCount,
+    completed_job_count: completedJobCount,
+  };
+}
+
 // Function สร้าง assignment จาก DB
 export async function createAssignment(
   vehicleJobId: number,
@@ -426,6 +476,31 @@ export async function markVehicleAssignmentsWorking(
     },
     data: {
       status: ASSIGNMENT_STATUS.WORKING,
+    },
+  });
+
+  return result.count;
+}
+
+export async function completeAssignments(
+  assignmentIds: number[],
+  completedAt: Date,
+  connection?: DbConnection,
+): Promise<number> {
+  if (assignmentIds.length === 0) {
+    return 0;
+  }
+
+  const db = client(connection);
+  const result = await db.vehicleJobAssignment.updateMany({
+    where: {
+      id: {
+        in: assignmentIds,
+      },
+    },
+    data: {
+      status: ASSIGNMENT_STATUS.COMPLETED,
+      completedAt,
     },
   });
 
