@@ -394,6 +394,7 @@ export async function createVehicleJobFromGate(
         ticketNo: input.ticketNo,
         gateTransactionRef: input.gate_transaction_ref,
         licensePlate: input.license_plate,
+        licensePlateProvince: input.license_plate_province,
         vehicleType: input.vehicle_type ?? null,
         ticketCreatedAt: input.ticket_created_at,
         boothCount: input.booth_count,
@@ -410,6 +411,7 @@ export async function createVehicleJobFromGate(
     existingVehicleJob &&
     (existingVehicleJob.gateTransactionRef !== input.gate_transaction_ref ||
       existingVehicleJob.licensePlate !== input.license_plate ||
+      existingVehicleJob.licensePlateProvince !== input.license_plate_province ||
       existingVehicleJob.vehicleType !== (input.vehicle_type ?? null) ||
       existingVehicleJob.ticketCreatedAt.getTime() !== input.ticket_created_at.getTime() ||
       existingVehicleJob.boothCount !== input.booth_count ||
@@ -424,6 +426,7 @@ export async function createVehicleJobFromGate(
       data: {
         gateTransactionRef: input.gate_transaction_ref,
         licensePlate: input.license_plate,
+        licensePlateProvince: input.license_plate_province,
         vehicleType: input.vehicle_type ?? null,
         ticketCreatedAt: input.ticket_created_at,
         boothCount: input.booth_count,

@@ -3,6 +3,7 @@ export const WORKER_WORK_STATUSES = [
   "open_app",
   "ready",
   "assigned",
+  "waiting_team",
   "working",
   "break",
 ] as const;
@@ -11,6 +12,7 @@ export const WORKER_WORK_STATUS = {
   OPEN_APP: "open_app",
   READY: "ready",
   ASSIGNED: "assigned",
+  WAITING_TEAM: "waiting_team",
   WORKING: "working",
   BREAK: "break",
 } as const;

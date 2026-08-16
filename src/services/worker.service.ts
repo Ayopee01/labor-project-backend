@@ -60,6 +60,7 @@ import type {
   TicketProductDto,
   VehicleJobAssignmentDto,
   VehicleJobDetailResponse,
+  VehicleWorkReadinessDto,
   WorkerAssignmentAcceptResponse,
   WorkerAssignmentCheckInResponse,
   WorkerAssignmentHistoryItemDto,
@@ -73,7 +74,10 @@ import type {
   WorkerQueueEntryDto,
   WorkerStatusResponse,
 } from "../types/worker.type";
-import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
+import {
+  WORKER_WORK_STATUS,
+  type WorkerWorkStatus,
+} from "../types/shared/worker-status.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import type { DbConnection } from "../types/shared/common.type";
 import {
@@ -86,7 +90,6 @@ import { parseWithSchema } from "../validation/parser";
 import {
   workerAssignmentHistoryQuerySchema,
   workerEarningsSummaryQuerySchema,
-  workerScanBodySchema,
   workerTicketCompleteBodySchema,
 } from "../validation/schemas";
 // Import Utils
@@ -99,6 +102,7 @@ import {
 } from "../utils/shift";
 import {
   buildBangkokDateRange,
+  buildBangkokDateSpanRange,
   buildDeadline,
   buildLatestCompletedBangkokDateRange,
   buildRemainingBreakTime,
@@ -106,6 +110,7 @@ import {
   formatBangkokDisplayDate,
   formatBangkokDisplayDateTime,
   getDelayUntil,
+  toUnixMs,
 } from "../utils/time";
 import { buildVendorCompletionReviewFlexMessage } from "../utils/line-flex-message";
 import { buildWorkerTicketPayload } from "../utils/ticket-payload";
@@ -143,9 +148,13 @@ function buildWorkerQueueActionResponse(
 function buildWorkerAssignmentAcceptResponse(
   detail: VehicleJobDetailResponse,
   team: WorkerAssignmentTeamMemberDto[],
+  assignment: VehicleJobAssignmentDto,
 ): WorkerAssignmentAcceptResponse {
   return {
     license_plate: detail.vehicle_job.license_plate,
+    license_plate_province: detail.vehicle_job.license_plate_province,
+    scan_deadline_at: assignment.scan_deadline_at,
+    scan_deadline_unix_ms: toUnixMs(assignment.scan_deadline_at),
     team: team.map((member) => ({
       full_name: member.full_name,
       worker_code: member.worker_code,
@@ -177,6 +186,7 @@ function buildWorkerAssignmentHistoryItemResponse(
   return {
     ticketNo: item.vehicle_job.ticketNo,
     license_plate: item.vehicle_job.license_plate,
+    license_plate_province: item.vehicle_job.license_plate_province,
     status: item.assignment.status,
     markets: item.markets,
   };
@@ -185,11 +195,24 @@ function buildWorkerAssignmentHistoryItemResponse(
 function buildWorkerCurrentJobResponse(
   detail: VehicleJobDetailResponse,
   team: WorkerAssignmentTeamMemberDto[],
+  assignment: VehicleJobAssignmentDto,
+  status: WorkerWorkStatus,
+  teamScan: VehicleWorkReadinessDto,
 ): WorkerCurrentJobResponse {
   return {
     ticketNo: detail.vehicle_job.ticketNo,
     license_plate: detail.vehicle_job.license_plate,
+    license_plate_province: detail.vehicle_job.license_plate_province,
+    scan_deadline_at:
+      status === WORKER_WORK_STATUS.ASSIGNED
+        ? assignment.scan_deadline_at
+        : null,
+    scan_deadline_unix_ms:
+      status === WORKER_WORK_STATUS.ASSIGNED
+        ? toUnixMs(assignment.scan_deadline_at)
+        : null,
     vehicle_type: detail.vehicle_job.vehicle_type,
+    team_scan: buildWorkerTeamScanResponse(teamScan),
     markets: detail.markets.map((market) => ({
       marketCode: market.marketCode,
       marketName: market.marketName,
@@ -214,6 +237,15 @@ function buildWorkerCurrentJobResponse(
   };
 }
 
+function buildWorkerTeamScanResponse(readiness: VehicleWorkReadinessDto) {
+  return {
+    workers_required: readiness.workers_required,
+    checked_in_count: readiness.checked_in_count,
+    remaining_count: readiness.remaining_count,
+    is_ready: readiness.is_ready,
+  };
+}
+
 function toBangkokDateKey(value: Date | string): string {
   return formatBangkokDate(value instanceof Date ? value : new Date(value));
 }
@@ -231,6 +263,7 @@ function buildAssignmentAcceptedSocketPayload(
     gate_transaction_ref: detail.vehicle_job.gate_transaction_ref,
     accepted_at: assignment.accepted_at,
     scan_deadline_at: assignment.scan_deadline_at,
+    scan_deadline_unix_ms: toUnixMs(assignment.scan_deadline_at),
   };
 }
 
@@ -753,7 +786,7 @@ export async function getWorkerStatus(
       assignmentRepository.findCurrentAssignmentByWorker(account.id),
     ]);
   const schedule = formatScheduleWithShift(currentSchedule);
-  const status = resolveWorkerWorkStatus(queueEntry, currentAssignment);
+  let status = resolveWorkerWorkStatus(queueEntry, currentAssignment);
   const dailySummary = await buildWorkerDailySummary(
     account.id,
     currentSchedule,
@@ -786,25 +819,38 @@ export async function getWorkerStatus(
     remainingBreakTime
   ) {
     response.break_until = queueEntry.break_until;
+    response.break_until_unix_ms = toUnixMs(queueEntry.break_until);
     response.remaining_break_time = remainingBreakTime;
   }
 
   if (
     currentAssignment &&
     (status === WORKER_WORK_STATUS.ASSIGNED ||
+      status === WORKER_WORK_STATUS.WAITING_TEAM ||
       status === WORKER_WORK_STATUS.WORKING)
   ) {
-    const [detail, team] = await Promise.all([
+    const [detail, team, teamScan] = await Promise.all([
       vehicleJobRepository.getVehicleJobDetail(
         currentAssignment.vehicle_job_id,
       ),
       assignmentRepository.listVehicleJobAssignmentTeam(
         currentAssignment.vehicle_job_id,
       ),
+      assignmentRepository.getVehicleJobTeamScanReadiness(
+        currentAssignment.vehicle_job_id,
+      ),
     ]);
+    status = resolveWorkerWorkStatus(queueEntry, currentAssignment, teamScan);
+    response.status = status;
 
     if (detail) {
-      response.current_job = buildWorkerCurrentJobResponse(detail, team);
+      response.current_job = buildWorkerCurrentJobResponse(
+        detail,
+        team,
+        currentAssignment,
+        status,
+        teamScan,
+      );
     }
   }
 
@@ -818,17 +864,28 @@ export async function listWorkerAssignmentHistory(
 ): Promise<WorkerAssignmentHistoryResponse> {
   const account = await requireWorker(auth);
   const input = parseWithSchema(workerAssignmentHistoryQuerySchema, query);
-  const { startAt, endAt } = buildBangkokDateRange(input.date);
+  const range =
+    input.date
+      ? buildBangkokDateRange(input.date)
+      : buildBangkokDateSpanRange(input.date_from, input.date_to);
+
+  if (!range.startAt || !range.endAt) {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      "Invalid assignment history date range.",
+    );
+  }
 
   const history =
     await workerApplicationRepository.listWorkerAssignmentHistoryByDate(
       account.id,
-      startAt,
-      endAt,
+      range.startAt,
+      range.endAt,
     );
 
   return {
-    date: input.date,
+    date: input.date ?? input.date_from ?? "",
     summary: {
       job_count: history.length,
       accept_timeout_job_count: history.filter(
@@ -1008,7 +1065,11 @@ export async function acceptWorkerAssignment(
     throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
   }
 
-  const response = buildWorkerAssignmentAcceptResponse(vehicleJobDetail, team);
+  const response = buildWorkerAssignmentAcceptResponse(
+    vehicleJobDetail,
+    team,
+    acceptedAssignment,
+  );
   const workerCode = account.username;
 
   sendWorkerSocketEvent(
@@ -1041,11 +1102,10 @@ export async function acceptWorkerAssignment(
 // Function บันทึกการสแกน worker assignment ใน service flow
 export async function scanWorkerAssignment(
   assignmentIdParam: unknown,
-  body: unknown,
   auth?: AccessTokenPayload,
 ): Promise<WorkerAssignmentCheckInResponse> {
   const account = await requireWorker(auth);
-  const input = parseWithSchema(workerScanBodySchema, body);
+  const qrToken = String(assignmentIdParam ?? "").trim();
   const settings = await getRuntimeSettings();
   const teamScanRemainingMinutes = settings.worker_scan_team_remaining_minutes;
 
@@ -1078,6 +1138,17 @@ export async function scanWorkerAssignment(
         WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT,
         transaction,
       );
+      const teamScan = await assignmentRepository.getVehicleJobTeamScanReadiness(
+        assignment.vehicle_job_id,
+        transaction,
+      );
+
+      if (teamScan.is_ready) {
+        await vehicleJobLifecycleService.markVehicleJobInProgress(
+          assignment.vehicle_job_id,
+          transaction,
+        );
+      }
 
       return {
         kind: "expired" as const,
@@ -1091,7 +1162,7 @@ export async function scanWorkerAssignment(
       transaction,
     );
 
-    if (!vehicleJob || vehicleJob.worker_qr_token !== input.qr_token) {
+    if (!vehicleJob || vehicleJob.worker_qr_token !== qrToken) {
       throw new ApiError(
         400,
         "INVALID_WORKER_QR",
@@ -1108,7 +1179,12 @@ export async function scanWorkerAssignment(
       transaction,
     );
 
-    if (scannedCount >= vehicleJob.workers_required) {
+    const teamScan = await assignmentRepository.getVehicleJobTeamScanReadiness(
+      assignment.vehicle_job_id,
+      transaction,
+    );
+
+    if (teamScan.is_ready) {
       await vehicleJobLifecycleService.markVehicleJobInProgress(
         assignment.vehicle_job_id,
         transaction,
@@ -1144,6 +1220,7 @@ export async function scanWorkerAssignment(
       scannedAssignment,
       vehicleJob,
       shortenedAssignments,
+      teamScan,
     };
   });
 
@@ -1151,6 +1228,7 @@ export async function scanWorkerAssignment(
     await removeScanTimeout(result.timedOutAssignment.id);
     await removeScanWarning(result.timedOutAssignment.id);
     const queue = await markWorkerOpenApp(account.id);
+    await dispatchReadyWorkers();
     const workerCode = account.username;
 
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
@@ -1177,7 +1255,7 @@ export async function scanWorkerAssignment(
     throw new ApiError(409, "QR_EXPIRED", "Worker QR scan time expired.");
   }
 
-  const { scannedAssignment, vehicleJob, shortenedAssignments } = result;
+  const { scannedAssignment, vehicleJob, shortenedAssignments, teamScan } = result;
   await removeScanTimeout(scannedAssignment.id);
   await removeScanWarning(scannedAssignment.id);
   await Promise.all(
@@ -1207,12 +1285,14 @@ export async function scanWorkerAssignment(
         ticketNo: vehicleJob.ticketNo,
         remaining_minutes: teamScanRemainingMinutes,
         scan_deadline_at: firstShortenedAssignment.scan_deadline_at,
+        scan_deadline_unix_ms: toUnixMs(firstShortenedAssignment.scan_deadline_at),
         assignment_count: shortenedAssignments.length,
       },
       worker_payload: {
         ticketNo: vehicleJob.ticketNo,
         remaining_minutes: teamScanRemainingMinutes,
         scan_deadline_at: firstShortenedAssignment.scan_deadline_at,
+        scan_deadline_unix_ms: toUnixMs(firstShortenedAssignment.scan_deadline_at),
       },
       admin: true,
       worker_account_ids: shortenedAssignments.map(
@@ -1238,14 +1318,16 @@ export async function scanWorkerAssignment(
 
   return {
     status: scannedAssignment.status,
+    worker_status: resolveWorkerWorkStatus(null, scannedAssignment, teamScan),
     worker_code: workerCode,
     ticketNo: vehicleJob.ticketNo,
     worker_qr_token: vehicleJob.worker_qr_token,
+    team_scan: buildWorkerTeamScanResponse(teamScan),
   };
 }
 
 // Function จบงาน worker assignment ticket ใน service flow
-export async function completeWorkerAssignmentTicket(
+async function completeWorkerAssignmentTicket(
   ticketNoParam: unknown,
   boothCodeParam: unknown,
   body: unknown,
@@ -1261,6 +1343,16 @@ export async function completeWorkerAssignmentTicket(
     body,
     auth,
   );
+}
+
+export async function completeWorkerAssignmentTicketFromBody(
+  ticketNoParam: unknown,
+  body: unknown,
+  auth?: AccessTokenPayload,
+): Promise<TicketCompletionResponse> {
+  const boothCode = (body as { boothCode?: unknown } | null)?.boothCode;
+
+  return completeWorkerAssignmentTicket(ticketNoParam, boothCode, body, auth);
 }
 
 // Function จบงาน resolved worker ticket ใน service flow

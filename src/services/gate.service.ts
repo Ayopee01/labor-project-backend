@@ -130,6 +130,7 @@ function isGateVehicleJobBody(
     typeof record.BoothCount !== "number" ||
     typeof record.MarketCode !== "string" ||
     typeof record.LicensePlate !== "string" ||
+    typeof record.LicensePlateProvince !== "string" ||
     typeof record.VehicleTypeCode !== "string" ||
     typeof record.VehicleTypeName !== "string" ||
     !Array.isArray(record.Booths) ||
@@ -561,6 +562,10 @@ function buildPublicGateVehicleJobResponse(
         detail.vehicle_job
           .license_plate,
 
+      LicensePlateProvince:
+        detail.vehicle_job
+          .license_plate_province,
+
       VehicleTypeCode:
         input.VehicleTypeCode,
 
@@ -817,6 +822,9 @@ function buildGateCreateInput(
 
     license_plate:
       input.LicensePlate,
+
+    license_plate_province:
+      input.LicensePlateProvince,
 
     vehicle_type:
       input.VehicleTypeName,
@@ -1393,6 +1401,9 @@ export async function createVehicleJobFromGate(
 
       license_plate:
         response.Ticket.LicensePlate,
+
+      license_plate_province:
+        response.Ticket.LicensePlateProvince,
 
       status:
         response.Ticket.Status,

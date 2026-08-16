@@ -56,6 +56,7 @@ function buildGateVehicleJobBody(suffix: string) {
     BoothCount: 1,
     MarketCode: `MARKET-${suffix}`,
     LicensePlate: `ABC-${suffix}`,
+    LicensePlateProvince: "Bangkok",
     VehicleTypeCode: "PICKUP",
     VehicleTypeName: "Pickup truck",
     Booths: [

@@ -85,6 +85,7 @@ export interface VehicleJobDto {
   ticketNo: string;
   gate_transaction_ref: string;
   license_plate: string;
+  license_plate_province: string | null;
   vehicle_type: string | null;
   ticket_created_at: string;
   booth_count: number;
@@ -248,6 +249,7 @@ export interface WorkerStatusResponse {
   shift: WorkerStatusShift | null;
   current_job?: WorkerCurrentJobResponse | null;
   break_until?: string;
+  break_until_unix_ms?: number | null;
   remaining_break_time?: WorkerStatusRemainingBreakTime;
 }
 
@@ -310,6 +312,7 @@ export interface WorkerAssignmentHistoryItemDto {
 export interface WorkerAssignmentHistoryItemResponse {
   ticketNo: string;
   license_plate: string;
+  license_plate_province: string | null;
   status: string;
   markets: WorkerAssignmentHistoryMarketDto[];
 }
@@ -325,6 +328,7 @@ export interface WorkerAssignmentHistoryProductDto {
 export interface WorkerAssignmentHistoryBoothDto {
   boothCode: string;
   boothName: string | null;
+  completed_at: string | null;
   products: WorkerAssignmentHistoryProductDto[];
   rating: number | null;
 }
@@ -382,10 +386,21 @@ export interface WorkerCurrentJobTeamMemberResponse {
   scanned_at: string | null;
 }
 
+export interface WorkerCurrentJobTeamScanResponse {
+  workers_required: number;
+  checked_in_count: number;
+  remaining_count: number;
+  is_ready: boolean;
+}
+
 export interface WorkerCurrentJobResponse {
   ticketNo: string;
   license_plate: string;
+  license_plate_province: string | null;
+  scan_deadline_at: string | null;
+  scan_deadline_unix_ms: number | null;
   vehicle_type: string | null;
+  team_scan: WorkerCurrentJobTeamScanResponse;
   markets: WorkerCurrentJobMarketResponse[];
   team: WorkerCurrentJobTeamMemberResponse[];
 }
@@ -416,6 +431,9 @@ interface WorkerAssignmentMarketDto {
 // Type response หลัง worker accept งาน
 export interface WorkerAssignmentAcceptResponse {
   license_plate: string;
+  license_plate_province: string | null;
+  scan_deadline_at: string | null;
+  scan_deadline_unix_ms: number | null;
   team: WorkerAssignmentTeamMemberDto[];
   markets: WorkerAssignmentMarketDto[];
 }
@@ -423,9 +441,11 @@ export interface WorkerAssignmentAcceptResponse {
 // Type response หลัง worker scan QR check-in
 export interface WorkerAssignmentCheckInResponse {
   status: string;
+  worker_status: WorkerWorkStatus;
   worker_code: string | null;
   ticketNo: string;
   worker_qr_token: string;
+  team_scan: WorkerCurrentJobTeamScanResponse;
 }
 
 export interface WorkerEarningsSummaryResponse {
@@ -443,6 +463,7 @@ export interface WorkerEarningsSummaryResponse {
     completed_at: string;
     ticketNo: string;
     license_plate: string;
+    license_plate_province: string | null;
     booth_count: number;
     marketCode: string;
     marketName: string;

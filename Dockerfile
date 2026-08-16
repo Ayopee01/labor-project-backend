@@ -7,6 +7,7 @@ RUN npm install -g npm@${NPM_VERSION}
 COPY package*.json ./
 RUN npm ci
 
+ENV DATABASE_URL="postgresql://postgres:password@localhost:5432/labor_project"
 COPY prisma.config.js ./
 COPY prisma ./prisma
 RUN npm run db:generate
@@ -26,6 +27,7 @@ WORKDIR /app
 RUN npm install -g npm@${NPM_VERSION}
 COPY package*.json ./
 RUN npm ci --omit=dev
+ENV DATABASE_URL="postgresql://postgres:password@localhost:5432/labor_project"
 COPY prisma.config.js ./
 COPY prisma ./prisma
 RUN npm run db:generate

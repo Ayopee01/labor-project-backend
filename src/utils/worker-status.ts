@@ -1,5 +1,9 @@
 import { ASSIGNMENT_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
-import type { VehicleJobAssignmentDto, WorkerQueueEntryDto } from "../types/worker.type";
+import type {
+  VehicleJobAssignmentDto,
+  VehicleWorkReadinessDto,
+  WorkerQueueEntryDto,
+} from "../types/worker.type";
 import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -7,7 +11,8 @@ import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worke
 // Function แปลง state ภายในของคิว/assignment เป็น 5 สถานะ worker สำหรับ UI
 export function resolveWorkerWorkStatus(
   queue: WorkerQueueEntryDto | null,
-  assignment: VehicleJobAssignmentDto | null
+  assignment: VehicleJobAssignmentDto | null,
+  teamScanReadiness?: Pick<VehicleWorkReadinessDto, "is_ready"> | null,
 ): WorkerWorkStatus {
   if (queue?.status === WORKER_WORK_STATUS.BREAK) {
     return WORKER_WORK_STATUS.BREAK;
@@ -22,6 +27,10 @@ export function resolveWorkerWorkStatus(
 
   if (assignment) {
     if (WORKING_ASSIGNMENT_STATUSES.includes(assignment.status)) {
+      if (teamScanReadiness?.is_ready === false) {
+        return WORKER_WORK_STATUS.WAITING_TEAM;
+      }
+
       return WORKER_WORK_STATUS.WORKING;
     }
 

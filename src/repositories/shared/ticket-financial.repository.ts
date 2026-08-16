@@ -122,7 +122,6 @@ export async function markGateTicketFinancialized(
       },
       data: {
         finalStallAmount,
-        completedAt: finalizedAt,
         financializedAt: finalizedAt,
       },
     });

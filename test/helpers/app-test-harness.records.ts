@@ -57,6 +57,7 @@ export type VehicleJobRecord = {
   ticketNo: string;
   gate_transaction_ref: string;
   license_plate: string;
+  license_plate_province: string | null;
   vehicle_type: string | null;
   ticket_created_at: string;
   booth_count: number;

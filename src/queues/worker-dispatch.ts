@@ -6,6 +6,7 @@ import * as gateTicketRepository from "../repositories/shared/gate-ticket.reposi
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import * as workerShiftAttendanceRepository from "../repositories/shared/worker-shift-attendance.repository";
 import { getRuntimeSettings } from "../services/shared/runtime-settings.service";
+import * as vehicleJobLifecycleService from "../services/shared/vehicle-job-lifecycle.service";
 import { publishAdminWorkerStatusChanged, publishNotification } from "../services/notifications.service";
 import { publishRealtimeEvent } from "../services/shared/realtime-notification.service";
 import { applyVendorTicketCompletionResult } from "../services/shared/ticket-completion.service";
@@ -215,8 +216,20 @@ async function handleAssignmentScanTimeout(input: {
     WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT,
     input.connection
   );
+  const teamScan = await assignmentRepository.getVehicleJobTeamScanReadiness(
+    input.assignment.vehicle_job_id,
+    input.connection,
+  );
+
+  if (teamScan.is_ready) {
+    await vehicleJobLifecycleService.markVehicleJobInProgress(
+      input.assignment.vehicle_job_id,
+      input.connection,
+    );
+  }
   await removeScanWarning(input.assignment.id);
   const queue = await markWorkerOpenApp(input.workerAccountId);
+  await dispatchReadyWorkers(input.connection);
 
   sendWorkerSocketEvent(input.workerAccountId, "ASSIGNMENT_TIMEOUT", {
     ticketNo: vehicleJob?.ticketNo ?? null,

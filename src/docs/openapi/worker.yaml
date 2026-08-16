@@ -19,7 +19,7 @@
         `ASSIGNMENT_SCAN_DEADLINE_SHORTENED`,
         `STALL_JOB_CANCELLED`, `MARKET_JOB_CANCELLED`, and `VEHICLE_JOB_CANCELLED`.
         `WORKER_ASSIGNED` sends `TicketNo`, `GateTransactionRef`,
-        `WorkerQrToken`, and `Assignment.CreatedAt/AcceptDeadlineAt`.
+        `WorkerQrToken`, and `Assignment.CreatedAt/AcceptDeadlineAt/AcceptDeadlineUnixMs`.
         For Gate-created jobs, `WorkerQrToken` is the same value as `TicketNo`.
         It does not send `DriverQrToken`.
         Important worker notification events are also sent through FCM when the worker has an active registered FCM token.
@@ -129,28 +129,53 @@
     get:
       tags:
         - Worker Application
-      summary: Get the current worker assignment history by date.
+      summary: Get the current worker assignment history by date or date range.
+      description: >
+        Returns assignment history for the authenticated worker only.
+
+        Use either date for a single Bangkok calendar day, or date_from and
+        date_to for an inclusive Bangkok calendar date range. date cannot be
+        combined with date_from/date_to. date_from and date_to must be sent
+        together, date_from must be less than or equal to date_to, and the
+        inclusive range must not exceed 31 calendar days. The database filter
+        uses VehicleJobAssignment.createdAt with [startAt, dayAfterEndAt).
       operationId: getWorkerAssignmentHistory
       security:
         - bearerAuth: []
       parameters:
         - in: query
           name: date
-          required: true
+          required: false
           schema:
             type: string
             format: date
-            example: "2026-07-07"
-          description: Assignment created date in YYYY-MM-DD format. The date is interpreted in Asia/Bangkok time.
+            example: "2026-08-14"
+          description: Single assignment-created date in YYYY-MM-DD format, interpreted in Asia/Bangkok time.
+        - in: query
+          name: date_from
+          required: false
+          schema:
+            type: string
+            format: date
+            example: "2026-08-01"
+          description: Inclusive start date for date range. Must be used together with date_to.
+        - in: query
+          name: date_to
+          required: false
+          schema:
+            type: string
+            format: date
+            example: "2026-08-14"
+          description: Inclusive end date for date range. Must be used together with date_from.
       responses:
         "200":
-          description: Worker assignment history for the selected date.
+          description: Worker assignment history for the selected date or date range.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkerAssignmentHistoryResponse"
         "400":
-          description: Invalid or missing date query.
+          description: Invalid or missing date/date range query.
           content:
             application/json:
               schema:
@@ -182,7 +207,7 @@
       tags:
         - Worker Application
       summary: Accept a pending worker assignment within the configured accept deadline.
-      description: If the worker misses the accept deadline, the assignment becomes TIMEOUT and the worker is moved to the queue tail even when the Worker WebSocket is disconnected. The accept-timeout streak resets after a successful accept. After worker_accept_timeout_limit consecutive accept timeouts, the worker is moved to open_app and cannot re-enter the queue in the same shift.
+      description: If the worker misses the accept deadline, the assignment becomes TIMEOUT and the worker is moved to the queue tail even when the Worker WebSocket is disconnected. The accept-timeout streak resets after a successful accept. After worker_accept_timeout_limit consecutive accept timeouts, the worker is moved to open_app and cannot re-enter the queue in the same shift. A successful response includes scan_deadline_at and scan_deadline_unix_ms from the persisted assignment so the frontend can calculate the QR scan countdown locally.
       operationId: acceptWorkerAssignment
       security:
         - bearerAuth: []
@@ -207,7 +232,9 @@
         - Worker Application
       summary: Check in to an accepted assignment with worker QR.
       description: |
-        Worker can check in only while scan_deadline_at is valid.
+        This endpoint uses the ticketNo path value as the scanned worker QR token and does not require a request body.
+        Worker can check in only while scan_deadline_at is valid. Countdown-capable responses and events include scan_deadline_unix_ms in Unix milliseconds.
+        After this worker checks in, worker_status is waiting_team until every active/eligible team assignment has scanned, then working.
         For multi-worker vehicle jobs, the first successful check-in shortens remaining ACCEPTED workers to the configured worker_scan_team_remaining_minutes window and emits ASSIGNMENT_SCAN_DEADLINE_SHORTENED.
         Backend emits ASSIGNMENT_SCAN_DEADLINE_WARNING to Admin SSE when an ACCEPTED worker has not checked in and remaining scan time is below worker_scan_warning_before_minutes.
         If the scan window expires by API call or background timeout, the assignment becomes TIMEOUT and the worker returns to open_app.
@@ -217,24 +244,11 @@
       parameters:
         - in: path
           name: ticketNo
-          description: ticketNo from WORKER_ASSIGNED.
+          description: ticketNo from WORKER_ASSIGNED. The mobile app scans this same value from the worker QR code.
           required: true
           schema:
             type: string
             example: TKT-20260723-000125
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - qr_token
-              properties:
-                qr_token:
-                  type: string
-                  description: ticketNo scanned from the worker QR. For Gate-created jobs, worker_qr_token is the same value as ticketNo.
-                  example: TKT-20260723-000125
       responses:
         "200":
           description: Checked-in assignment status.
@@ -248,17 +262,18 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/workers/me/assignments/{ticketNo}/tickets/{boothCode}/complete:
+  /api/workers/me/assignments/{ticketNo}/tickets/complete:
     post:
       tags:
         - Worker Application
-      summary: Submit counted product quantities for a GateTicket and wait for vendor confirmation via LINE.
+      summary: Submit counted product quantities for a GateTicket using BoothCode in body.
       description: |
+        Preferred endpoint for mobile clients. Send boothCode in the JSON body so BoothCode values containing "/" such as OM3/40 do not need URL encoding.
         After worker submits quantities, the ticket and assignment status become DELIVERED.
         Workers can submit any stall/market in the same vehicle job once the assigned team has checked in; the API no longer requires waiting for the previous stall to close first.
         Vendor receives a LINE Flex card with Confirm/Reject buttons. If vendor confirms through LINE, the ticket closes and backend sends an optional 1-5 satisfaction rating Flex prompt to the confirming LINE user. If vendor rejects, the assignment status becomes REJECT and the same endpoint can be used to resubmit.
         If vendor does not respond, the timeout is controlled by vendor_confirm_timeout_hours for the first submission and vendor_reconfirm_timeout_hours after a rejected resubmission.
-      operationId: completeWorkerAssignmentTicket
+      operationId: completeWorkerAssignmentTicketWithBodyBoothCode
       security:
         - bearerAuth: []
       parameters:
@@ -269,19 +284,12 @@
             type: string
             example: TKT-20260723-000125
           description: TicketNo from the accepted/check-in assignment.
-        - in: path
-          name: boothCode
-          required: true
-          schema:
-            type: string
-            example: B-018
-          description: BoothCode from the accepted job payload. Backend resolves the ticket using TicketNo + BoothCode so the same booth can appear under another TicketNo.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/WorkerTicketCompleteRequest"
+              $ref: "#/components/schemas/WorkerTicketCompleteWithBoothRequest"
       responses:
         "200":
           description: Ticket completion submitted and waiting for vendor confirmation.

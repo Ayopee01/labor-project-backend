@@ -151,6 +151,7 @@ export interface AdminVehicleJobFinancialResponse {
     ticketNo: string;
     gate_transaction_ref: string;
     license_plate: string;
+    license_plate_province: string | null;
     vehicle_type: string | null;
     status: string;
   };
@@ -198,6 +199,7 @@ export interface AdminVehicleJobListItemResponse {
   ticketNo: string;
   gate_transaction_ref: string;
   license_plate: string;
+  license_plate_province: string | null;
   vehicle_type: string | null;
   ticket_created_at: string;
   booth_count: number;
@@ -296,7 +298,9 @@ interface AdminVehicleJobOperationWorkerResponse {
   assignment_status: string;
   worker_status: string;
   accept_deadline_at: string | null;
+  accept_deadline_unix_ms?: number | null;
   scan_deadline_at: string | null;
+  scan_deadline_unix_ms?: number | null;
   accepted_at: string | null;
   scanned_at: string | null;
   completed_at: string | null;
@@ -374,6 +378,7 @@ export interface AdminScanDeadlineAssignmentResponse {
   worker_code: string | null;
   status: string;
   scan_deadline_at: string | null;
+  scan_deadline_unix_ms: number | null;
 }
 
 export interface AdminExtendScanDeadlineResponse {
@@ -388,7 +393,9 @@ export interface AdminAssignmentResponse {
   worker_code: string | null;
   status: string;
   accept_deadline_at: string | null;
+  accept_deadline_unix_ms: number | null;
   scan_deadline_at: string | null;
+  scan_deadline_unix_ms: number | null;
   created_at: string;
   updated_at: string;
 }

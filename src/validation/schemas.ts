@@ -50,6 +50,13 @@ const optionalDateString = z.preprocess(
   dateString.optional()
 );
 
+function countInclusiveCalendarDays(dateFrom: string, dateTo: string): number {
+  const startAt = Date.parse(`${dateFrom}T00:00:00.000Z`);
+  const endAt = Date.parse(`${dateTo}T00:00:00.000Z`);
+
+  return Math.floor((endAt - startAt) / (24 * 60 * 60 * 1000)) + 1;
+}
+
 const optionalTrimmedString = z.preprocess(
   emptyStringToUndefined,
   z.string().trim().optional()
@@ -265,6 +272,7 @@ export const gateVehicleJobBodySchema = z
     MarketCode: trimmedString,
 
     LicensePlate: trimmedString,
+    LicensePlateProvince: trimmedString,
     VehicleTypeCode: trimmedString,
     VehicleTypeName: trimmedString,
 
@@ -304,10 +312,6 @@ export const driverQrSessionBodySchema = z.object({
   qr_token: trimmedString,
 });
 
-export const workerScanBodySchema = z.object({
-  qr_token: trimmedString,
-});
-
 const workerTicketCompleteItemSchema = z.object({
   productCode: trimmedString,
   packageCode: trimmedString,
@@ -315,12 +319,64 @@ const workerTicketCompleteItemSchema = z.object({
 });
 
 export const workerTicketCompleteBodySchema = z.object({
+  boothCode: trimmedString,
   items: z.array(workerTicketCompleteItemSchema).min(1),
 });
 
-export const workerAssignmentHistoryQuerySchema = z.object({
-  date: dateString,
-});
+export const workerAssignmentHistoryQuerySchema = z
+  .object({
+    date: optionalDateString,
+    date_from: optionalDateString,
+    date_to: optionalDateString,
+  })
+  .superRefine((input, context) => {
+    const hasDate = Boolean(input.date);
+    const hasDateFrom = Boolean(input.date_from);
+    const hasDateTo = Boolean(input.date_to);
+
+    if (!hasDate && !hasDateFrom && !hasDateTo) {
+      context.addIssue({
+        code: "custom",
+        path: ["date"],
+        message: "date or date_from/date_to is required.",
+      });
+    }
+
+    if (hasDate && (hasDateFrom || hasDateTo)) {
+      context.addIssue({
+        code: "custom",
+        path: ["date"],
+        message: "date cannot be combined with date_from/date_to.",
+      });
+    }
+
+    if (hasDateFrom !== hasDateTo) {
+      context.addIssue({
+        code: "custom",
+        path: hasDateFrom ? ["date_to"] : ["date_from"],
+        message: "date_from and date_to must be sent together.",
+      });
+    }
+
+    if (input.date_from && input.date_to) {
+      if (input.date_from > input.date_to) {
+        context.addIssue({
+          code: "custom",
+          path: ["date_to"],
+          message: "date_to must be greater than or equal to date_from.",
+        });
+        return;
+      }
+
+      if (countInclusiveCalendarDays(input.date_from, input.date_to) > 31) {
+        context.addIssue({
+          code: "custom",
+          path: ["date_to"],
+          message: "Date range must not exceed 31 calendar days.",
+        });
+      }
+    }
+  });
 
 export const workerEarningsSummaryQuerySchema = z.object({}).strict();
 

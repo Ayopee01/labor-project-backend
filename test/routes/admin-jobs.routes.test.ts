@@ -56,6 +56,7 @@ function buildGateVehicleJobBody(suffix: string) {
     BoothCount: 1,
     MarketCode: `MARKET-${suffix}`,
     LicensePlate: `ABC-${suffix}`,
+    LicensePlateProvince: "Bangkok",
     VehicleTypeCode: "PICKUP",
     VehicleTypeName: "Pickup truck",
     Booths: [
@@ -908,10 +909,11 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   // Worker A เธชเนเธเธขเธญเธ”เธเธฃเธดเธ
   const submitResponse = await server.request(
     "POST",
-    `/api/workers/me/assignments/${job.ticketNo}/tickets/${ticket.boothCode}/complete`,
+    `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`,
     {
       token: workerToken,
       body: {
+        boothCode: ticket.boothCode,
         items: products.map(
           (product, index) => ({
             productCode: product.productCode,
@@ -1223,10 +1225,11 @@ test("admin cancel on next booth preserves worker earnings from completed booth"
   const firstSubmitResponse =
     await server.request(
       "POST",
-      `/api/workers/me/assignments/${job.ticketNo}/tickets/${firstTicket.boothCode}/complete`,
+      `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`,
       {
         token: workerToken,
         body: {
+          boothCode: firstTicket.boothCode,
           items: firstProducts.map(
             (product, index) => ({
               productCode:
@@ -1974,12 +1977,15 @@ test("ticket financialization keeps Gate rate snapshot after MasterRate changes"
   const submitResponse =
     await server.request(
       "POST",
-      `/api/workers/me/assignments/${job.ticketNo}/tickets/${ticket.boothCode}/complete`,
+      `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`,
       {
         token:
           workerToken,
 
         body: {
+          boothCode:
+            ticket.boothCode,
+
           items: [
             {
               productCode:
@@ -2642,4 +2648,3 @@ test("ticket financialization rejects partial financial state without overwritin
 });
 
 /* -------------------------------------- Worker Queue Route Tests -------------------------------------- */
-

@@ -56,6 +56,7 @@ function buildGateVehicleJobBody(suffix: string) {
     BoothCount: 1,
     MarketCode: `MARKET-${suffix}`,
     LicensePlate: `ABC-${suffix}`,
+    LicensePlateProvince: "Bangkok",
     VehicleTypeCode: "PICKUP",
     VehicleTypeName: "Pickup truck",
     Booths: [
@@ -203,9 +204,10 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
   assignment.status = "SCANNED";
   assignment.scanned_at = new Date().toISOString();
   const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
-  const submitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/${ticket.boothCode}/complete`, {
+  const submitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`, {
     token,
     body: {
+      boothCode: ticket.boothCode,
       items: products.map((product) => ({
         productCode: product.productCode,
         packageCode: product.packageCode,
@@ -279,9 +281,10 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
     "REJECT"
   );
 
-  const resubmitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/${ticket.boothCode}/complete`, {
+  const resubmitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`, {
     token,
     body: {
+      boothCode: ticket.boothCode,
       items: products.map((product) => ({
         productCode: product.productCode,
         packageCode: product.packageCode,
@@ -294,4 +297,3 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
   assert.equal(resubmitResponse.body.assignment_status, "DELIVERED");
   assert.equal(assignment.status, "DELIVERED");
 });
-

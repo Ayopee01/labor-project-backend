@@ -24,6 +24,7 @@ import * as vehicleJobRepository from "../repositories/shared/vehicle-job.reposi
 import { publishNotification } from "./notifications.service";
 import { publishRealtimeEvent } from "./shared/realtime-notification.service";
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
+import * as vehicleJobLifecycleService from "./shared/vehicle-job-lifecycle.service";
 import {
   buildVehicleOperationSummary,
   formatVehicleOperationItem,
@@ -74,6 +75,7 @@ import {
   buildBangkokDateSpanRange,
   buildDeadline,
   getDelayUntil,
+  toUnixMs,
 } from "../utils/time";
 import { buildWorkerAssignedPayload } from "../utils/worker-payload";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
@@ -99,6 +101,7 @@ function formatPublicVehicleJobListItem(
     ticketNo: vehicleJob.ticketNo,
     gate_transaction_ref: vehicleJob.gate_transaction_ref,
     license_plate: vehicleJob.license_plate,
+    license_plate_province: vehicleJob.license_plate_province,
     vehicle_type: vehicleJob.vehicle_type,
     ticket_created_at: vehicleJob.ticket_created_at,
     booth_count: vehicleJob.booth_count,
@@ -468,6 +471,7 @@ async function buildScanDeadlineAssignmentResponses(
     worker_code: workerCodeMap.get(assignment.worker_account_id) ?? null,
     status: assignment.status,
     scan_deadline_at: assignment.scan_deadline_at,
+    scan_deadline_unix_ms: toUnixMs(assignment.scan_deadline_at),
   }));
 }
 
@@ -485,7 +489,9 @@ async function buildAdminAssignmentResponses(
     worker_code: workerCodeMap.get(assignment.worker_account_id) ?? null,
     status: assignment.status,
     accept_deadline_at: assignment.accept_deadline_at,
+    accept_deadline_unix_ms: toUnixMs(assignment.accept_deadline_at),
     scan_deadline_at: assignment.scan_deadline_at,
+    scan_deadline_unix_ms: toUnixMs(assignment.scan_deadline_at),
     created_at: assignment.created_at,
     updated_at: assignment.updated_at,
   }));
@@ -562,6 +568,7 @@ export async function getVehicleJobFinancials(
       ticketNo: vehicleJob.ticketNo,
       gate_transaction_ref: vehicleJob.gateTransactionRef,
       license_plate: vehicleJob.licensePlate,
+      license_plate_province: vehicleJob.licensePlateProvince,
       vehicle_type: vehicleJob.vehicleType,
       status: vehicleJob.status,
     },
@@ -1003,7 +1010,26 @@ export async function cancelAssignment(
     assignment.vehicle_job_id,
   );
   const cancelledAssignment = await withTransaction(async (transaction) =>
-    adminJobsRepository.cancelAssignment(assignment.id, transaction),
+    {
+      const result = await adminJobsRepository.cancelAssignment(
+        assignment.id,
+        transaction,
+      );
+      const teamScan =
+        await assignmentRepository.getVehicleJobTeamScanReadiness(
+          assignment.vehicle_job_id,
+          transaction,
+        );
+
+      if (teamScan.is_ready) {
+        await vehicleJobLifecycleService.markVehicleJobInProgress(
+          assignment.vehicle_job_id,
+          transaction,
+        );
+      }
+
+      return result;
+    },
   );
 
   await removeAssignmentTimeout(assignment.id);

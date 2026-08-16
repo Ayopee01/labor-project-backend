@@ -56,6 +56,7 @@ function buildGateVehicleJobBody(suffix: string) {
     BoothCount: 1,
     MarketCode: `MARKET-${suffix}`,
     LicensePlate: `ABC-${suffix}`,
+    LicensePlateProvince: "Bangkok",
     VehicleTypeCode: "PICKUP",
     VehicleTypeName: "Pickup truck",
     Booths: [
@@ -340,6 +341,7 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.deepEqual(Object.keys(response.body.Ticket).sort(), [
     "BoothCount",
     "LicensePlate",
+    "LicensePlateProvince",
     "Status",
     "TicketCreatedAt",
     "TicketNo",
@@ -351,6 +353,7 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(response.body.Ticket.TicketCreatedAt, "2026-07-23T07:30:00.000Z");
   assert.equal(response.body.Ticket.BoothCount, 1);
   assert.equal(response.body.Ticket.LicensePlate, "ABC-001");
+  assert.equal(response.body.Ticket.LicensePlateProvince, "Bangkok");
   assert.equal(response.body.Ticket.VehicleTypeCode, "PICKUP");
   assert.equal(response.body.Ticket.VehicleTypeName, "Pickup truck");
   assert.equal(response.body.Ticket.Status, "unload_now");
@@ -905,4 +908,3 @@ test("POST /api/gate/tickets rejects duplicate ProductCode + PackageCode in the 
 });
 
 /* -------------------------------------- Admin Worker Status Route Tests -------------------------------------- */
-

@@ -258,6 +258,7 @@ export async function confirmTicketCompletion(
   submission: TicketCompletionSubmissionDto;
 }> {
   const db = client(connection);
+  const completedAt = new Date();
   const updateResult = await db.gateTicket.updateMany({
     where: {
       id: ticketId,
@@ -265,14 +266,13 @@ export async function confirmTicketCompletion(
     },
     data: {
       status: TICKET_STATUS.COMPLETED,
+      completedAt,
     },
   });
 
   if (updateResult.count !== 1) {
     throw new Error("Ticket confirm did not update a waiting ticket.");
   }
-
-  const completedAt = new Date();
 
   await db.ticketWorker.updateMany({
     where: {

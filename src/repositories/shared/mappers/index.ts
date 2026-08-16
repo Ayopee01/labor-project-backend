@@ -186,6 +186,7 @@ export function mapVehicleJob(record: VehicleJob | null): VehicleJobDto | null {
     ticketNo: record.ticketNo,
     gate_transaction_ref: record.gateTransactionRef,
     license_plate: record.licensePlate,
+    license_plate_province: record.licensePlateProvince,
     vehicle_type: record.vehicleType,
     ticket_created_at: toIsoString(record.ticketCreatedAt),
     booth_count: record.boothCount,

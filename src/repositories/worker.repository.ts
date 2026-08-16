@@ -67,6 +67,7 @@ export async function listWorkerAssignmentHistoryByDate(
       booths: market.tickets.map((ticket) => ({
         boothCode: ticket.boothCode,
         boothName: ticket.boothName,
+        completed_at: ticket.completedAt?.toISOString() ?? null,
         products: ticket.products.map((product) => ({
           productCode: product.productCode,
           productName: product.productName,
@@ -127,6 +128,7 @@ export async function listWorkerEarningsSummaryRows(
     completed_at: row.ticket.completedAt?.toISOString() ?? "",
     ticketNo: row.ticket.vehicleJob.ticketNo,
     license_plate: row.ticket.vehicleJob.licensePlate,
+    license_plate_province: row.ticket.vehicleJob.licensePlateProvince,
     booth_count: row.ticket.vehicleJob.boothCount,
     marketCode: row.ticket.marketJob.marketCode,
     marketName: row.ticket.marketJob.marketName,

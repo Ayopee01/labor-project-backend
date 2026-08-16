@@ -293,6 +293,7 @@ export function formatVehicleOperationItem(
       ticketNo: record.ticketNo,
       gate_transaction_ref: record.gateTransactionRef,
       license_plate: record.licensePlate,
+      license_plate_province: record.licensePlateProvince,
       vehicle_type: record.vehicleType,
       ticket_created_at: record.ticketCreatedAt.toISOString(),
       booth_count: record.boothCount,

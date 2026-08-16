@@ -114,6 +114,7 @@ export interface GateVehicleJobCreateInput {
   booth_count: number;
 
   license_plate: string;
+  license_plate_province: string;
   vehicle_type?: string;
 
   // จำนวน Worker ที่ Master กำหนด
@@ -156,6 +157,7 @@ export interface GateVehicleJobBody {
   MarketCode: string;
 
   LicensePlate: string;
+  LicensePlateProvince: string;
 
   VehicleTypeCode: string;
   VehicleTypeName: string;
@@ -185,6 +187,7 @@ interface GateVehicleJobResponseTicket {
   BoothCount: number;
 
   LicensePlate: string;
+  LicensePlateProvince: string | null;
 
   VehicleTypeCode: string | null;
   VehicleTypeName: string | null;

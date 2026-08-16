@@ -261,11 +261,12 @@
           example: https://example.com/uploads/workers/mn000142.jpg
         status:
           type: string
-          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, working, or break.
+          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, waiting_team, working, or break.
           enum:
             - open_app
             - ready
             - assigned
+            - waiting_team
             - working
             - break
           example: ready
@@ -1394,6 +1395,7 @@
         - BoothCount
         - MarketCode
         - LicensePlate
+        - LicensePlateProvince
         - VehicleTypeCode
         - VehicleTypeName
         - Booths
@@ -1422,6 +1424,10 @@
         LicensePlate:
           type: string
           example: ABC-1234
+
+        LicensePlateProvince:
+          type: string
+          example: Bangkok
 
         VehicleTypeCode:
           type: string
@@ -1452,6 +1458,10 @@
         license_plate:
           type: string
           example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
         vehicle_type:
           type: string
           nullable: true
@@ -1497,6 +1507,10 @@
         license_plate:
           type: string
           example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
         vehicle_type:
           type: string
           nullable: true
@@ -1586,6 +1600,17 @@
                 minimum: 0
                 example: 10
                 description: Actual quantity counted by the worker.
+    WorkerTicketCompleteWithBoothRequest:
+      allOf:
+        - $ref: "#/components/schemas/WorkerTicketCompleteRequest"
+        - type: object
+          required:
+            - boothCode
+          properties:
+            boothCode:
+              type: string
+              example: OM3/40
+              description: BoothCode from the accepted job payload. Send in body so values containing "/" do not need URL encoding.
     TicketCompletionResponse:
       type: object
       properties:
@@ -1876,6 +1901,7 @@
             - TicketCreatedAt
             - BoothCount
             - LicensePlate
+            - LicensePlateProvince
             - VehicleTypeCode
             - VehicleTypeName
             - Status
@@ -1896,6 +1922,11 @@
             LicensePlate:
               type: string
               example: ABC-1234
+
+            LicensePlateProvince:
+              type: string
+              nullable: true
+              example: Bangkok
 
             VehicleTypeCode:
               type: string
@@ -1974,6 +2005,10 @@
         license_plate:
           type: string
           example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
         status:
           type: string
           example: WORKING
@@ -2139,16 +2174,27 @@
           enum:
             - open_app
             - assigned
+            - waiting_team
             - working
           example: working
         accept_deadline_at:
           type: string
           nullable: true
           format: date-time
+        accept_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as accept_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
         scan_deadline_at:
           type: string
           nullable: true
           format: date-time
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
         accepted_at:
           type: string
           nullable: true
@@ -2529,6 +2575,10 @@
             license_plate:
               type: string
               example: ABC-1234
+            license_plate_province:
+              type: string
+              nullable: true
+              example: Bangkok
             vehicle_type:
               type: string
               nullable: true
@@ -2710,6 +2760,11 @@
           type: string
           format: date-time
           nullable: true
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
     AdminCancelMarketJobResponse:
       type: object
       properties:
@@ -2756,11 +2811,12 @@
           example: MN000142
         status:
           type: string
-          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, working, or break.
+          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, waiting_team, working, or break.
           enum:
             - open_app
             - ready
             - assigned
+            - waiting_team
             - working
             - break
           example: ready
@@ -2770,6 +2826,11 @@
         break_until:
           type: string
           nullable: true
+        break_until_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same value as break_until, represented as Unix timestamp in milliseconds for countdown timers.
         break_count_used:
           type: integer
           nullable: true
@@ -2849,6 +2910,7 @@
             - open_app
             - ready
             - assigned
+            - waiting_team
             - working
             - break
           example: break
@@ -2887,9 +2949,19 @@
         accept_deadline_at:
           type: string
           nullable: true
+        accept_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as accept_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
         scan_deadline_at:
           type: string
           nullable: true
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
         accepted_at:
           type: string
           nullable: true
@@ -2977,6 +3049,22 @@
         license_plate:
           type: string
           example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
+        scan_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Persisted Worker assignment QR scan deadline in ISO 8601 UTC. Frontend can calculate its own countdown from this value.
+          example: "2026-08-14T04:30:00.000Z"
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
+          example: 1786681800000
         team:
           type: array
           items:
@@ -2989,13 +3077,21 @@
       type: object
       required:
         - status
+        - worker_status
         - worker_code
         - ticketNo
         - worker_qr_token
+        - team_scan
       properties:
         status:
           type: string
           example: SCANNED
+        worker_status:
+          type: string
+          enum:
+            - waiting_team
+            - working
+          example: waiting_team
         worker_code:
           type: string
           nullable: true
@@ -3007,6 +3103,8 @@
           type: string
           description: Worker QR value that was just scanned. For Gate-created jobs this is the same value as ticketNo, and the mobile app can render it as a QR for other assigned workers in the same vehicle job.
           example: TKT-20260723-000125
+        team_scan:
+          $ref: "#/components/schemas/WorkerTeamScan"
     WorkerAssignmentEarningProduct:
       type: object
       properties:
@@ -3087,6 +3185,12 @@
           type: string
           nullable: true
           example: Booth A
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Actual time when this GateTicket/booth case was completed. Incomplete cases return null.
+          example: "2026-08-14T03:15:42.000Z"
         products:
           type: array
           items:
@@ -3120,6 +3224,10 @@
         license_plate:
           type: string
           example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
         status:
           type: string
           example: COMPLETED
@@ -3216,6 +3324,21 @@
           type: string
           format: date-time
           nullable: true
+    WorkerTeamScan:
+      type: object
+      properties:
+        workers_required:
+          type: integer
+          example: 3
+        checked_in_count:
+          type: integer
+          example: 1
+        remaining_count:
+          type: integer
+          example: 2
+        is_ready:
+          type: boolean
+          example: false
     WorkerCurrentJob:
       type: object
       properties:
@@ -3225,10 +3348,28 @@
         license_plate:
           type: string
           example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
+        scan_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Latest persisted scan deadline for assigned workers. Returns null when the worker is waiting_team or working.
+          example: "2026-08-14T04:30:00.000Z"
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers. Returns null when scan_deadline_at is null.
+          example: 1786681800000
         vehicle_type:
           type: string
           nullable: true
           example: Truck
+        team_scan:
+          $ref: "#/components/schemas/WorkerTeamScan"
         markets:
           type: array
           items:
@@ -3282,6 +3423,10 @@
               license_plate:
                 type: string
                 example: ABC-1234
+              license_plate_province:
+                type: string
+                nullable: true
+                example: Bangkok
               booth_count:
                 type: integer
                 example: 2
@@ -3397,11 +3542,12 @@
           example: https://example.com/uploads/workers/mn000142.jpg
         status:
           type: string
-          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, working, or break.
+          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, waiting_team, working, or break.
           enum:
             - open_app
             - ready
             - assigned
+            - waiting_team
             - working
             - break
           example: break
@@ -3436,12 +3582,18 @@
           allOf:
             - $ref: "#/components/schemas/WorkerCurrentJob"
           nullable: true
-          description: Present for assigned and working statuses. Not included for open_app, ready, or break.
+          description: Present for assigned, waiting_team, and working statuses. Not included for open_app, ready, or break.
         break_until:
           type: string
           format: date-time
           description: Present only when status is break.
           example: 2026-07-14T05:30:00.000Z
+        break_until_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same value as break_until, represented as Unix timestamp in milliseconds for countdown timers. Present only when status is break.
+          example: 1784007000000
         remaining_break_time:
           type: object
           description: Present only when status is break.
@@ -3508,6 +3660,7 @@
             - open_app
             - ready
             - assigned
+            - waiting_team
             - working
             - break
           example: ready
@@ -3524,6 +3677,8 @@
             ready:
               type: integer
             assigned:
+              type: integer
+            waiting_team:
               type: integer
             working:
               type: integer
@@ -3567,6 +3722,7 @@
             - open_app
             - ready
             - assigned
+            - waiting_team
             - working
             - break
           example: open_app

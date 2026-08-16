@@ -25,6 +25,16 @@ export function getDelayUntil(deadlineAt: string | null, baseTime = Date.now()):
   return Math.max(0, deadlineMs - baseTime);
 }
 
+export function toUnixMs(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const timeMs = new Date(value).getTime();
+
+  return Number.isFinite(timeMs) ? timeMs : null;
+}
+
 // Function สร้าง bangkok date range สำหรับ helper กลาง
 export function buildBangkokDateRange(date: string): { startAt: Date; endAt: Date } {
   const startAt = new Date(`${date}T00:00:00.000+07:00`);

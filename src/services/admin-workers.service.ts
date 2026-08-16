@@ -10,7 +10,7 @@ import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { DbConnection } from "../types/shared/common.type";
 import type { AccountDto, AdminWorkerBoardStatus, AdminWorkerStatusItem, PaginationMeta, ProfileDto, ProfileUpdateInput, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
-import type { VehicleJobAssignmentDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
+import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
 import { parseWithSchema } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
@@ -586,8 +586,9 @@ const ADMIN_WORKER_STATUS_ORDER: Record<AdminWorkerBoardStatus, number> = {
   [WORKER_WORK_STATUS.OPEN_APP]: 0,
   [WORKER_WORK_STATUS.READY]: 1,
   [WORKER_WORK_STATUS.ASSIGNED]: 2,
-  [WORKER_WORK_STATUS.WORKING]: 3,
-  [WORKER_WORK_STATUS.BREAK]: 4,
+  [WORKER_WORK_STATUS.WAITING_TEAM]: 3,
+  [WORKER_WORK_STATUS.WORKING]: 4,
+  [WORKER_WORK_STATUS.BREAK]: 5,
 };
 
 // Function จัดการ timestamp เป็น sort value ใน service flow
@@ -617,6 +618,10 @@ function resolveStatusEnteredAt(
   }
 
   if (status === WORKER_WORK_STATUS.WORKING) {
+    return assignment?.scanned_at ?? assignment?.updated_at ?? assignment?.accepted_at ?? queue?.updated_at ?? presence.last_seen_at;
+  }
+
+  if (status === WORKER_WORK_STATUS.WAITING_TEAM) {
     return assignment?.scanned_at ?? assignment?.updated_at ?? assignment?.accepted_at ?? queue?.updated_at ?? presence.last_seen_at;
   }
 
@@ -693,10 +698,11 @@ function formatAdminWorkerStatusItem(
   assignment: VehicleJobAssignmentDto | null,
   presence: WorkerPresenceDto,
   queueRank: number | null = null,
-  socketConnected = isWorkerSocketConnected(account.id)
+  socketConnected = isWorkerSocketConnected(account.id),
+  teamScanReadiness: Pick<VehicleWorkReadinessDto, "is_ready"> | null = null,
 ): AdminWorkerStatusItem {
   const scheduleWithShift = formatScheduleWithShift(schedule);
-  const status = resolveWorkerWorkStatus(queue, assignment);
+  const status = resolveWorkerWorkStatus(queue, assignment, teamScanReadiness);
 
   return {
     full_name: account.full_name,
@@ -718,6 +724,7 @@ function buildAdminWorkerStatusSummary(items: AdminWorkerStatusItem[]): {
   open_app: number;
   ready: number;
   assigned: number;
+  waiting_team: number;
   working: number;
   break: number;
 } {
@@ -730,6 +737,8 @@ function buildAdminWorkerStatusSummary(items: AdminWorkerStatusItem[]): {
         summary.ready += 1;
       } else if (item.status === WORKER_WORK_STATUS.ASSIGNED) {
         summary.assigned += 1;
+      } else if (item.status === WORKER_WORK_STATUS.WAITING_TEAM) {
+        summary.waiting_team += 1;
       } else if (item.status === WORKER_WORK_STATUS.WORKING) {
         summary.working += 1;
       } else if (item.status === WORKER_WORK_STATUS.BREAK) {
@@ -743,6 +752,7 @@ function buildAdminWorkerStatusSummary(items: AdminWorkerStatusItem[]): {
       open_app: 0,
       ready: 0,
       assigned: 0,
+      waiting_team: 0,
       working: 0,
       break: 0,
     }
@@ -763,6 +773,11 @@ async function getAdminWorkerStatus(idParam: unknown): Promise<AdminWorkerStatus
     getWorkerPresence(account.id),
     getWorkerReadyQueueRanks([account.id]),
   ]);
+  const teamScanReadiness = assignment
+    ? await assignmentRepository.getVehicleJobTeamScanReadiness(
+        assignment.vehicle_job_id,
+      )
+    : null;
 
   return formatAdminWorkerStatusItem(
     account,
@@ -772,7 +787,8 @@ async function getAdminWorkerStatus(idParam: unknown): Promise<AdminWorkerStatus
     assignment,
     presence,
     queueRanks.get(account.id) ?? null,
-    isWorkerSocketConnected(account.id)
+    isWorkerSocketConnected(account.id),
+    teamScanReadiness,
   );
 }
 
@@ -811,6 +827,23 @@ export async function listAdminWorkerStatuses(): Promise<{
   profiles.forEach((profile) => {
     profileMap.set(profile.account_id, profile);
   });
+  const vehicleJobIds = Array.from(
+    new Set(
+      assignments
+        .filter(
+          (assignment): assignment is VehicleJobAssignmentDto =>
+            assignment !== null,
+        )
+        .map((assignment) => assignment.vehicle_job_id),
+    ),
+  );
+  const teamScanReadinessEntries = await Promise.all(
+    vehicleJobIds.map(async (vehicleJobId) => [
+      vehicleJobId,
+      await assignmentRepository.getVehicleJobTeamScanReadiness(vehicleJobId),
+    ] as const),
+  );
+  const teamScanReadinessMap = new Map(teamScanReadinessEntries);
 
   const data = accounts
     .map((account) => {
@@ -840,7 +873,10 @@ export async function listAdminWorkerStatuses(): Promise<{
           assignment,
           presence,
           queueRanks.get(account.id) ?? null,
-          socketConnected
+          socketConnected,
+          assignment
+            ? teamScanReadinessMap.get(assignment.vehicle_job_id) ?? null
+            : null,
         ),
       };
     })

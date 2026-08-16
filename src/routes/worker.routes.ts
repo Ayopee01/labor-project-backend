@@ -110,7 +110,6 @@ router.post(
     try {
       const result = await workerService.scanWorkerAssignment(
         req.params.ticketNo,
-        req.body,
         req.auth
       );
       res.json(result);
@@ -121,15 +120,15 @@ router.post(
 );
 
 router.post(
-  "/me/assignments/:ticketNo/tickets/:boothCode/complete",
+  "/me/assignments/:ticketNo/tickets/complete",
   async (req, res, next) => {
     try {
-      const result = await workerService.completeWorkerAssignmentTicket(
-        req.params.ticketNo,
-        req.params.boothCode,
-        req.body,
-        req.auth
-      );
+      const result =
+        await workerService.completeWorkerAssignmentTicketFromBody(
+          req.params.ticketNo,
+          req.body,
+          req.auth
+        );
       res.json(result);
     } catch (error) {
       next(error);

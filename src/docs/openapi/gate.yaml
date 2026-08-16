@@ -55,6 +55,8 @@
         multiple booths using Booths[], and each booth can contain multiple
         products using Products[].
 
+        Gate must send LicensePlateProvince together with LicensePlate.
+
         BoothCount must equal Booths.length. BoothCode cannot be duplicated
         inside the same request. ProductCode + PackageCode cannot be duplicated
         inside the same booth.

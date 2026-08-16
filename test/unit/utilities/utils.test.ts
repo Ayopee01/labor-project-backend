@@ -162,6 +162,7 @@ test("gate vehicle job schema accepts multi booth PascalCase Gate body", () => {
     BoothCount: 2,
     MarketCode: "MARKET-A",
     LicensePlate: "ABC-1234",
+    LicensePlateProvince: "Bangkok",
     VehicleTypeCode: "PICKUP",
     VehicleTypeName: "Pickup truck",
     Booths: [
@@ -220,6 +221,7 @@ test("gate vehicle job schema rejects BoothCount mismatch", () => {
       BoothCount: 2,
       MarketCode: "MARKET-A",
       LicensePlate: "ABC-1234",
+      LicensePlateProvince: "Bangkok",
       VehicleTypeCode: "PICKUP",
       VehicleTypeName: "Pickup truck",
       Booths: [
@@ -247,6 +249,7 @@ test("gate vehicle job schema rejects duplicate BoothCode", () => {
       BoothCount: 2,
       MarketCode: "MARKET-A",
       LicensePlate: "ABC-1234",
+      LicensePlateProvince: "Bangkok",
       VehicleTypeCode: "PICKUP",
       VehicleTypeName: "Pickup truck",
       Booths: [
@@ -284,6 +287,7 @@ test("gate vehicle job schema rejects duplicate ProductCode and PackageCode in s
       BoothCount: 1,
       MarketCode: "MARKET-A",
       LicensePlate: "ABC-1234",
+      LicensePlateProvince: "Bangkok",
       VehicleTypeCode: "PICKUP",
       VehicleTypeName: "Pickup truck",
       Booths: [

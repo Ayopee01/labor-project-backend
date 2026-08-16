@@ -49,6 +49,7 @@ function formatDriverVehicleJob(
     ticketNo: vehicleJob.ticketNo,
     gate_transaction_ref: vehicleJob.gate_transaction_ref,
     license_plate: vehicleJob.license_plate,
+    license_plate_province: vehicleJob.license_plate_province,
     vehicle_type: vehicleJob.vehicle_type,
     ticket_created_at: vehicleJob.ticket_created_at,
     booth_count: vehicleJob.booth_count,
@@ -233,6 +234,7 @@ export async function markDriverJobReady(
     payload: {
       ticketNo: detail.vehicle_job.ticketNo,
       license_plate: detail.vehicle_job.license_plate,
+      license_plate_province: detail.vehicle_job.license_plate_province,
       status: detail.vehicle_job.status,
     },
     audience: {
@@ -243,6 +245,7 @@ export async function markDriverJobReady(
   return {
     ticketNo: detail.vehicle_job.ticketNo,
     license_plate: detail.vehicle_job.license_plate,
+    license_plate_province: detail.vehicle_job.license_plate_province,
     status: detail.vehicle_job.status,
     worker_qr_token: detail.vehicle_job.worker_qr_token,
   };

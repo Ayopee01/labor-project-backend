@@ -1,5 +1,6 @@
 import type { VehicleJobAssignmentDto, VehicleJobDto, WorkerQueueEntryDto } from "../types/worker.type";
 import { resolveWorkerWorkStatus } from "./worker-status";
+import { toUnixMs } from "./time";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -15,6 +16,7 @@ export function buildWorkerAssignedPayload(
     assignment: {
       created_at: assignment.created_at,
       accept_deadline_at: assignment.accept_deadline_at,
+      accept_deadline_unix_ms: toUnixMs(assignment.accept_deadline_at),
     },
   };
 }
@@ -33,7 +35,12 @@ export function buildWorkerQueueSocketPayload(
     worker_code: workerCode,
     status: resolveWorkerWorkStatus(queueEntry, assignment),
     ...(queueEntry.ready_at ? { ready_at: queueEntry.ready_at } : {}),
-    ...(queueEntry.break_until ? { break_until: queueEntry.break_until } : {}),
+    ...(queueEntry.break_until
+      ? {
+        break_until: queueEntry.break_until,
+        break_until_unix_ms: toUnixMs(queueEntry.break_until),
+      }
+      : {}),
     created_at: queueEntry.created_at,
     updated_at: queueEntry.updated_at,
     ...(queueEntry.break_count_used !== undefined

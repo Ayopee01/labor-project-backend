@@ -133,19 +133,20 @@ model GateRequestLog {
 }
 
 model VehicleJob {
-  id                 Int      @id @default(autoincrement())
-  ticketNo           String   @unique @map("ticket_no") @db.VarChar(100)
-  gateTransactionRef String   @map("gate_transaction_ref") @db.VarChar(100)
-  licensePlate       String   @map("license_plate") @db.VarChar(50)
-  vehicleType        String?  @map("vehicle_type") @db.VarChar(100)
-  ticketCreatedAt    DateTime @map("ticket_created_at") @db.Timestamp(3)
-  boothCount         Int      @default(1) @map("booth_count")
-  workersRequired    Int      @map("workers_required")
-  dispatchNow        Boolean  @default(false) @map("dispatch_now")
-  status             String   @default("WAIT") @db.VarChar(30)
-  driverQrToken      String   @unique @map("driver_qr_token") @db.VarChar(255)
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+  id                   Int      @id @default(autoincrement())
+  ticketNo             String   @unique @map("ticket_no") @db.VarChar(100)
+  gateTransactionRef   String   @map("gate_transaction_ref") @db.VarChar(100)
+  licensePlate         String   @map("license_plate") @db.VarChar(50)
+  licensePlateProvince String?  @map("license_plate_province") @db.VarChar(100)
+  vehicleType          String?  @map("vehicle_type") @db.VarChar(100)
+  ticketCreatedAt      DateTime @map("ticket_created_at") @db.Timestamp(3)
+  boothCount           Int      @default(1) @map("booth_count")
+  workersRequired      Int      @map("workers_required")
+  dispatchNow          Boolean  @default(false) @map("dispatch_now")
+  status               String   @default("WAIT") @db.VarChar(30)
+  driverQrToken        String   @unique @map("driver_qr_token") @db.VarChar(255)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
 
   gateRequests     GateRequestLog[]
   marketJobs       MarketJob[]

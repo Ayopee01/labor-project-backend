@@ -17,6 +17,7 @@ import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerAssignmentEventType } from "../../types/shared/worker-assignment-event.type";
 import type {
   VehicleJobAssignmentDto,
+  VehicleWorkReadinessDto,
   WorkerAssignmentTeamMemberDto,
 } from "../../types/worker.type";
 
@@ -173,6 +174,39 @@ export async function countScannedAssignments(
       },
     },
   });
+}
+
+export async function getVehicleJobTeamScanReadiness(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<VehicleWorkReadinessDto> {
+  const db = client(connection);
+  const [eligibleCount, checkedInCount] = await Promise.all([
+    db.vehicleJobAssignment.count({
+      where: {
+        vehicleJobId,
+        status: {
+          in: FINISHED_ASSIGNMENT_STATUSES,
+        },
+      },
+    }),
+    db.vehicleJobAssignment.count({
+      where: {
+        vehicleJobId,
+        status: {
+          in: SCANNED_ASSIGNMENT_STATUSES,
+        },
+      },
+    }),
+  ]);
+  const remainingCount = Math.max(0, eligibleCount - checkedInCount);
+
+  return {
+    workers_required: eligibleCount,
+    checked_in_count: checkedInCount,
+    remaining_count: remainingCount,
+    is_ready: eligibleCount > 0 && remainingCount === 0,
+  };
 }
 
 function buildAssignmentScanStatus(assignment: VehicleJobAssignmentDto): string {

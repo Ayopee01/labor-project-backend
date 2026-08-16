@@ -633,6 +633,25 @@ export const workerApplicationRepositoryMock = {
       is_ready: workersRequired > 0 && checkedInCount >= workersRequired,
     };
   },
+  getVehicleJobTeamScanReadiness: async (vehicleJobId: number) => {
+    const eligibleAssignments = state.assignments.filter(
+      (assignment) =>
+        assignment.vehicle_job_id === vehicleJobId &&
+        FINISHED_ASSIGNMENT_STATUSES.includes(assignment.status),
+    );
+    const checkedInCount = eligibleAssignments.filter((assignment) =>
+      SCANNED_ASSIGNMENT_STATUSES.includes(assignment.status),
+    ).length;
+
+    return {
+      workers_required: eligibleAssignments.length,
+      checked_in_count: checkedInCount,
+      remaining_count: Math.max(0, eligibleAssignments.length - checkedInCount),
+      is_ready:
+        eligibleAssignments.length > 0 &&
+        checkedInCount >= eligibleAssignments.length,
+    };
+  },
   activateNextTicketIfReady: async (vehicleJobId: number) =>
     activateNextTicketForVehicleJob(vehicleJobId),
   getWorkerDailyAssignmentCounts: async (
@@ -688,6 +707,7 @@ export const workerApplicationRepositoryMock = {
           ticketNo: `JOB-${assignment.vehicle_job_id}`,
           gate_transaction_ref: `GATE-${assignment.vehicle_job_id}`,
           license_plate: "TEST",
+          license_plate_province: "Bangkok",
           vehicle_type: null,
           ticket_created_at: assignment.created_at ?? new Date().toISOString(),
           booth_count: 1,
@@ -723,6 +743,7 @@ export const workerApplicationRepositoryMock = {
               return {
                 boothCode: ticket.boothCode,
                 boothName: ticket.boothName,
+                completed_at: ticket.completed_at ?? null,
                 products: state.ticketProducts
                   .filter((product) => product.ticket_id === ticket.id)
                   .sort((left, right) => left.id - right.id)
@@ -814,6 +835,7 @@ export const workerApplicationRepositoryMock = {
           completed_at: ticket.completed_at ?? "",
           ticketNo: vehicleJob.ticketNo,
           license_plate: vehicleJob.license_plate,
+          license_plate_province: vehicleJob.license_plate_province,
           booth_count: vehicleJob.booth_count,
           marketCode: ticket.marketCode ?? `MARKET-${ticket.market_job_id}`,
           marketName: ticket.marketName ?? `Market ${ticket.market_job_id}`,
@@ -1048,12 +1070,13 @@ export const workerApplicationRepositoryMock = {
       throw new Error("Ticket confirm did not update a waiting ticket.");
     }
 
+    const completedAt = new Date().toISOString();
     ticket.status = "COMPLETED";
     ticket.confirmation_status = "COMPLETED";
+    ticket.completed_at = completedAt;
     submission.status = "COMPLETED";
-    submission.confirmed_at = new Date().toISOString();
+    submission.confirmed_at = completedAt;
     submission.resolved_by_line_user_id = resolvedByLineUserId ?? null;
-    const completedAt = new Date().toISOString();
 
     state.ticketWorkers
       .filter(
@@ -1296,7 +1319,6 @@ export const workerApplicationRepositoryMock = {
     }
 
     ticket.final_stall_amount = finalStallAmount.toFixed(2);
-    ticket.completed_at = finalizedAt.toISOString();
     ticket.financialized_at = finalizedAt.toISOString();
     ticket.updated_at = finalizedAt.toISOString();
   },
@@ -1391,6 +1413,7 @@ export const workerApplicationRepositoryMock = {
         ticketNo: job.ticketNo,
         gate_transaction_ref: job.gate_transaction_ref,
         license_plate: job.license_plate,
+        license_plate_province: job.license_plate_province,
         vehicle_type: job.vehicle_type,
         ticket_created_at: job.ticket_created_at,
         booth_count: job.booth_count,
@@ -1450,6 +1473,7 @@ const {
   findVehicleJobLifecycleState,
   findWaitingTicketCompletionSubmission,
   getVehicleJobDetail,
+  getVehicleJobTeamScanReadiness,
   getVehicleWorkReadiness,
   getWorkerDailyAssignmentCounts,
   listAcceptedAssignmentsByVehicleJob,
@@ -1517,6 +1541,7 @@ export const vehicleJobAssignmentRepositoryMock = {
   findCurrentAssignmentByWorker,
   findAssignmentById,
   countScannedAssignments,
+  getVehicleJobTeamScanReadiness,
   listVehicleJobAssignmentTeam,
   findAssignmentByIdAndWorker,
   findCurrentAssignmentByVehicleJobRefAndWorker,
@@ -1725,6 +1750,7 @@ export const gateRepositoryMock = {
       ticket_created_at: Date;
       booth_count: number;
       license_plate: string;
+      license_plate_province: string;
       vehicle_type?: string | null;
       workers_required: number;
       dispatch_now?: boolean;
@@ -1776,6 +1802,7 @@ export const gateRepositoryMock = {
         ticketNo: input.ticketNo,
         gate_transaction_ref: input.gate_transaction_ref,
         license_plate: input.license_plate,
+        license_plate_province: input.license_plate_province,
         vehicle_type: input.vehicle_type ?? null,
         ticket_created_at: input.ticket_created_at.toISOString(),
         booth_count: input.booth_count,
@@ -1793,6 +1820,7 @@ export const gateRepositoryMock = {
       const requestedWorkersRequired = Math.max(1, input.workers_required);
       vehicleJob.gate_transaction_ref = input.gate_transaction_ref;
       vehicleJob.license_plate = input.license_plate;
+      vehicleJob.license_plate_province = input.license_plate_province;
       vehicleJob.vehicle_type = input.vehicle_type ?? null;
       vehicleJob.ticket_created_at = input.ticket_created_at.toISOString();
       vehicleJob.booth_count = input.booth_count;
@@ -2543,6 +2571,7 @@ export const adminJobsRepositoryMock = {
       ticketNo: vehicleJob.ticketNo,
       gateTransactionRef: vehicleJob.gate_transaction_ref,
       licensePlate: vehicleJob.license_plate,
+      licensePlateProvince: vehicleJob.license_plate_province,
       vehicleType: vehicleJob.vehicle_type,
       status: vehicleJob.status,
 

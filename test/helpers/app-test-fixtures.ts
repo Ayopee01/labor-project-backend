@@ -401,6 +401,7 @@ export function addDispatchableJob(
     ticketNo: `JOB-${id}`,
     gate_transaction_ref: `GATE-${id}`,
     license_plate: `TEST-${id}`,
+    license_plate_province: "Bangkok",
     vehicle_type: "truck",
     ticket_created_at: now,
     booth_count: 1,
@@ -464,6 +465,8 @@ export function addTicketForVehicleJob(
     reject_reason: null,
     status: "WORKING",
     confirmation_status: null,
+    completed_at: null,
+    financialized_at: null,
     created_at: now,
     updated_at: now,
   };
