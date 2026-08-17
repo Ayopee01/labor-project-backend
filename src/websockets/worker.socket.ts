@@ -10,7 +10,7 @@ import * as profileRepository from "../repositories/shared/profile.repository";
 import { findActiveByIdAndAccountId } from "../repositories/shared/session.repository";
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
 import { getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";
-import { publishNotification } from "../services/notifications.service";
+import { buildWorkerNotification, persistWorkerNotification, publishNotification } from "../services/notifications.service";
 import { sendWorkerPushNotificationByAccountIds } from "../services/shared/worker-push.service";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
 
@@ -221,37 +221,74 @@ export function sendWorkerSocketEvent(
 ): boolean {
   const sockets = workerSockets.get(accountId);
   const shouldPush = options.push ?? PUSH_WORKER_SOCKET_EVENTS.has(type);
+  const hasSockets = Boolean(sockets && sockets.size > 0);
+  const fallbackTitle = options.pushTitle ?? options.fallbackTitle ?? buildWorkerPushTitle(type);
+  const fallbackMessage =
+    options.pushMessage ?? options.fallbackMessage ?? buildWorkerPushMessage(type, payload);
 
-  if (shouldPush) {
-    void sendWorkerPushNotificationByAccountIds({
-      account_ids: [accountId],
+  void accountRepository.findById(accountId).then((account) => {
+    const localized = buildWorkerNotification({
       type,
-      title: options.pushTitle ?? buildWorkerPushTitle(type),
-      message: options.pushMessage ?? buildWorkerPushMessage(type, payload),
+      lang: account?.lang,
+      notification_key: options.notificationKey,
+      notification_params: options.notificationParams,
       payload,
-    }).catch((error) => {
-      logger.error("Failed to send worker push notification.", { error });
+      fallbackTitle,
+      fallbackMessage,
     });
-  }
+    const notification = {
+      key: localized.key,
+      lang: localized.lang,
+      title: localized.title,
+      message: localized.message,
+    };
 
-  if (!sockets || sockets.size === 0) {
-    return false;
-  }
+    if (shouldPush) {
+      persistWorkerNotification({
+        worker_account_id: accountId,
+        type,
+        notification_key: localized.key,
+        lang: localized.lang,
+        title: localized.title,
+        message: localized.message,
+        payload,
+      });
 
-  const event = toPascalCasePayload({
-    type,
-    payload,
-    occurred_at: new Date().toISOString(),
-  });
-  const message = JSON.stringify(event);
-
-  for (const socket of sockets) {
-    if (socket.readyState === WebSocket.OPEN) {
-      socket.send(message);
+      void sendWorkerPushNotificationByAccountIds({
+        account_ids: [accountId],
+        type,
+        title: fallbackTitle,
+        message: fallbackMessage,
+        notification_key: localized.key,
+        notification_params: options.notificationParams,
+        payload,
+      }).catch((error) => {
+        logger.error("Failed to send worker push notification.", { error });
+      });
     }
-  }
 
-  return true;
+    if (!sockets || sockets.size === 0) {
+      return;
+    }
+
+    const event = toPascalCasePayload({
+      type,
+      notification,
+      payload,
+      occurred_at: new Date().toISOString(),
+    });
+    const message = JSON.stringify(event);
+
+    for (const socket of sockets) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(message);
+      }
+    }
+  }).catch((error) => {
+    logger.error("Failed to send worker socket event.", { error });
+  });
+
+  return hasSockets;
 }
 
 // Function สร้าง title ของ FCM notification ให้ตรงกับชนิด event จาก Worker WebSocket
@@ -274,6 +311,8 @@ function buildWorkerPushTitle(type: WorkerSocketEventType): string {
       return "Ticket submitted";
     case "TICKET_COMPLETION_RESULT":
       return "Ticket result updated";
+    case "SESSION_REVOKED":
+      return "Signed in on another device";
     default:
       return "Worker notification";
   }
@@ -308,6 +347,8 @@ function buildWorkerPushMessage(
       return "Ticket completion is waiting for vendor confirmation.";
     case "TICKET_COMPLETION_RESULT":
       return "Vendor confirmation result is available.";
+    case "SESSION_REVOKED":
+      return "This session was signed out because login was confirmed on another device.";
     default:
       return "A worker notification is available.";
   }

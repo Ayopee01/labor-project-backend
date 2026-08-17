@@ -12,6 +12,21 @@ export type AccountRecord = {
   phone?: string | null;
   permission_level?: string | null;
   shirt_number?: string | null;
+  lang: string;
+};
+
+export type WorkerNotificationRecord = {
+  id: number;
+  worker_account_id: number;
+  type: string;
+  notification_key: string | null;
+  lang: string;
+  title: string;
+  message: string;
+  payload: unknown;
+  read_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type GateClientRecord = {

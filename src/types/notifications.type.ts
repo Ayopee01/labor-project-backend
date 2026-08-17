@@ -11,6 +11,8 @@ export type RealtimeNotificationEvent = {
   type: string;
   title: string;
   message: string;
+  notification_key?: string | null;
+  lang?: string | null;
   payload?: unknown;
   audience?: NotificationAudience;
 };
@@ -19,6 +21,8 @@ export type PublishRealtimeEventInput = {
   type: WorkerSocketEventType | string;
   title: string;
   message: string;
+  notification_key?: string;
+  notification_params?: Record<string, unknown>;
   payload?: Record<string, unknown>;
   worker_payload?: Record<string, unknown>;
   admin?: boolean;
@@ -31,6 +35,56 @@ export type NotificationClient = {
   response: Response;
   heartbeat: NodeJS.Timeout;
 };
+
+export interface WorkerNotificationDto {
+  id: number;
+  worker_account_id: number;
+  type: string;
+  notification_key: string | null;
+  lang: string;
+  title: string;
+  message: string;
+  payload: unknown;
+  read_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateWorkerNotificationInput {
+  worker_account_id: number;
+  type: string;
+  notification_key?: string | null;
+  lang?: string | null;
+  title: string;
+  message: string;
+  payload?: unknown;
+}
+
+export interface WorkerNotificationListResponse {
+  data: Array<{
+    id: number;
+    type: string;
+    notification_key: string | null;
+    lang: string;
+    title: string;
+    message: string;
+    notification: {
+      key: string | null;
+      lang: string;
+      title: string;
+      message: string;
+    };
+    payload: unknown;
+    read_at: string | null;
+    created_at: string;
+  }>;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    total_pages: number;
+  };
+}
 
 // Type ค่า platform ของ client ที่เป็นเจ้าของ FCM token
 export type PushPlatform = "android" | "ios" | "web" | "unknown";
@@ -76,6 +130,8 @@ export interface WorkerPushEventInput {
   type: string;
   title: string;
   message: string;
+  notification_key?: string | null;
+  lang?: string | null;
   payload?: Record<string, unknown>;
 }
 

@@ -107,4 +107,18 @@ router.patch(
   }
 );
 
+router.patch(
+  "/me/lang",
+  authMiddleware,
+  sessionMiddleware,
+  async (req, res, next) => {
+    try {
+      const result = await authService.updateOwnLang(req.auth, req.body);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;

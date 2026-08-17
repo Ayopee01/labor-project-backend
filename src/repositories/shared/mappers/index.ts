@@ -92,6 +92,7 @@ export function mapAccount(record: Account | null): AccountDto | null {
     shift_no: record.shiftNo,
     shift_start_time: record.shiftStartTime,
     shift_end_time: record.shiftEndTime,
+    lang: record.lang,
     source: toAccountSource(record.source),
     master_worker_id: record.masterWorkerId,
     master_updated_at: toIsoString(record.masterUpdatedAt),

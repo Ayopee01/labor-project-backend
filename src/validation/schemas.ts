@@ -131,6 +131,28 @@ const pushPlatformSchema = z.preprocess(
     .optional()
 );
 
+const accountLangSchema = z.preprocess(
+  (value) => {
+    const normalized = emptyStringToUndefined(value);
+
+    if (typeof normalized !== "string") {
+      return normalized;
+    }
+
+    const upper = normalized.trim().toUpperCase();
+    const aliases: Record<string, string> = {
+      MY: "MN",
+      KM: "CN",
+    };
+
+    return aliases[upper] ?? upper;
+  },
+  z
+    .string()
+    .trim()
+    .pipe(z.enum(["TH", "MN", "CN", "EN"]))
+);
+
 const optionalPageNumber = z.preprocess(
   emptyStringToUndefined,
   z.coerce.number().int().min(1).optional()
@@ -178,6 +200,10 @@ export const refreshBodySchema = z.object({
 export const changeOwnPasswordBodySchema = z.object({
   current_password: trimmedString,
   new_password: trimmedString,
+});
+
+export const updateOwnLangBodySchema = z.object({
+  lang: accountLangSchema,
 });
 
 /* -------------------------------------- User Schemas -------------------------------------- */

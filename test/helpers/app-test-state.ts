@@ -16,6 +16,7 @@ import type {
   TicketWorkerRecord,
   VehicleJobRecord,
   WorkerAssignmentEventRecord,
+  WorkerNotificationRecord,
   WorkerShiftAttendanceRecord,
 } from "./app-test-harness.records";
 
@@ -40,6 +41,7 @@ export const state = {
     fcm_token_hash: string;
     is_active: boolean;
   }>,
+  workerNotifications: [] as WorkerNotificationRecord[],
   workers: new Map<number, AccountRecord>(),
   schedules: new Map<number, unknown>(),
   vehicleJobs: [] as VehicleJobRecord[],
@@ -77,6 +79,7 @@ export const state = {
   >(),
   nextAssignmentId: 1,
   nextWorkerAssignmentEventId: 1,
+  nextWorkerNotificationId: 1,
   nextSessionId: 1,
   nextTicketWorkerId: 1,
   nextTicketProductFinancialId: 1,

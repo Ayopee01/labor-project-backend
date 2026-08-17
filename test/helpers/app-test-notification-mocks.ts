@@ -14,6 +14,96 @@ async function resolveTicketResultAudience(ticket: { id: number }) {
 export const notificationServiceMock = {
   publishNotification: (event: unknown) => state.notifications.push(event),
   publishRealtimeEvent: (event: unknown) => state.realtimeEvents.push(event),
+  buildWorkerNotification: (input: {
+    type: string;
+    lang?: string | null;
+    notification_key?: string | null;
+    fallbackTitle: string;
+    fallbackMessage: string;
+  }) => ({
+    key: input.notification_key ?? input.type,
+    lang: input.lang ?? "TH",
+    title: input.fallbackTitle,
+    message: input.fallbackMessage,
+  }),
+  persistWorkerNotification: (input: {
+    worker_account_id: number;
+    type: string;
+    notification_key?: string | null;
+    lang?: string | null;
+    title: string;
+    message: string;
+    payload?: unknown;
+  }) => {
+    const now = new Date().toISOString();
+
+    state.workerNotifications.push({
+      id: state.nextWorkerNotificationId++,
+      worker_account_id: input.worker_account_id,
+      type: input.type,
+      notification_key: input.notification_key ?? null,
+      lang: input.lang ?? "TH",
+      title: input.title,
+      message: input.message,
+      payload: input.payload ?? null,
+      read_at: null,
+      created_at: now,
+      updated_at: now,
+    });
+  },
+  persistWorkerNotifications: (
+    inputs: Array<{
+      worker_account_id: number;
+      type: string;
+      notification_key?: string | null;
+      lang?: string | null;
+      title: string;
+      message: string;
+      payload?: unknown;
+    }>,
+  ) => {
+    for (const input of inputs) {
+      notificationServiceMock.persistWorkerNotification(input);
+    }
+  },
+  listWorkerNotifications: async (
+    query: { page?: string; limit?: string },
+    auth?: { account_id?: number; role?: string },
+  ) => {
+    const page = Number(query.page ?? 1);
+    const limit = Number(query.limit ?? 20);
+    const filtered = state.workerNotifications
+      .filter((item) => item.worker_account_id === auth?.account_id)
+      .sort((left, right) =>
+        right.created_at.localeCompare(left.created_at) || right.id - left.id
+      );
+
+    return {
+      data: filtered.slice((page - 1) * limit, page * limit).map((item) => ({
+        id: item.id,
+        type: item.type,
+        notification_key: item.notification_key,
+        lang: item.lang,
+        title: item.title,
+        message: item.message,
+        notification: {
+          key: item.notification_key,
+          lang: item.lang,
+          title: item.title,
+          message: item.message,
+        },
+        payload: item.payload,
+        read_at: item.read_at,
+        created_at: item.created_at,
+      })),
+      pagination: {
+        page,
+        limit,
+        total: filtered.length,
+        total_pages: Math.ceil(filtered.length / limit),
+      },
+    };
+  },
   resolveTicketResultAudience,
   publishAdminWorkerStatusChanged: (event: {
     title: string;

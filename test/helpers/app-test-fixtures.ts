@@ -243,6 +243,7 @@ export function resetRouteTestState(): void {
   state.realtimeEvents.length = 0;
   state.lineMessages.length = 0;
   state.workerPushTokens.length = 0;
+  state.workerNotifications.length = 0;
   state.workers.clear();
   state.schedules.clear();
   state.vehicleJobs.length = 0;
@@ -279,6 +280,7 @@ export function resetRouteTestState(): void {
   );
   state.nextAssignmentId = 1;
   state.nextWorkerAssignmentEventId = 1;
+  state.nextWorkerNotificationId = 1;
   state.nextSessionId = 1;
   state.nextTicketWorkerId = 1;
   state.nextTicketProductFinancialId = 1;
@@ -309,6 +311,7 @@ export function addWorker(
     phone: `081-${String(accountId).padStart(7, "0")}`,
     shirt_number: String(accountId),
     permission_level: null,
+    lang: "TH",
   };
 
   state.workers.set(accountId, worker);
@@ -347,6 +350,7 @@ export function addAdmin(
     email: `admin-${accountId}@simmummuang.local`,
     phone: `081-000-${String(accountId).padStart(4, "0")}`,
     permission_level: "manager",
+    lang: "TH",
   };
 
   state.authAccountsByUsername.set(admin.username, admin);

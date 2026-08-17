@@ -99,6 +99,7 @@ interface AdminMeResponse {
   phone: string | null;
   permission_level: string | null;
   permissions: AdminPermission[];
+  lang: string;
   latest_active_at: string | null;
 }
 
@@ -111,6 +112,7 @@ interface WorkerMeResponse {
   nationality: string | null;
   work_start_date: string | null;
   phone: string | null;
+  lang: string;
   shift: ProfileCardShift | null;
 }
 
@@ -123,6 +125,11 @@ export interface AuthSuccessResponse {
   refresh_token: string;
   token_type: "Bearer";
   expires_in: number;
+}
+
+export interface UpdateLangResponse {
+  message: string;
+  lang: string;
 }
 
 // Type option ตอนเซ็น token

@@ -48,6 +48,7 @@ const requestKeyMap: Record<string, string> = {
   MarketCode: "marketCode",
   MarketName: "marketName",
   NewPassword: "new_password",
+  NotificationKey: "notification_key",
   OperationStatus: "operation_status",
   PackageCode: "packageCode",
   PackageName: "packageName",

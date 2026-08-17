@@ -48,8 +48,16 @@ const FINISHED_ASSIGNMENT_STATUSES = [
 
 export const workerApplicationRepositoryMock = {
   accountRepository: {
+    findById: async (accountId: number) =>
+      state.authAccountsById.get(accountId) ?? null,
     findUserById: async (accountId: number) =>
       state.workers.get(accountId) ?? null,
+    listByIds: async (accountIds: number[]) =>
+      accountIds
+        .map((accountId) => state.authAccountsById.get(accountId) ?? null)
+        .filter(
+          (account): account is NonNullable<typeof account> => account !== null,
+        ),
     listAdmins: async () => [],
   },
   profileRepository: {
@@ -2030,6 +2038,16 @@ export const authRepositoryMock = {
       account.password_hash = passwordHash;
       return account;
     },
+    updateLang: async (accountId: number, lang: string) => {
+      const account = state.authAccountsById.get(accountId);
+
+      if (!account) {
+        throw new Error("Account not found.");
+      }
+
+      account.lang = lang;
+      return account;
+    },
     sanitizeAccount: (account: AccountRecord | null) => {
       if (!account) {
         return null;
@@ -2109,6 +2127,68 @@ export const authRepositoryMock = {
   },
 };
 
+export const workerNotificationRepositoryMock = {
+  createWorkerNotification: async (input: {
+    worker_account_id: number;
+    type: string;
+    notification_key?: string | null;
+    lang?: string | null;
+    title: string;
+    message: string;
+    payload?: unknown;
+  }) => {
+    const now = new Date().toISOString();
+    const record = {
+      id: state.nextWorkerNotificationId++,
+      worker_account_id: input.worker_account_id,
+      type: input.type,
+      notification_key: input.notification_key ?? null,
+      lang: input.lang ?? "TH",
+      title: input.title,
+      message: input.message,
+      payload: input.payload ?? null,
+      read_at: null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.workerNotifications.push(record);
+
+    return record;
+  },
+  createWorkerNotifications: async (
+    inputs: Array<{
+      worker_account_id: number;
+      type: string;
+      notification_key?: string | null;
+      lang?: string | null;
+      title: string;
+      message: string;
+      payload?: unknown;
+    }>,
+  ) => {
+    for (const input of inputs) {
+      await workerNotificationRepositoryMock.createWorkerNotification(input);
+    }
+  },
+  listWorkerNotifications: async (
+    workerAccountId: number,
+    page: number,
+    limit: number,
+  ) => {
+    const filtered = state.workerNotifications
+      .filter((item) => item.worker_account_id === workerAccountId)
+      .sort((left, right) =>
+        right.created_at.localeCompare(left.created_at) || right.id - left.id
+      );
+
+    return {
+      total: filtered.length,
+      items: filtered.slice((page - 1) * limit, page * limit),
+    };
+  },
+};
+
 export const workerPushTokenRepositoryMock = {
   upsertWorkerPushToken: async (input: {
     worker_code: string;
@@ -2155,6 +2235,17 @@ export const workerPushTokenRepositoryMock = {
       .filter(
         (token) => token.is_active && workerCodes.includes(token.worker_code),
       )
+      .map((token, index) => ({
+        id: index + 1,
+        ...token,
+        last_seen_at: new Date().toISOString(),
+        revoked_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })),
+  listActiveTokensBySessionId: async (sessionId: number) =>
+    state.workerPushTokens
+      .filter((token) => token.is_active && token.session_id === sessionId)
       .map((token, index) => ({
         id: index + 1,
         ...token,
@@ -2287,6 +2378,7 @@ export const adminSettingsRepositoryMock = {
         email: account.email ?? null,
         phone: account.phone ?? null,
         permission_level: account.permission_level ?? null,
+        lang: "TH",
       };
 
       state.authAccountsByUsername.set(created.username, created);

@@ -1,4 +1,4 @@
-import { publishNotification } from "../notifications.service";
+import { buildWorkerNotification, persistWorkerNotifications, publishNotification } from "../notifications.service";
 import * as accountRepository from "../../repositories/shared/account.repository";
 import * as ticketWorkerRepository from "../../repositories/shared/ticket-worker.repository";
 import { sendWorkerPushNotificationByAccountIds } from "./worker-push.service";
@@ -28,11 +28,43 @@ export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
   const workerPayload = input.worker_payload ?? payload;
 
   if (workerAccountIds.length > 0) {
+    void accountRepository.listByIds(workerAccountIds).then((accounts) => {
+      const accountById = new Map(accounts.map((account) => [account.id, account]));
+
+      persistWorkerNotifications(
+        workerAccountIds.map((workerAccountId) => {
+          const localized = buildWorkerNotification({
+            type: input.type,
+            lang: accountById.get(workerAccountId)?.lang,
+            notification_key: input.notification_key,
+            notification_params: input.notification_params,
+            payload: workerPayload,
+            fallbackTitle: input.title,
+            fallbackMessage: input.message,
+          });
+
+          return {
+            worker_account_id: workerAccountId,
+            type: input.type,
+            notification_key: localized.key,
+            lang: localized.lang,
+            title: localized.title,
+            message: localized.message,
+            payload: workerPayload,
+          };
+        }),
+      );
+    }).catch((error) => {
+      logger.error("Failed to localize worker notifications.", { error });
+    });
+
     void sendWorkerPushNotificationByAccountIds({
       account_ids: workerAccountIds,
       type: input.type,
       title: input.title,
       message: input.message,
+      notification_key: input.notification_key,
+      notification_params: input.notification_params,
       payload: workerPayload,
     }).catch((error) => {
       logger.error("Failed to send worker push notification.", { error });
@@ -46,6 +78,10 @@ export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
       workerPayload,
       {
         push: false,
+        notificationKey: input.notification_key,
+        notificationParams: input.notification_params,
+        fallbackTitle: input.title,
+        fallbackMessage: input.message,
       },
     );
   }

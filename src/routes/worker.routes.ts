@@ -5,6 +5,7 @@ import authMiddleware from "../middlewares/auth.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 // Import Services
+import * as notificationsService from "../services/notifications.service";
 import * as workerService from "../services/worker.service";
 
 const router = express.Router();
@@ -81,6 +82,21 @@ router.get(
       const result = await workerService.getWorkerEarningsSummary(
         req.query,
         req.auth
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.get(
+  "/me/notifications",
+  async (req, res, next) => {
+    try {
+      const result = await notificationsService.listWorkerNotifications(
+        req.query,
+        req.auth,
       );
       res.json(result);
     } catch (error) {

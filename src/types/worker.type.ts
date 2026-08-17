@@ -58,6 +58,10 @@ export type WorkerSocketEventOptions = {
   push?: boolean;
   pushTitle?: string;
   pushMessage?: string;
+  notificationKey?: string | null;
+  notificationParams?: Record<string, unknown>;
+  fallbackTitle?: string;
+  fallbackMessage?: string;
 };
 
 // Type ค่า reason สำหรับปิด attendance ของ worker
@@ -555,6 +559,7 @@ export type WorkerSocketEventType =
   | "STALL_JOB_CANCELLED"
   | "MARKET_JOB_CANCELLED"
   | "VEHICLE_JOB_CANCELLED"
+  | "SESSION_REVOKED"
   | "WORKER_STATUS_CHANGED";
 
 // Type payload มาตรฐานของ Worker WebSocket event

@@ -70,6 +70,27 @@ export async function listAdmins(
   return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
 }
 
+export async function listByIds(
+  ids: number[],
+  connection?: DbConnection,
+): Promise<AccountDto[]> {
+  const uniqueIds = [...new Set(ids.map((id) => toId(id)).filter((id) => id > 0))];
+
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  const accounts = await client(connection).account.findMany({
+    where: {
+      id: {
+        in: uniqueIds,
+      },
+    },
+  });
+
+  return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
+}
+
 // Function อัปเดต password จาก DB
 export async function updatePassword(
   id: number | string,
@@ -110,6 +131,25 @@ export async function updateStatus(
   });
 
   return requireMapped(mapAccount(updatedAccount), "Account", "status update");
+}
+
+// Function อัปเดตภาษาของ account จาก DB
+export async function updateLang(
+  id: number | string,
+  lang: string,
+  connection?: DbConnection,
+): Promise<AccountDto> {
+  const db = client(connection);
+  const updatedAccount = await db.account.update({
+    where: {
+      id: toId(id),
+    },
+    data: {
+      lang,
+    },
+  });
+
+  return requireMapped(mapAccount(updatedAccount), "Account", "lang update");
 }
 
 // Function ดึงรายการ all users จาก DB

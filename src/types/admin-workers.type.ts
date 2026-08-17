@@ -37,6 +37,7 @@ export interface AccountDto {
   shift_no: number | null;
   shift_start_time: string | null;
   shift_end_time: string | null;
+  lang: string;
   source: AccountSource;
   master_worker_id: string | null;
   master_updated_at: string | null;

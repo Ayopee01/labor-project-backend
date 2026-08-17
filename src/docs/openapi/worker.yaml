@@ -17,7 +17,10 @@
         `WORKER_STATUS_CHANGED`, `TICKET_COMPLETION_SUBMITTED`, `TICKET_COMPLETION_RESULT`,
         `ASSIGNMENT_SCAN_DEADLINE_EXTENDED`,
         `ASSIGNMENT_SCAN_DEADLINE_SHORTENED`,
-        `STALL_JOB_CANCELLED`, `MARKET_JOB_CANCELLED`, and `VEHICLE_JOB_CANCELLED`.
+        `STALL_JOB_CANCELLED`, `MARKET_JOB_CANCELLED`, `VEHICLE_JOB_CANCELLED`, and
+        `SESSION_REVOKED`.
+        Events that are intended for mobile display include a localized `Notification`
+        object with `Key`, `Lang`, `Title`, and `Message`.
         `WORKER_ASSIGNED` sends `TicketNo`, `GateTransactionRef`,
         `WorkerQrToken`, and `Assignment.CreatedAt/AcceptDeadlineAt/AcceptDeadlineUnixMs`.
         `ASSIGNMENT_TEAM_UPDATED` is sent to every worker assigned to the same vehicle job after accept/check-in and includes the latest `TicketNo`, `WorkerStatus`, `TeamScan`, and `Team` snapshot.
@@ -219,6 +222,46 @@
                 $ref: "#/components/schemas/WorkerEarningsSummaryResponse"
         "400":
           description: Query parameters are not supported.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/notifications:
+    get:
+      tags:
+        - Worker Application
+      summary: List current worker notification history.
+      description: Returns persisted worker notification payload history for mobile app inbox display. This endpoint is read-only.
+      operationId: listWorkerNotifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        "200":
+          description: Worker notification history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerNotificationListResponse"
+        "401":
+          description: Worker token is invalid, expired, or session was revoked.
           content:
             application/json:
               schema:

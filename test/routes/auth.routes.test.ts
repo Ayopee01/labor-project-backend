@@ -76,6 +76,7 @@ test("GET /api/auth/me returns only the admin profile fields", async () => {
     "email",
     "employee_code",
     "full_name",
+    "lang",
     "latest_active_at",
     "permission_level",
     "permissions",
@@ -92,6 +93,7 @@ test("GET /api/auth/me returns only the admin profile fields", async () => {
   assert.equal(response.body.status, "active");
   assert.equal(response.body.email, admin.email);
   assert.equal(response.body.phone, admin.phone);
+  assert.equal(response.body.lang, "TH");
   assert.equal(response.body.permission_level, "manager");
   assert.ok(response.body.permissions.includes("admins:create"));
   assert.ok(response.body.latest_active_at);
@@ -141,6 +143,7 @@ test("GET /api/auth/me returns current worker account from access token", async 
   assert.deepEqual(Object.keys(response.body).sort(), [
     "employee_code",
     "full_name",
+    "lang",
     "nationality",
     "phone",
     "role",
@@ -155,8 +158,41 @@ test("GET /api/auth/me returns current worker account from access token", async 
   assert.equal(response.body.nationality, "Thai");
   assert.equal(response.body.work_start_date, "2026-01-01");
   assert.equal(response.body.phone, worker.phone);
+  assert.equal(response.body.lang, "TH");
   assert.equal(response.body.shift.start_time, "00:00");
   assert.equal(response.body.shift.end_time, "23:59");
+});
+
+test("PATCH /api/auth/me/lang updates current account language", async () => {
+  const passwordHash = await password.hashPassword("Worker@123456");
+  const worker = addWorker(1008, passwordHash);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: worker.username,
+      password: "Worker@123456",
+      device_id: "mobile-1008",
+      device_name: "Worker Mobile",
+    },
+  });
+
+  const update = await server.request("PATCH", "/api/auth/me/lang", {
+    token: login.body.access_token,
+    body: {
+      lang: "EN",
+    },
+  });
+
+  assert.equal(update.status, 200);
+  assert.deepEqual(update.body, {
+    message: "Language updated successfully.",
+    lang: "EN",
+  });
+
+  const me = await server.request("GET", "/api/auth/me", {
+    token: login.body.access_token,
+  });
+
+  assert.equal(me.body.lang, "EN");
 });
 
 test("worker auth flow stores, refreshes, and revokes FCM token by WorkerCode", async () => {

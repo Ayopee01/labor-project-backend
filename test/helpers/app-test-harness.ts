@@ -28,6 +28,7 @@ import {
   vehicleJobRepositoryMock,
   profileRepositoryMock,
   workerShiftAttendanceRepositoryMock,
+  workerNotificationRepositoryMock,
   workerPushTokenRepositoryMock,
   workerRepositoryMock,
   workScheduleRepositoryMock,
@@ -149,6 +150,13 @@ function patchModuleLoader(): void {
       request === "../../repositories/shared/profile.repository"
     ) {
       return profileRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/worker-notification.repository" ||
+      request === "../../repositories/shared/worker-notification.repository"
+    ) {
+      return workerNotificationRepositoryMock;
     }
 
     if (

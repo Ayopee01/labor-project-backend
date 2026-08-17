@@ -229,3 +229,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/me/lang:
+    patch:
+      tags:
+        - Auth
+      summary: Update the current account language preference.
+      operationId: updateOwnLang
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAccountLangRequest"
+      responses:
+        "200":
+          description: Language preference updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateAccountLangResponse"
+        "400":
+          description: Invalid language payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

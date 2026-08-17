@@ -108,6 +108,20 @@ export async function listActiveTokensByWorkerCodes(
   return records.map(mapWorkerPushToken);
 }
 
+export async function listActiveTokensBySessionId(
+  sessionId: number,
+  connection?: DbConnection,
+): Promise<WorkerPushTokenDto[]> {
+  const records = await client(connection).workerPushToken.findMany({
+    where: {
+      sessionId,
+      isActive: true,
+    },
+  });
+
+  return records.map(mapWorkerPushToken);
+}
+
 export async function revokeBySessionId(
   sessionId: number,
   connection?: DbConnection,

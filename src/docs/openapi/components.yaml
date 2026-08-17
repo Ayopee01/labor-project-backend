@@ -237,6 +237,8 @@
           type: array
           items:
             $ref: "#/components/schemas/AdminPermission"
+        lang:
+          $ref: "#/components/schemas/AccountLang"
         latest_active_at:
           type: string
           nullable: true
@@ -290,6 +292,8 @@
           type: string
           nullable: true
           example: 081-234-5678
+        lang:
+          $ref: "#/components/schemas/AccountLang"
         shift:
           $ref: "#/components/schemas/ProfileCardShift"
     WorkerProfile:
@@ -372,6 +376,29 @@
       oneOf:
         - $ref: "#/components/schemas/AdminMeResponse"
         - $ref: "#/components/schemas/WorkerMeResponse"
+    AccountLang:
+      type: string
+      enum:
+        - TH
+        - MN
+        - CN
+        - EN
+      example: TH
+    UpdateAccountLangRequest:
+      type: object
+      required:
+        - lang
+      properties:
+        lang:
+          $ref: "#/components/schemas/AccountLang"
+    UpdateAccountLangResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Language updated successfully.
+        lang:
+          $ref: "#/components/schemas/AccountLang"
     LoginRequest:
       type: object
       required:
@@ -2928,6 +2955,67 @@
         platform:
           type: string
           example: android
+    WorkerNotificationItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 123
+        type:
+          type: string
+          example: TICKET_COMPLETION_RESULT
+        notification_key:
+          type: string
+          nullable: true
+          example: ticket.completion_confirmed
+        lang:
+          $ref: "#/components/schemas/AccountLang"
+        title:
+          type: string
+          example: แผงค้ายืนยันยอดแล้ว
+        message:
+          type: string
+          example: แผง A01 ยืนยันยอดเรียบร้อยแล้ว
+        notification:
+          type: object
+          properties:
+            key:
+              type: string
+              nullable: true
+              example: ticket.completion_confirmed
+            lang:
+              $ref: "#/components/schemas/AccountLang"
+            title:
+              type: string
+              example: แผงค้ายืนยันยอดแล้ว
+            message:
+              type: string
+              example: แผง A01 ยืนยันยอดเรียบร้อยแล้ว
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
+          example:
+            ticketNo: TKT-20260817-0001
+            boothCode: A01
+            status: COMPLETED
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-08-17T06:00:00.000Z
+    WorkerNotificationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerNotificationItem"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
     WorkerBreakResponse:
       type: object
       properties:

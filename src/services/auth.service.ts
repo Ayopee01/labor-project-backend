@@ -7,13 +7,15 @@ import {
   registerWorkerPushToken as registerWorkerPushTokenForSession,
   registerWorkerPushTokenForAccount,
   revokeWorkerPushTokensBySession,
+  sendWorkerPushNotificationToSession,
 } from "./shared/worker-push.service";
+import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import { withTransaction } from "../db/prisma";
-import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto } from "../types/auth.type";
+import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto, UpdateLangResponse } from "../types/auth.type";
 import type { DbConnection } from "../types/shared/common.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import { parseWithSchema } from "../validation/parser";
-import { changeOwnPasswordBodySchema, confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema } from "../validation/schemas";
+import { changeOwnPasswordBodySchema, confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema, updateOwnLangBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { signAccessToken, signLoginChallengeToken, signRefreshToken, verifyLoginChallengeToken, verifyRefreshToken } from "../utils/jwt";
 import { hashPassword, verifyPassword } from "../utils/password";
@@ -96,6 +98,7 @@ async function buildMeResponse(
       phone: account.phone,
       permission_level: account.permission_level,
       permissions: accountPermissions.permissions,
+      lang: account.lang,
       latest_active_at: latestActiveAt,
     };
   }
@@ -114,6 +117,7 @@ async function buildMeResponse(
     nationality: profile?.nationality ?? null,
     work_start_date: profile?.work_start_date ?? null,
     phone: account.phone,
+    lang: account.lang,
     shift: formatProfileCardShift(schedule),
   };
 }
@@ -358,6 +362,36 @@ export async function confirmForceLogin(body: unknown) {
     throw new ApiError(423, "ACCOUNT_INACTIVE", "Account is inactive.");
   }
 
+  if (account.role === WORKER_ROLE) {
+    const notificationPayload = {
+      reason: "force_login",
+      old_device_id: oldSession.device_id,
+      old_device_name: oldSession.device_name,
+      new_device_id: deviceId,
+      new_device_name: deviceName,
+    };
+
+    sendWorkerSocketEvent(account.id, "SESSION_REVOKED", notificationPayload, {
+      push: false,
+      notificationKey: "auth.session_revoked",
+      notificationParams: notificationPayload,
+      fallbackTitle: "Signed in on another device",
+      fallbackMessage:
+        "This session was signed out because login was confirmed on another device.",
+    });
+    await sendWorkerPushNotificationToSession({
+      session_id: oldSession.id,
+      type: "SESSION_REVOKED",
+      title: "Signed in on another device",
+      message:
+        "This session was signed out because login was confirmed on another device.",
+      notification_key: "auth.session_revoked",
+      notification_params: notificationPayload,
+      lang: account.lang,
+      payload: notificationPayload,
+    });
+  }
+
   return withTransaction(async (transaction) => {
     await sessionRepository.revoke(oldSession.id, transaction);
     await revokeWorkerPushTokensBySession(oldSession.id, transaction);
@@ -520,4 +554,27 @@ export async function changeOwnPassword(
       message: "Password changed successfully.",
     };
   });
+}
+
+export async function updateOwnLang(
+  auth: AccessTokenPayload | undefined,
+  body: unknown
+): Promise<UpdateLangResponse> {
+  if (!auth || !auth.account_id) {
+    throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
+  }
+
+  const { lang } = parseWithSchema(updateOwnLangBodySchema, body);
+  const account = await accountRepository.findById(auth.account_id);
+
+  if (!account || account.status !== "active") {
+    throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
+  }
+
+  const updatedAccount = await accountRepository.updateLang(account.id, lang);
+
+  return {
+    message: "Language updated successfully.",
+    lang: updatedAccount.lang,
+  };
 }

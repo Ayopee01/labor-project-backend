@@ -1,12 +1,13 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
 import * as accountRepository from "../../repositories/shared/account.repository";
-import * as profileRepository from "../../repositories/shared/profile.repository";
 import * as workerPushTokenRepository from "../../repositories/shared/worker-push-token.repository";
+import { buildLocalizedNotification } from "../../utils/notification-localization";
 import type { AccessTokenPayload, SessionDto } from "../../types/auth.type";
 import type { DbConnection } from "../../types/shared/common.type";
 import type {
   WorkerPushEventInput,
+  WorkerPushTokenDto,
   WorkerPushRegistrationResponse,
 } from "../../types/notifications.type";
 import { parseWithSchema } from "../../validation/parser";
@@ -195,9 +196,27 @@ async function sendWorkerPushNotification(
     return;
   }
 
+  await sendWorkerPushNotificationToTokens(tokens, input);
+}
+
+async function sendWorkerPushNotificationToTokens(
+  tokens: WorkerPushTokenDto[],
+  input: WorkerPushEventInput,
+): Promise<void> {
+  if (!ensureFirebaseApp() || tokens.length === 0) {
+    return;
+  }
+
+  const notification = {
+    key: input.notification_key ?? input.type,
+    lang: input.lang ?? null,
+    title: input.title,
+    message: input.message,
+  };
   const payload = {
     ...(input.payload ?? {}),
     type: input.type,
+    notification,
   };
   const data = toFcmData(payload);
   const invalidTokenHashes: string[] = [];
@@ -230,17 +249,70 @@ export async function sendWorkerPushNotificationByAccountIds(input: {
   type: string;
   title: string;
   message: string;
+  notification_key?: string | null;
+  notification_params?: Record<string, unknown>;
   payload?: Record<string, unknown>;
 }): Promise<void> {
-  const workerCodes = (
-    await profileRepository.findWorkerCodesByAccountIds(input.account_ids)
-  ).filter((workerCode): workerCode is string => Boolean(workerCode));
+  const accounts = await accountRepository.listByIds(input.account_ids);
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
 
-  await sendWorkerPushNotification({
-    worker_codes: workerCodes,
+  for (const accountId of [...new Set(input.account_ids)]) {
+    const account = accountById.get(accountId);
+
+    if (!account || account.role !== "worker") {
+      continue;
+    }
+
+    const localized = buildLocalizedNotification({
+      type: input.type,
+      lang: account.lang,
+      key: input.notification_key,
+      params: input.notification_params ?? input.payload,
+      fallbackTitle: input.title,
+      fallbackMessage: input.message,
+    });
+
+    await sendWorkerPushNotification({
+      worker_codes: [account.username],
+      type: input.type,
+      title: localized.title,
+      message: localized.message,
+      notification_key: localized.key,
+      lang: localized.lang,
+      payload: input.payload,
+    });
+  }
+}
+
+export async function sendWorkerPushNotificationToSession(input: {
+  session_id: number;
+  type: string;
+  title: string;
+  message: string;
+  notification_key?: string | null;
+  notification_params?: Record<string, unknown>;
+  lang?: string | null;
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  const tokens = await workerPushTokenRepository.listActiveTokensBySessionId(
+    input.session_id,
+  );
+  const localized = buildLocalizedNotification({
     type: input.type,
-    title: input.title,
-    message: input.message,
+    lang: input.lang,
+    key: input.notification_key,
+    params: input.notification_params ?? input.payload,
+    fallbackTitle: input.title,
+    fallbackMessage: input.message,
+  });
+
+  await sendWorkerPushNotificationToTokens(tokens, {
+    worker_codes: [],
+    type: input.type,
+    title: localized.title,
+    message: localized.message,
+    notification_key: localized.key,
+    lang: localized.lang,
     payload: input.payload,
   });
 }

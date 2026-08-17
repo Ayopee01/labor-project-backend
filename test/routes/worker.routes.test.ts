@@ -567,6 +567,79 @@ test("GET /api/workers/me/assignments/history rejects invalid date range queries
   }
 });
 
+test("GET /api/workers/me/notifications returns current worker notification history with pagination", async () => {
+  const { token, worker } = await loginWorker(120);
+  const otherWorker = addWorker(220, await password.hashPassword("Worker@123456"));
+
+  state.workerNotifications.push(
+    {
+      id: state.nextWorkerNotificationId++,
+      worker_account_id: worker.id,
+      type: "WORKER_ASSIGNED",
+      notification_key: "worker.assigned",
+      lang: "TH",
+      title: "New assignment",
+      message: "Job A is ready.",
+      payload: {
+        ticketNo: "JOB-A",
+      },
+      read_at: null,
+      created_at: "2026-08-17T01:00:00.000Z",
+      updated_at: "2026-08-17T01:00:00.000Z",
+    },
+    {
+      id: state.nextWorkerNotificationId++,
+      worker_account_id: worker.id,
+      type: "TICKET_COMPLETION_RESULT",
+      notification_key: "ticket.completion_confirmed",
+      lang: "TH",
+      title: "Vendor confirmed",
+      message: "Stall confirmed quantities.",
+      payload: {
+        ticketNo: "JOB-B",
+        status: "COMPLETED",
+      },
+      read_at: null,
+      created_at: "2026-08-17T02:00:00.000Z",
+      updated_at: "2026-08-17T02:00:00.000Z",
+    },
+    {
+      id: state.nextWorkerNotificationId++,
+      worker_account_id: otherWorker.id,
+      type: "WORKER_ASSIGNED",
+      notification_key: "worker.assigned",
+      lang: "TH",
+      title: "Other worker",
+      message: "This should not be visible.",
+      payload: null,
+      read_at: null,
+      created_at: "2026-08-17T03:00:00.000Z",
+      updated_at: "2026-08-17T03:00:00.000Z",
+    },
+  );
+
+  const response = await server.request("GET", "/api/workers/me/notifications?page=1&limit=1", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.pagination, {
+    page: 1,
+    limit: 1,
+    total: 2,
+    totalPages: 2,
+  });
+  assert.equal(response.body.data.length, 1);
+  assert.equal(response.body.data[0].type, "TICKET_COMPLETION_RESULT");
+  assert.equal(response.body.data[0].notification_key, "ticket.completion_confirmed");
+  assert.equal(response.body.data[0].lang, "TH");
+  assert.equal(response.body.data[0].notification.key, "ticket.completion_confirmed");
+  assert.equal(response.body.data[0].notification.lang, "TH");
+  assert.equal(response.body.data[0].payload.ticketNo, "JOB-B");
+  assert.equal(response.body.data[0].readAt, null);
+  assert.equal(response.body.data[0].created_at, "2026-08-17T02:00:00.000Z");
+});
+
 test("GET /api/workers/me/earnings/summary returns latest 15 completed days from persisted booth earnings", async () => {
   const { token, worker } = await loginWorker(112);
   const otherWorker = addWorker(212, await password.hashPassword("Worker@123456"));

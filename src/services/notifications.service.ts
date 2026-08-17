@@ -1,10 +1,16 @@
 // Import Library
 import type { Response } from "express";
+import * as workerNotificationRepository from "../repositories/shared/worker-notification.repository";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
+import { parseWithSchema } from "../validation/parser";
+import { paginationQuerySchema } from "../validation/schemas";
+import ApiError from "../utils/api-error";
+import { logger } from "../utils/logger";
+import { buildLocalizedNotification } from "../utils/notification-localization";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { NotificationAudience, NotificationClient, RealtimeNotificationEvent, WorkerStatusChangedInput } from "../types/notifications.type";
+import type { NotificationAudience, NotificationClient, RealtimeNotificationEvent, WorkerNotificationListResponse, WorkerStatusChangedInput } from "../types/notifications.type";
 import type { VehicleJobAssignmentDto, WorkerQueueEntryDto } from "../types/worker.type";
 
 /* -------------------------------------- Config -------------------------------------- */
@@ -100,6 +106,95 @@ export function publishNotification(event: RealtimeNotificationEvent): void {
 
     writeSseEvent(client.response, event.type, payload);
   }
+}
+
+export function persistWorkerNotification(input: {
+  worker_account_id: number;
+  type: string;
+  notification_key?: string | null;
+  lang?: string | null;
+  title: string;
+  message: string;
+  payload?: unknown;
+}): void {
+  void workerNotificationRepository.createWorkerNotification(input).catch((error) => {
+    logger.error("Failed to persist worker notification.", { error });
+  });
+}
+
+export function persistWorkerNotifications(inputs: Array<{
+  worker_account_id: number;
+  type: string;
+  notification_key?: string | null;
+  lang?: string | null;
+  title: string;
+  message: string;
+  payload?: unknown;
+}>): void {
+  void workerNotificationRepository.createWorkerNotifications(inputs).catch((error) => {
+    logger.error("Failed to persist worker notifications.", { error });
+  });
+}
+
+export async function listWorkerNotifications(
+  query: unknown,
+  auth?: AccessTokenPayload
+): Promise<WorkerNotificationListResponse> {
+  if (!auth || !auth.account_id || auth.role !== "worker") {
+    throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
+  }
+
+  const { page, limit } = parseWithSchema(paginationQuerySchema, query);
+  const result = await workerNotificationRepository.listWorkerNotifications(
+    auth.account_id,
+    page,
+    limit,
+  );
+
+  return {
+    data: result.items.map((item) => ({
+      id: item.id,
+      type: item.type,
+      notification_key: item.notification_key,
+      lang: item.lang,
+      title: item.title,
+      message: item.message,
+      notification: {
+        key: item.notification_key,
+        lang: item.lang,
+        title: item.title,
+        message: item.message,
+      },
+      payload: item.payload,
+      read_at: item.read_at,
+      created_at: item.created_at,
+    })),
+    pagination: {
+      page,
+      limit,
+      total: result.total,
+      total_pages: Math.ceil(result.total / limit),
+    },
+  };
+}
+
+export function buildWorkerNotification(input: {
+  type: string;
+  lang?: string | null;
+  notification_key?: string | null;
+  notification_params?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  fallbackTitle: string;
+  fallbackMessage: string;
+}) {
+  return buildLocalizedNotification({
+    type: input.type,
+    lang: input.lang,
+    key: input.notification_key,
+    params: input.notification_params ?? input.payload,
+    fallbackTitle: input.fallbackTitle,
+    fallbackMessage: input.fallbackMessage,
+  });
 }
 
 // Function สร้าง worker status changed payload ใน service flow

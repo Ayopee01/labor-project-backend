@@ -24,6 +24,7 @@ model Account {
   shiftNo         Int?      @map("shift_no")
   shiftStartTime  String?   @map("shift_start_time") @db.Char(5)
   shiftEndTime    String?   @map("shift_end_time") @db.Char(5)
+  lang            String    @default("TH") @db.VarChar(10)
   source          String    @default("internal") @db.VarChar(30)
   masterWorkerId  String?   @unique @map("master_worker_id") @db.VarChar(100)
   masterUpdatedAt DateTime? @map("master_updated_at") @db.Timestamp(3)
@@ -42,12 +43,34 @@ model Account {
   permissions                AccountPermission[]
   ticketWorkers              TicketWorker[]
   submittedTicketCompletions TicketCompletionSubmission[] @relation("TicketCompletionSubmitter")
+  workerNotifications         WorkerNotification[]        @relation("WorkerNotificationAccount")
   createdGateClients         GateClient[]                 @relation("GateClientCreatedBy")
   updatedGateClients         GateClient[]                 @relation("GateClientUpdatedBy")
 
   @@index([role, source])
   @@index([masterUpdatedAt])
   @@map("accounts")
+}
+
+model WorkerNotification {
+  id              Int       @id @default(autoincrement())
+  workerAccountId Int       @map("worker_account_id")
+  type            String    @db.VarChar(100)
+  notificationKey String?   @map("notification_key") @db.VarChar(100)
+  lang            String    @default("TH") @db.VarChar(10)
+  title           String    @db.VarChar(255)
+  message         String    @db.Text
+  payload         Json?
+  readAt          DateTime? @map("read_at") @db.Timestamp(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  worker Account @relation("WorkerNotificationAccount", fields: [workerAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workerAccountId, createdAt])
+  @@index([workerAccountId, readAt])
+  @@index([type, createdAt])
+  @@map("worker_notifications")
 }
 
 model WorkerShiftAttendance {
