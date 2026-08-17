@@ -307,6 +307,7 @@ export function addWorker(
     position: null,
     email: null,
     phone: `081-${String(accountId).padStart(7, "0")}`,
+    shirt_number: String(accountId),
     permission_level: null,
   };
 

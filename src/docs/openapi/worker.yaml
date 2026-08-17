@@ -13,13 +13,14 @@
         - `Sec-WebSocket-Protocol: token.<AccessToken>`
 
         Backend sends realtime events such as `WORKER_ASSIGNED`, `ASSIGNMENT_TIMEOUT`,
-        `ASSIGNMENT_CANCELLED`, `ASSIGNMENT_ACCEPTED`, `WORKER_STATUS_CHANGED`,
-        `TICKET_COMPLETION_SUBMITTED`, `TICKET_COMPLETION_RESULT`,
+        `ASSIGNMENT_CANCELLED`, `ASSIGNMENT_ACCEPTED`, `ASSIGNMENT_TEAM_UPDATED`,
+        `WORKER_STATUS_CHANGED`, `TICKET_COMPLETION_SUBMITTED`, `TICKET_COMPLETION_RESULT`,
         `ASSIGNMENT_SCAN_DEADLINE_EXTENDED`,
         `ASSIGNMENT_SCAN_DEADLINE_SHORTENED`,
         `STALL_JOB_CANCELLED`, `MARKET_JOB_CANCELLED`, and `VEHICLE_JOB_CANCELLED`.
         `WORKER_ASSIGNED` sends `TicketNo`, `GateTransactionRef`,
         `WorkerQrToken`, and `Assignment.CreatedAt/AcceptDeadlineAt/AcceptDeadlineUnixMs`.
+        `ASSIGNMENT_TEAM_UPDATED` is sent to every worker assigned to the same vehicle job after accept/check-in and includes the latest `TicketNo`, `WorkerStatus`, `TeamScan`, and `Team` snapshot.
         For Gate-created jobs, `WorkerQrToken` is the same value as `TicketNo`.
         It does not send `DriverQrToken`.
         Important worker notification events are also sent through FCM when the worker has an active registered FCM token.
@@ -207,7 +208,7 @@
       tags:
         - Worker Application
       summary: Accept a pending worker assignment within the configured accept deadline.
-      description: If the worker misses the accept deadline, the assignment becomes TIMEOUT and the worker is moved to the queue tail even when the Worker WebSocket is disconnected. The accept-timeout streak resets after a successful accept. After worker_accept_timeout_limit consecutive accept timeouts, the worker is moved to open_app and cannot re-enter the queue in the same shift. A successful response includes scan_deadline_at and scan_deadline_unix_ms from the persisted assignment so the frontend can calculate the QR scan countdown locally.
+      description: If the worker misses the accept deadline, the assignment becomes TIMEOUT and the worker is moved to the queue tail even when the Worker WebSocket is disconnected. The accept-timeout streak resets after a successful accept. After worker_accept_timeout_limit consecutive accept timeouts, the worker is moved to open_app and cannot re-enter the queue in the same shift. A successful response includes accepted_at, worker_code, shirt_number, scan_deadline_at, and scan_deadline_unix_ms from the persisted assignment so the frontend can calculate the QR scan countdown locally.
       operationId: acceptWorkerAssignment
       security:
         - bearerAuth: []

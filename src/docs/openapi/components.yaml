@@ -169,6 +169,10 @@
           type: string
           nullable: true
           example: MN000142
+        shirt_number:
+          type: string
+          nullable: true
+          example: "51"
         image_url:
           type: string
           nullable: true
@@ -3046,6 +3050,22 @@
     WorkerAssignmentAcceptResponse:
       type: object
       properties:
+        worker_code:
+          type: string
+          nullable: true
+          description: Worker code of the worker who accepted this assignment.
+          example: MN000142
+        shirt_number:
+          type: string
+          nullable: true
+          description: Shirt number of the worker who accepted this assignment.
+          example: "51"
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when this worker accepted the assignment.
+          example: "2026-08-14T04:15:00.000Z"
         license_plate:
           type: string
           example: ABC-1234

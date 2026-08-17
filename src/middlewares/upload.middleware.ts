@@ -14,7 +14,8 @@ import ApiError from "../utils/api-error";
 /* -------------------------------------- Config -------------------------------------- */
 
 // Config โฟลเดอร์เก็บรูป worker ที่อัปโหลดจาก multipart/form-data
-const workerUploadDir = path.resolve(process.cwd(), "uploads", "workers");
+const uploadRootDir = process.env.UPLOAD_DIR || "uploads";
+const workerUploadDir = path.resolve(process.cwd(), uploadRootDir, "workers");
 
 // Config MIME type รูปภาพที่อนุญาตให้อัปโหลด
 const allowedImageMimeTypes = new Set([

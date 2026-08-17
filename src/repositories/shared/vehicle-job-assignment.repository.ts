@@ -252,11 +252,13 @@ export async function listVehicleJobAssignmentTeam(
     );
 
     return {
+      worker_account_id: assignment.workerAccountId,
       full_name: assignment.worker.fullName,
       worker_code: assignment.worker.username,
       shirt_number: assignment.worker.shirtNumber ?? null,
       image_url: assignment.worker.imageUrl ?? null,
       scan_status: buildAssignmentScanStatus(assignmentDto),
+      accepted_at: assignmentDto.accepted_at,
       scanned_at: assignmentDto.scanned_at,
     };
   });

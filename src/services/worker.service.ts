@@ -149,8 +149,13 @@ function buildWorkerAssignmentAcceptResponse(
   detail: VehicleJobDetailResponse,
   team: WorkerAssignmentTeamMemberDto[],
   assignment: VehicleJobAssignmentDto,
+  workerCode: string | null,
+  shirtNumber: string | null,
 ): WorkerAssignmentAcceptResponse {
   return {
+    worker_code: workerCode,
+    shirt_number: shirtNumber,
+    accepted_at: assignment.accepted_at,
     license_plate: detail.vehicle_job.license_plate,
     license_plate_province: detail.vehicle_job.license_plate_province,
     scan_deadline_at: assignment.scan_deadline_at,
@@ -158,6 +163,7 @@ function buildWorkerAssignmentAcceptResponse(
     team: team.map((member) => ({
       full_name: member.full_name,
       worker_code: member.worker_code,
+      shirt_number: member.shirt_number ?? null,
       image_url: member.image_url,
       scan_status: member.scan_status,
     })),
@@ -244,6 +250,68 @@ function buildWorkerTeamScanResponse(readiness: VehicleWorkReadinessDto) {
     remaining_count: readiness.remaining_count,
     is_ready: readiness.is_ready,
   };
+}
+
+function resolveTeamUpdatedWorkerStatus(
+  teamScan: VehicleWorkReadinessDto,
+): WorkerWorkStatus {
+  if (teamScan.is_ready) {
+    return WORKER_WORK_STATUS.WORKING;
+  }
+
+  if (teamScan.checked_in_count > 0) {
+    return WORKER_WORK_STATUS.WAITING_TEAM;
+  }
+
+  return WORKER_WORK_STATUS.ASSIGNED;
+}
+
+function buildAssignmentTeamUpdatedSocketPayload(
+  ticketNo: string,
+  team: WorkerAssignmentTeamMemberDto[],
+  teamScan: VehicleWorkReadinessDto,
+) {
+  return {
+    ticketNo,
+    worker_status: resolveTeamUpdatedWorkerStatus(teamScan),
+    team_scan: buildWorkerTeamScanResponse(teamScan),
+    team: team.map((member) => ({
+      worker_code: member.worker_code,
+      shirt_number: member.shirt_number ?? null,
+      full_name: member.full_name,
+      image_url: member.image_url,
+      scan_status: member.scan_status,
+      accepted_at: member.accepted_at ?? null,
+      scanned_at: member.scanned_at ?? null,
+    })),
+  };
+}
+
+function sendAssignmentTeamUpdatedSocketEvents(
+  ticketNo: string,
+  team: WorkerAssignmentTeamMemberDto[],
+  teamScan: VehicleWorkReadinessDto,
+): void {
+  const payload = buildAssignmentTeamUpdatedSocketPayload(
+    ticketNo,
+    team,
+    teamScan,
+  );
+
+  for (const workerAccountId of new Set(
+    team
+      .map((member) => member.worker_account_id)
+      .filter((value): value is number => typeof value === "number"),
+  )) {
+    sendWorkerSocketEvent(
+      workerAccountId,
+      "ASSIGNMENT_TEAM_UPDATED",
+      payload,
+      {
+        push: false,
+      },
+    );
+  }
 }
 
 function toBangkokDateKey(value: Date | string): string {
@@ -1054,9 +1122,12 @@ export async function acceptWorkerAssignment(
     acceptedAssignment.worker_account_id,
     acceptedAssignment.scan_deadline_at,
   );
-  const [vehicleJobDetail, team] = await Promise.all([
+  const [vehicleJobDetail, team, teamScan] = await Promise.all([
     vehicleJobRepository.getVehicleJobDetail(acceptedAssignment.vehicle_job_id),
     assignmentRepository.listVehicleJobAssignmentTeam(
+      acceptedAssignment.vehicle_job_id,
+    ),
+    assignmentRepository.getVehicleJobTeamScanReadiness(
       acceptedAssignment.vehicle_job_id,
     ),
   ]);
@@ -1069,6 +1140,8 @@ export async function acceptWorkerAssignment(
     vehicleJobDetail,
     team,
     acceptedAssignment,
+    account.username,
+    account.shirt_number,
   );
   const workerCode = account.username;
 
@@ -1080,6 +1153,11 @@ export async function acceptWorkerAssignment(
       vehicleJobDetail,
       workerCode,
     ),
+  );
+  sendAssignmentTeamUpdatedSocketEvents(
+    vehicleJobDetail.vehicle_job.ticketNo,
+    team,
+    teamScan,
   );
   publishNotification({
     type: "ASSIGNMENT_ACCEPTED",
@@ -1300,6 +1378,11 @@ export async function scanWorkerAssignment(
       ),
     });
   }
+  const team = await assignmentRepository.listVehicleJobAssignmentTeam(
+    scannedAssignment.vehicle_job_id,
+  );
+
+  sendAssignmentTeamUpdatedSocketEvents(vehicleJob.ticketNo, team, teamScan);
 
   publishNotification({
     type: "ASSIGNMENT_CHECKED_IN",

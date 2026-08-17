@@ -511,12 +511,14 @@ export const workerApplicationRepositoryMock = {
                 : "pending";
 
         return {
+          worker_account_id: assignment.worker_account_id,
           full_name:
             worker?.full_name ?? `Worker ${assignment.worker_account_id}`,
           worker_code: profile?.worker_code ?? null,
           shirt_number: worker?.shirt_number ?? null,
           image_url: profile?.image_url ?? null,
           scan_status: scanStatus,
+          accepted_at: assignment.accepted_at ?? null,
           scanned_at: assignment.scanned_at ?? null,
         };
       }),

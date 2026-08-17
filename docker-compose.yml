@@ -56,6 +56,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # Local development only: expose the API for LINE webhook testing.
+  # Production on Railway must use the Railway public domain or a custom domain.
   cloudflared-quick:
     image: cloudflare/cloudflared:latest
     container_name: labor-cloudflared-quick
@@ -66,6 +68,7 @@ services:
       api:
         condition: service_started
 
+  # Local development only: stable named tunnel for LINE webhook testing.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: labor-cloudflared

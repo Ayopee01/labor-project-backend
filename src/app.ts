@@ -25,6 +25,7 @@ import systemRoutes from "./routes/system.routes";
 import workerRoutes from "./routes/worker.routes";
 
 const app = express();
+const uploadDir = process.env.UPLOAD_DIR || "uploads";
 
 if (process.env.TRUST_PROXY === "true") {
   app.set("trust proxy", 1);
@@ -49,7 +50,7 @@ app.use(
 );
 app.use(normalizeApiRequestBody);
 app.use(pascalCaseApiResponse);
-app.use("/uploads", express.static("uploads"));
+app.use("/uploads", express.static(uploadDir));
 
 // Routes
 app.use("/", systemRoutes);

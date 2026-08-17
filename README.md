@@ -24,7 +24,7 @@ npm run db:seed
 npm run dev
 ```
 
-The server listens on `PORT` or `8080`.
+The server listens on `PORT` or `8080` and binds to `0.0.0.0` by default.
 Create a local PostgreSQL database first and set `DATABASE_URL` in `.env`.
 
 ## Docker Development
@@ -105,7 +105,7 @@ npm run build
 npm test
 ```
 
-Cloudflare Tunnel for LINE OA webhook testing:
+Cloudflare Tunnel for LINE OA webhook testing only:
 
 ```bash
 npm run docker:tunnel:quick
@@ -115,11 +115,29 @@ Use the printed `https://*.trycloudflare.com/api/line/webhook` URL in LINE
 Developers. For a stable hostname, set `CLOUDFLARE_TUNNEL_TOKEN` and run
 `npm run docker:tunnel`. See `docs/LINE_CLOUDFLARE_TUNNEL.md`.
 
+Production on Railway should use the Railway public domain or a custom domain,
+not the local Cloudflare Tunnel profiles.
+
+## Railway Production
+
+Production deployment is GitHub Actions CI followed by Railway deployment from
+the GitHub repository. Railway builds the `Dockerfile`, injects `PORT`, runs
+`npm run db:deploy` before deploy, and checks `/ready`.
+
+Required Railway services:
+
+- Backend API
+- PostgreSQL
+- Redis
+
 Production migration command:
 
 ```bash
 npm run db:deploy
 ```
+
+See `docs/deployment.md` and `docs/production-runbook.md` before enabling
+production traffic.
 
 `npm test` runs tests that do not need a database. To run DB-backed service
 smoke tests:

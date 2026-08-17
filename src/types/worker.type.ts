@@ -351,11 +351,13 @@ export interface WorkerAssignmentHistoryResponse {
 
 // Type สมาชิกทีมที่แสดงตอน worker รับงาน
 export interface WorkerAssignmentTeamMemberDto {
+  worker_account_id?: number;
   full_name: string;
   worker_code: string | null;
   shirt_number?: string | null;
   image_url: string | null;
   scan_status: string;
+  accepted_at?: string | null;
   scanned_at?: string | null;
 }
 
@@ -430,6 +432,9 @@ interface WorkerAssignmentMarketDto {
 
 // Type response หลัง worker accept งาน
 export interface WorkerAssignmentAcceptResponse {
+  worker_code: string | null;
+  shirt_number: string | null;
+  accepted_at: string | null;
   license_plate: string;
   license_plate_province: string | null;
   scan_deadline_at: string | null;
@@ -525,6 +530,7 @@ export type WorkerSocketEventType =
   | "ASSIGNMENT_CANCELLED"
   | "ASSIGNMENT_ACCEPTED"
   | "ASSIGNMENT_CHECKED_IN"
+  | "ASSIGNMENT_TEAM_UPDATED"
   | "ASSIGNMENT_SCAN_DEADLINE_EXTENDED"
   | "ASSIGNMENT_SCAN_DEADLINE_SHORTENED"
   | "TICKET_COMPLETION_SUBMITTED"

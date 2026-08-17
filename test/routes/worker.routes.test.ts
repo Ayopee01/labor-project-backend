@@ -1116,13 +1116,19 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
 
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
+    "accepted_at",
     "license_plate",
     "license_plate_province",
     "markets",
     "scan_deadline_at",
     "scan_deadline_unix_ms",
+    "shirt_number",
     "team",
+    "worker_code",
   ]);
+  assert.equal(response.body.worker_code, `W${worker.id}`);
+  assert.equal(response.body.shirt_number, String(worker.id));
+  assert.ok(response.body.accepted_at);
   assert.equal(response.body.license_plate, job.license_plate);
   assert.equal(response.body.license_plate_province, job.license_plate_province);
   assert.ok(response.body.scan_deadline_at);
@@ -1132,9 +1138,11 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
     "full_name",
     "image_url",
     "scan_status",
+    "shirt_number",
     "worker_code",
   ]);
   assert.equal(response.body.team[0].full_name, worker.full_name);
+  assert.equal(response.body.team[0].shirt_number, String(worker.id));
   assert.equal(response.body.team[0].scan_status, "accepted");
   assert.deepEqual(Object.keys(response.body.markets[0]).sort(), [
     "marketName",
@@ -1182,6 +1190,40 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
   assert.equal(acceptedPayload.id, undefined);
   assert.equal(acceptedPayload.vehicle_job_id, undefined);
   assert.equal(acceptedPayload.worker_account_id, undefined);
+  const acceptedTeamEvent = state.socketEvents.find(
+    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_TEAM_UPDATED"
+  );
+  assert.ok(acceptedTeamEvent);
+  const acceptedTeamPayload = acceptedTeamEvent.payload as {
+    ticketNo?: string;
+    worker_status?: string;
+    team_scan?: {
+      workers_required?: number;
+      checked_in_count?: number;
+      remaining_count?: number;
+      is_ready?: boolean;
+    };
+    team?: Array<{
+      worker_code?: string | null;
+      shirt_number?: string | null;
+      scan_status?: string;
+      accepted_at?: string | null;
+      scanned_at?: string | null;
+    }>;
+  };
+  assert.equal(acceptedTeamPayload.ticketNo, job.ticketNo);
+  assert.equal(acceptedTeamPayload.worker_status, "assigned");
+  assert.deepEqual(acceptedTeamPayload.team_scan, {
+    workers_required: 1,
+    checked_in_count: 0,
+    remaining_count: 1,
+    is_ready: false,
+  });
+  assert.equal(acceptedTeamPayload.team?.[0]?.worker_code, `W${worker.id}`);
+  assert.equal(acceptedTeamPayload.team?.[0]?.shirt_number, String(worker.id));
+  assert.equal(acceptedTeamPayload.team?.[0]?.scan_status, "accepted");
+  assert.equal(acceptedTeamPayload.team?.[0]?.accepted_at, response.body.accepted_at);
+  assert.equal(acceptedTeamPayload.team?.[0]?.scanned_at, null);
   const scanTimeoutJob = state.queueJobs
     .get(process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string)
     ?.get("assignment-scan-timeout-951");
@@ -1329,6 +1371,38 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr scans correct QR", 
     ).length,
     1
   );
+  const scannedTeamEvent = state.socketEvents.find(
+    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_TEAM_UPDATED"
+  );
+  assert.ok(scannedTeamEvent);
+  const scannedTeamPayload = scannedTeamEvent.payload as {
+    ticketNo?: string;
+    worker_status?: string;
+    team_scan?: {
+      workers_required?: number;
+      checked_in_count?: number;
+      remaining_count?: number;
+      is_ready?: boolean;
+    };
+    team?: Array<{
+      worker_code?: string | null;
+      shirt_number?: string | null;
+      scan_status?: string;
+      scanned_at?: string | null;
+    }>;
+  };
+  assert.equal(scannedTeamPayload.ticketNo, job.ticketNo);
+  assert.equal(scannedTeamPayload.worker_status, "working");
+  assert.deepEqual(scannedTeamPayload.team_scan, {
+    workers_required: 1,
+    checked_in_count: 1,
+    remaining_count: 0,
+    is_ready: true,
+  });
+  assert.equal(scannedTeamPayload.team?.[0]?.worker_code, `W${worker.id}`);
+  assert.equal(scannedTeamPayload.team?.[0]?.shirt_number, String(worker.id));
+  assert.equal(scannedTeamPayload.team?.[0]?.scan_status, "scanned");
+  assert.ok(scannedTeamPayload.team?.[0]?.scanned_at);
 });
 
 test("POST /api/workers/me/assignments/:ticketNo/check-in-qr shortens remaining team scan window from settings", async () => {
@@ -1364,6 +1438,65 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr shortens remaining 
   });
   assert.equal(firstAssignment.status, "SCANNED");
   assert.equal(job.status, "WORKING");
+  const teamUpdatedEvents = state.socketEvents.filter(
+    (item) => item.event === "ASSIGNMENT_TEAM_UPDATED"
+  );
+  assert.deepEqual(
+    teamUpdatedEvents.map((item) => item.accountId).sort(),
+    [worker.id, second.worker.id, third.worker.id].sort()
+  );
+  const teamUpdatedPayload = teamUpdatedEvents[0].payload as {
+    ticketNo?: string;
+    worker_status?: string;
+    team_scan?: {
+      workers_required?: number;
+      checked_in_count?: number;
+      remaining_count?: number;
+      is_ready?: boolean;
+    };
+    team?: Array<{
+      worker_code?: string | null;
+      shirt_number?: string | null;
+      scan_status?: string;
+      scanned_at?: string | null;
+    }>;
+  };
+  assert.equal(teamUpdatedPayload.ticketNo, job.ticketNo);
+  assert.equal(teamUpdatedPayload.worker_status, "waiting_team");
+  assert.deepEqual(teamUpdatedPayload.team_scan, {
+    workers_required: 3,
+    checked_in_count: 1,
+    remaining_count: 2,
+    is_ready: false,
+  });
+  assert.deepEqual(
+    teamUpdatedPayload.team?.map((member) => ({
+      worker_code: member.worker_code,
+      shirt_number: member.shirt_number,
+      scan_status: member.scan_status,
+      scanned: Boolean(member.scanned_at),
+    })),
+    [
+      {
+        worker_code: `W${worker.id}`,
+        shirt_number: String(worker.id),
+        scan_status: "scanned",
+        scanned: true,
+      },
+      {
+        worker_code: `W${second.worker.id}`,
+        shirt_number: String(second.worker.id),
+        scan_status: "accepted",
+        scanned: false,
+      },
+      {
+        worker_code: `W${third.worker.id}`,
+        shirt_number: String(third.worker.id),
+        scan_status: "accepted",
+        scanned: false,
+      },
+    ]
+  );
 
   for (const assignment of [secondAssignment, thirdAssignment]) {
     assert.equal(assignment.status, "ACCEPTED");
