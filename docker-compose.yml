@@ -13,7 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d labor_project"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d labor_project" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -23,11 +23,11 @@ services:
     container_name: labor-redis
     ports:
       - "${REDIS_HOST_PORT:-6380}:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+    command: [ "redis-server", "--appendonly", "yes" ]
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -55,29 +55,6 @@ services:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-  # Local development only: expose the API for LINE webhook testing.
-  # Production on Railway must use the Railway public domain or a custom domain.
-  cloudflared-quick:
-    image: cloudflare/cloudflared:latest
-    container_name: labor-cloudflared-quick
-    profiles:
-      - tunnel-quick
-    command: tunnel --no-autoupdate --protocol http2 --url http://api:8080
-    depends_on:
-      api:
-        condition: service_started
-
-  # Local development only: stable named tunnel for LINE webhook testing.
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: labor-cloudflared
-    profiles:
-      - tunnel
-    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      api:
-        condition: service_started
 
 volumes:
   postgres_data:

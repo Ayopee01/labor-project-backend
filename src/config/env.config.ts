@@ -96,13 +96,22 @@ export function validateRuntimeEnv(): EnvValidationResult {
     }
   }
 
+  // Validate CORS_ORIGIN in production
   if (isProduction()) {
     if (!hasValue("CORS_ORIGIN")) {
       errors.push("CORS_ORIGIN is required in production.");
-    } else if (process.env.CORS_ORIGIN!.trim() === "*") {
-      errors.push("CORS_ORIGIN must not be '*' in production.");
+      // } else if (process.env.CORS_ORIGIN!.trim() === "*") {
+      //   errors.push("CORS_ORIGIN must not be '*' in production.");
+    } else if (
+      process.env.CORS_ORIGIN!.trim() === "*" &&
+      process.env.ALLOW_CORS_WILDCARD !== "true"
+    ) {
+      errors.push(
+        "CORS_ORIGIN must not be '*' in production unless ALLOW_CORS_WILDCARD=true."
+      );
     }
   }
+
 
   return {
     ok: errors.length === 0,

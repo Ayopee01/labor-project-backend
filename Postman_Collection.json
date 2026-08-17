@@ -32,12 +32,6 @@
       "description": "Local backend base URL for testing."
     },
     {
-      "key": "publicBaseUrl",
-      "value": "",
-      "type": "string",
-      "description": "Optional Cloudflare Tunnel public base URL, for example https://example.trycloudflare.com. Use publicBaseUrl + /api/line/webhook in LINE Developers."
-    },
-    {
       "key": "wsBaseUrl",
       "value": "ws://localhost:8080",
       "type": "string",

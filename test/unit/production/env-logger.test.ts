@@ -173,6 +173,65 @@ test("env validation rejects missing production CORS origin and LINE config", ()
   }
 });
 
+// test ทดสอบ
+test("env validation allows wildcard CORS when explicitly enabled", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousCorsOrigin = process.env.CORS_ORIGIN;
+  const previousAllowWildcard = process.env.ALLOW_CORS_WILDCARD;
+
+  process.env.NODE_ENV = "production";
+  process.env.CORS_ORIGIN = "*";
+  process.env.ALLOW_CORS_WILDCARD = "true";
+
+  process.env.DATABASE_URL =
+    "postgresql://user:pass@localhost:5432/app";
+  process.env.REDIS_URL = "redis://localhost:6379";
+  process.env.REDIS_WORKER_QUEUE_KEY = "worker:queue";
+  process.env.REDIS_WORKER_STATUS_KEY_PREFIX = "worker:status:";
+  process.env.REDIS_WORKER_PRESENCE_KEY_PREFIX = "worker:presence:";
+  process.env.WORKER_PRESENCE_STALE_SECONDS = "90";
+  process.env.REDIS_WORKER_BREAK_COUNT_KEY_PREFIX = "worker:break:";
+  process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE = "assignment-timeouts";
+  process.env.BULLMQ_WORKER_BREAK_RETURN_QUEUE =
+    "worker-break-returns";
+  process.env.BULLMQ_LINE_MESSAGE_QUEUE = "line-messages";
+
+  process.env.JWT_ACCESS_SECRET = "x".repeat(32);
+  process.env.JWT_REFRESH_SECRET = "x".repeat(32);
+  process.env.JWT_LOGIN_CHALLENGE_SECRET = "y".repeat(32);
+  process.env.REFRESH_TOKEN_HASH_SECRET = "z".repeat(32);
+
+  process.env.LINE_CHANNEL_SECRET = "line-channel-secret";
+  process.env.LINE_CHANNEL_ACCESS_TOKEN =
+    "line-channel-access-token";
+
+  process.env.FIREBASE_PROJECT_ID = "firebase-project";
+  process.env.FIREBASE_CLIENT_EMAIL =
+    "firebase@example.com";
+  process.env.FIREBASE_PRIVATE_KEY =
+    "-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----\\n";
+
+  try {
+    const result = validateRuntimeEnv();
+
+    assert.equal(result.ok, true);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+
+    if (previousCorsOrigin === undefined) {
+      delete process.env.CORS_ORIGIN;
+    } else {
+      process.env.CORS_ORIGIN = previousCorsOrigin;
+    }
+
+    if (previousAllowWildcard === undefined) {
+      delete process.env.ALLOW_CORS_WILDCARD;
+    } else {
+      process.env.ALLOW_CORS_WILDCARD = previousAllowWildcard;
+    }
+  }
+});
+
 test("env validation rejects wildcard production CORS origin", () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousCorsOrigin = process.env.CORS_ORIGIN;

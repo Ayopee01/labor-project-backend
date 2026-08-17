@@ -1,215 +1,38 @@
 # Backend API Structure
 
-Backend Express API for labor/user management. During development the API runs
-locally with `npm run dev`, while PostgreSQL runs as a local database service.
-Prisma owns the database schema, migrations, seed, and database client.
+Backend Express API for labor/user management.
+
+The project supports two development modes:
+
+- Local development on a developer machine
+- Shared development/test deployment on Render
+
+The shared Render environment provides a single public Backend Base URL for:
+
+- Frontend integration
+- Postman testing
+- LINE OA webhook testing
+- WebSocket testing
+- Integration testing
+
+Prisma owns the PostgreSQL schema, migrations, seed, and database client.
 
 ## Stack
 
 - Node.js
 - Express.js
 - PostgreSQL
-- Redis
+- Redis / Redis-compatible Key Value
 - BullMQ
 - Prisma ORM
 - TypeScript compiled to CommonJS
+- Docker
+- GitHub Actions CI
+- Render for shared development/test deployment
 
-## Development Setup
+## Local Development Setup
+
+Install dependencies:
 
 ```bash
 npm install
-copy .env.example .env
-npm run db:migrate
-npm run db:seed
-npm run dev
-```
-
-The server listens on `PORT` or `8080` and binds to `0.0.0.0` by default.
-Create a local PostgreSQL database first and set `DATABASE_URL` in `.env`.
-
-## Docker Development
-
-This project keeps PostgreSQL outside Docker for local development, while Redis
-and the API can run in Docker. This mirrors production more closely because the
-database remains an external service.
-
-Use `.env` for normal local runs:
-
-```env
-DATABASE_URL=postgresql://postgres:0000@localhost:5433/labor_project
-REDIS_URL=redis://localhost:6380
-REDIS_HOST_PORT=6380
-```
-
-Use `DOCKER_DATABASE_URL` when the API runs inside Docker and PostgreSQL stays
-on the host machine:
-
-```env
-DOCKER_DATABASE_URL=postgresql://postgres:0000@host.docker.internal:5433/labor_project
-```
-
-Start Redis and the API containers:
-
-```bash
-docker compose up --build
-```
-
-Run only Redis and keep the API on your host:
-
-```bash
-docker compose up redis
-npm run dev
-```
-
-The Redis container is exposed on host port `6380` by default to avoid conflicts
-with a local Redis service on `6379`. The API container still connects to Redis
-inside Docker through `redis://redis:6379`.
-
-Stop containers without deleting Redis data:
-
-```bash
-docker compose down
-```
-
-Delete Redis volume data:
-
-```bash
-docker compose down -v
-```
-
-Default seed admin:
-
-- username: `admin`
-- password: `Admin@123456`
-
-The seed account is hardcoded in `prisma/seed.ts` because it is only for local
-development/testing.
-
-## Development Runtime
-
-```text
-labor-project
-  |- npm run dev       Express API
-  |- PostgreSQL        local database service
-  |- Redis             Docker or local Redis service
-  `- Prisma            schema, migration, seed, client
-```
-
-Useful commands:
-
-```bash
-npm run db:migrate
-npm run db:seed
-npm run db:studio
-npm run build
-npm test
-```
-
-Cloudflare Tunnel for LINE OA webhook testing only:
-
-```bash
-npm run docker:tunnel:quick
-```
-
-Use the printed `https://*.trycloudflare.com/api/line/webhook` URL in LINE
-Developers. For a stable hostname, set `CLOUDFLARE_TUNNEL_TOKEN` and run
-`npm run docker:tunnel`. See `docs/LINE_CLOUDFLARE_TUNNEL.md`.
-
-Production on Railway should use the Railway public domain or a custom domain,
-not the local Cloudflare Tunnel profiles.
-
-## Railway Production
-
-Production deployment is GitHub Actions CI followed by Railway deployment from
-the GitHub repository. Railway builds the `Dockerfile`, injects `PORT`, runs
-`npm run db:deploy` before deploy, and checks `/ready`.
-
-Required Railway services:
-
-- Backend API
-- PostgreSQL
-- Redis
-
-Production migration command:
-
-```bash
-npm run db:deploy
-```
-
-See `docs/deployment.md` and `docs/production-runbook.md` before enabling
-production traffic.
-
-`npm test` runs tests that do not need a database. To run DB-backed service
-smoke tests:
-
-```bash
-RUN_DB_TESTS=1 npm test
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:RUN_DB_TESTS="1"; npm test
-```
-
-## Routes
-
-### Auth
-
-- `POST /api/auth/login`
-- `POST /api/auth/login/confirm-force`
-- `POST /api/auth/refresh`
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
-
-### Admin Users
-
-- `POST /api/admin/users`
-- `GET /api/admin/users`
-- `GET /api/admin/users/:workerCode`
-- `PATCH /api/admin/users/:workerCode`
-- `PATCH /api/admin/users/:workerCode/password`
-
-## File Layout
-
-```text
-prisma/
-  schema.prisma
-  seed.ts
-
-src/
-  app.ts
-  db/
-    prisma.ts
-  docs/
-    swagger.ts
-    openapi/
-  middlewares/
-    auth.middleware.ts
-    async-handler.middleware.ts
-    error.middleware.ts
-    role.middleware.ts
-    session.middleware.ts
-  repositories/
-    account.repository.ts
-    mapper.ts
-    profile.repository.ts
-    session.repository.ts
-    work-schedule.repository.ts
-  routes/
-    auth.routes.ts
-    system.routes.ts
-    users.routes.ts
-  services/
-    auth.service.ts
-    user.service.ts
-  types/
-    domain.ts
-    express.d.ts
-  utils/
-    api-error.ts
-    jwt.ts
-    password.ts
-    refresh-token-hash.ts
-    shift.ts
-```

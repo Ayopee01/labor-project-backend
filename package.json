@@ -10,6 +10,7 @@
   },
   "scripts": {
     "start": "node dist/index.js",
+    "start:render": "npm run db:deploy && node dist/index.js",
     "dev": "tsx watch index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -21,8 +22,6 @@
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
     "docker:redis": "docker compose up redis",
-    "docker:tunnel:quick": "docker compose --profile tunnel-quick up cloudflared-quick",
-    "docker:tunnel": "docker compose --profile tunnel up cloudflared",
     "test": "npm run test:unit && npm run test:routes",
     "test:unit": "node --import tsx --test test/unit/utilities/utils.test.ts test/unit/permissions/permission-config.test.ts test/unit/admin-workers/worker-code.test.ts test/unit/production/env-logger.test.ts",
     "test:routes": "node --import tsx --test test/routes/system.routes.test.ts && node --import tsx --test test/routes/auth.routes.test.ts && node --import tsx --test test/routes/admin-settings.routes.test.ts && node --import tsx --test test/routes/gate.routes.test.ts && node --import tsx --test test/routes/line.routes.test.ts && node --import tsx --test test/routes/admin-jobs.routes.test.ts && node --import tsx --test test/routes/admin-audit.routes.test.ts && node --import tsx --test test/routes/worker.routes.test.ts",
