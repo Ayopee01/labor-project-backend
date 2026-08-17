@@ -329,12 +329,17 @@ test("GET /api/workers/me/assignments/history returns job summary without financ
     "license_plate_province",
     "markets",
     "status",
+    "ticketCompletedAt",
     "ticketNo",
   ]);
   assert.equal(response.body.data[0].ticketNo, completedJob.ticketNo);
   assert.equal(response.body.data[0].status, "COMPLETED");
+  assert.equal(response.body.data[0].ticketCompletedAt, completedAssignment.completed_at);
   assert.equal(response.body.data[0].markets[0].booths[0].rating, null);
+  assert.equal(response.body.data[0].markets[0].booths[0].status, "WORKING");
+  assert.equal(response.body.data[0].markets[0].booths[0].confirmation_status, "WORKING");
   assert.equal(response.body.data[0].markets[0].booths[0].completed_at, null);
+  assert.equal(response.body.data[0].markets[0].booths[0].confirmedAt, null);
   assert.equal(response.body.data[0].markets[0].booths[0].products[0].confirmed_quantity, null);
   assert.equal(response.body.data[1].ticketNo, scanTimeoutJob.ticketNo);
   assert.equal(response.body.data[1].status, "TIMEOUT");
@@ -429,6 +434,82 @@ test("GET /api/workers/me/assignments/history filters by inclusive Bangkok date 
   assert.equal(response.body.total_earnings, undefined);
 });
 
+test("GET /api/workers/me/assignments/history supports optional page and limit", async () => {
+  const { token, worker } = await loginWorker(118);
+  const oldestJob = addHistoryAssignment(11801, 11801, worker.id, "2026-08-16T01:00:00.000Z");
+  const secondJob = addHistoryAssignment(11802, 11802, worker.id, "2026-08-16T02:00:00.000Z");
+  const thirdJob = addHistoryAssignment(11803, 11803, worker.id, "2026-08-16T03:00:00.000Z");
+  const newestJob = addHistoryAssignment(11804, 11804, worker.id, "2026-08-16T04:00:00.000Z");
+
+  const response = await server.request(
+    "GET",
+    "/api/workers/me/assignments/history?date=2026-08-16&page=2&limit=2",
+    {
+      token,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.pagination, {
+    page: 2,
+    limit: 2,
+    total: 4,
+    totalPages: 2,
+  });
+  assert.deepEqual(response.body.summary, {
+    jobCount: 4,
+    acceptTimeoutJobCount: 0,
+    completed_job_count: 4,
+  });
+  assert.deepEqual(
+    response.body.data.map((item: { ticketNo: string }) => item.ticketNo),
+    [secondJob.ticketNo, oldestJob.ticketNo],
+  );
+  assert.equal(response.body.data.some((item: { ticketNo: string }) => item.ticketNo === thirdJob.ticketNo), false);
+  assert.equal(response.body.data.some((item: { ticketNo: string }) => item.ticketNo === newestJob.ticketNo), false);
+});
+
+test("GET /api/workers/me/assignments/history defaults to today's Bangkok date", async () => {
+  const { token, worker } = await loginWorker(119);
+  const todayBangkok = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const todayJob = addHistoryAssignment(
+    11901,
+    11901,
+    worker.id,
+    new Date(`${todayBangkok}T12:00:00.000+07:00`).toISOString(),
+  );
+  addHistoryAssignment(
+    11902,
+    11902,
+    worker.id,
+    new Date(
+      new Date(`${todayBangkok}T00:00:00.000+07:00`).getTime() - 1,
+    ).toISOString(),
+  );
+
+  const response = await server.request("GET", "/api/workers/me/assignments/history?limit=20", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.date, todayBangkok);
+  assert.deepEqual(response.body.pagination, {
+    page: 1,
+    limit: 20,
+    total: 1,
+    totalPages: 1,
+  });
+  assert.deepEqual(
+    response.body.data.map((item: { ticketNo: string }) => item.ticketNo),
+    [todayJob.ticketNo],
+  );
+});
+
 test("GET /api/workers/me/assignments/history uses Bangkok calendar boundaries for single date", async () => {
   const { token, worker } = await loginWorker(114);
   addHistoryAssignment(11401, 11401, worker.id, "2026-08-13T16:59:59.000Z");
@@ -462,13 +543,14 @@ test("GET /api/workers/me/assignments/history accepts exactly 31 inclusive days"
 test("GET /api/workers/me/assignments/history rejects invalid date range queries", async () => {
   const { token } = await loginWorker(116);
   const invalidQueries = [
-    "",
     "date_from=2026-08-01",
     "date_to=2026-08-14",
     "date=2026-08-14&date_from=2026-08-01&date_to=2026-08-14",
     "date_from=2026-08-14&date_to=2026-08-01",
     "date=2026-02-30",
     "date_from=2026-08-01&date_to=2026-09-01",
+    "date=2026-08-14&page=0",
+    "date=2026-08-14&limit=101",
   ];
 
   for (const query of invalidQueries) {
@@ -1154,10 +1236,16 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
   assert.deepEqual(Object.keys(response.body.markets[0].stalls[0]).sort(), [
     "boothCode",
     "boothName",
+    "completed_at",
+    "confirmation_status",
     "product_count",
     "products",
+    "status",
   ]);
   assert.equal(response.body.markets[0].stalls[0].boothCode, "STALL-1851");
+  assert.equal(response.body.markets[0].stalls[0].status, "WORKING");
+  assert.equal(response.body.markets[0].stalls[0].confirmation_status, "WORKING");
+  assert.equal(response.body.markets[0].stalls[0].completed_at, null);
   assert.equal(response.body.markets[0].stalls[0].product_count, 2);
   assert.deepEqual(Object.keys(response.body.markets[0].stalls[0].products[0]).sort(), [
     "packageName",
@@ -1673,18 +1761,26 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete submits quanti
     "assignment_status",
     "boothCode",
     "boothName",
+    "completed_at",
     "confirmation_status",
+    "confirmedAt",
     "items",
     "marketCode",
     "marketName",
     "message",
+    "rejectedAt",
     "status",
     "submission_status",
+    "ticketCompletedAt",
     "ticketNo",
   ]);
   assert.equal(response.body.status, "DELIVERED");
   assert.equal(response.body.confirmation_status, "DELIVERED");
   assert.equal(response.body.assignment_status, "DELIVERED");
+  assert.equal(response.body.completed_at, null);
+  assert.equal(response.body.confirmedAt, null);
+  assert.equal(response.body.rejectedAt, null);
+  assert.equal(response.body.ticketCompletedAt, null);
   assert.equal(assignment.status, "DELIVERED");
   assert.equal(response.body.ticketNo, job.ticketNo);
   assert.equal(response.body.marketCode, "MARKET-871");

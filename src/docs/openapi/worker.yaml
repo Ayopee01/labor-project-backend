@@ -134,8 +134,9 @@
       description: >
         Returns assignment history for the authenticated worker only.
 
-        Use either date for a single Bangkok calendar day, or date_from and
-        date_to for an inclusive Bangkok calendar date range. date cannot be
+        Use date for a single Bangkok calendar day, or date_from and date_to
+        for an inclusive Bangkok calendar date range. If date/date_from/date_to
+        are omitted, the API uses today's Asia/Bangkok date. date cannot be
         combined with date_from/date_to. date_from and date_to must be sent
         together, date_from must be less than or equal to date_to, and the
         inclusive range must not exceed 31 calendar days. The database filter
@@ -151,7 +152,7 @@
             type: string
             format: date
             example: "2026-08-14"
-          description: Single assignment-created date in YYYY-MM-DD format, interpreted in Asia/Bangkok time.
+          description: Single assignment-created date in YYYY-MM-DD format, interpreted in Asia/Bangkok time. Defaults to today's Bangkok date when date/date_from/date_to are omitted.
         - in: query
           name: date_from
           required: false
@@ -168,6 +169,25 @@
             format: date
             example: "2026-08-14"
           description: Inclusive end date for date range. Must be used together with date_from.
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+          description: Optional page number. If page or limit is sent, the response includes pagination metadata.
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+          description: Optional page size. Defaults to 20 when page or limit is sent.
       responses:
         "200":
           description: Worker assignment history for the selected date or date range.

@@ -45,6 +45,11 @@ export async function listWorkerAssignmentHistoryByDate(
                       id: "asc",
                     },
                   },
+                  completionSubmissions: {
+                    orderBy: {
+                      id: "desc",
+                    },
+                  },
                   rating: true,
                 },
               },
@@ -64,19 +69,26 @@ export async function listWorkerAssignmentHistoryByDate(
     markets: assignment.vehicleJob.marketJobs.map((market) => ({
       marketCode: market.marketCode,
       marketName: market.marketName,
-      booths: market.tickets.map((ticket) => ({
-        boothCode: ticket.boothCode,
-        boothName: ticket.boothName,
-        completed_at: ticket.completedAt?.toISOString() ?? null,
-        products: ticket.products.map((product) => ({
-          productCode: product.productCode,
-          productName: product.productName,
-          packageCode: product.packageCode,
-          packageName: product.packageName,
-          confirmed_quantity: product.confirmedQuantity?.toFixed(2) ?? null,
-        })),
-        rating: ticket.rating?.score ?? null,
-      })),
+      booths: market.tickets.map((ticket) => {
+        const latestSubmission = ticket.completionSubmissions[0];
+
+        return {
+          boothCode: ticket.boothCode,
+          boothName: ticket.boothName,
+          status: ticket.status,
+          confirmation_status: ticket.status,
+          completed_at: ticket.completedAt?.toISOString() ?? null,
+          confirmed_at: latestSubmission?.confirmedAt?.toISOString() ?? null,
+          products: ticket.products.map((product) => ({
+            productCode: product.productCode,
+            productName: product.productName,
+            packageCode: product.packageCode,
+            packageName: product.packageName,
+            confirmed_quantity: product.confirmedQuantity?.toFixed(2) ?? null,
+          })),
+          rating: ticket.rating?.score ?? null,
+        };
+      }),
     })),
   }));
 }

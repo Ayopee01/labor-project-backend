@@ -514,8 +514,12 @@ export async function handleLineWebhook(
           result.products,
           {
             submission_status: result.submission.status,
+            confirmed_at: result.submission.confirmed_at,
+            rejected_at: result.submission.rejected_at,
             vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
             completed_worker_codes: result.completedWorkerCodes,
+            ticket_completed_at:
+              result.completedVehicleJob?.vehicle_job.updated_at ?? null,
             nextMarketCode: result.nextTicket?.marketCode ?? null,
             nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
             next_ticket_status: result.nextTicket?.ticket.status ?? null,
@@ -530,8 +534,12 @@ export async function handleLineWebhook(
           result.products,
           {
             submission_status: result.submission.status,
+            confirmed_at: result.submission.confirmed_at,
+            rejected_at: result.submission.rejected_at,
             vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
             completed_worker_codes: result.completedWorkerCodes,
+            ticket_completed_at:
+              result.completedVehicleJob?.vehicle_job.updated_at ?? null,
             nextMarketCode: result.nextTicket?.marketCode ?? null,
             nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
             next_ticket_status: result.nextTicket?.ticket.status ?? null,

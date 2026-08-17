@@ -311,6 +311,7 @@ export interface WorkerAssignmentHistoryItemDto {
 // Type response ประวัติ assignment ที่ส่งให้ Worker Mobile
 export interface WorkerAssignmentHistoryItemResponse {
   ticketNo: string;
+  ticket_completed_at: string | null;
   license_plate: string;
   license_plate_province: string | null;
   status: string;
@@ -328,7 +329,10 @@ export interface WorkerAssignmentHistoryProductDto {
 export interface WorkerAssignmentHistoryBoothDto {
   boothCode: string;
   boothName: string | null;
+  status: string;
+  confirmation_status: string;
   completed_at: string | null;
+  confirmed_at: string | null;
   products: WorkerAssignmentHistoryProductDto[];
   rating: number | null;
 }
@@ -345,6 +349,12 @@ export interface WorkerAssignmentHistoryResponse {
     job_count: number;
     accept_timeout_job_count: number;
     completed_job_count: number;
+  };
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    total_pages: number;
   };
   data: WorkerAssignmentHistoryItemResponse[];
 }
@@ -372,6 +382,9 @@ export interface WorkerCurrentJobProductResponse {
 export interface WorkerCurrentJobBoothResponse {
   boothCode: string;
   boothName: string | null;
+  status: string;
+  confirmation_status: string;
+  completed_at: string | null;
   products: WorkerCurrentJobProductResponse[];
 }
 
@@ -496,12 +509,16 @@ export interface VehicleJobDetailResponse {
 export interface TicketCompletionResponse {
   message: string;
   ticketNo: string | null;
+  ticket_completed_at: string | null;
   marketCode: string | null;
   marketName: string | null;
   boothCode: string;
   boothName: string | null;
   status: string;
   confirmation_status: string;
+  completed_at: string | null;
+  confirmed_at: string | null;
+  rejected_at: string | null;
   submission_status: string;
   assignment_status: string;
   items: Array<{

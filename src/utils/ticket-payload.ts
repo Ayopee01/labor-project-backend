@@ -35,12 +35,17 @@ export function buildWorkerTicketPayload(
 
   return {
     ticketNo: detail?.vehicle_job.ticketNo ?? null,
+    ticket_completed_at:
+      detail?.vehicle_job.status === "COMPLETED"
+        ? detail.vehicle_job.updated_at
+        : null,
     marketCode: market?.marketCode ?? null,
     marketName: market?.marketName ?? null,
     boothCode: ticket.boothCode,
     boothName: ticket.boothName,
     status: ticket.status,
     confirmation_status: ticket.confirmation_status,
+    completed_at: ticket.completed_at,
     ...extra,
     items: formatWorkerTicketItems(products),
   };

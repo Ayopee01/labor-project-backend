@@ -170,11 +170,14 @@ function buildWorkerAssignmentAcceptResponse(
     markets: detail.markets.map((market) => ({
       marketName: market.marketName,
       stall_count: market.tickets.length,
-      stalls: market.tickets.map((ticket) => ({
-        boothCode: ticket.boothCode,
-        boothName: ticket.boothName,
-        product_count: ticket.products.length,
-        products: ticket.products.map((product) => ({
+        stalls: market.tickets.map((ticket) => ({
+          boothCode: ticket.boothCode,
+          boothName: ticket.boothName,
+          status: ticket.status,
+          confirmation_status: ticket.confirmation_status,
+          completed_at: ticket.completed_at,
+          product_count: ticket.products.length,
+          products: ticket.products.map((product) => ({
           productCode: product.productCode,
           productName: product.productName,
           quantity: product.quantity,
@@ -191,6 +194,10 @@ function buildWorkerAssignmentHistoryItemResponse(
 ): WorkerAssignmentHistoryItemResponse {
   return {
     ticketNo: item.vehicle_job.ticketNo,
+    ticket_completed_at:
+      item.assignment.status === ASSIGNMENT_STATUS.COMPLETED
+        ? item.assignment.completed_at ?? item.vehicle_job.updated_at
+        : null,
     license_plate: item.vehicle_job.license_plate,
     license_plate_province: item.vehicle_job.license_plate_province,
     status: item.assignment.status,
@@ -225,6 +232,9 @@ function buildWorkerCurrentJobResponse(
       booths: market.tickets.map((ticket) => ({
         boothCode: ticket.boothCode,
         boothName: ticket.boothName,
+        status: ticket.status,
+        confirmation_status: ticket.confirmation_status,
+        completed_at: ticket.completed_at,
         products: ticket.products.map((product) => ({
           productCode: product.productCode,
           productName: product.productName,
@@ -932,9 +942,12 @@ export async function listWorkerAssignmentHistory(
 ): Promise<WorkerAssignmentHistoryResponse> {
   const account = await requireWorker(auth);
   const input = parseWithSchema(workerAssignmentHistoryQuerySchema, query);
+  const selectedDate = input.date ?? (
+    !input.date_from && !input.date_to ? formatBangkokDate() : undefined
+  );
   const range =
-    input.date
-      ? buildBangkokDateRange(input.date)
+    selectedDate
+      ? buildBangkokDateRange(selectedDate)
       : buildBangkokDateSpanRange(input.date_from, input.date_to);
 
   if (!range.startAt || !range.endAt) {
@@ -951,9 +964,16 @@ export async function listWorkerAssignmentHistory(
       range.startAt,
       range.endAt,
     );
+  const usesPagination = input.page !== undefined || input.limit !== undefined;
+  const page = input.page ?? 1;
+  const limit = input.limit ?? 20;
+  const offset = (page - 1) * limit;
+  const pagedHistory = usesPagination
+    ? history.slice(offset, offset + limit)
+    : history;
 
-  return {
-    date: input.date ?? input.date_from ?? "",
+  const response: WorkerAssignmentHistoryResponse = {
+    date: selectedDate ?? input.date_from ?? "",
     summary: {
       job_count: history.length,
       accept_timeout_job_count: history.filter(
@@ -965,8 +985,19 @@ export async function listWorkerAssignmentHistory(
         (item) => item.assignment.status === ASSIGNMENT_STATUS.COMPLETED,
       ).length,
     },
-    data: history.map(buildWorkerAssignmentHistoryItemResponse),
+    data: pagedHistory.map(buildWorkerAssignmentHistoryItemResponse),
   };
+
+  if (usesPagination) {
+    response.pagination = {
+      page,
+      limit,
+      total: history.length,
+      total_pages: Math.ceil(history.length / limit),
+    };
+  }
+
+  return response;
 }
 
 export async function getWorkerEarningsSummary(
@@ -1656,12 +1687,18 @@ async function completeResolvedWorkerTicket(
       ...buildWorkerTicketPayload(result.ticket, detail, result.products, {
         submission_status: result.submission.status,
         assignment_status: ASSIGNMENT_STATUS.DELIVERED,
+        confirmed_at: result.submission.confirmed_at,
+        rejected_at: result.submission.rejected_at,
+        ticket_completed_at: null,
       }),
     },
     worker_payload: {
       ...buildWorkerTicketPayload(result.ticket, detail, result.products, {
         submission_status: result.submission.status,
         assignment_status: ASSIGNMENT_STATUS.DELIVERED,
+        confirmed_at: result.submission.confirmed_at,
+        rejected_at: result.submission.rejected_at,
+        ticket_completed_at: null,
       }),
     },
     admin: true,
@@ -1675,6 +1712,9 @@ async function completeResolvedWorkerTicket(
     {
       submission_status: result.submission.status,
       assignment_status: ASSIGNMENT_STATUS.DELIVERED,
+      confirmed_at: result.submission.confirmed_at,
+      rejected_at: result.submission.rejected_at,
+      ticket_completed_at: null,
     },
   ) as Omit<TicketCompletionResponse, "message">;
 

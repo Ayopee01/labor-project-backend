@@ -1625,6 +1625,12 @@
           type: string
           nullable: true
           example: TKT-20260723-000125
+        ticket_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Vehicle job completion time when every booth under the TicketNo is terminal.
+          example: "2026-08-14T04:00:00.000Z"
         marketCode:
           type: string
           nullable: true
@@ -1646,6 +1652,24 @@
         confirmation_status:
           type: string
           example: DELIVERED
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Booth completion time after vendor confirmation or auto-confirm timeout.
+          example: "2026-08-14T03:15:42.000Z"
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when vendor confirmed this booth. Null while waiting or rejected.
+          example: "2026-08-14T03:15:42.000Z"
+        rejected_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when vendor rejected this booth. Null unless rejected.
+          example: "2026-08-14T03:10:00.000Z"
         submission_status:
           type: string
           example: DELIVERED
@@ -2006,6 +2030,12 @@
         ticketNo:
           type: string
           example: TKT-20260723-000125
+        ticket_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when the whole TicketNo/vehicle job completed for this worker history item.
+          example: "2026-08-14T04:00:00.000Z"
         license_plate:
           type: string
           example: ABC-1234
@@ -3027,6 +3057,24 @@
           type: string
           nullable: true
           example: Vendor A
+        status:
+          type: string
+          description: Booth status in English. WAIT means waiting for goods, DELIVERED means waiting for vendor confirmation, REJECT means rejected, COMPLETED means confirmed or auto-confirmed.
+          enum:
+            - WAIT
+            - WORKING
+            - DELIVERED
+            - REJECT
+            - COMPLETED
+            - CANCELLED
+          example: WORKING
+        confirmation_status:
+          type: string
+          example: WORKING
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
         product_count:
           type: integer
           example: 2
@@ -3205,11 +3253,31 @@
           type: string
           nullable: true
           example: Booth A
+        status:
+          type: string
+          description: Booth status in English.
+          enum:
+            - WAIT
+            - WORKING
+            - DELIVERED
+            - REJECT
+            - COMPLETED
+            - CANCELLED
+          example: COMPLETED
+        confirmation_status:
+          type: string
+          example: COMPLETED
         completed_at:
           type: string
           format: date-time
           nullable: true
           description: Actual time when this GateTicket/booth case was completed. Incomplete cases return null.
+          example: "2026-08-14T03:15:42.000Z"
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Vendor confirmation time for this booth. Null before confirmation or when rejected.
           example: "2026-08-14T03:15:42.000Z"
         products:
           type: array
@@ -3241,6 +3309,12 @@
         ticketNo:
           type: string
           example: TKT-20260723-000125
+        ticket_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when the whole TicketNo/vehicle job completed for this worker history item.
+          example: "2026-08-14T04:00:00.000Z"
         license_plate:
           type: string
           example: ABC-1234
@@ -3274,6 +3348,10 @@
             completed_job_count:
               type: integer
               example: 3
+        pagination:
+          allOf:
+            - $ref: "#/components/schemas/PaginationMeta"
+          description: Included only when page or limit is sent in the query.
         data:
           type: array
           items:
@@ -3307,6 +3385,23 @@
           type: string
           nullable: true
           example: Booth A
+        status:
+          type: string
+          enum:
+            - WAIT
+            - WORKING
+            - DELIVERED
+            - REJECT
+            - COMPLETED
+            - CANCELLED
+          example: DELIVERED
+        confirmation_status:
+          type: string
+          example: DELIVERED
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
         products:
           type: array
           items:

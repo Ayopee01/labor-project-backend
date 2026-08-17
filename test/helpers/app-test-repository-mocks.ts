@@ -742,12 +742,20 @@ export const workerApplicationRepositoryMock = {
                 (item) => item.ticket_id === ticket.id,
               );
 
-              return {
-                boothCode: ticket.boothCode,
-                boothName: ticket.boothName,
-                completed_at: ticket.completed_at ?? null,
-                products: state.ticketProducts
-                  .filter((product) => product.ticket_id === ticket.id)
+                return {
+                  boothCode: ticket.boothCode,
+                  boothName: ticket.boothName,
+                  status: ticket.status,
+                  confirmation_status: ticket.confirmation_status ?? ticket.status,
+                  completed_at: ticket.completed_at ?? null,
+                  confirmed_at:
+                    state.completionSubmissions.find(
+                      (submission) =>
+                        submission.ticket_id === ticket.id &&
+                        submission.status === "COMPLETED",
+                    )?.confirmed_at ?? null,
+                  products: state.ticketProducts
+                    .filter((product) => product.ticket_id === ticket.id)
                   .sort((left, right) => left.id - right.id)
                   .map((product) => ({
                     productCode: product.productCode,
@@ -1340,17 +1348,17 @@ export const workerApplicationRepositoryMock = {
       return null;
     }
 
+    const now = new Date().toISOString();
     job.status = tickets.every((ticket) => ticket.status === "CANCELLED")
       ? "CANCELLED"
       : "COMPLETED";
+    job.updated_at = now;
 
     const activeAssignments = state.assignments.filter(
       (assignment) =>
         assignment.vehicle_job_id === vehicleJobId &&
         ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status),
     );
-    const now = new Date().toISOString();
-
     activeAssignments.forEach((assignment) => {
       assignment.status = "COMPLETED";
       assignment.completed_at = now;
@@ -1442,6 +1450,7 @@ export const workerApplicationRepositoryMock = {
           status: job.status,
           tickets: marketTickets.map((ticket) => ({
             ...ticket,
+            confirmation_status: ticket.confirmation_status ?? ticket.status,
             products: state.ticketProducts.filter(
               (product) => product.ticket_id === ticket.id,
             ),

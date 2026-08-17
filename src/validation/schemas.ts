@@ -328,19 +328,13 @@ export const workerAssignmentHistoryQuerySchema = z
     date: optionalDateString,
     date_from: optionalDateString,
     date_to: optionalDateString,
+    page: optionalPageNumber,
+    limit: optionalLimitNumber,
   })
   .superRefine((input, context) => {
     const hasDate = Boolean(input.date);
     const hasDateFrom = Boolean(input.date_from);
     const hasDateTo = Boolean(input.date_to);
-
-    if (!hasDate && !hasDateFrom && !hasDateTo) {
-      context.addIssue({
-        code: "custom",
-        path: ["date"],
-        message: "date or date_from/date_to is required.",
-      });
-    }
 
     if (hasDate && (hasDateFrom || hasDateTo)) {
       context.addIssue({
