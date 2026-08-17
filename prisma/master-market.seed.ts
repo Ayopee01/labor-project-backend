@@ -87111,7 +87111,8 @@ const chunkArray = <T>(items: T[], size: number): T[][] => {
 
 export async function seedMasterMarkets(prisma: PrismaClient): Promise<void> {
   const syncedAt = new Date();
-  const batches = chunkArray(masterMarketSeedData, 100);
+  // const batches = chunkArray(masterMarketSeedData, 100);
+  const batches = chunkArray(masterMarketSeedData, 25);
 
   for (const batch of batches) {
     const operations = batch.map((item) =>

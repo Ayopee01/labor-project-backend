@@ -12904,7 +12904,8 @@ const chunkArray = <T>(items: T[], size: number): T[][] => {
 
 // Function seed ข้อมูล master_product จาก master product list ลง DB
 export async function seedMasterProducts(prisma: PrismaClient): Promise<void> {
-  const batches = chunkArray(masterProductSeedData, 100);
+  // const batches = chunkArray(masterProductSeedData, 100);
+  const batches = chunkArray(masterProductSeedData, 25);
 
   for (const batch of batches) {
     const operations = batch.map((item) => {
