@@ -154,9 +154,10 @@ test("GET /api/auth/me returns current worker account from access token", async 
   ]);
   assert.equal(response.body.full_name, worker.full_name);
   assert.equal(response.body.role, "worker");
-  assert.equal(response.body.employee_code, `W${worker.id}`);
   assert.equal(response.body.worker_code, `W${worker.id}`);
   assert.equal(response.body.nationality, "Thai");
+  assert.equal(response.body.shirt_number, String(worker.id));
+  assert.equal(response.body.shirt_type, "standard");
   assert.equal(response.body.work_start_date, "2026-01-01");
   assert.equal(response.body.phone, worker.phone);
   assert.equal(response.body.lang, "TH");
