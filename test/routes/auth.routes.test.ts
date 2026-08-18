@@ -141,13 +141,14 @@ test("GET /api/auth/me returns current worker account from access token", async 
 
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
-    "employee_code",
     "full_name",
     "lang",
     "nationality",
     "phone",
     "role",
     "shift",
+    "shirt_number",
+    "shirt_type",
     "work_start_date",
     "worker_code",
   ]);
