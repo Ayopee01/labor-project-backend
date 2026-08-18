@@ -33,12 +33,12 @@ router.get(
 );
 
 router.post(
-  "/jobs/:ticketNo/ready",
+  "/jobs/:ticketNumber/ready",
   driverSessionMiddleware,
   async (req, res, next) => {
     try {
       const result = await driverService.markDriverJobReady(
-        req.params.ticketNo,
+        req.params.ticketNumber,
         req.driverSession
       );
       res.json(result);

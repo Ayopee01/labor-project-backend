@@ -67,6 +67,7 @@ export async function listWorkerAssignmentHistoryByDate(
       "vehicle job",
     ),
     markets: assignment.vehicleJob.marketJobs.map((market) => ({
+      ticket_no: market.ticketNo,
       marketCode: market.marketCode,
       marketName: market.marketName,
       booths: market.tickets.map((ticket) => {
@@ -93,6 +94,8 @@ export async function listWorkerAssignmentHistoryByDate(
   }));
 }
 
+// Function ดึงสรุปรายได้ของ Worker ต่อ Business Ticket (ไม่ใช่ต่อ Booth เพราะ TicketWorker
+// เป็น Roster ระดับ Business Ticket แล้ว final_earning_amount จึงรวมทุก Booth ของ Ticket นั้น)
 export async function listWorkerEarningsSummaryRows(
   workerAccountId: number,
   startAt: Date,
@@ -106,7 +109,7 @@ export async function listWorkerEarningsSummaryRows(
       finalEarningAmount: {
         not: null,
       },
-      ticket: {
+      marketJob: {
         completedAt: {
           gte: startAt,
           lt: endAt,
@@ -118,7 +121,7 @@ export async function listWorkerEarningsSummaryRows(
     },
     orderBy: [
       {
-        ticket: {
+        marketJob: {
           completedAt: "desc",
         },
       },
@@ -127,25 +130,23 @@ export async function listWorkerEarningsSummaryRows(
       },
     ],
     include: {
-      ticket: {
+      marketJob: {
         include: {
           vehicleJob: true,
-          marketJob: true,
         },
       },
     },
   });
 
   return rows.map((row) => ({
-    completed_at: row.ticket.completedAt?.toISOString() ?? "",
-    ticketNo: row.ticket.vehicleJob.ticketNo,
-    license_plate: row.ticket.vehicleJob.licensePlate,
-    license_plate_province: row.ticket.vehicleJob.licensePlateProvince,
-    booth_count: row.ticket.vehicleJob.boothCount,
-    marketCode: row.ticket.marketJob.marketCode,
-    marketName: row.ticket.marketJob.marketName,
-    boothCode: row.ticket.boothCode,
-    boothName: row.ticket.boothName,
+    completed_at: row.marketJob.completedAt?.toISOString() ?? "",
+    ticket_number: row.marketJob.vehicleJob.ticketNumber,
+    ticket_no: row.marketJob.ticketNo,
+    license_plate: row.marketJob.vehicleJob.licensePlate,
+    license_plate_province: row.marketJob.vehicleJob.licensePlateProvince,
+    booth_count: row.marketJob.boothCount,
+    marketCode: row.marketJob.marketCode,
+    marketName: row.marketJob.marketName,
     earnings: row.finalEarningAmount?.toFixed(2) ?? "0.00",
   }));
 }

@@ -50,7 +50,7 @@ export function mapVehicleJobDetail(
     vehicle_job: requireDto(mapVehicleJob(record), "vehicle job"),
     markets: record.marketJobs.map((market) => ({
       ...requireDto(mapMarketJob(market), "market job"),
-      tickets: market.tickets.map((ticket) => ({
+      booths: market.tickets.map((ticket) => ({
         ...requireDto(mapGateTicket(ticket), "gate ticket"),
         products: ticket.products.map((product) =>
           requireDto(mapTicketProduct(product), "ticket product"),
@@ -75,15 +75,15 @@ export async function findVehicleJobById(
   return mapVehicleJob(vehicleJob);
 }
 
-// Function ค้นหา vehicle job ตาม ref จาก DB
+// Function ค้นหา vehicle job (TicketNumber) ตาม ref จาก DB
 export async function findVehicleJobByRef(
-  ticketNo: string,
+  ticketNumber: string,
   connection?: DbConnection,
 ): Promise<VehicleJobDto | null> {
   const db = client(connection);
   const vehicleJob = await db.vehicleJob.findUnique({
     where: {
-      ticketNo,
+      ticketNumber,
     },
   });
 

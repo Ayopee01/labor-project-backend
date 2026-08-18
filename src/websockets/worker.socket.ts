@@ -323,12 +323,12 @@ function buildWorkerPushMessage(
   type: WorkerSocketEventType,
   payload: WorkerSocketPayload
 ): string {
-  const ticketNo = typeof payload.ticketNo === "string" ? payload.ticketNo : null;
+  const ticketNumber = typeof payload.ticketNumber === "string" ? payload.ticketNumber : null;
 
   switch (type) {
     case "WORKER_ASSIGNED":
-      return ticketNo
-        ? `You have a new assignment for ticket ${ticketNo}.`
+      return ticketNumber
+        ? `You have a new assignment for ticket ${ticketNumber}.`
         : "You have a new assignment.";
     case "ASSIGNMENT_TIMEOUT":
       return "Your assignment deadline has expired.";
@@ -336,8 +336,8 @@ function buildWorkerPushMessage(
     case "STALL_JOB_CANCELLED":
     case "MARKET_JOB_CANCELLED":
     case "VEHICLE_JOB_CANCELLED":
-      return ticketNo
-        ? `Assignment ${ticketNo} was cancelled.`
+      return ticketNumber
+        ? `Assignment ${ticketNumber} was cancelled.`
         : "Your assignment was cancelled.";
     case "ASSIGNMENT_SCAN_DEADLINE_EXTENDED":
       return "Your QR scan deadline was extended.";

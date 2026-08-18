@@ -12,7 +12,10 @@ export type AccountRecord = {
   phone?: string | null;
   permission_level?: string | null;
   shirt_number?: string | null;
+  shift_no?: number | null;
   lang: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type WorkerNotificationRecord = {
@@ -47,11 +50,14 @@ export type AssignmentRecord = {
   vehicle_job_id: number;
   worker_account_id: number;
   status: string;
+  // Audit-only: Business Ticket ที่ทำให้เกิดการ Dispatch นี้ ถ้ารู้
+  source_market_job_id?: number | null;
   accept_deadline_at: string | null;
   scan_deadline_at: string | null;
   accepted_at?: string | null;
   scanned_at?: string | null;
   completed_at?: string | null;
+  released_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -69,18 +75,39 @@ export type WorkerAssignmentEventRecord = {
 
 export type VehicleJobRecord = {
   id: number;
-  ticketNo: string;
-  gate_transaction_ref: string;
+  ticket_number: string;
   license_plate: string;
   license_plate_province: string | null;
   vehicle_type: string | null;
-  ticket_created_at: string;
-  booth_count: number;
   workers_required: number;
   dispatch_now: boolean;
   status: string;
   driver_qr_token: string;
+  expected_ticket_count?: number | null;
+  tickets_closed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// Business Ticket (repurposed MarketJob) — หนึ่งใบอยู่ได้ตลาดเดียว แต่ TicketNumber
+// (VehicleJobRecord) เดียวมีได้หลาย MarketJobRecord
+export type MarketJobRecord = {
+  id: number;
+  vehicle_job_id: number;
+  ticket_no: string;
+  ticket_created_at: string;
+  booth_count: number;
+  gate_transaction_ref: string;
+  workers_required: number;
+  marketCode: string;
+  marketName: string;
+  dropoff_point: string | null;
+  status: string;
   worker_qr_token: string;
+  worker_roster_locked_at: string | null;
+  final_stall_amount: string | null;
+  financialized_at: string | null;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -149,9 +176,10 @@ export type TicketProductRecord = {
   updated_at?: string;
 };
 
+// Worker Roster ของ Business Ticket (market job) — ไม่ใช่ระดับ Booth อีกต่อไป
 export type TicketWorkerRecord = {
   id: number;
-  ticket_id: number;
+  market_job_id: number;
   worker_account_id: number;
   status: string;
   final_earning_amount?: string | null;
@@ -191,6 +219,7 @@ export type TicketCompletionSubmissionRecord = {
   confirmed_at: string | null;
   rejected_at: string | null;
   resolved_by_line_user_id: string | null;
+  created_at?: string;
 };
 
 export type TicketRatingRecord = {
@@ -221,6 +250,7 @@ export type LineActionTokenRecord = {
 export type GateRequestLogRecord = {
   gate_transaction_ref: string;
   vehicle_job_id: number | null;
+  market_job_id: number | null;
   payload_snapshot: unknown;
   response_snapshot: unknown | null;
 };
@@ -257,4 +287,16 @@ export type MasterMarketRecord = {
   boothName: string;
   marketStatus: string | null;
   boothStatus: string;
+};
+
+export type AdminActionLogRecord = {
+  id: number;
+  vehicle_job_id: number;
+  gate_ticket_id: number | null;
+  action_type: string;
+  reason_code: string | null;
+  reason_text: string | null;
+  actor_account_id: number;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 };

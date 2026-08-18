@@ -82,13 +82,28 @@ router.get(
   }
 );
 
+// Route รายได้ Worker รายวัน — อยู่ใต้ namespace /vehicle-jobs/history เดิม (ไม่สร้าง /work-history
+// namespace ใหม่) เพราะเป็นรายงานที่ derive จากข้อมูล Vehicle Job History เดียวกัน
 router.get(
-  "/vehicle-jobs/:ticketNo/financials",
+  "/vehicle-jobs/history/daily-worker-income",
+  permissionMiddleware(["jobs:read"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.listDailyWorkerIncome(req.query);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.get(
+  "/vehicle-jobs/:ticketNumber/financials",
   permissionMiddleware(["jobs:read"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.getVehicleJobFinancials(
-        req.params.ticketNo
+        req.params.ticketNumber
       );
       res.json(result);
     } catch (error) {
@@ -98,12 +113,12 @@ router.get(
 );
 
 router.post(
-  "/vehicle-jobs/:ticketNo/assign-workers",
+  "/vehicle-jobs/:ticketNumber/assign-workers",
   permissionMiddleware(["jobs:assign"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.assignVehicleJobWorkers(
-        req.params.ticketNo,
+        req.params.ticketNumber,
         req.body
       );
       res.status(201).json(result);
@@ -114,12 +129,12 @@ router.post(
 );
 
 router.post(
-  "/vehicle-jobs/:ticketNo/scan-deadline/extend",
+  "/vehicle-jobs/:ticketNumber/scan-deadline/extend",
   permissionMiddleware(["jobs:extend_deadline"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.extendVehicleJobScanDeadline(
-        req.params.ticketNo,
+        req.params.ticketNumber,
         req.body
       );
       res.json(result);
@@ -130,14 +145,89 @@ router.post(
 );
 
 router.post(
-  "/vehicle-jobs/:ticketNo/workers/:workerCode/assignment/cancel",
+  "/vehicle-jobs/:ticketNumber/workers/:workerCode/assignment/cancel",
   permissionMiddleware(["jobs:cancel"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.cancelAssignment(
+        req.params.ticketNumber,
+        req.params.workerCode,
+        req.body
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Route ยกเลิก Worker หนึ่งคนออกจาก Business Ticket ใบเดียว (ไม่แตะ Assignment ระดับรถ)
+// แยกจาก /workers/:workerCode/assignment/cancel ซึ่งยกเลิกทั้ง TicketNumber โดยเจตนา
+router.post(
+  "/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:workerCode/cancel",
+  permissionMiddleware(["jobs:cancel"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.cancelTicketWorker(
+        req.params.ticketNumber,
         req.params.ticketNo,
         req.params.workerCode,
         req.body
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Route Admin ส่ง/แก้ยอดสินค้าของ Booth หนึ่งใบแทน Worker
+router.post(
+  "/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count",
+  permissionMiddleware(["jobs:override_count"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.overrideTicketProductCounts(
+        req.params.ticketNumber,
+        req.params.stallCode,
+        req.body,
+        req.auth
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Route Admin สั่งให้ VehicleJob กลับไปสถานะ WAIT (รถยังไม่พร้อมเข้าจุดลงสินค้า)
+router.post(
+  "/vehicle-jobs/:ticketNumber/wait",
+  permissionMiddleware(["jobs:wait"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.changeVehicleJobToWait(
+        req.params.ticketNumber,
+        req.body,
+        req.auth
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Route Admin ปล่อย Worker ทั้งทีมของ VehicleJob กลับคิวก่อนเวลา (ส่งยอดครบทุก Booth แล้ว)
+router.post(
+  "/vehicle-jobs/:ticketNumber/release-workers",
+  permissionMiddleware(["jobs:release_workers"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.releaseVehicleJobWorkers(
+        req.params.ticketNumber,
+        req.body,
+        req.auth
       );
       res.json(result);
     } catch (error) {

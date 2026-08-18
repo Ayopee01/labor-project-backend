@@ -33,7 +33,7 @@ export type AssignmentAcceptTimeoutResult = {
 
 // Type ผลลัพธ์เมื่อ worker จบงานและอาจกลับเข้าคิวได้
 export type CompletedWorkerQueueResult = {
-  vehicle_job: Pick<VehicleJobDto, "ticketNo">;
+  vehicle_job: Pick<VehicleJobDto, "ticket_number">;
   completed_worker_account_ids: number[];
 };
 
@@ -83,33 +83,41 @@ export type WorkerShiftAttendanceWriteInput = WorkerShiftAttendanceKeyInput & {
   schedule: WorkScheduleDto;
 };
 
-// Type DTO ของ vehicle_jobs ที่ใช้ใน Worker flow
+// Type DTO ของ vehicle_jobs (TicketNumber) ที่ใช้ใน Worker flow
 export interface VehicleJobDto {
   id: number;
-  ticketNo: string;
-  gate_transaction_ref: string;
+  ticket_number: string;
   license_plate: string;
   license_plate_province: string | null;
   vehicle_type: string | null;
-  ticket_created_at: string;
-  booth_count: number;
   workers_required: number;
   dispatch_now: boolean;
   status: string;
   driver_qr_token: string;
-  worker_qr_token: string;
+  expected_ticket_count: number | null;
+  tickets_closed_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
-// Type DTO ของ market_jobs ที่อยู่ใต้ vehicle job
+// Type DTO ของ market_jobs (Business Ticket) ที่อยู่ใต้ vehicle job
 export interface MarketJobDto {
   id: number;
   vehicle_job_id: number;
+  ticket_no: string;
+  ticket_created_at: string;
+  booth_count: number;
+  gate_transaction_ref: string;
+  workers_required: number;
   marketCode: string;
   marketName: string;
   dropoff_point: string | null;
   status: string;
+  worker_qr_token: string;
+  worker_roster_locked_at: string | null;
+  final_stall_amount: string | null;
+  financialized_at: string | null;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -167,10 +175,10 @@ export interface TicketProductDto {
   updated_at: string;
 }
 
-// Type DTO ความสัมพันธ์ระหว่าง ticket กับ worker
+// Type DTO ความสัมพันธ์ระหว่าง Business Ticket (market job) กับ worker
 export interface TicketWorkerDto {
   id: number;
-  ticket_id: number;
+  market_job_id: number;
   worker_account_id: number;
   status: string;
   final_earning_amount: string | null;
@@ -270,11 +278,17 @@ export interface VehicleJobAssignmentDto {
   vehicle_job_id: number;
   worker_account_id: number;
   status: string;
+  // Audit-only: which Ticket's shortfall triggered this dispatch, if any. Never used
+  // for access control — a worker can work any Ticket under the same TicketNumber.
+  source_market_job_id: number | null;
   accept_deadline_at: string | null;
   scan_deadline_at: string | null;
   accepted_at: string | null;
   scanned_at: string | null;
   completed_at: string | null;
+  // Set when Admin releases this worker back to the FIFO queue early, before the whole
+  // TicketNumber closes. Distinct from completed_at (whole vehicle job finished).
+  released_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -314,7 +328,7 @@ export interface WorkerAssignmentHistoryItemDto {
 
 // Type response ประวัติ assignment ที่ส่งให้ Worker Mobile
 export interface WorkerAssignmentHistoryItemResponse {
-  ticketNo: string;
+  ticket_number: string;
   ticket_completed_at: string | null;
   license_plate: string;
   license_plate_province: string | null;
@@ -342,6 +356,7 @@ export interface WorkerAssignmentHistoryBoothDto {
 }
 
 export interface WorkerAssignmentHistoryMarketDto {
+  ticket_no: string;
   marketCode: string;
   marketName: string;
   booths: WorkerAssignmentHistoryBoothDto[];
@@ -393,6 +408,7 @@ export interface WorkerCurrentJobBoothResponse {
 }
 
 export interface WorkerCurrentJobMarketResponse {
+  ticket_no: string;
   marketCode: string;
   marketName: string;
   booths: WorkerCurrentJobBoothResponse[];
@@ -413,7 +429,7 @@ export interface WorkerCurrentJobTeamScanResponse {
 }
 
 export interface WorkerCurrentJobResponse {
-  ticketNo: string;
+  ticket_number: string;
   license_plate: string;
   license_plate_province: string | null;
   scan_deadline_at: string | null;
@@ -440,8 +456,9 @@ interface WorkerAssignmentStallDto {
   products: WorkerAssignmentProductDto[];
 }
 
-// Type ตลาดใน assignment ที่รวมแผงของตลาดนั้น
+// Type ตลาดใน assignment ที่รวมแผงของตลาดนั้น (หนึ่งรายการ = หนึ่ง Business Ticket)
 interface WorkerAssignmentMarketDto {
+  ticket_no: string;
   marketName: string;
   stall_count: number;
   stalls: WorkerAssignmentStallDto[];
@@ -449,6 +466,9 @@ interface WorkerAssignmentMarketDto {
 
 // Type response หลัง worker accept งาน
 export interface WorkerAssignmentAcceptResponse {
+  ticket_number: string;
+  // Audit-only: which Ticket (if any) triggered this specific assignment's dispatch.
+  triggered_by_ticket_no: string | null;
   worker_code: string | null;
   shirt_number: string | null;
   accepted_at: string | null;
@@ -465,8 +485,7 @@ export interface WorkerAssignmentCheckInResponse {
   status: string;
   worker_status: WorkerWorkStatus;
   worker_code: string | null;
-  ticketNo: string;
-  worker_qr_token: string;
+  ticket_number: string;
   team_scan: WorkerCurrentJobTeamScanResponse;
 }
 
@@ -481,26 +500,26 @@ export interface WorkerEarningsSummaryResponse {
     date: string;
     earnings: string;
   }>;
+  // หนึ่งแถว = รายได้ของ Worker จาก Business Ticket หนึ่งใบ (รวมทุก Booth ภายใต้ Ticket นั้น)
   details: Array<{
     completed_at: string;
-    ticketNo: string;
+    ticket_number: string;
+    ticket_no: string;
     license_plate: string;
     license_plate_province: string | null;
     booth_count: number;
     marketCode: string;
     marketName: string;
-    boothCode: string;
-    boothName: string | null;
     earnings: string;
   }>;
 }
 
-// Type response รายละเอียดงานรถพร้อมตลาด แผง และสินค้า
+// Type response รายละเอียดงานรถพร้อม Business Ticket, แผง และสินค้า
 export interface VehicleJobDetailResponse {
   vehicle_job: VehicleJobDto;
   markets: Array<
     MarketJobDto & {
-      tickets: Array<
+      booths: Array<
         GateTicketDto & {
           products: TicketProductDto[];
         }
@@ -512,7 +531,8 @@ export interface VehicleJobDetailResponse {
 // Type response หลัง worker ส่งยอดให้ vendor ตรวจสอบ
 export interface TicketCompletionResponse {
   message: string;
-  ticketNo: string | null;
+  ticket_number: string | null;
+  ticket_no: string | null;
   ticket_completed_at: string | null;
   marketCode: string | null;
   marketName: string | null;

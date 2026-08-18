@@ -5,14 +5,15 @@ import { toUnixMs } from "./time";
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function สร้าง worker assigned payload สำหรับ helper กลาง
+//
+// ไม่มี worker_qr_token เดี่ยวให้ส่งอีกต่อไป เพราะ QR check-in เป็นระดับ Business Ticket
+// (หลายใบ) ไม่ใช่ระดับ TicketNumber แล้ว — client ต้อง re-fetch current job detail เอง
 export function buildWorkerAssignedPayload(
   assignment: VehicleJobAssignmentDto,
   vehicleJob: VehicleJobDto
 ) {
   return {
-    ticketNo: vehicleJob.ticketNo,
-    gate_transaction_ref: vehicleJob.gate_transaction_ref,
-    worker_qr_token: vehicleJob.worker_qr_token,
+    ticketNumber: vehicleJob.ticket_number,
     assignment: {
       created_at: assignment.created_at,
       accept_deadline_at: assignment.accept_deadline_at,

@@ -209,6 +209,7 @@ export interface UserListItem {
   worker_code: string | null;
   shirt_number: string | null;
   full_name: string;
+  phone: string | null;
   work_start_date: string | null;
   work_schedule: UserListSchedule | null;
   status: AccountStatus;

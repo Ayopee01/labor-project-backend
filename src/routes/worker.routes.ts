@@ -106,11 +106,11 @@ router.get(
 );
 
 router.post(
-  "/me/assignments/:ticketNo/accept",
+  "/me/assignments/:ticketNumber/accept",
   async (req, res, next) => {
     try {
       const result = await workerService.acceptWorkerAssignment(
-        req.params.ticketNo,
+        req.params.ticketNumber,
         req.auth
       );
       res.json(result);
@@ -121,11 +121,12 @@ router.post(
 );
 
 router.post(
-  "/me/assignments/:ticketNo/check-in-qr",
+  "/me/assignments/:ticketNumber/check-in-qr",
   async (req, res, next) => {
     try {
       const result = await workerService.scanWorkerAssignment(
-        req.params.ticketNo,
+        req.params.ticketNumber,
+        req.body,
         req.auth
       );
       res.json(result);
@@ -136,12 +137,12 @@ router.post(
 );
 
 router.post(
-  "/me/assignments/:ticketNo/tickets/complete",
+  "/me/assignments/:ticketNumber/tickets/complete",
   async (req, res, next) => {
     try {
       const result =
         await workerService.completeWorkerAssignmentTicketFromBody(
-          req.params.ticketNo,
+          req.params.ticketNumber,
           req.body,
           req.auth
         );

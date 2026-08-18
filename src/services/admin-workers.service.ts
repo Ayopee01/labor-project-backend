@@ -38,7 +38,7 @@ async function buildWorkerAssignmentSocketPayload(
   );
 
   return {
-    ticketNo: vehicleJob?.ticketNo ?? null,
+    ticketNumber: vehicleJob?.ticket_number ?? null,
     status: assignment.status,
     accept_deadline_at: assignment.accept_deadline_at,
     scan_deadline_at: assignment.scan_deadline_at,
@@ -116,6 +116,7 @@ async function formatUserListItem(
     worker_code: account.username,
     shirt_number: profile?.shirt_number ?? null,
     full_name: account.full_name,
+    phone: account.phone,
     work_start_date: profile?.work_start_date ?? null,
     work_schedule: formatUserListSchedule(formatScheduleWithShift(currentWorkSchedule)),
     status: account.status,

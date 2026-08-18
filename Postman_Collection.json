@@ -104,6 +104,12 @@
       "description": "Lower-rank admin account id used by /api/admin/users/{{adminUserId}}/permissions. Set by POST /api/admin/admins."
     },
     {
+      "key": "ticketNumber",
+      "value": "TRUCK-20260723-001",
+      "type": "string",
+      "description": "TicketNumber (vehicle-level identity) returned as the top-level TicketNumber field by POST /api/gate/tickets. Used by all /api/admin/vehicle-jobs/{ticketNumber}/... routes. Do not confuse with ticketNo, which is the Business Ticket identity (Ticket.TicketNo)."
+    },
+    {
       "key": "ticketNo",
       "value": "TKT-20260804-000001",
       "type": "string",
@@ -732,7 +738,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: WorkerCode, ShirtNumber, FullName, WorkStartDate, WorkSchedule, Status, UpdatedAt. Shift availability uses only ShiftStartTime and ShiftEndTime; WorkSchedule does not return WorkDate."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: WorkerCode, ShirtNumber, FullName, Phone, WorkStartDate, WorkSchedule, Status, UpdatedAt. Shift availability uses only ShiftStartTime and ShiftEndTime; WorkSchedule does not return WorkDate."
           },
           "response": []
         },
@@ -1078,11 +1084,11 @@
                   "const body = pm.response.json();",
                   "const firstItem = body.Data?.[0];",
                   "const firstMarket = firstItem?.Markets?.[0];",
-                  "const firstTicket = firstMarket?.Tickets?.[0];",
-                  "if (firstItem?.VehicleJob?.TicketNo) pm.collectionVariables.set('ticketNo', String(firstItem.VehicleJob.TicketNo));",
+                  "const firstBooth = firstMarket?.Booths?.[0];",
+                  "if (firstItem?.VehicleJob?.TicketNumber) pm.collectionVariables.set('ticketNumber', String(firstItem.VehicleJob.TicketNumber));",
                   "if (firstMarket?.MarketCode) pm.collectionVariables.set('marketCode', String(firstMarket.MarketCode));",
-                  "if (firstTicket?.BoothCode) pm.collectionVariables.set('boothCode', String(firstTicket.BoothCode));",
-                  "if (firstTicket?.Products?.[0]?.ProductCode) pm.collectionVariables.set('productCode', String(firstTicket.Products[0].ProductCode));"
+                  "if (firstBooth?.BoothCode) pm.collectionVariables.set('boothCode', String(firstBooth.BoothCode));",
+                  "if (firstBooth?.Products?.[0]?.ProductCode) pm.collectionVariables.set('productCode', String(firstBooth.Products[0].ProductCode));"
                 ]
               }
             }
@@ -1141,7 +1147,73 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/history?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&status=\nAuth: Admin access token\nQuery: date_from/date_to/search/status optional. date is still supported as a legacy single-day filter. status can match vehicle, market, booth/ticket, confirmation, or worker assignment status. page optional; when page is omitted backend returns all matching rows ordered by latest CreatedAt. When page is sent backend returns that page and pagination metadata.\nSupported status examples: WAIT, WORKING, DELIVERED, REJECT, COMPLETED, CANCELLED, PENDING, ACCEPTED, SCANNED, TIMEOUT.\nResponse: Data[].VehicleJob plus Markets[].Tickets[].Products[] for the Admin history report. Search can match TicketNo, license plate, MarketCode/MarketName, BoothCode/BoothName, ProductCode/ProductName, or vendor name.\nNotes: Use search with a license plate to see what that vehicle delivered, use MarketCode/MarketName to see vehicles that delivered to that market, or use BoothCode/BoothName to see vehicles and products for that booth in the selected date range."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/history?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&search=&status=\nAuth: Admin access token\nQuery: date_from/date_to/search/status optional. date is still supported as a legacy single-day filter. status can match vehicle, market, booth/ticket, confirmation, or worker assignment status. page optional; when page is omitted backend returns all matching rows ordered by latest CreatedAt. When page is sent backend returns that page and pagination metadata.\nSupported status examples: WAIT, WORKING, DELIVERED, REJECT, COMPLETED, CANCELLED, PENDING, ACCEPTED, SCANNED, TIMEOUT.\nResponse: Data[].VehicleJob plus Markets[].Tickets[].Products[] for the Admin history report. Search can match TicketNo, license plate, MarketCode/MarketName, BoothCode/BoothName, ProductCode/ProductName, or vendor name.\nNotes: Use search with a license plate to see what that vehicle delivered, use MarketCode/MarketName to see vehicles that delivered to that market, or use BoothCode/BoothName to see vehicles and products for that booth in the selected date range.\nUpdated fields: Data[].VehicleJob now also returns WorkStart, SubmittedCompleteAt, VendorConfirmedCompleteAt, CompletedAt, and DurationSeconds (all derived, never stored). Each item also returns Workers[] (every worker ever dispatched to the vehicle job, with AcceptedAt/ScannedAt/StartedAt/SubmittedAt/ReleasedAt/FinalStatus/Cancellation), Timeline[] (chronological merge of worker lifecycle, booth submission/reject/confirm, and admin-action events), and Finance (job-level totals reused from the same persisted financial records as /financials, never recalculated). Markets[].Booths[] (renamed from the older Tickets[] naming) also gained VendorLineId, RejectReason, SubmittedWorkerCodes, SubmittedAt, ConfirmedAt, and RejectionHistory."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/admin/vehicle-jobs/history/daily-worker-income",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/history/daily-worker-income?date_from=2026-07-01&date_to=2026-07-07&page=1&limit=20&workerCode=&status=&shift=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "history",
+                "daily-worker-income"
+              ],
+              "query": [
+                {
+                  "key": "date_from",
+                  "value": "2026-07-01",
+                  "description": "Optional date range start in YYYY-MM-DD."
+                },
+                {
+                  "key": "date_to",
+                  "value": "2026-07-07",
+                  "description": "Optional date range end in YYYY-MM-DD, inclusive."
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "workerCode",
+                  "value": "",
+                  "description": "Alias of worker_code. Filters to one worker's rows."
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Optional filter by TicketWorker status."
+                },
+                {
+                  "key": "shift",
+                  "value": "",
+                  "description": "Optional filter by the worker's shift number."
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/history/daily-worker-income\nAuth: Admin access token with jobs:read permission\nQuery: date_from/date_to (aliases: from/to), worker_code (alias: workerCode), status, shift, search (alias: keyword), page, limit (alias: pageSize). Nested under the existing /vehicle-jobs/history namespace rather than a new /work-history root, since this report is derived from the same Vehicle Job History data.\nNotes: One row per worker per Business Ticket. Payable is TicketWorker.FinalEarningAmount taken as-is once financialized; never recomputed.\nResponse: Data[] of {Id, BusinessDate, Shift, TicketNumber, MarketJobNo, Plate, Worker: {Code, Name, Shirt}, AssignedStalls, ConfirmedStalls, Collected, Payable, Status, AcceptedAt, ScannedAt, StartedAt, SubmittedAt, ConfirmedAt, ReleasedAt, Cancellation}, plus Pagination."
           },
           "response": []
         },
@@ -1324,6 +1396,143 @@
               "type": "noauth"
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/workers/{{workerCode}}/assignment/cancel\nAuth: Admin access token\nBody: optional reason\nNotes: Cancels one active worker assignment by ticketNo + WorkerCode, removes that worker from dispatch queue, and shows the worker as open_app. Backend does not auto-fill a replacement worker."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ReasonCode\": \"R001\",\n  \"ReasonText\": \"Worker entered the wrong count.\",\n  \"Counts\": [\n    {\n      \"ProductCode\": \"{{productCode}}\",\n      \"PackageCode\": \"{{packageCode}}\",\n      \"ActualQuantity\": 7\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/stalls/{{boothCode}}/override-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "{{ticketNumber}}",
+                "stalls",
+                "{{boothCode}}",
+                "override-count"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/stalls/{{boothCode}}/override-count\nAuth: Admin access token with jobs:override_count permission\nBody: ReasonCode (required), ReasonText (optional), Counts[] of {ProductCode, PackageCode, ActualQuantity}\nNotes: Admin submits or corrects a booth's product quantities on behalf of a worker. Looks up products by ProductCode+PackageCode, the same business key the worker submit-count flow uses. Returns 409 if the booth is already closed or already financialized. Every call is recorded in AdminActionLog and appears in GET /api/admin/vehicle-jobs/history Timeline as an ADMIN_ACTION event.\nResponse: Message, TicketNumber, BoothCode, Status, ReasonCode, ReasonText, Products[] of {ProductCode, PackageCode, PreviousQuantity, ConfirmedQuantity}."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/vehicle-jobs/:ticketNumber/wait",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ReasonCode\": \"DRIVER_NOT_READY\",\n  \"ReasonText\": \"Driver requested more time before unloading.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/wait",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "{{ticketNumber}}",
+                "wait"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/wait\nAuth: Admin access token with jobs:wait permission\nBody: ReasonCode (required), ReasonText (optional)\nNotes: Sets the vehicle job back to WAIT. Only allowed while every booth is still WAIT (no booth has started work), so no in-progress assignment/queue/timeout state needs to be unwound. Does not touch VehicleJobAssignment. Returns 409 if the vehicle job is already closed or already has a booth in progress. Recorded in AdminActionLog and appears in GET /api/admin/vehicle-jobs/history Timeline as an ADMIN_ACTION event.\nResponse: Message, TicketNumber, Status, ReasonCode, ReasonText."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/vehicle-jobs/:ticketNumber/release-workers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ReasonCode\": \"ALL_BOOTHS_RESOLVED\",\n  \"ReasonText\": \"All booths submitted, no unresolved rejection.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/release-workers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "{{ticketNumber}}",
+                "release-workers"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/release-workers\nAuth: Admin access token with jobs:release_workers permission\nBody: ReasonCode (required), ReasonText (optional)\nNotes: Releases the dispatched worker team back to the FIFO queue once every booth is terminal (confirmed or cancelled, no pending submission or unresolved reject) — does not wait for the whole vehicle job to close, Gate to signal no more Business Tickets, or per-Business-Ticket financial finalize. Returns 409 if the vehicle job is already closed, has an unresolved booth, or has no releasable workers. Recorded in AdminActionLog and appears in GET /api/admin/vehicle-jobs/history Timeline as an ADMIN_ACTION event plus a WORKER_RELEASED event per worker.\nResponse: Message, TicketNumber, ReleasedWorkerCodes[], ReasonCode, ReasonText."
           },
           "response": []
         }
@@ -2005,6 +2214,7 @@
                   "});",
                   "",
                   "if (body.Result) pm.collectionVariables.set('gateResult', body.Result);",
+                  "if (body.TicketNumber) pm.collectionVariables.set('ticketNumber', body.TicketNumber);",
                   "if (body.Ticket?.TicketNo) pm.collectionVariables.set('ticketNo', body.Ticket.TicketNo);",
                   "if (body.Market?.MarketCode) pm.collectionVariables.set('marketCode', body.Market.MarketCode);",
                   "if (firstBooth?.BoothCode) pm.collectionVariables.set('boothCode', firstBooth.BoothCode);",

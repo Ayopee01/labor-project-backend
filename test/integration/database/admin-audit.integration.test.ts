@@ -71,11 +71,8 @@ async function createVehicleJob(
 ) {
   return tx.vehicleJob.create({
     data: {
-      ticketNo: `AUDIT-${suffix}-${sequence}`,
-      gateTransactionRef: `AUDIT-GATE-${suffix}-${sequence}`,
+      ticketNumber: `AUDIT-${suffix}-${sequence}`,
       licensePlate: `AUD-${sequence}`,
-      ticketCreatedAt: bangkokDateToUtc("2026-08-15", 8),
-      boothCount: 1,
       workersRequired: 1,
       status: "WAIT",
       driverQrToken: `audit-driver-token-${suffix}-${sequence}`,

@@ -46,16 +46,12 @@ function formatDriverVehicleJob(
   vehicleJob: VehicleJobDto,
 ): DriverVehicleJobResponse {
   return {
-    ticketNo: vehicleJob.ticketNo,
-    gate_transaction_ref: vehicleJob.gate_transaction_ref,
+    ticket_number: vehicleJob.ticket_number,
     license_plate: vehicleJob.license_plate,
     license_plate_province: vehicleJob.license_plate_province,
     vehicle_type: vehicleJob.vehicle_type,
-    ticket_created_at: vehicleJob.ticket_created_at,
-    booth_count: vehicleJob.booth_count,
     workers_required: vehicleJob.workers_required,
     status: vehicleJob.status,
-    worker_qr_token: vehicleJob.worker_qr_token,
     created_at: vehicleJob.created_at,
     updated_at: vehicleJob.updated_at,
   };
@@ -68,10 +64,12 @@ function formatDriverVehicleJobDetail(
   return {
     vehicle_job: formatDriverVehicleJob(detail.vehicle_job),
     markets: detail.markets.map((market) => ({
+      ticket_no: market.ticket_no,
+      boothCount: market.booth_count,
       marketCode: market.marketCode,
       marketName: market.marketName,
       status: market.status,
-      tickets: market.tickets.map((ticket) => ({
+      booths: market.booths.map((ticket) => ({
         boothCode: ticket.boothCode,
         boothName: ticket.boothName,
         status: ticket.status,
@@ -164,9 +162,9 @@ export async function markDriverJobReady(
     );
   }
 
-  const ticketNo = parseReference(idParam);
+  const ticketNumber = parseReference(idParam);
   const requestedVehicleJob =
-    await vehicleJobRepository.findVehicleJobByRef(ticketNo);
+    await vehicleJobRepository.findVehicleJobByRef(ticketNumber);
 
   if (!requestedVehicleJob) {
     throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
@@ -182,7 +180,7 @@ export async function markDriverJobReady(
 
   const detail = await withTransaction(async (transaction) => {
     const vehicleJob = await vehicleJobRepository.findVehicleJobByRef(
-      ticketNo,
+      ticketNumber,
       transaction,
     );
 
@@ -230,9 +228,9 @@ export async function markDriverJobReady(
   publishNotification({
     type: "DRIVER_JOB_READY",
     title: "Driver job ready",
-    message: `Driver marked vehicle job ${detail.vehicle_job.ticketNo} ready.`,
+    message: `Driver marked vehicle job ${detail.vehicle_job.ticket_number} ready.`,
     payload: {
-      ticketNo: detail.vehicle_job.ticketNo,
+      ticketNumber: detail.vehicle_job.ticket_number,
       license_plate: detail.vehicle_job.license_plate,
       license_plate_province: detail.vehicle_job.license_plate_province,
       status: detail.vehicle_job.status,
@@ -243,10 +241,9 @@ export async function markDriverJobReady(
   });
 
   return {
-    ticketNo: detail.vehicle_job.ticketNo,
+    ticket_number: detail.vehicle_job.ticket_number,
     license_plate: detail.vehicle_job.license_plate,
     license_plate_province: detail.vehicle_job.license_plate_province,
     status: detail.vehicle_job.status,
-    worker_qr_token: detail.vehicle_job.worker_qr_token,
   };
 }

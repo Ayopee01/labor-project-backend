@@ -9,7 +9,7 @@ import type { DbConnection } from "../../types/shared/common.type";
 import type { TicketFinancializationResult } from "../../types/shared/ticket-financial.type";
 
 // Import Config
-import { TICKET_STATUS } from "../../constants/job-status";
+import { TICKET_STATUS, TICKET_WORKER_STATUS, TERMINAL_TICKET_STATUSES } from "../../constants/job-status";
 
 // Import Utils
 import ApiError from "../../utils/api-error";
@@ -60,32 +60,34 @@ function hasCompleteRateSnapshot(product: {
   );
 }
 
-// Function Finalize เงินทั้งหมดของ Ticket/Booth
+// Function Finalize เงินทั้งหมดของ Business Ticket (market job) ทั้งใบ
 //
 // หลักการ:
+// - รอทุก Booth ของ Business Ticket นี้ Terminal ก่อน (COMPLETED หรือ CANCELLED)
+//   และต้องมีอย่างน้อยหนึ่ง Booth COMPLETED
+// - Lock Worker Roster ก่อนคำนวณเสมอ (WORKING -> COMPLETED) นี่คือ Final Eligible Worker
 // - ใช้ confirmedQuantity เท่านั้น
 // - ใช้ Rate Snapshot เท่านั้น
-// - ใช้ Worker ที่ COMPLETED ใน Booth นี้จริงเท่านั้น
-// - คิดแยก Product
+// - คิดแยก Product ของทุก Booth ที่ COMPLETED ภายใต้ Ticket นี้
 // - ProductCharge ปัดขึ้นแยกแต่ละ Product
-// - Worker หารแยกแต่ละ Product
+// - Worker หารแยกแต่ละ Product ด้วย Final Eligible Worker Count เดียวกันทั้ง Ticket
 // - Fund คำนวณแยกแต่ละ Product
 // - ห้าม Query Master Rate ใหม่
-export async function finalizeTicketFinancials(
-  ticketId: number,
+export async function finalizeMarketJobFinancials(
+  marketJobId: number,
   connection?: DbConnection,
 ): Promise<TicketFinancializationResult> {
   const context =
-    await ticketFinancialRepository.findTicketFinancializationContext(
-      ticketId,
+    await ticketFinancialRepository.findMarketJobFinancializationContext(
+      marketJobId,
       connection,
     );
 
   if (!context) {
     throw new ApiError(
       404,
-      "TICKET_NOT_FOUND",
-      "Ticket not found for financialization.",
+      "MARKET_JOB_NOT_FOUND",
+      "Business ticket not found for financialization.",
     );
   }
 
@@ -97,11 +99,14 @@ export async function finalizeTicketFinancials(
       throw new ApiError(
         500,
         "TICKET_FINANCIAL_STATE_INVALID",
-        "Financialized ticket does not have final stall amount.",
+        "Financialized business ticket does not have final stall amount.",
       );
     }
 
-    const hasMissingWorkerEarning = context.workers.some(
+    const completedWorkers = context.ticketWorkers.filter(
+      (worker) => worker.status === TICKET_WORKER_STATUS.COMPLETED,
+    );
+    const hasMissingWorkerEarning = completedWorkers.some(
       (worker) => worker.finalEarningAmount === null,
     );
 
@@ -109,16 +114,21 @@ export async function finalizeTicketFinancials(
       throw new ApiError(
         500,
         "TICKET_FINANCIAL_STATE_INVALID",
-        "Financialized ticket has completed worker without final earning amount.",
+        "Financialized business ticket has completed worker without final earning amount.",
       );
     }
 
+    const financializedProductCount = context.tickets.reduce(
+      (total, ticket) => total + ticket.products.length,
+      0,
+    );
+
     return {
-      ticketId: context.id,
+      marketJobId: context.id,
 
-      productCount: context.products.length,
+      productCount: financializedProductCount,
 
-      workerCount: context.workers.length,
+      workerCount: completedWorkers.length,
 
       finalStallAmount: context.finalStallAmount,
 
@@ -128,43 +138,37 @@ export async function finalizeTicketFinancials(
     };
   }
 
-  if (context.status !== TICKET_STATUS.COMPLETED) {
+  const completedTickets = context.tickets.filter(
+    (ticket) => ticket.status === TICKET_STATUS.COMPLETED,
+  );
+  const allTicketsTerminal =
+    context.tickets.length > 0 &&
+    context.tickets.every((ticket) => TERMINAL_TICKET_STATUSES.includes(ticket.status));
+
+  if (completedTickets.length === 0 || !allTicketsTerminal) {
     throw new ApiError(
       409,
-      "TICKET_NOT_COMPLETED",
-      "Ticket must be completed before financialization.",
+      "MARKET_JOB_NOT_READY_FOR_FINANCIALIZE",
+      "Every booth of this business ticket must be terminal, with at least one completed, before financialization.",
     );
   }
 
-  if (context.products.length === 0) {
+  const products = completedTickets.flatMap((ticket) => ticket.products);
+
+  if (products.length === 0) {
     throw new ApiError(
       409,
       "TICKET_PRODUCTS_NOT_FOUND",
-      "Ticket does not have products for financialization.",
+      "Business ticket does not have products for financialization.",
     );
   }
 
-  // จำนวน Worker จริงของ Booth
-  //
-  // ไม่ใช้:
-  // VehicleJob.workersRequired
-  // Master Worker Range
-  const actualWorkerCount = context.workers.length;
-
-  if (actualWorkerCount <= 0) {
-    throw new ApiError(
-      409,
-      "TICKET_WORKERS_NOT_FOUND",
-      "Ticket does not have completed workers for financialization.",
-    );
-  }
-
-  // ถ้า Ticket ยังไม่ได้ Financialize
+  // ถ้า Business Ticket ยังไม่ได้ Financialize
   // แต่มี Product Financial อยู่แล้ว
   // ถือว่าเป็น Partial State ที่ไม่ควรเกิดขึ้น
   //
   // ห้ามเขียนทับข้อมูลทางการเงินเก่า
-  const hasExistingFinancial = context.products.some(
+  const hasExistingFinancial = products.some(
     (product) => product.financial !== null,
   );
 
@@ -172,123 +176,162 @@ export async function finalizeTicketFinancials(
     throw new ApiError(
       500,
       "TICKET_FINANCIAL_PARTIAL_STATE",
-      "Ticket has partial financial records before finalization.",
+      "Business ticket has partial financial records before finalization.",
+    );
+  }
+
+  // Final Eligible Worker = Roster ที่ยัง WORKING ตอน Lock เท่านั้น
+  //
+  // ไม่ใช้:
+  // VehicleJob.workersRequired
+  // Master Worker Range
+  const workingWorkers = context.ticketWorkers.filter(
+    (worker) => worker.status === TICKET_WORKER_STATUS.WORKING,
+  );
+  const actualWorkerCount = workingWorkers.length;
+
+  if (actualWorkerCount <= 0) {
+    throw new ApiError(
+      409,
+      "TICKET_WORKERS_NOT_FOUND",
+      "Business ticket does not have active workers for financialization.",
     );
   }
 
   const finalizedAt = new Date();
 
+  // Lock Roster ก่อนคำนวณเสมอ: จุดนี้คือจุดตัดสิน Final Eligible Worker
+  // หลัง Lock ห้าม Sync/Cancel/Add Worker เข้า Roster นี้อีก
+  await ticketFinancialRepository.lockMarketJobWorkerRoster(
+    context.id,
+    connection,
+  );
+  await ticketFinancialRepository.markMarketJobTicketWorkersCompleted(
+    context.id,
+    finalizedAt,
+    connection,
+  );
+
   let finalStallAmount = new Prisma.Decimal(0);
 
   const finalEarningByTicketWorkerId = new Map<number, Prisma.Decimal>();
+  const boothStallAmountByTicketId = new Map<number, Prisma.Decimal>();
 
-  for (const worker of context.workers) {
+  for (const worker of workingWorkers) {
     finalEarningByTicketWorkerId.set(worker.id, new Prisma.Decimal(0));
   }
 
-  for (const product of context.products) {
-    if (product.confirmedQuantity === null) {
-      throw new ApiError(
-        409,
-        "CONFIRMED_QUANTITY_MISSING",
-        `Confirmed quantity is missing for ticket product ${product.id}.`,
-      );
-    }
+  for (const ticket of completedTickets) {
+    for (const product of ticket.products) {
+      if (product.confirmedQuantity === null) {
+        throw new ApiError(
+          409,
+          "CONFIRMED_QUANTITY_MISSING",
+          `Confirmed quantity is missing for ticket product ${product.id}.`,
+        );
+      }
 
-    if (!hasCompleteRateSnapshot(product)) {
-      throw new ApiError(
-        409,
-        "TICKET_RATE_SNAPSHOT_INCOMPLETE",
-        `Rate snapshot is incomplete for ticket product ${product.id}.`,
-      );
-    }
+      if (!hasCompleteRateSnapshot(product)) {
+        throw new ApiError(
+          409,
+          "TICKET_RATE_SNAPSHOT_INCOMPLETE",
+          `Rate snapshot is incomplete for ticket product ${product.id}.`,
+        );
+      }
 
-    /*
-     * TypeScript ยังมอง field เป็น nullable
-     * แม้ผ่าน hasCompleteRateSnapshot แล้ว
-     * จึงเก็บเป็นตัวแปรหลัง validation
-     */
-    const stallRate = product.stallRateSnapshot;
+      /*
+       * TypeScript ยังมอง field เป็น nullable
+       * แม้ผ่าน hasCompleteRateSnapshot แล้ว
+       * จึงเก็บเป็นตัวแปรหลัง validation
+       */
+      const stallRate = product.stallRateSnapshot;
 
-    const laborRate = product.laborRateSnapshot;
+      const laborRate = product.laborRateSnapshot;
 
-    if (stallRate === null || laborRate === null) {
-      throw new ApiError(
-        409,
-        "TICKET_RATE_SNAPSHOT_INCOMPLETE",
-        `Rate snapshot is incomplete for ticket product ${product.id}.`,
-      );
-    }
+      if (stallRate === null || laborRate === null) {
+        throw new ApiError(
+          409,
+          "TICKET_RATE_SNAPSHOT_INCOMPLETE",
+          `Rate snapshot is incomplete for ticket product ${product.id}.`,
+        );
+      }
 
-    // คำนวณยอดที่แผงต้องจ่าย
-    // ด้วย confirmed quantity เท่านั้น
-    const stallCharge = calculateProductStallCharge({
-      quantity: product.confirmedQuantity,
+      // คำนวณยอดที่แผงต้องจ่าย
+      // ด้วย confirmed quantity เท่านั้น
+      const stallCharge = calculateProductStallCharge({
+        quantity: product.confirmedQuantity,
 
-      stallRate,
+        stallRate,
 
-      laborRate,
-    });
+        laborRate,
+      });
 
-    // คำนวณเงิน Worker
-    // ด้วยจำนวน Worker จริงของ Booth
-    const workerPayment = calculateProductWorkerPayment({
-      laborFeeRaw: stallCharge.laborFeeRaw,
-
-      actualWorkerCount,
-    });
-
-    const workerPayments = context.workers.map((worker) => {
-      const finalAmount = workerPayment.finalAmountPerWorker;
-      const currentTotal =
-        finalEarningByTicketWorkerId.get(worker.id) ?? new Prisma.Decimal(0);
-
-      finalEarningByTicketWorkerId.set(
-        worker.id,
-        currentTotal.plus(finalAmount),
-      );
-
-      return {
-        ticketWorkerId: worker.id,
-
-        rawAmount: workerPayment.rawAmountPerWorker,
-
-        remainderAmount: workerPayment.remainderAmountPerWorker,
-
-        finalAmount,
-      };
-    });
-
-    await ticketFinancialRepository.createTicketProductFinancial(
-      {
-        ticketProductId: product.id,
-
-        confirmedQuantity: product.confirmedQuantity,
-
-        stallFeeRaw: stallCharge.stallFeeRaw,
-
-        stallFeeRounded: stallCharge.stallFeeRounded,
-
+      // คำนวณเงิน Worker
+      // ด้วย Final Eligible Worker Count ของ Business Ticket ทั้งใบ
+      const workerPayment = calculateProductWorkerPayment({
         laborFeeRaw: stallCharge.laborFeeRaw,
 
-        productCharge: stallCharge.productCharge,
+        actualWorkerCount,
+      });
 
-        workerCount: actualWorkerCount,
+      const workerPayments = workingWorkers.map((worker) => {
+        const finalAmount = workerPayment.finalAmountPerWorker;
+        const currentTotal =
+          finalEarningByTicketWorkerId.get(worker.id) ?? new Prisma.Decimal(0);
 
-        workerPayoutTotal: workerPayment.workerPayoutTotal,
+        finalEarningByTicketWorkerId.set(
+          worker.id,
+          currentTotal.plus(finalAmount),
+        );
 
-        fundAmount: workerPayment.fundAmount,
+        return {
+          ticketWorkerId: worker.id,
 
-        finalizedAt,
+          rawAmount: workerPayment.rawAmountPerWorker,
 
-        workerPayments,
-      },
-      connection,
-    );
+          remainderAmount: workerPayment.remainderAmountPerWorker,
 
-    // รวมเฉพาะ ProductCharge
-    // ที่ผ่านการปัดตาม Method A แล้ว
-    finalStallAmount = finalStallAmount.plus(stallCharge.productCharge);
+          finalAmount,
+        };
+      });
+
+      await ticketFinancialRepository.createTicketProductFinancial(
+        {
+          ticketProductId: product.id,
+
+          confirmedQuantity: product.confirmedQuantity,
+
+          stallFeeRaw: stallCharge.stallFeeRaw,
+
+          stallFeeRounded: stallCharge.stallFeeRounded,
+
+          laborFeeRaw: stallCharge.laborFeeRaw,
+
+          productCharge: stallCharge.productCharge,
+
+          workerCount: actualWorkerCount,
+
+          workerPayoutTotal: workerPayment.workerPayoutTotal,
+
+          fundAmount: workerPayment.fundAmount,
+
+          finalizedAt,
+
+          workerPayments,
+        },
+        connection,
+      );
+
+      // รวมเฉพาะ ProductCharge
+      // ที่ผ่านการปัดตาม Method A แล้ว
+      finalStallAmount = finalStallAmount.plus(stallCharge.productCharge);
+      boothStallAmountByTicketId.set(
+        ticket.id,
+        (boothStallAmountByTicketId.get(ticket.id) ?? new Prisma.Decimal(0)).plus(
+          stallCharge.productCharge,
+        ),
+      );
+    }
   }
 
   await ticketFinancialRepository.updateTicketWorkerFinalEarningAmounts(
@@ -296,7 +339,17 @@ export async function finalizeTicketFinancials(
     connection,
   );
 
-  await ticketFinancialRepository.markGateTicketFinancialized(
+  // บันทึกยอดรวมแยกรายบูธไว้ประกอบการแสดงผล Admin (ไม่ใช่ guard หลัก)
+  for (const [ticketId, boothStallAmount] of boothStallAmountByTicketId) {
+    await ticketFinancialRepository.markGateTicketFinancializedInfo(
+      ticketId,
+      boothStallAmount,
+      finalizedAt,
+      connection,
+    );
+  }
+
+  await ticketFinancialRepository.markMarketJobFinancialized(
     context.id,
     finalStallAmount,
     finalizedAt,
@@ -304,9 +357,9 @@ export async function finalizeTicketFinancials(
   );
 
   return {
-    ticketId: context.id,
+    marketJobId: context.id,
 
-    productCount: context.products.length,
+    productCount: products.length,
 
     workerCount: actualWorkerCount,
 

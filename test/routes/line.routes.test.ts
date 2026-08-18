@@ -204,7 +204,7 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
   assignment.status = "SCANNED";
   assignment.scanned_at = new Date().toISOString();
   const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
-  const submitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`, {
+  const submitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
       boothCode: ticket.boothCode,
@@ -281,7 +281,7 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
     "REJECT"
   );
 
-  const resubmitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`, {
+  const resubmitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
       boothCode: ticket.boothCode,

@@ -157,6 +157,7 @@ test("login body schema allows device fields to be omitted", () => {
 
 test("gate vehicle job schema accepts multi booth PascalCase Gate body", () => {
   const gateBody = schemas.gateVehicleJobBodySchema.parse({
+    TicketNumber: "TRUCK-DISPATCH-NOW",
     TicketNo: "TKT-DISPATCH-NOW",
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
     BoothCount: 2,
@@ -216,6 +217,7 @@ test("gate vehicle job schema accepts multi booth PascalCase Gate body", () => {
 test("gate vehicle job schema rejects BoothCount mismatch", () => {
   assert.throws(() =>
     schemas.gateVehicleJobBodySchema.parse({
+      TicketNumber: "TRUCK-BOOTH-COUNT-MISMATCH",
       TicketNo: "TKT-BOOTH-COUNT-MISMATCH",
       TicketCreatedAt: "2026-07-23T14:30:00+07:00",
       BoothCount: 2,
@@ -244,6 +246,7 @@ test("gate vehicle job schema rejects BoothCount mismatch", () => {
 test("gate vehicle job schema rejects duplicate BoothCode", () => {
   assert.throws(() =>
     schemas.gateVehicleJobBodySchema.parse({
+      TicketNumber: "TRUCK-DUPLICATE-BOOTH",
       TicketNo: "TKT-DUPLICATE-BOOTH",
       TicketCreatedAt: "2026-07-23T14:30:00+07:00",
       BoothCount: 2,
@@ -282,6 +285,7 @@ test("gate vehicle job schema rejects duplicate BoothCode", () => {
 test("gate vehicle job schema rejects duplicate ProductCode and PackageCode in same booth", () => {
   assert.throws(() =>
     schemas.gateVehicleJobBodySchema.parse({
+      TicketNumber: "TRUCK-DUPLICATE-PRODUCT",
       TicketNo: "TKT-DUPLICATE-PRODUCT",
       TicketCreatedAt: "2026-07-23T14:30:00+07:00",
       BoothCount: 1,

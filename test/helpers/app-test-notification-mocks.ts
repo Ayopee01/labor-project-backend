@@ -1,8 +1,11 @@
 import { state } from "./app-test-state";
 
-async function resolveTicketResultAudience(ticket: { id: number }) {
+async function resolveTicketResultAudience(ticket: { id: number; market_job_id?: number }) {
+  const marketJobId =
+    ticket.market_job_id ??
+    state.gateTickets.find((item) => item.id === ticket.id)?.market_job_id;
   const ticketWorkerIds = state.ticketWorkers
-    .filter((worker) => worker.ticket_id === ticket.id)
+    .filter((worker) => worker.market_job_id === marketJobId)
     .map((worker) => worker.worker_account_id);
   const adminIds = Array.from(state.authAccountsById.values())
     .filter((account) => account.role === "admin")

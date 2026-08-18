@@ -257,8 +257,8 @@ test("POST /api/workers/me/online dispatches an existing ready job when queue wa
   );
   assert.ok(assignedEvent);
   assert.equal(
-    (assignedEvent.payload as { ticketNo?: string }).ticketNo,
-    job.ticketNo
+    (assignedEvent.payload as { ticketNumber?: string }).ticketNumber,
+    job.ticket_number
   );
 });
 
@@ -330,9 +330,9 @@ test("GET /api/workers/me/assignments/history returns job summary without financ
     "markets",
     "status",
     "ticketCompletedAt",
-    "ticketNo",
+    "ticket_number",
   ]);
-  assert.equal(response.body.data[0].ticketNo, completedJob.ticketNo);
+  assert.equal(response.body.data[0].ticket_number, completedJob.ticket_number);
   assert.equal(response.body.data[0].status, "COMPLETED");
   assert.equal(response.body.data[0].ticketCompletedAt, completedAssignment.completed_at);
   assert.equal(response.body.data[0].markets[0].booths[0].rating, null);
@@ -341,9 +341,9 @@ test("GET /api/workers/me/assignments/history returns job summary without financ
   assert.equal(response.body.data[0].markets[0].booths[0].completed_at, null);
   assert.equal(response.body.data[0].markets[0].booths[0].confirmedAt, null);
   assert.equal(response.body.data[0].markets[0].booths[0].products[0].confirmed_quantity, null);
-  assert.equal(response.body.data[1].ticketNo, scanTimeoutJob.ticketNo);
+  assert.equal(response.body.data[1].ticket_number, scanTimeoutJob.ticket_number);
   assert.equal(response.body.data[1].status, "TIMEOUT");
-  assert.equal(response.body.data[2].ticketNo, acceptTimeoutJob.ticketNo);
+  assert.equal(response.body.data[2].ticket_number, acceptTimeoutJob.ticket_number);
 });
 
 test("GET /api/workers/me/assignments/history returns per-booth completed_at from GateTicket", async () => {
@@ -375,7 +375,7 @@ test("GET /api/workers/me/assignments/history returns per-booth completed_at fro
   assert.equal(response.status, 200);
 
   const historyItem = response.body.data.find(
-    (item: { ticketNo: string }) => item.ticketNo === job.ticketNo
+    (item: { ticket_number: string }) => item.ticket_number === job.ticket_number
   );
   assert.ok(historyItem);
 
@@ -423,8 +423,8 @@ test("GET /api/workers/me/assignments/history filters by inclusive Bangkok date 
   assert.deepEqual(Object.keys(response.body).sort(), ["data", "date", "summary"]);
   assert.equal(response.body.date, "2026-08-01");
   assert.deepEqual(
-    response.body.data.map((item: { ticketNo: string }) => item.ticketNo),
-    [lastDayJob.ticketNo, firstDayJob.ticketNo],
+    response.body.data.map((item: { ticket_number: string }) => item.ticket_number),
+    [lastDayJob.ticket_number, firstDayJob.ticket_number],
   );
   assert.deepEqual(response.body.summary, {
     jobCount: 2,
@@ -462,11 +462,11 @@ test("GET /api/workers/me/assignments/history supports optional page and limit",
     completed_job_count: 4,
   });
   assert.deepEqual(
-    response.body.data.map((item: { ticketNo: string }) => item.ticketNo),
-    [secondJob.ticketNo, oldestJob.ticketNo],
+    response.body.data.map((item: { ticket_number: string }) => item.ticket_number),
+    [secondJob.ticket_number, oldestJob.ticket_number],
   );
-  assert.equal(response.body.data.some((item: { ticketNo: string }) => item.ticketNo === thirdJob.ticketNo), false);
-  assert.equal(response.body.data.some((item: { ticketNo: string }) => item.ticketNo === newestJob.ticketNo), false);
+  assert.equal(response.body.data.some((item: { ticket_number: string }) => item.ticket_number === thirdJob.ticket_number), false);
+  assert.equal(response.body.data.some((item: { ticket_number: string }) => item.ticket_number === newestJob.ticket_number), false);
 });
 
 test("GET /api/workers/me/assignments/history defaults to today's Bangkok date", async () => {
@@ -505,8 +505,8 @@ test("GET /api/workers/me/assignments/history defaults to today's Bangkok date",
     totalPages: 1,
   });
   assert.deepEqual(
-    response.body.data.map((item: { ticketNo: string }) => item.ticketNo),
-    [todayJob.ticketNo],
+    response.body.data.map((item: { ticket_number: string }) => item.ticket_number),
+    [todayJob.ticket_number],
   );
 });
 
@@ -521,8 +521,8 @@ test("GET /api/workers/me/assignments/history uses Bangkok calendar boundaries f
 
   assert.equal(response.status, 200);
   assert.deepEqual(
-    response.body.data.map((item: { ticketNo: string }) => item.ticketNo),
-    [bangkokDateJob.ticketNo],
+    response.body.data.map((item: { ticket_number: string }) => item.ticket_number),
+    [bangkokDateJob.ticket_number],
   );
 });
 
@@ -581,7 +581,7 @@ test("GET /api/workers/me/notifications returns current worker notification hist
       title: "New assignment",
       message: "Job A is ready.",
       payload: {
-        ticketNo: "JOB-A",
+        ticket_number: "JOB-A",
       },
       read_at: null,
       created_at: "2026-08-17T01:00:00.000Z",
@@ -596,7 +596,7 @@ test("GET /api/workers/me/notifications returns current worker notification hist
       title: "Vendor confirmed",
       message: "Stall confirmed quantities.",
       payload: {
-        ticketNo: "JOB-B",
+        ticket_number: "JOB-B",
         status: "COMPLETED",
       },
       read_at: null,
@@ -635,12 +635,12 @@ test("GET /api/workers/me/notifications returns current worker notification hist
   assert.equal(response.body.data[0].lang, "TH");
   assert.equal(response.body.data[0].notification.key, "ticket.completion_confirmed");
   assert.equal(response.body.data[0].notification.lang, "TH");
-  assert.equal(response.body.data[0].payload.ticketNo, "JOB-B");
+  assert.equal(response.body.data[0].payload.ticket_number, "JOB-B");
   assert.equal(response.body.data[0].readAt, null);
   assert.equal(response.body.data[0].created_at, "2026-08-17T02:00:00.000Z");
 });
 
-test("GET /api/workers/me/earnings/summary returns latest 15 completed days from persisted booth earnings", async () => {
+test("GET /api/workers/me/earnings/summary returns latest 15 completed days from persisted Business Ticket earnings", async () => {
   const { token, worker } = await loginWorker(112);
   const otherWorker = addWorker(212, await password.hashPassword("Worker@123456"));
   const todayBangkok = new Intl.DateTimeFormat("en-CA", {
@@ -662,30 +662,37 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
   const yesterday = atBangkokNoon(-1);
   const today = atBangkokNoon(0);
   const tooOld = atBangkokNoon(-16);
+  // firstTicket/secondTicket = สอง Business Ticket แยกกันใต้ TicketNumber เดียวกัน (รถคันเดียวกัน)
   const job = addDispatchableJob(1120, 1);
-  const firstTicket = addTicketForVehicleJob(job.id, 11200);
-  const secondTicket = addTicketForVehicleJob(job.id, 11201);
+  const firstTicket = addTicketForVehicleJob(job.id, 11200, 112001);
+  const secondTicket = addTicketForVehicleJob(job.id, 11201, 112002);
   const todayTicket = addTicketForVehicleJob(addDispatchableJob(1121, 1).id, 11210);
   const oldTicket = addTicketForVehicleJob(addDispatchableJob(1122, 1).id, 11220);
   const now = new Date().toISOString();
+  const marketOf = (ticket: { market_job_id: number }) =>
+    state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
+  const firstMarket = marketOf(firstTicket);
+  const secondMarket = marketOf(secondTicket);
+  const todayMarket = marketOf(todayTicket);
+  const oldMarket = marketOf(oldTicket);
 
-  for (const ticket of [firstTicket, secondTicket]) {
-    ticket.status = "COMPLETED";
-    ticket.completed_at = yesterday.toISOString();
-    ticket.financialized_at = yesterday.toISOString();
+  for (const market of [firstMarket, secondMarket]) {
+    market.status = "COMPLETED";
+    market.completed_at = yesterday.toISOString();
+    market.financialized_at = yesterday.toISOString();
   }
 
-  todayTicket.status = "COMPLETED";
-  todayTicket.completed_at = today.toISOString();
-  todayTicket.financialized_at = today.toISOString();
-  oldTicket.status = "COMPLETED";
-  oldTicket.completed_at = tooOld.toISOString();
-  oldTicket.financialized_at = tooOld.toISOString();
+  todayMarket.status = "COMPLETED";
+  todayMarket.completed_at = today.toISOString();
+  todayMarket.financialized_at = today.toISOString();
+  oldMarket.status = "COMPLETED";
+  oldMarket.completed_at = tooOld.toISOString();
+  oldMarket.financialized_at = tooOld.toISOString();
 
   state.ticketWorkers.push(
     {
       id: state.nextTicketWorkerId++,
-      ticket_id: firstTicket.id,
+      market_job_id: firstTicket.market_job_id,
       worker_account_id: worker.id,
       status: "COMPLETED",
       final_earning_amount: "150.00",
@@ -695,7 +702,7 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
     },
     {
       id: state.nextTicketWorkerId++,
-      ticket_id: secondTicket.id,
+      market_job_id: secondTicket.market_job_id,
       worker_account_id: worker.id,
       status: "COMPLETED",
       final_earning_amount: "25.50",
@@ -705,7 +712,7 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
     },
     {
       id: state.nextTicketWorkerId++,
-      ticket_id: firstTicket.id,
+      market_job_id: firstTicket.market_job_id,
       worker_account_id: otherWorker.id,
       status: "COMPLETED",
       final_earning_amount: "999.00",
@@ -715,7 +722,7 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
     },
     {
       id: state.nextTicketWorkerId++,
-      ticket_id: todayTicket.id,
+      market_job_id: todayTicket.market_job_id,
       worker_account_id: worker.id,
       status: "COMPLETED",
       final_earning_amount: "300.00",
@@ -725,7 +732,7 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
     },
     {
       id: state.nextTicketWorkerId++,
-      ticket_id: oldTicket.id,
+      market_job_id: oldTicket.market_job_id,
       worker_account_id: worker.id,
       status: "COMPLETED",
       final_earning_amount: "400.00",
@@ -745,17 +752,17 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
   assert.equal(response.body.total_earnings, "175.50");
   assert.equal(response.body.details.length, 2);
   assert.deepEqual(
-    response.body.details.map((detail: { boothCode: string; earnings: string }) => ({
-      boothCode: detail.boothCode,
+    response.body.details.map((detail: { ticket_no: string; earnings: string }) => ({
+      ticket_no: detail.ticket_no,
       earnings: detail.earnings,
     })),
     [
       {
-        boothCode: firstTicket.boothCode,
+        ticket_no: firstMarket.ticket_no,
         earnings: "150.00",
       },
       {
-        boothCode: secondTicket.boothCode,
+        ticket_no: secondMarket.ticket_no,
         earnings: "25.50",
       },
     ]
@@ -989,7 +996,7 @@ test("GET /api/workers/me/status maps pending assignment to assigned", async () 
 
   assert.equal(response.status, 200);
   assert.equal(response.body.status, "assigned");
-  assert.equal(response.body.currentJob.ticketNo, job.ticketNo);
+  assert.equal(response.body.currentJob.ticket_number, job.ticket_number);
   assert.equal(response.body.currentJob.license_plate, job.license_plate);
   assert.equal(response.body.currentJob.license_plate_province, job.license_plate_province);
   assert.equal(response.body.currentJob.scan_deadline_at, "2026-07-24T02:15:00.000Z");
@@ -1208,9 +1215,7 @@ test("dispatch assigns ready workers in FIFO order", async () => {
     (event) => event.event === "WORKER_ASSIGNED" && event.accountId === 11
   );
   const payload = assignedEvent?.payload as {
-    ticketNo: string;
-    gate_transaction_ref: string;
-    worker_qr_token: string;
+    ticketNumber: string;
     assignment: {
       created_at: string;
       accept_deadline_at: string | null;
@@ -1220,13 +1225,9 @@ test("dispatch assigns ready workers in FIFO order", async () => {
 
   assert.deepEqual(Object.keys(payload).sort(), [
     "assignment",
-    "gate_transaction_ref",
-    "ticketNo",
-    "worker_qr_token",
+    "ticketNumber",
   ]);
-  assert.equal(payload.ticketNo, job.ticketNo);
-  assert.equal(payload.gate_transaction_ref, job.gate_transaction_ref);
-  assert.equal(payload.worker_qr_token, job.ticketNo);
+  assert.equal(payload.ticketNumber, job.ticket_number);
   assert.deepEqual(Object.keys(payload.assignment).sort(), [
     "accept_deadline_at",
     "accept_deadline_unix_ms",
@@ -1257,7 +1258,7 @@ test("dispatch assigns disconnected ready worker by FIFO order", async () => {
 
 /* -------------------------------------- Worker Assignment Route Tests -------------------------------------- */
 
-test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignment", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assignment", async () => {
   const { token, worker } = await loginWorker(51);
   const job = addDispatchableJob(851, 1);
   addTicketForVehicleJob(job.id, 1851);
@@ -1265,7 +1266,7 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
   oldAssignment.status = "TIMEOUT";
   addPendingAssignment(951, job.id, worker.id);
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/accept`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/accept`, {
     token,
   });
 
@@ -1279,10 +1280,14 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
     "scan_deadline_unix_ms",
     "shirt_number",
     "team",
+    "ticket_number",
+    "triggeredByTicketNo",
     "worker_code",
   ]);
   assert.equal(response.body.worker_code, `W${worker.id}`);
   assert.equal(response.body.shirt_number, String(worker.id));
+  assert.equal(response.body.ticket_number, job.ticket_number);
+  assert.equal(response.body.triggeredByTicketNo, null);
   assert.ok(response.body.accepted_at);
   assert.equal(response.body.license_plate, job.license_plate);
   assert.equal(response.body.license_plate_province, job.license_plate_province);
@@ -1303,6 +1308,7 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
     "marketName",
     "stall_count",
     "stalls",
+    "ticket_no",
   ]);
   assert.equal(response.body.markets[0].marketName, "Market A");
   assert.equal(response.body.markets[0].stall_count, 1);
@@ -1335,17 +1341,15 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
   const acceptedPayload = acceptedEvent.payload as Record<string, unknown>;
   assert.deepEqual(Object.keys(acceptedPayload).sort(), [
     "accepted_at",
-    "gate_transaction_ref",
     "scan_deadline_at",
     "scan_deadline_unix_ms",
     "status",
-    "ticketNo",
+    "ticketNumber",
     "worker_code",
   ]);
   assert.equal(acceptedPayload.worker_code, `W${worker.id}`);
   assert.equal(acceptedPayload.status, "ACCEPTED");
-  assert.equal(acceptedPayload.ticketNo, job.ticketNo);
-  assert.equal(acceptedPayload.gate_transaction_ref, job.gate_transaction_ref);
+  assert.equal(acceptedPayload.ticketNumber, job.ticket_number);
   assert.equal(acceptedPayload.scan_deadline_at, response.body.scan_deadline_at);
   assert.equal(acceptedPayload.scan_deadline_unix_ms, response.body.scan_deadline_unix_ms);
   assert.equal(acceptedPayload.id, undefined);
@@ -1356,7 +1360,7 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
   );
   assert.ok(acceptedTeamEvent);
   const acceptedTeamPayload = acceptedTeamEvent.payload as {
-    ticketNo?: string;
+    ticketNumber?: string;
     worker_status?: string;
     team_scan?: {
       workers_required?: number;
@@ -1372,7 +1376,7 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
       scanned_at?: string | null;
     }>;
   };
-  assert.equal(acceptedTeamPayload.ticketNo, job.ticketNo);
+  assert.equal(acceptedTeamPayload.ticketNumber, job.ticket_number);
   assert.equal(acceptedTeamPayload.worker_status, "assigned");
   assert.deepEqual(acceptedTeamPayload.team_scan, {
     workers_required: 1,
@@ -1403,13 +1407,13 @@ test("POST /api/workers/me/assignments/:ticketNo/accept accepts pending assignme
   });
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/accept times out late accept and requeues worker even when socket is disconnected", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/accept times out late accept and requeues worker even when socket is disconnected", async () => {
   const { token, worker } = await loginWorker(52);
   const job = addDispatchableJob(852, 1);
   job.status = "WAIT";
   addPendingAssignment(952, job.id, worker.id, -1000);
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/accept`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/accept`, {
     token,
   });
 
@@ -1424,12 +1428,12 @@ test("POST /api/workers/me/assignments/:ticketNo/accept times out late accept an
   );
   assert.ok(timeoutEvent);
   const timeoutPayload = timeoutEvent.payload as Record<string, unknown>;
-  assert.equal(timeoutPayload.ticketNo, job.ticketNo);
+  assert.equal(timeoutPayload.ticketNumber, job.ticket_number);
   assert.equal(timeoutPayload.assignment_id, undefined);
   assert.equal(timeoutPayload.vehicle_job_id, undefined);
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/accept resets consecutive timeout streak after accepting", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/accept resets consecutive timeout streak after accepting", async () => {
   const { token, worker } = await loginWorker(54);
   const timedOutJob = addDispatchableJob(8541, 1);
   timedOutJob.status = "WAIT";
@@ -1437,7 +1441,7 @@ test("POST /api/workers/me/assignments/:ticketNo/accept resets consecutive timeo
 
   const timeoutResponse = await server.request(
     "POST",
-    `/api/workers/me/assignments/${timedOutJob.ticketNo}/accept`,
+    `/api/workers/me/assignments/${timedOutJob.ticket_number}/accept`,
     { token }
   );
   assert.equal(timeoutResponse.status, 409);
@@ -1450,7 +1454,7 @@ test("POST /api/workers/me/assignments/:ticketNo/accept resets consecutive timeo
 
   const acceptedResponse = await server.request(
     "POST",
-    `/api/workers/me/assignments/${acceptedJob.ticketNo}/accept`,
+    `/api/workers/me/assignments/${acceptedJob.ticket_number}/accept`,
     { token }
   );
 
@@ -1459,7 +1463,7 @@ test("POST /api/workers/me/assignments/:ticketNo/accept resets consecutive timeo
   assert.equal(state.shiftAttendances[0].lastAcceptTimeoutAt, null);
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/accept closes worker shift after configured timeout limit", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/accept closes worker shift after configured timeout limit", async () => {
   const { token, worker } = await loginWorker(53);
   state.connectedWorkers.add(worker.id);
 
@@ -1468,7 +1472,7 @@ test("POST /api/workers/me/assignments/:ticketNo/accept closes worker shift afte
     job.status = "WAIT";
     addPendingAssignment(suffix, job.id, worker.id, -1000);
 
-    const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/accept`, {
+    const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/accept`, {
       token,
     });
 
@@ -1492,31 +1496,34 @@ test("POST /api/workers/me/assignments/:ticketNo/accept closes worker shift afte
   );
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/check-in-qr scans correct QR", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr scans correct QR", async () => {
   const { token, worker } = await loginWorker(61);
   const job = addDispatchableJob(861, 1);
+  const ticket = addTicketForVehicleJob(job.id, 1861);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
   const assignment = addPendingAssignment(961, job.id, worker.id);
   assignment.status = "ACCEPTED";
   assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/check-in-qr`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
     token,
+    body: {
+      worker_qr_token: market.worker_qr_token,
+    },
   });
 
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
     "status",
     "teamScan",
-    "ticketNo",
-    "worker_qr_token",
+    "ticket_number",
     "workerStatus",
     "worker_code",
   ].sort());
   assert.equal(response.body.status, "SCANNED");
   assert.equal(response.body.workerStatus, "working");
   assert.equal(response.body.worker_code, `W${worker.id}`);
-  assert.equal(response.body.ticketNo, job.ticketNo);
-  assert.equal(response.body.worker_qr_token, job.ticketNo);
+  assert.equal(response.body.ticket_number, job.ticket_number);
   assert.deepEqual(response.body.teamScan, {
     workers_required: 1,
     checked_in_count: 1,
@@ -1537,7 +1544,7 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr scans correct QR", 
   );
   assert.ok(scannedTeamEvent);
   const scannedTeamPayload = scannedTeamEvent.payload as {
-    ticketNo?: string;
+    ticketNumber?: string;
     worker_status?: string;
     team_scan?: {
       workers_required?: number;
@@ -1552,7 +1559,7 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr scans correct QR", 
       scanned_at?: string | null;
     }>;
   };
-  assert.equal(scannedTeamPayload.ticketNo, job.ticketNo);
+  assert.equal(scannedTeamPayload.ticketNumber, job.ticket_number);
   assert.equal(scannedTeamPayload.worker_status, "working");
   assert.deepEqual(scannedTeamPayload.team_scan, {
     workers_required: 1,
@@ -1566,13 +1573,15 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr scans correct QR", 
   assert.ok(scannedTeamPayload.team?.[0]?.scanned_at);
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/check-in-qr shortens remaining team scan window from settings", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr shortens remaining team scan window from settings", async () => {
   const [{ token, worker }, second, third] = await Promise.all([
     loginWorker(64),
     loginWorker(65),
     loginWorker(66),
   ]);
   const job = addDispatchableJob(864, 3);
+  const ticket = addTicketForVehicleJob(job.id, 1864);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
   const firstAssignment = addPendingAssignment(964, job.id, worker.id);
   const secondAssignment = addPendingAssignment(965, job.id, second.worker.id);
   const thirdAssignment = addPendingAssignment(966, job.id, third.worker.id);
@@ -1585,8 +1594,11 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr shortens remaining 
   }
 
   const startedAt = Date.now();
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/check-in-qr`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
     token,
+    body: {
+      worker_qr_token: market.worker_qr_token,
+    },
   });
 
   assert.equal(response.status, 200);
@@ -1607,7 +1619,7 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr shortens remaining 
     [worker.id, second.worker.id, third.worker.id].sort()
   );
   const teamUpdatedPayload = teamUpdatedEvents[0].payload as {
-    ticketNo?: string;
+    ticketNumber?: string;
     worker_status?: string;
     team_scan?: {
       workers_required?: number;
@@ -1622,7 +1634,7 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr shortens remaining 
       scanned_at?: string | null;
     }>;
   };
-  assert.equal(teamUpdatedPayload.ticketNo, job.ticketNo);
+  assert.equal(teamUpdatedPayload.ticketNumber, job.ticket_number);
   assert.equal(teamUpdatedPayload.worker_status, "waiting_team");
   assert.deepEqual(teamUpdatedPayload.team_scan, {
     workers_required: 3,
@@ -1706,15 +1718,18 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr shortens remaining 
   );
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/check-in-qr rejects unknown QR ticketNo", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects unknown TicketNumber", async () => {
   const { token, worker } = await loginWorker(62);
   const job = addDispatchableJob(862, 1);
   const assignment = addPendingAssignment(962, job.id, worker.id);
   assignment.status = "ACCEPTED";
   assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
 
-  const response = await server.request("POST", "/api/workers/me/assignments/wrong-qr-token/check-in-qr", {
+  const response = await server.request("POST", "/api/workers/me/assignments/unknown-ticket-number/check-in-qr", {
     token,
+    body: {
+      worker_qr_token: "any-token",
+    },
   });
 
   assert.equal(response.status, 404);
@@ -1722,7 +1737,51 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr rejects unknown QR 
   assert.equal(assignment.status, "ACCEPTED");
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/check-in-qr rejects expired QR scan window", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects unknown WorkerQrToken", async () => {
+  const { token, worker } = await loginWorker(621);
+  const job = addDispatchableJob(8621, 1);
+  addTicketForVehicleJob(job.id, 18621);
+  const assignment = addPendingAssignment(9621, job.id, worker.id);
+  assignment.status = "ACCEPTED";
+  assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
+
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
+    token,
+    body: {
+      worker_qr_token: "does-not-exist",
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.code, "INVALID_WORKER_QR");
+  assert.equal(assignment.status, "ACCEPTED");
+});
+
+// Ticket ที่สแกน ต้องถูก resolve จาก DB จริงแล้วเทียบ TicketNumber ของรถ worker คนนั้น
+// ห้ามเชื่อค่า TicketNumber ที่ QR อ้างมาตรงๆ (scenario 11)
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects QR belonging to a different vehicle", async () => {
+  const { token, worker } = await loginWorker(622);
+  const job = addDispatchableJob(8622, 1);
+  const otherJob = addDispatchableJob(8623, 1);
+  const otherTicket = addTicketForVehicleJob(otherJob.id, 18623);
+  const otherMarket = state.marketJobs.find((item) => item.id === otherTicket.market_job_id)!;
+  const assignment = addPendingAssignment(9622, job.id, worker.id);
+  assignment.status = "ACCEPTED";
+  assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
+
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
+    token,
+    body: {
+      worker_qr_token: otherMarket.worker_qr_token,
+    },
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "QR_TICKET_NUMBER_MISMATCH");
+  assert.equal(assignment.status, "ACCEPTED");
+});
+
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects expired QR scan window", async () => {
   const { token, worker } = await loginWorker(63);
   const replacementWorker = addWorker(64, await password.hashPassword("Worker@123456"));
   const job = addDispatchableJob(863, 1);
@@ -1731,8 +1790,11 @@ test("POST /api/workers/me/assignments/:ticketNo/check-in-qr rejects expired QR 
   assignment.scan_deadline_at = new Date(Date.now() - 1000).toISOString();
   await workerQueue.enqueueWorker(replacementWorker.id);
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/check-in-qr`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
     token,
+    body: {
+      worker_qr_token: "any-token",
+    },
   });
 
   assert.equal(response.status, 409);
@@ -1799,7 +1861,7 @@ test("assignment scan timeout processor dispatches replacement worker from queue
 
 /* -------------------------------------- Worker Ticket Route Tests -------------------------------------- */
 
-test("POST /api/workers/me/assignments/:ticketNo/tickets/complete submits quantities for vendor confirmation", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete submits quantities for vendor confirmation", async () => {
   const { token, worker } = await loginWorker(71);
   const job = addDispatchableJob(871, 1);
   const ticket = addTicketForVehicleJob(job.id, 971);
@@ -1815,7 +1877,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete submits quanti
   await workerQueue.markWorkerAssigned(worker.id);
   const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
       boothCode: ticket.boothCode,
@@ -1845,7 +1907,8 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete submits quanti
     "status",
     "submission_status",
     "ticketCompletedAt",
-    "ticketNo",
+    "ticket_no",
+    "ticket_number",
   ]);
   assert.equal(response.body.status, "DELIVERED");
   assert.equal(response.body.confirmation_status, "DELIVERED");
@@ -1855,7 +1918,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete submits quanti
   assert.equal(response.body.rejectedAt, null);
   assert.equal(response.body.ticketCompletedAt, null);
   assert.equal(assignment.status, "DELIVERED");
-  assert.equal(response.body.ticketNo, job.ticketNo);
+  assert.equal(response.body.ticket_number, job.ticket_number);
   assert.equal(response.body.marketCode, "MARKET-871");
   assert.equal(response.body.boothCode, ticket.boothCode);
   assert.equal(response.body.ticket, undefined);
@@ -1894,7 +1957,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete submits quanti
   );
   const submittedWorkerPayload = (submittedEvent as { worker_payload?: Record<string, unknown> })
     .worker_payload;
-  assert.equal(submittedWorkerPayload?.ticketNo, job.ticketNo);
+  assert.equal(submittedWorkerPayload?.ticket_number, job.ticket_number);
   assert.equal(submittedWorkerPayload?.marketCode, "MARKET-871");
   assert.equal(submittedWorkerPayload?.boothCode, ticket.boothCode);
   assert.equal(submittedWorkerPayload?.assignment_status, "DELIVERED");
@@ -1945,7 +2008,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete submits quanti
   const confirmToken = /token=([^&\s]+)/.exec(confirmButtonPostback ?? "")?.[1];
 
   assert.equal(lineFlexMessage?.type, "flex");
-  assert.ok(lineFlexContents.includes(job.ticketNo));
+  assert.ok(lineFlexContents.includes(job.ticket_number));
   assert.match(lineFlexContents, /ถูกต้อง/);
   assert.match(confirmButtonPostback ?? "", /^token=/);
   assert.ok((confirmButtonPostback ?? "").length <= 300);
@@ -1977,11 +2040,15 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete submits quanti
   const ticketCompletedAt = ticket.completed_at;
   const completedTicketWorker = state.ticketWorkers.find(
     (ticketWorker) =>
-      ticketWorker.ticket_id === ticket.id &&
+      ticketWorker.market_job_id === ticket.market_job_id &&
       ticketWorker.worker_account_id === worker.id
   );
   assert.ok(ticketCompletedAt);
-  assert.equal(completedTicketWorker?.completed_at, ticketCompletedAt);
+  assert.ok(completedTicketWorker?.completed_at);
+  assert.ok(
+    new Date(String(completedTicketWorker?.completed_at)).getTime() >=
+      new Date(ticketCompletedAt).getTime()
+  );
 
   // Financialization เธ•เนเธญเธเน€เธเธดเธ”เธซเธฅเธฑเธ Vendor Confirm
   assert.equal(state.ticketProductFinancials.length, products.length);
@@ -2027,7 +2094,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete submits quanti
   );
   const resultWorkerPayload = (resultEvent as { worker_payload?: Record<string, unknown> })
     .worker_payload;
-  assert.equal(resultWorkerPayload?.ticketNo, job.ticketNo);
+  assert.equal(resultWorkerPayload?.ticket_number, job.ticket_number);
   assert.equal(resultWorkerPayload?.marketCode, "MARKET-871");
   assert.equal(resultWorkerPayload?.boothCode, ticket.boothCode);
   assert.equal(resultWorkerPayload?.assignment_status, "COMPLETED");
@@ -2185,7 +2252,7 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
 
   const submitResponse = await server.request(
     "POST",
-    `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`,
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
     {
       token,
       body: {
@@ -2242,10 +2309,16 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
   const ticketCompletedAt = ticket.completed_at;
   const completedTicketWorker = state.ticketWorkers.find(
     (ticketWorker) =>
-      ticketWorker.ticket_id === ticket.id &&
+      ticketWorker.market_job_id === ticket.market_job_id &&
       ticketWorker.worker_account_id === worker.id
   );
-  assert.equal(completedTicketWorker?.completed_at, ticketCompletedAt);
+  // Booth (ticket.completed_at) เธเธฑเธเธเธฒเธฃ Lock Roster (completedTicketWorker.completed_at) เนเธเนเธเธ Step เนเธขเธเธเธฑเธเนเธฅเนเธง
+  // เนเธกเนเธ•เนเธญเธเนเธเน timestamp เธ•เธฃเธเธเธฑเธเธ—เธธเธเธเธดเธ• เนเธ•เนเธ•เนเธญเธเนเธกเนเธเนเธญเธเธเธงเนเธฒ Booth complete
+  assert.ok(completedTicketWorker?.completed_at);
+  assert.ok(
+    new Date(String(completedTicketWorker?.completed_at)).getTime() >=
+      new Date(ticketCompletedAt).getTime()
+  );
 
   assert.equal(state.ticketProductFinancials.length, products.length);
   assert.equal(state.ticketWorkerPayments.length, products.length);
@@ -2301,7 +2374,7 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
   assert.equal(historyResponse.status, 200);
 
   const historyItem = historyResponse.body.data.find(
-    (item: { ticketNo: string }) => item.ticketNo === job.ticketNo
+    (item: { ticket_number: string }) => item.ticket_number === job.ticket_number
   );
 
   assert.ok(historyItem);
@@ -2312,7 +2385,7 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
   const boothHistory = historyItem.markets[0].booths[0];
   const boothEarning = state.ticketWorkers.find(
     (ticketWorker) =>
-      ticketWorker.ticket_id === ticket.id &&
+      ticketWorker.market_job_id === ticket.market_job_id &&
       ticketWorker.worker_account_id === worker.id
   );
 
@@ -2323,7 +2396,7 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
   assert.equal(boothEarning?.final_earning_amount, "12.00");
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/tickets/complete allows submitting another stall in the same job", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete allows submitting another stall in the same job", async () => {
   const { token, worker } = await loginWorker(73);
   const job = addDispatchableJob(873, 1);
   const currentTicket = addTicketForVehicleJob(job.id, 973);
@@ -2335,7 +2408,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete allows submitt
     (product) => product.ticket_id === nextTicket.id
   );
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
       boothCode: nextTicket.boothCode,
@@ -2357,7 +2430,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete allows submitt
   assert.equal(state.lineMessages.length, 2);
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/tickets/complete accepts BoothCode with slash in body", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete accepts BoothCode with slash in body", async () => {
   const { token, worker } = await loginWorker(75);
   const job = addDispatchableJob(875, 1);
   const ticket = addTicketForVehicleJob(job.id, 976);
@@ -2370,7 +2443,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete accepts BoothC
 
   const response = await server.request(
     "POST",
-    `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`,
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
     {
       token,
       body: {
@@ -2390,7 +2463,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete accepts BoothC
   assert.equal(ticket.status, "DELIVERED");
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete is not supported", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/tickets/:boothCode/complete is not supported", async () => {
   const { token, worker } = await loginWorker(76);
   const job = addDispatchableJob(8760, 1);
   const ticket = addTicketForVehicleJob(job.id, 9760);
@@ -2401,7 +2474,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete is 
 
   const response = await server.request(
     "POST",
-    `/api/workers/me/assignments/${job.ticketNo}/tickets/${ticket.boothCode}/complete`,
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/${ticket.boothCode}/complete`,
     {
       token,
       body: {
@@ -2418,7 +2491,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/:boothCode/complete is 
   assert.equal(ticket.status, "WORKING");
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/tickets/complete rejects before all required workers check in", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete rejects before all required workers check in", async () => {
   const { token, worker } = await loginWorker(74);
   const job = addDispatchableJob(874, 2);
   const ticket = addTicketForVehicleJob(job.id, 975);
@@ -2426,7 +2499,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete rejects before
   assignment.status = "SCANNED";
   const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
       boothCode: ticket.boothCode,
@@ -2446,7 +2519,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete rejects before
   assert.equal(state.lineMessages.length, 0);
 });
 
-test("POST /api/workers/me/assignments/:ticketNo/tickets/complete rejects incomplete product quantities", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete rejects incomplete product quantities", async () => {
   const { token, worker } = await loginWorker(72);
   const job = addDispatchableJob(872, 1);
   const ticket = addTicketForVehicleJob(job.id, 972);
@@ -2454,7 +2527,7 @@ test("POST /api/workers/me/assignments/:ticketNo/tickets/complete rejects incomp
   assignment.status = "SCANNED";
   const [firstProduct] = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
       boothCode: ticket.boothCode,
@@ -2525,7 +2598,7 @@ test("break return moves worker to open_app when WebSocket is still disconnected
   ) as { payload?: Record<string, unknown> } | undefined;
 
   assert.ok(warningNotification);
-  assert.equal(warningNotification.payload?.ticketNo, job.ticketNo);
+  assert.equal(warningNotification.payload?.ticketNumber, job.ticket_number);
   assert.equal(warningNotification.payload?.worker_code, `W${worker.id}`);
   assert.equal(warningNotification.payload?.assignment_status, "ACCEPTED");
   assert.equal(warningNotification.payload?.worker_status, "assigned");
@@ -2547,7 +2620,7 @@ test("worker assignment audit events are immutable and distinguish accept timeou
 
   const acceptTimeoutResponse = await server.request(
     "POST",
-    `/api/workers/me/assignments/${acceptTimeoutJob.ticketNo}/accept`,
+    `/api/workers/me/assignments/${acceptTimeoutJob.ticket_number}/accept`,
     { token }
   );
 
@@ -2571,7 +2644,7 @@ test("worker assignment audit events are immutable and distinguish accept timeou
 
   const acceptResponse = await server.request(
     "POST",
-    `/api/workers/me/assignments/${scanTimeoutJob.ticketNo}/accept`,
+    `/api/workers/me/assignments/${scanTimeoutJob.ticket_number}/accept`,
     { token }
   );
 
@@ -2579,9 +2652,12 @@ test("worker assignment audit events are immutable and distinguish accept timeou
   scanAssignment.scan_deadline_at = new Date(Date.now() - 1000).toISOString();
   const scanTimeoutResponse = await server.request(
     "POST",
-    `/api/workers/me/assignments/${scanTimeoutJob.ticketNo}/check-in-qr`,
+    `/api/workers/me/assignments/${scanTimeoutJob.ticket_number}/check-in-qr`,
     {
       token,
+      body: {
+        worker_qr_token: "any-token",
+      },
     }
   );
 
@@ -2618,4 +2694,74 @@ test("worker assignment audit events are immutable and distinguish accept timeou
     ),
     false
   );
+});
+
+test("worker only returns to the FIFO queue once every Business Ticket is terminal AND Gate has explicitly closed the TicketNumber", async () => {
+  const { token: workerToken, worker } = await loginWorker(9950);
+  const job = addDispatchableJob(9950, 1);
+  // Gate ยังไม่ได้ยืนยันว่าไม่มี Business Ticket เพิ่ม (ต่างจาก default ของ addDispatchableJob)
+  job.tickets_closed_at = null;
+  const ticket = addTicketForVehicleJob(job.id, 19950);
+  const assignment = addPendingAssignment(19951, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.markWorkerAssigned(worker.id);
+
+  const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+
+  const submitResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
+    {
+      token: workerToken,
+      body: {
+        boothCode: ticket.boothCode,
+        items: products.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    }
+  );
+
+  assert.equal(submitResponse.status, 200);
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  const processor = state.workerProcessors.get(queueName);
+
+  assert.ok(processor, "Assignment timeout processor must be registered.");
+
+  const submission = state.completionSubmissions.at(-1);
+
+  assert.ok(submission, "Completion submission must exist.");
+
+  await processor({
+    data: {
+      ticketId: ticket.id,
+      submissionId: submission.id,
+      kind: "vendor_confirm",
+    },
+  });
+
+  // Business Ticket (booth) เดียวของ TicketNumber นี้ Terminal ครบแล้ว
+  // แต่ Gate ยังไม่ได้ปิดรับ Ticket เพิ่ม -> ห้ามถือว่ารถจบ ห้ามคืนคิว Worker
+  assert.equal(ticket.status, "COMPLETED");
+  assert.equal(job.status, "WORKING");
+  assert.equal(assignment.status, "WORKING");
+  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "assigned");
+
+  // Gate ยืนยันว่าไม่มี Business Ticket เพิ่มเข้ามาอีกสำหรับ TicketNumber นี้
+  const closeResponse = await server.request(
+    "POST",
+    `/api/gate/vehicle-jobs/${job.ticket_number}/close`,
+    { headers: await gateAuthHeaders() }
+  );
+
+  assert.equal(closeResponse.status, 200);
+  assert.equal(job.status, "COMPLETED");
+  assert.equal(assignment.status, "COMPLETED");
+  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");
 });

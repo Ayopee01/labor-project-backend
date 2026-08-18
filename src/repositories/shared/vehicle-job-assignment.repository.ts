@@ -3,6 +3,7 @@ import {
   ACTIVE_ASSIGNMENT_STATUSES,
   ASSIGNMENT_STATUS,
   FINISHED_ASSIGNMENT_STATUSES,
+  RELEASABLE_ASSIGNMENT_STATUSES,
   SCANNED_ASSIGNMENT_STATUSES,
   WORKING_ASSIGNMENT_STATUSES,
 } from "../../constants/job-status";
@@ -90,15 +91,19 @@ export async function getWorkerDailyAssignmentCounts(
 }
 
 // Function สร้าง assignment จาก DB
+//
+// sourceMarketJobId เป็น audit เท่านั้น (Ticket ที่ทำให้เกิดการ Dispatch รอบนี้ ถ้ารู้)
+// ไม่ใช่การจำกัดสิทธิ์ worker คนไหนก็ทำ Ticket อื่นในทีมเดียวกันได้ทั้งหมด
 export async function createAssignment(
   vehicleJobId: number,
   workerAccountId: number,
   acceptDeadlineAt: Date,
-  connection?: DbConnection
+  connection?: DbConnection,
+  sourceMarketJobId?: number
 ): Promise<VehicleJobAssignmentDto> {
   if (!connection) {
     return withTransaction((transaction) =>
-      createAssignment(vehicleJobId, workerAccountId, acceptDeadlineAt, transaction)
+      createAssignment(vehicleJobId, workerAccountId, acceptDeadlineAt, transaction, sourceMarketJobId)
     );
   }
 
@@ -109,6 +114,7 @@ export async function createAssignment(
       workerAccountId,
       status: "PENDING",
       acceptDeadlineAt,
+      sourceMarketJobId: sourceMarketJobId ?? null,
     },
   });
   await workerAssignmentEventRepository.createOnce(
@@ -281,7 +287,7 @@ export async function findAssignmentByIdAndWorker(
 }
 
 export async function findCurrentAssignmentByVehicleJobRefAndWorker(
-  ticketNo: string,
+  ticketNumber: string,
   workerAccountId: number,
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto | null> {
@@ -293,7 +299,7 @@ export async function findCurrentAssignmentByVehicleJobRefAndWorker(
         in: ACTIVE_ASSIGNMENT_STATUSES,
       },
       vehicleJob: {
-        ticketNo,
+        ticketNumber,
       },
     },
     orderBy: {
@@ -537,6 +543,58 @@ export async function completeAssignments(
     data: {
       status: ASSIGNMENT_STATUS.COMPLETED,
       completedAt,
+    },
+  });
+
+  return result.count;
+}
+
+// Function ค้นหา assignment ของ VehicleJob ที่ Admin ปล่อยกลับคิวก่อนเวลาได้จาก DB
+export async function listReleasableAssignmentsByVehicleJob(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<VehicleJobAssignmentDto[]> {
+  const db = client(connection);
+  const assignments = await db.vehicleJobAssignment.findMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: RELEASABLE_ASSIGNMENT_STATUSES,
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+
+  return assignments
+    .map((assignment) => mapVehicleJobAssignment(assignment))
+    .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
+}
+
+// Function ปล่อย assignment กลับคิวก่อนเวลาโดย Admin ใน DB (ไม่รอทั้ง TicketNumber จบ)
+export async function releaseAssignments(
+  assignmentIds: number[],
+  releasedAt: Date,
+  connection?: DbConnection,
+): Promise<number> {
+  if (assignmentIds.length === 0) {
+    return 0;
+  }
+
+  const db = client(connection);
+  const result = await db.vehicleJobAssignment.updateMany({
+    where: {
+      id: {
+        in: assignmentIds,
+      },
+      status: {
+        in: RELEASABLE_ASSIGNMENT_STATUSES,
+      },
+    },
+    data: {
+      status: ASSIGNMENT_STATUS.RELEASED,
+      releasedAt,
     },
   });
 

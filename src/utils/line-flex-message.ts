@@ -395,7 +395,8 @@ export function buildVendorCompletionReviewFlexMessage(input: {
     type: "flex",
 
     altText:
-      `กรุณาตรวจสอบข้อมูล ${input.detail?.vehicle_job.ticketNo ??
+      `กรุณาตรวจสอบข้อมูล ${market?.ticket_no ??
+      input.detail?.vehicle_job.ticket_number ??
       input.ticket.boothCode
       }`,
 
@@ -403,8 +404,13 @@ export function buildVendorCompletionReviewFlexMessage(input: {
       "กรุณาตรวจสอบข้อมูล",
       [
         fieldRow(
-          "เลขที่งาน:",
-          input.detail?.vehicle_job.ticketNo
+          "เลขที่งานรถ:",
+          input.detail?.vehicle_job.ticket_number
+        ),
+
+        fieldRow(
+          "เลขที่ตั๋ว:",
+          market?.ticket_no
         ),
 
         fieldRow(
@@ -450,6 +456,7 @@ export function buildVendorCompletionResultFlexMessage(input: {
   detail: VehicleJobDetailResponse | null;
   isConfirmed: boolean;
 }): LineMessage {
+  const market = findTicketMarket(input.detail, input.ticket);
   const text =
     input.isConfirmed
       ? "คุณได้ยืนยันข้อมูลถูกต้อง ปิดงานเรียบร้อย"
@@ -469,8 +476,13 @@ export function buildVendorCompletionResultFlexMessage(input: {
       title,
       [
         fieldRow(
-          "เลขที่งาน:",
-          input.detail?.vehicle_job.ticketNo
+          "เลขที่งานรถ:",
+          input.detail?.vehicle_job.ticket_number
+        ),
+
+        fieldRow(
+          "เลขที่ตั๋ว:",
+          market?.ticket_no
         ),
 
         fieldRow(
@@ -509,11 +521,14 @@ export function buildVendorRatingPromptFlexMessage(input: {
   detail: VehicleJobDetailResponse | null;
   ratingToken: string;
 }): LineMessage {
+  const market = findTicketMarket(input.detail, input.ticket);
+
   return {
     type: "flex",
 
     altText:
-      `กรุณาให้คะแนน ${input.detail?.vehicle_job.ticketNo ??
+      `กรุณาให้คะแนน ${market?.ticket_no ??
+      input.detail?.vehicle_job.ticket_number ??
       input.ticket.boothCode
       }`,
 
@@ -559,9 +574,13 @@ export function buildVendorRatingResultFlexMessages(input: {
   score: number;
   stallAmountBaht: number;
 }): LineMessage[] {
-  const ticketNo =
-    input.detail?.vehicle_job.ticketNo ??
+  const market = findTicketMarket(input.detail, input.ticket);
+  const ticketNumber =
+    input.detail?.vehicle_job.ticket_number ??
     "-";
+  const ticketNo =
+    market?.ticket_no ??
+    ticketNumber;
 
   const stars =
     `${"★".repeat(input.score)}` +
@@ -619,9 +638,7 @@ export function buildVendorRatingResultFlexMessages(input: {
             type: "text",
             text:
               formatBangkokDisplayDate(
-                input.detail
-                  ?.vehicle_job
-                  .ticket_created_at
+                market?.ticket_created_at
               ),
             size: "md",
             color: TEXT_COLOR,

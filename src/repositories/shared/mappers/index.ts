@@ -1,10 +1,11 @@
 // Import Library
-import type { Account, DriverSession, GateTicket, MarketJob, TicketCompletionSubmission, TicketProduct, TicketWorker, UserSession, VehicleJob, VehicleJobAssignment } from "@prisma/client";
+import type { Account, AdminActionLog, DriverSession, GateTicket, MarketJob, TicketCompletionSubmission, TicketProduct, TicketWorker, UserSession, VehicleJob, VehicleJobAssignment } from "@prisma/client";
 
 // Import Types
 import type { SessionDto } from "../../../types/auth.type";
 import type { DriverSessionDto } from "../../../types/driver.type";
 import type { GateTicketDto, MarketJobDto, TicketCompletionSubmissionDto, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto } from "../../../types/worker.type";
+import type { AdminActionLogDto, AdminActionType } from "../../../types/shared/admin-action-log.type";
 import { ACCOUNT_ROLES, ACCOUNT_SOURCES, type AccountDto, type AccountRole, type AccountSource, type ProfileDto, type SafeAccountDto, type WorkScheduleDto } from "../../../types/admin-workers.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -176,7 +177,7 @@ export function mapSession(record: UserSession | null): SessionDto | null {
   };
 }
 
-// Function แปลง vehicle job จาก DB
+// Function แปลง vehicle job (TicketNumber) จาก DB
 export function mapVehicleJob(record: VehicleJob | null): VehicleJobDto | null {
   if (!record) {
     return null;
@@ -184,24 +185,22 @@ export function mapVehicleJob(record: VehicleJob | null): VehicleJobDto | null {
 
   return {
     id: record.id,
-    ticketNo: record.ticketNo,
-    gate_transaction_ref: record.gateTransactionRef,
+    ticket_number: record.ticketNumber,
     license_plate: record.licensePlate,
     license_plate_province: record.licensePlateProvince,
     vehicle_type: record.vehicleType,
-    ticket_created_at: toIsoString(record.ticketCreatedAt),
-    booth_count: record.boothCount,
     workers_required: record.workersRequired,
     dispatch_now: record.dispatchNow,
     status: record.status,
     driver_qr_token: record.driverQrToken,
-    worker_qr_token: record.ticketNo,
+    expected_ticket_count: record.expectedTicketCount,
+    tickets_closed_at: record.ticketsClosedAt ? toIsoString(record.ticketsClosedAt) : null,
     created_at: toIsoString(record.createdAt),
     updated_at: toIsoString(record.updatedAt),
   };
 }
 
-// Function แปลง market job จาก DB
+// Function แปลง market job (Business Ticket) จาก DB
 export function mapMarketJob(record: MarketJob | null): MarketJobDto | null {
   if (!record) {
     return null;
@@ -210,10 +209,20 @@ export function mapMarketJob(record: MarketJob | null): MarketJobDto | null {
   return {
     id: record.id,
     vehicle_job_id: record.vehicleJobId,
+    ticket_no: record.ticketNo,
+    ticket_created_at: toIsoString(record.ticketCreatedAt),
+    booth_count: record.boothCount,
+    gate_transaction_ref: record.gateTransactionRef,
+    workers_required: record.workersRequired,
     marketCode: record.marketCode,
     marketName: record.marketName,
     dropoff_point: record.dropoffPoint,
     status: record.status,
+    worker_qr_token: record.workerQrToken,
+    worker_roster_locked_at: record.workerRosterLockedAt ? toIsoString(record.workerRosterLockedAt) : null,
+    final_stall_amount: record.finalStallAmount?.toFixed(2) ?? null,
+    financialized_at: record.financializedAt ? toIsoString(record.financializedAt) : null,
+    completed_at: record.completedAt ? toIsoString(record.completedAt) : null,
     created_at: toIsoString(record.createdAt),
     updated_at: toIsoString(record.updatedAt),
   };
@@ -263,7 +272,7 @@ export function mapTicketProduct(record: TicketProduct | null): TicketProductDto
   };
 }
 
-// Function แปลง ticket worker จาก DB
+// Function แปลง ticket worker (roster membership บน Business Ticket) จาก DB
 export function mapTicketWorker(record: TicketWorker | null): TicketWorkerDto | null {
   if (!record) {
     return null;
@@ -271,7 +280,7 @@ export function mapTicketWorker(record: TicketWorker | null): TicketWorkerDto | 
 
   return {
     id: record.id,
-    ticket_id: record.ticketId,
+    market_job_id: record.marketJobId,
     worker_account_id: record.workerAccountId,
     status: record.status,
     final_earning_amount: record.finalEarningAmount?.toFixed(2) ?? null,
@@ -339,12 +348,37 @@ export function mapVehicleJobAssignment(
     vehicle_job_id: record.vehicleJobId,
     worker_account_id: record.workerAccountId,
     status: record.status,
+    source_market_job_id: record.sourceMarketJobId,
     accept_deadline_at: toIsoString(record.acceptDeadlineAt),
     scan_deadline_at: toIsoString(record.scanDeadlineAt),
     accepted_at: toIsoString(record.acceptedAt),
     scanned_at: toIsoString(record.scannedAt),
     completed_at: toIsoString(record.completedAt),
+    released_at: toIsoString(record.releasedAt),
     created_at: toIsoString(record.createdAt),
     updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง admin action log จาก DB
+export function mapAdminActionLog(
+  record: (AdminActionLog & { actor?: Account | null }) | null
+): AdminActionLogDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    vehicle_job_id: record.vehicleJobId,
+    gate_ticket_id: record.gateTicketId,
+    action_type: record.actionType as AdminActionType,
+    reason_code: record.reasonCode,
+    reason_text: record.reasonText,
+    actor_account_id: record.actorAccountId,
+    actor_worker_code: record.actor?.username ?? null,
+    actor_full_name: record.actor?.fullName ?? null,
+    metadata: (record.metadata as Record<string, unknown> | null) ?? null,
+    created_at: toIsoString(record.createdAt),
   };
 }

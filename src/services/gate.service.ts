@@ -6,16 +6,17 @@ import { Prisma, type MasterMarket, type MasterProduct, type MasterRate } from "
 import { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 import { withTransaction } from "../db/prisma";
 import { enqueueLoggedLineMessage } from "../queues/notification-queue";
-import { dispatchReadyWorkers } from "../queues/worker-dispatch";
+import { dispatchReadyWorkers, returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
 import * as gateRepository from "../repositories/gate.repository";
-import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
+import * as marketJobRepository from "../repositories/shared/market-job.repository";
 import { publishNotification } from "./notifications.service";
+import * as vehicleJobLifecycleService from "./shared/vehicle-job-lifecycle.service";
 
 // Import Types
 import type { GateOptionsResponse, GateProductOption, GateVehicleJobBody, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVehicleJobResponseStatus, GateVehicleJobResult } from "../types/gate.type";
 import type { DbConnection } from "../types/shared/common.type";
 import type { LineMessage } from "../types/line.type";
-import type { VehicleJobDetailResponse } from "../types/worker.type";
+import type { MarketJobDto, VehicleJobDto } from "../types/worker.type";
 
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
@@ -125,6 +126,7 @@ function isGateVehicleJobBody(
   const record = value as Record<string, unknown>;
 
   if (
+    typeof record.TicketNumber !== "string" ||
     typeof record.TicketNo !== "string" ||
     typeof record.TicketCreatedAt !== "string" ||
     typeof record.BoothCount !== "number" ||
@@ -538,7 +540,8 @@ async function prepareLaborJob(
 // Response นี้เป็นข้อมูล Operation เท่านั้น
 // ยังไม่มีเงินจริง
 function buildPublicGateVehicleJobResponse(
-  detail: VehicleJobDetailResponse,
+  vehicleJob: VehicleJobDto,
+  marketJob: MarketJobDto,
   input: GateVehicleJobBody,
   result: GateVehicleJobResult,
   preparation: LaborJobPreparation
@@ -547,36 +550,38 @@ function buildPublicGateVehicleJobResponse(
     Result:
       result,
 
+    TicketNumber:
+      vehicleJob.ticket_number,
+
     Ticket: {
       TicketNo:
-        detail.vehicle_job.ticketNo,
+        marketJob.ticket_no,
 
       TicketCreatedAt:
-        detail.vehicle_job
-          .ticket_created_at,
+        marketJob.ticket_created_at,
 
       BoothCount:
-        detail.vehicle_job.booth_count,
+        marketJob.booth_count,
 
       LicensePlate:
-        detail.vehicle_job
-          .license_plate,
+        vehicleJob.license_plate,
 
       LicensePlateProvince:
-        detail.vehicle_job
-          .license_plate_province,
+        vehicleJob.license_plate_province,
 
       VehicleTypeCode:
         input.VehicleTypeCode,
 
       VehicleTypeName:
-        detail.vehicle_job
-          .vehicle_type,
+        vehicleJob.vehicle_type,
 
       Status:
         buildGateTicketResponseStatus(
           input.Dispatch
         ),
+
+      WorkerQrToken:
+        marketJob.worker_qr_token,
     },
 
     Market: {
@@ -631,19 +636,13 @@ function buildPublicGateVehicleJobResponse(
         })
       ),
 
-    // จำนวนที่ใช้ Dispatch
+    // จำนวน Worker รวมทุก Business Ticket ของ TicketNumber นี้ที่ใช้ Dispatch
     WorkerCount:
-      detail.vehicle_job
-        .workers_required,
+      vehicleJob.workers_required,
 
     Qr: {
       DriverQrToken:
-        detail.vehicle_job
-          .driver_qr_token,
-
-      WorkerQrToken:
-        detail.vehicle_job
-          .worker_qr_token,
+        vehicleJob.driver_qr_token,
     },
   };
 }
@@ -697,6 +696,9 @@ async function notifyVendorGateTicketCreated(
           target.line_user_id,
 
         payload: {
+          ticketNumber:
+            response.TicketNumber,
+
           ticketNo:
             response.Ticket.TicketNo,
 
@@ -775,15 +777,18 @@ function arePayloadsEqual(
 }
 
 // Function สร้าง transaction ref ของ Gate
+//
+// Idempotency key มาจาก TicketNumber + TicketNo เท่านั้น (ไม่ใช่ MarketCode อีกต่อไป)
+// เพราะ Ticket หนึ่งอยู่ได้ตลาดเดียวอยู่แล้ว แต่ TicketNumber เดียวมีหลาย Ticket ได้
 function buildGateTransactionRef(
   input: GateVehicleJobBody
 ): string {
   const idempotencyParts = {
+    ticketNumber:
+      input.TicketNumber,
+
     ticketNo:
       input.TicketNo,
-
-    marketCode:
-      input.MarketCode,
   };
 
   const hash =
@@ -806,19 +811,8 @@ function buildGateCreateInput(
   preparation: LaborJobPreparation
 ): GateVehicleJobCreateInput {
   return {
-    gate_transaction_ref:
-      gateTransactionRef,
-
-    ticketNo:
-      input.TicketNo,
-
-    ticket_created_at:
-      new Date(
-        input.TicketCreatedAt
-      ),
-
-    booth_count:
-      input.BoothCount,
+    ticketNumber:
+      input.TicketNumber,
 
     license_plate:
       input.LicensePlate,
@@ -829,14 +823,31 @@ function buildGateCreateInput(
     vehicle_type:
       input.VehicleTypeName,
 
-    workers_required:
-      preparation.workerCount,
-
     dispatch_now:
       input.Dispatch,
 
+    expected_ticket_count:
+      input.TicketCount,
+
     markets: [
       {
+        ticketNo:
+          input.TicketNo,
+
+        ticket_created_at:
+          new Date(
+            input.TicketCreatedAt
+          ),
+
+        booth_count:
+          input.BoothCount,
+
+        gate_transaction_ref:
+          gateTransactionRef,
+
+        workers_required:
+          preparation.workerCount,
+
         marketCode:
           preparation.market
             .marketCode,
@@ -845,7 +856,7 @@ function buildGateCreateInput(
           preparation.market
             .marketName,
 
-        tickets:
+        booths:
           preparation.booths.map(
             (booth) => ({
               boothCode:
@@ -949,14 +960,14 @@ async function buildGateCreateInputWithVendorLineIds(
         async (market) => ({
           ...market,
 
-          tickets:
+          booths:
             await Promise.all(
-              market.tickets.map(
-                async (ticket) => {
+              market.booths.map(
+                async (booth) => {
                   const vendorLineTargets =
                     await gateRepository.findActiveVendorLineTargetsByStall(
                       market.marketCode,
-                      ticket.boothCode,
+                      booth.boothCode,
                       connection
                     );
 
@@ -972,13 +983,13 @@ async function buildGateCreateInputWithVendorLineIds(
                           market.marketCode,
 
                         boothCode:
-                          ticket.boothCode,
+                          booth.boothCode,
                       }
                     );
                   }
 
                   return {
-                    ...ticket,
+                    ...booth,
 
                     vendor_line_id:
                       vendorLineTargets[0]
@@ -1042,38 +1053,6 @@ function buildGateReplayResponse(
       Status: status,
     },
   };
-}
-
-// Function สร้าง Gate response จาก VehicleJob
-async function buildGateVehicleJobResponse(
-  vehicleJobId: number,
-  input: GateVehicleJobBody,
-  result: GateVehicleJobResult,
-  preparation: LaborJobPreparation,
-  connection?: Parameters<
-    typeof vehicleJobRepository.getVehicleJobDetail
-  >[1]
-): Promise<GateVehicleJobResponse> {
-  const detail =
-    await vehicleJobRepository.getVehicleJobDetail(
-      vehicleJobId,
-      connection
-    );
-
-  if (!detail) {
-    throw new ApiError(
-      404,
-      "VEHICLE_JOB_NOT_FOUND",
-      "Vehicle job not found."
-    );
-  }
-
-  return buildPublicGateVehicleJobResponse(
-    detail,
-    input,
-    result,
-    preparation
-  );
 }
 
 // TEST HELPER: ใช้สำหรับ Postman / Swagger / Gate integration testing
@@ -1273,22 +1252,35 @@ export async function createVehicleJobFromGate(
     );
   }
 
-  // ป้องกัน TicketNo เดิมถูกสร้างซ้ำ
+  // TicketNumber เดิมที่มีอยู่แล้วไม่ได้แปลว่าต้องปฏิเสธ เพราะ TicketNumber เดียวมีหลาย
+  // Business Ticket ได้ ต้องปฏิเสธเฉพาะเมื่อ TicketNo นี้มีอยู่แล้วจริงภายใต้ TicketNumber
+  // เดียวกัน (ด้วย gate_transaction_ref อื่น เพราะ replay เดิมถูกจัดการไปแล้วด้านบน)
   const existingVehicleJob =
     await gateRepository.findVehicleJobByRef(
-      input.TicketNo
+      input.TicketNumber
     );
 
   if (existingVehicleJob) {
-    throw new ApiError(
-      409,
-      "GATE_TICKET_ALREADY_EXISTS",
-      "TicketNo already exists.",
-      {
-        ticketNo:
-          input.TicketNo,
-      }
-    );
+    const existingMarketJob =
+      await marketJobRepository.findMarketJobByVehicleAndTicketNo(
+        existingVehicleJob.id,
+        input.TicketNo
+      );
+
+    if (existingMarketJob) {
+      throw new ApiError(
+        409,
+        "GATE_TICKET_ALREADY_EXISTS",
+        "TicketNo already exists under this TicketNumber.",
+        {
+          ticketNumber:
+            input.TicketNumber,
+
+          ticketNo:
+            input.TicketNo,
+        }
+      );
+    }
   }
 
   const createResult =
@@ -1319,22 +1311,22 @@ export async function createVehicleJobFromGate(
             transaction
           );
 
-        // สร้าง VehicleJob
-        const vehicleJob =
+        // สร้าง VehicleJob (ถ้ายังไม่มี) และ Business Ticket ใหม่
+        const { vehicleJob, marketJob } =
           await gateRepository.createVehicleJobFromGate(
             gateInputWithVendorLineIds,
             input as unknown as Prisma.InputJsonValue,
             transaction
           );
 
-        // สร้าง response
+        // สร้าง response จากผลการสร้างโดยตรง ไม่ต้อง reload
         const response =
-          await buildGateVehicleJobResponse(
-            vehicleJob.id,
+          buildPublicGateVehicleJobResponse(
+            vehicleJob,
+            marketJob,
             input,
             "CREATED",
-            preparation,
-            transaction
+            preparation
           );
 
         // เก็บ response สำหรับ replay
@@ -1350,6 +1342,9 @@ export async function createVehicleJobFromGate(
               .dispatch_now === true
               ? vehicleJob.id
               : null,
+
+          dispatch_source_market_job_id:
+            marketJob.id,
 
           response,
         };
@@ -1372,6 +1367,10 @@ export async function createVehicleJobFromGate(
             createResult
               .dispatch_vehicle_job_id,
           ],
+
+          source_market_job_id:
+            createResult
+              .dispatch_source_market_job_id,
         }
       );
     } catch (error) {
@@ -1393,6 +1392,9 @@ export async function createVehicleJobFromGate(
       `Vehicle job ${response.Ticket.TicketNo} was created from Gate.`,
 
     payload: {
+      ticketNumber:
+        response.TicketNumber,
+
       ticketNo:
         response.Ticket.TicketNo,
 
@@ -1434,4 +1436,57 @@ export async function createVehicleJobFromGate(
   }
 
   return response;
+}
+
+// Function ปิดรับ Business Ticket เพิ่มของ TicketNumber นี้แบบ explicit
+//
+// ใช้เมื่อ Gate ไม่สามารถบอกจำนวน Ticket ทั้งหมดล่วงหน้าผ่าน TicketCount ได้
+// เรียกซ้ำได้ (idempotent) ผลลัพธ์เหมือนเดิมถ้าปิดไปแล้ว
+export async function closeVehicleJobTickets(
+  ticketNumberParam: unknown
+): Promise<{ ticketNumber: string; tickets_closed_at: string | null }> {
+  const ticketNumber =
+    typeof ticketNumberParam === "string"
+      ? ticketNumberParam.trim()
+      : "";
+
+  if (!ticketNumber) {
+    throw new ApiError(
+      400,
+      "INVALID_TICKET_NUMBER",
+      "TicketNumber is invalid."
+    );
+  }
+
+  const vehicleJob =
+    await gateRepository.closeVehicleJobTicketsIfOpen(
+      ticketNumber
+    );
+
+  if (!vehicleJob) {
+    throw new ApiError(
+      404,
+      "VEHICLE_JOB_NOT_FOUND",
+      "Vehicle job not found."
+    );
+  }
+
+  // Ticket ทุกใบอาจ Terminal ครบอยู่แล้วก่อน Gate ปิดรับ Ticket เพิ่ม (ลำดับเหตุการณ์สลับกับ
+  // เคสปกติที่ Booth สุดท้าย Complete แล้วค่อยครบ) ต้องเช็คซ้ำที่นี่ ไม่งั้นรถจะค้าง WORKING
+  // และ Worker จะไม่ถูกคืนคิวตลอดไป
+  const completedVehicleJob = await withTransaction((transaction) =>
+    vehicleJobLifecycleService.closeCompletedVehicleJobIfReady(
+      vehicleJob.id,
+      transaction
+    )
+  );
+
+  if (completedVehicleJob) {
+    await returnCompletedWorkersToQueue(completedVehicleJob);
+  }
+
+  return {
+    ticketNumber: vehicleJob.ticket_number,
+    tickets_closed_at: vehicleJob.tickets_closed_at,
+  };
 }

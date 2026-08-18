@@ -13,6 +13,7 @@ import {
 } from "./app-test-notification-mocks";
 import {
   accountRepositoryMock,
+  adminActionLogRepositoryMock,
   adminAuditRepositoryMock,
   adminJobsRepositoryMock,
   adminSettingsRepositoryMock,
@@ -21,6 +22,7 @@ import {
   gateClientRepositoryMock,
   gateTicketRepositoryMock,
   gateRepositoryMock,
+  marketJobRepositoryMock,
   systemSettingRepositoryMock,
   ticketFinancialRepositoryMock,
   ticketWorkerRepositoryMock,
@@ -199,6 +201,20 @@ function patchModuleLoader(): void {
       request === "../../repositories/shared/ticket-worker.repository"
     ) {
       return ticketWorkerRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/market-job.repository" ||
+      request === "../../repositories/shared/market-job.repository"
+    ) {
+      return marketJobRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/admin-action-log.repository" ||
+      request === "../../repositories/shared/admin-action-log.repository"
+    ) {
+      return adminActionLogRepositoryMock;
     }
 
     if (request === "../repositories/admin-jobs.repository") {

@@ -1,4 +1,4 @@
-import { TICKET_STATUS, TICKET_WORKER_STATUS } from "../../constants/job-status";
+import { TICKET_STATUS } from "../../constants/job-status";
 import {
   mapGateTicket,
   mapTicketCompletionSubmission,
@@ -31,8 +31,8 @@ export async function findGateTicketForCompletion(
   return mapGateTicket(ticket);
 }
 
-export async function findGateTicketForCompletionByTicketNoAndBoothCode(
-  ticketNo: string,
+export async function findGateTicketForCompletionByTicketNumberAndBoothCode(
+  ticketNumber: string,
   boothCode: string,
   connection?: DbConnection
 ): Promise<GateTicketDto | null> {
@@ -41,7 +41,7 @@ export async function findGateTicketForCompletionByTicketNoAndBoothCode(
     where: {
       boothCode,
       vehicleJob: {
-        ticketNo,
+        ticketNumber,
       },
     },
     orderBy: {
@@ -274,17 +274,9 @@ export async function confirmTicketCompletion(
     throw new Error("Ticket confirm did not update a waiting ticket.");
   }
 
-  await db.ticketWorker.updateMany({
-    where: {
-      ticketId,
-      status: TICKET_WORKER_STATUS.WORKING,
-    },
-    data: {
-      status: TICKET_WORKER_STATUS.COMPLETED,
-      completedAt,
-      cancelledAt: null,
-    },
-  });
+  // หมายเหตุ: TicketWorker (roster ของ Business Ticket) ไม่ถูกแตะที่นี่อีกต่อไป
+  // การปิด Roster เป็น COMPLETED เกิดเฉพาะตอน Lock ที่ finalizeMarketJobFinancials
+  // เพราะ Business Ticket หนึ่งอาจมีหลาย Booth และ Booth นี้เป็นเพียงใบเดียวที่จบ
 
   const [ticket, submission] = await Promise.all([
     db.gateTicket.findUnique({

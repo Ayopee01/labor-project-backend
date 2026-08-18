@@ -20,7 +20,6 @@ import {
   mapVehicleJobAssignment,
 } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
-import { mapVehicleJobDetail } from "./shared/vehicle-job.repository";
 
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
@@ -33,8 +32,10 @@ import type {
 } from "../types/worker.type";
 import type {
   AdminVehicleJobFinancialRecord,
+  DailyWorkerIncomeFilters,
+  DailyWorkerIncomeRecord,
+  VehicleJobHistoryListResult,
   VehicleJobListFilters,
-  VehicleJobListResult,
   VehicleJobOperationFilters,
   VehicleJobOperationRecord,
 } from "../types/admin-jobs.type";
@@ -45,7 +46,7 @@ import type {
 export async function listVehicleJobs(
   filters: VehicleJobListFilters = {},
   connection?: DbConnection,
-): Promise<VehicleJobListResult> {
+): Promise<VehicleJobHistoryListResult> {
   const db = client(connection);
   const andFilters: Prisma.VehicleJobWhereInput[] = [];
 
@@ -89,19 +90,13 @@ export async function listVehicleJobs(
     andFilters.push({
       OR: [
         {
-          ticketNo: {
+          ticketNumber: {
             contains: filters.search,
             mode: "insensitive",
           },
         },
         {
           licensePlate: {
-            contains: filters.search,
-            mode: "insensitive",
-          },
-        },
-        {
-          gateTransactionRef: {
             contains: filters.search,
             mode: "insensitive",
           },
@@ -118,6 +113,18 @@ export async function listVehicleJobs(
                 },
                 {
                   marketName: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  gateTransactionRef: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  ticketNo: {
                     contains: filters.search,
                     mode: "insensitive",
                   },
@@ -199,7 +206,7 @@ export async function listVehicleJobs(
   };
   const shouldPaginate = filters.page !== undefined;
   const limit = filters.limit ?? 20;
-  const vehicleJobs = await db.vehicleJob.findMany({
+  const data = await db.vehicleJob.findMany({
     where,
     orderBy: {
       createdAt: "desc",
@@ -210,18 +217,56 @@ export async function listVehicleJobs(
           id: "asc",
         },
         include: {
+          ticketWorkers: {
+            include: {
+              worker: true,
+              payments: true,
+            },
+          },
           tickets: {
             orderBy: {
               id: "asc",
             },
             include: {
+              completionSubmissions: {
+                orderBy: {
+                  id: "asc",
+                },
+                include: {
+                  submittedByWorker: true,
+                },
+              },
               products: {
                 orderBy: {
                   id: "asc",
                 },
+                include: {
+                  financial: {
+                    include: {
+                      workerPayments: {
+                        include: {
+                          ticketWorker: {
+                            include: {
+                              worker: true,
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
               },
             },
           },
+        },
+      },
+      assignments: {
+        orderBy: {
+          id: "asc",
+        },
+        include: {
+          worker: true,
+          events: true,
         },
       },
     },
@@ -230,7 +275,6 @@ export async function listVehicleJobs(
       take: limit,
     }),
   });
-  const data = vehicleJobs.map((vehicleJob) => mapVehicleJobDetail(vehicleJob));
 
   if (!shouldPaginate) {
     return {
@@ -260,19 +304,13 @@ export async function listVehicleJobOperations(
     andFilters.push({
       OR: [
         {
-          ticketNo: {
+          ticketNumber: {
             contains: filters.search,
             mode: "insensitive",
           },
         },
         {
           licensePlate: {
-            contains: filters.search,
-            mode: "insensitive",
-          },
-        },
-        {
-          gateTransactionRef: {
             contains: filters.search,
             mode: "insensitive",
           },
@@ -289,6 +327,18 @@ export async function listVehicleJobOperations(
                 },
                 {
                   marketName: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  gateTransactionRef: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  ticketNo: {
                     contains: filters.search,
                     mode: "insensitive",
                   },
@@ -411,25 +461,24 @@ export async function listVehicleJobOperations(
   });
 }
 
-// Function ดึง Financial breakdown ของ VehicleJob ตาม TicketNo จาก DB
+// Function ดึง Financial breakdown ของ VehicleJob ตาม TicketNumber จาก DB
 export async function findVehicleJobFinancialByRef(
-  ticketNo: string,
+  ticketNumber: string,
   connection?: DbConnection,
 ): Promise<AdminVehicleJobFinancialRecord | null> {
   const db = client(connection);
 
   return db.vehicleJob.findUnique({
     where: {
-      ticketNo,
+      ticketNumber,
     },
     include: {
-      tickets: {
+      marketJobs: {
         orderBy: {
           id: "asc",
         },
         include: {
-          marketJob: true,
-          workers: {
+          ticketWorkers: {
             orderBy: {
               id: "asc",
             },
@@ -442,21 +491,28 @@ export async function findVehicleJobFinancialByRef(
               },
             },
           },
-          products: {
+          tickets: {
             orderBy: {
               id: "asc",
             },
             include: {
-              financial: {
+              products: {
+                orderBy: {
+                  id: "asc",
+                },
                 include: {
-                  workerPayments: {
-                    orderBy: {
-                      id: "asc",
-                    },
+                  financial: {
                     include: {
-                      ticketWorker: {
+                      workerPayments: {
+                        orderBy: {
+                          id: "asc",
+                        },
                         include: {
-                          worker: true,
+                          ticketWorker: {
+                            include: {
+                              worker: true,
+                            },
+                          },
                         },
                       },
                     },
@@ -540,7 +596,7 @@ export async function findWorkerByCode(
 
 // Function ค้นหา active assignment ตาม vehicle job ref และ WorkerCode จาก DB
 export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
-  ticketNo: string,
+  ticketNumber: string,
   workerCode: string,
   connection?: DbConnection,
 ): Promise<VehicleJobAssignmentDto | null> {
@@ -548,7 +604,7 @@ export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
   const assignment = await db.vehicleJobAssignment.findFirst({
     where: {
       vehicleJob: {
-        ticketNo,
+        ticketNumber,
       },
       worker: {
         username: workerCode,
@@ -594,7 +650,7 @@ export async function cancelVehicleJob(
     where: {
       status: TICKET_WORKER_STATUS.WORKING,
 
-      ticket: { vehicleJobId },
+      marketJob: { vehicleJobId },
     },
     data: {
       status: TICKET_WORKER_STATUS.CANCELLED,
@@ -667,7 +723,7 @@ export async function cancelMarketJob(
   await db.ticketWorker.updateMany({
     where: {
       status: TICKET_WORKER_STATUS.WORKING,
-      ticket: { marketJobId },
+      marketJobId,
     },
     data: {
       status: TICKET_WORKER_STATUS.CANCELLED,
@@ -696,25 +752,15 @@ export async function cancelMarketJob(
   return requireDto(mapMarketJob(marketJob), "market job cancel");
 }
 
-// Function ยกเลิก Gate ticket จาก DB
+// Function ยกเลิก Gate ticket (booth) จาก DB
+//
+// ไม่แตะ TicketWorker (Worker Roster) เพราะ Roster เป็นระดับ Business Ticket (market job) แล้ว
+// ไม่ใช่ระดับ Booth การยกเลิก Booth เดียวไม่ควรกระทบสมาชิกที่ยังทำ Booth อื่นในใบเดียวกันอยู่
 export async function cancelGateTicket(
   ticketId: number,
   connection?: DbConnection,
 ): Promise<GateTicketDto> {
   const db = client(connection);
-  const now = new Date();
-
-  await db.ticketWorker.updateMany({
-    where: {
-      ticketId,
-      status: TICKET_WORKER_STATUS.WORKING,
-    },
-    data: {
-      status: TICKET_WORKER_STATUS.CANCELLED,
-      cancelledAt: now,
-      completedAt: null,
-    },
-  });
 
   const ticket = await db.gateTicket.update({
     where: {
@@ -843,13 +889,15 @@ export async function cancelAssignment(
     connection,
   );
 
+  // ถอด Worker ออกจาก Roster ของทุก Business Ticket ที่ยังไม่ Terminal ภายใต้ TicketNumber
+  // เดียวกัน (Ticket ที่ Lock/Terminal แล้วต้องไม่ถูกแก้ Roster ย้อนหลัง)
   await db.ticketWorker.updateMany({
     where: {
       workerAccountId: assignment.workerAccountId,
 
       status: TICKET_WORKER_STATUS.WORKING,
 
-      ticket: {
+      marketJob: {
         vehicleJobId: assignment.vehicleJobId,
 
         status: {
@@ -868,6 +916,32 @@ export async function cancelAssignment(
   });
 
   return requireDto(mapVehicleJobAssignment(assignment), "assignment cancel");
+}
+
+// Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket (market job) ใบเดียว
+//
+// ต่างจาก cancelAssignment: ไม่แตะ VehicleJobAssignment เลย (worker ยังอยู่กับรถ/TicketNumber
+// และยังทำ Business Ticket อื่นได้) กระทบเฉพาะ Roster ของ Business Ticket ใบนี้ใบเดียว
+export async function cancelTicketWorkerForMarketJob(
+  marketJobId: number,
+  workerAccountId: number,
+  connection?: DbConnection,
+): Promise<boolean> {
+  const db = client(connection);
+  const result = await db.ticketWorker.updateMany({
+    where: {
+      marketJobId,
+      workerAccountId,
+      status: TICKET_WORKER_STATUS.WORKING,
+    },
+    data: {
+      status: TICKET_WORKER_STATUS.CANCELLED,
+      cancelledAt: new Date(),
+      completedAt: null,
+    },
+  });
+
+  return result.count === 1;
 }
 
 // Function ต่อเวลา assignment scan deadline จาก DB
@@ -890,4 +964,138 @@ export async function extendAssignmentScanDeadline(
     mapVehicleJobAssignment(assignment),
     "assignment extend scan",
   );
+}
+
+// Function ดึงรายได้ Worker รายวันจาก DB — หนึ่งแถว = สมาชิกภาพของ Worker หนึ่งคนใน Business
+// Ticket หนึ่งใบ (TicketWorker) กรองตามช่วงวันที่จาก completedAt ถ้ามี ไม่งั้นใช้ joinedAt แทน
+// (Business Ticket ที่ยังไม่ Finalize จะยังไม่มี completedAt)
+export async function listDailyWorkerIncome(
+  filters: DailyWorkerIncomeFilters,
+  connection?: DbConnection,
+): Promise<{ data: DailyWorkerIncomeRecord[]; total: number }> {
+  const db = client(connection);
+  const dateRangeFilter: Prisma.TicketWorkerWhereInput[] =
+    filters.startAt || filters.endAt
+      ? [
+        {
+          completedAt: {
+            ...(filters.startAt && { gte: filters.startAt }),
+            ...(filters.endAt && { lt: filters.endAt }),
+          },
+        },
+        {
+          AND: [
+            { completedAt: null },
+            {
+              joinedAt: {
+                ...(filters.startAt && { gte: filters.startAt }),
+                ...(filters.endAt && { lt: filters.endAt }),
+              },
+            },
+          ],
+        },
+      ]
+      : [];
+  const workerFilter: Prisma.AccountWhereInput = {
+    ...(filters.workerCode && {
+      username: {
+        equals: filters.workerCode,
+        mode: "insensitive",
+      },
+    }),
+    ...(filters.shift !== undefined && {
+      shiftNo: filters.shift,
+    }),
+  };
+  const where: Prisma.TicketWorkerWhereInput = {
+    ...(Object.keys(workerFilter).length > 0 && {
+      worker: workerFilter,
+    }),
+    ...(filters.status && {
+      status: {
+        equals: filters.status,
+        mode: "insensitive",
+      },
+    }),
+    ...(filters.search && {
+      OR: [
+        {
+          worker: {
+            username: {
+              contains: filters.search,
+              mode: "insensitive",
+            },
+          },
+        },
+        {
+          worker: {
+            fullName: {
+              contains: filters.search,
+              mode: "insensitive",
+            },
+          },
+        },
+        {
+          marketJob: {
+            ticketNo: {
+              contains: filters.search,
+              mode: "insensitive",
+            },
+          },
+        },
+      ],
+    }),
+    ...(dateRangeFilter.length > 0 && {
+      OR: dateRangeFilter,
+    }),
+  };
+  const limit = filters.limit ?? 20;
+  const page = filters.page ?? 1;
+  const [data, total] = await Promise.all([
+    db.ticketWorker.findMany({
+      where,
+      orderBy: [
+        {
+          completedAt: "desc",
+        },
+        {
+          joinedAt: "desc",
+        },
+        {
+          id: "desc",
+        },
+      ],
+      skip: (page - 1) * limit,
+      take: limit,
+      include: {
+        worker: true,
+        marketJob: {
+          include: {
+            vehicleJob: {
+              include: {
+                assignments: {
+                  include: {
+                    worker: true,
+                  },
+                },
+              },
+            },
+            tickets: {
+              include: {
+                completionSubmissions: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+    db.ticketWorker.count({
+      where,
+    }),
+  ]);
+
+  return {
+    data,
+    total,
+  };
 }

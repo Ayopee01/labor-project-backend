@@ -21,6 +21,21 @@ router.post(
   }
 );
 
+// Route ปิดรับ Business Ticket เพิ่มของ TicketNumber นี้แบบ explicit เมื่อ Gate ไม่สามารถ
+// บอกจำนวน Ticket ทั้งหมดล่วงหน้าผ่าน TicketCount ได้
+router.post(
+  "/vehicle-jobs/:ticketNumber/close",
+  gateClientAuthMiddleware,
+  async (req, res, next) => {
+    try {
+      const result = await gateService.closeVehicleJobTickets(req.params.ticketNumber);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // TEST HELPER: ใช้สำหรับ Postman / Swagger / Gate integration testing
 // Route ดึงรายการตลาด แผงค้า สินค้า และแพ็กเกจสำหรับช่วยสร้าง Gate request
 router.get(

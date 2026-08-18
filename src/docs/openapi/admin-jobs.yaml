@@ -195,11 +195,124 @@
           description: Filter by status at vehicle, market, stall, stall confirmation, or worker assignment level.
       responses:
         "200":
-          description: Vehicle job history list with markets, stall jobs, and products.
+          description: >
+            Vehicle job history list with markets, stall jobs, and products. Each item also
+            includes workers (every worker ever dispatched to the vehicle job, with derived
+            accept/scan/submit/release timestamps), timeline (a chronological merge of worker
+            lifecycle events, booth submission/reject/confirm events, and admin actions), finance
+            (job-level totals reused from the same persisted financial records as
+            /financials), and derived job-level timestamps (work_start, submitted_complete_at,
+            vendor_confirmed_complete_at, completed_at, duration_seconds). Nothing here is
+            recalculated from a formula; everything is read from existing persisted data.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminVehicleJobListResponse"
+  /api/admin/vehicle-jobs/history/daily-worker-income:
+    get:
+      tags:
+        - Admin Jobs
+      summary: List each worker's per-Business-Ticket earnings (one row per worker per Business Ticket).
+      description: >
+        Nested under the existing /vehicle-jobs/history namespace rather than a new
+        /work-history root, since this report is derived from the same Vehicle Job History data.
+        payable is TicketWorker.final_earning_amount taken as-is once financialized; it is never
+        recomputed. Accepts both this endpoint's own query names and aliases matching the
+        /vehicle-jobs/history convention (from/to are aliases of date_from/date_to, workerCode
+        is an alias of worker_code, keyword is an alias of search, pageSize is an alias of
+        limit) so existing Frontend query-building code for History can be reused as-is.
+      operationId: listAdminDailyWorkerIncome
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+            example: "2026-07-01"
+          description: Created date range start in YYYY-MM-DD, interpreted in Asia/Bangkok.
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Created date range end in YYYY-MM-DD, inclusive, interpreted in Asia/Bangkok.
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+          description: Alias of date_from.
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+          description: Alias of date_to.
+        - in: query
+          name: worker_code
+          schema:
+            type: string
+          description: Filter to one worker's rows.
+        - in: query
+          name: workerCode
+          schema:
+            type: string
+          description: Alias of worker_code.
+        - in: query
+          name: status
+          schema:
+            type: string
+          description: Filter by TicketWorker status.
+        - in: query
+          name: shift
+          schema:
+            type: integer
+            minimum: 1
+          description: Filter by the worker's shift number.
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search by ticketNo, license plate, marketCode/marketName, or worker code/name.
+        - in: query
+          name: keyword
+          schema:
+            type: string
+          description: Alias of search.
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          description: Alias of limit.
+      responses:
+        "200":
+          description: One row per worker per Business Ticket, with the locked payout.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDailyWorkerIncomeListResponse"
+        "403":
+          description: Authenticated admin lacks jobs:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/admin/vehicle-jobs/{ticketNo}/financials:
     get:
       tags:
@@ -357,3 +470,166 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminCancelAssignmentResponse"
+  /api/admin/vehicle-jobs/{ticketNumber}/stalls/{stallCode}/override-count:
+    post:
+      tags:
+        - Admin Jobs
+      summary: Admin submits or corrects a booth's product quantities on behalf of a worker.
+      description: >
+        Looks up products by productCode+packageCode (the same business key used by the
+        worker-facing submit-count flow), not by internal id. Rejected once the booth is already
+        closed (COMPLETED/CANCELLED) or already financialized, since money would otherwise be
+        silently invalidated after being locked. Every call is recorded in AdminActionLog with
+        the given reason, and appears in Work History's Timeline as an ADMIN_ACTION event.
+      operationId: overrideAdminTicketProductCounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNumber
+          required: true
+          schema:
+            type: string
+            example: TRUCK-20260723-001
+        - in: path
+          name: stallCode
+          required: true
+          schema:
+            type: string
+            example: OM3/40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminOverrideCountRequest"
+      responses:
+        "200":
+          description: Booth counts overridden.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOverrideCountResponse"
+        "403":
+          description: Authenticated admin lacks jobs:override_count permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Vehicle job, booth, or product was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Booth is already closed or already financialized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/{ticketNumber}/wait:
+    post:
+      tags:
+        - Admin Jobs
+      summary: Admin sets a vehicle job back to WAIT status.
+      description: >
+        Only allowed while every booth under the vehicle job is still WAIT (no booth has started
+        work yet), so no in-progress worker assignment, queue, or timeout state needs to be
+        unwound. Does not touch VehicleJobAssignment; the dispatched team is treated as still
+        waiting at the site, not removed from the job. Recorded in AdminActionLog and appears in
+        Work History's Timeline as an ADMIN_ACTION event.
+      operationId: setAdminVehicleJobToWait
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNumber
+          required: true
+          schema:
+            type: string
+            example: TRUCK-20260723-001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminVehicleWaitRequest"
+      responses:
+        "200":
+          description: Vehicle job set back to WAIT.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVehicleWaitResponse"
+        "403":
+          description: Authenticated admin lacks jobs:wait permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Vehicle job was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Vehicle job is already closed, or already has a booth in progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/{ticketNumber}/release-workers:
+    post:
+      tags:
+        - Admin Jobs
+      summary: Admin releases the dispatched worker team back to the FIFO queue once every booth is resolved.
+      description: >
+        Usable once every booth on the vehicle job is terminal (confirmed or cancelled, no
+        pending submission or unresolved reject) — the team does not need to wait for the whole
+        vehicle job to close, Gate to signal no more Business Tickets, or per-Business-Ticket
+        financial finalize, since the worker's physical duty is already done; money is settled
+        later independently. Recorded in AdminActionLog and appears in Work History's Timeline
+        both as an ADMIN_ACTION event and as a WORKER_RELEASED event per worker.
+      operationId: releaseAdminVehicleJobWorkers
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNumber
+          required: true
+          schema:
+            type: string
+            example: TRUCK-20260723-001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReleaseWorkersRequest"
+      responses:
+        "200":
+          description: Workers released back to the FIFO queue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminReleaseWorkersResponse"
+        "403":
+          description: Authenticated admin lacks jobs:release_workers permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Vehicle job was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Vehicle job is already closed, has an unresolved booth, or has no releasable workers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

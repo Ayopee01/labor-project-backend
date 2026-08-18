@@ -98,23 +98,23 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
   TH: {
     "worker.assigned": (params) => ({
       title: "มีงานใหม่",
-      message: `คุณได้รับงานใหม่ Ticket ${text(params.ticketNo)} กรุณากดรับงาน`,
+      message: `คุณได้รับงานใหม่ Ticket ${text(params.ticketNumber)} กรุณากดรับงาน`,
     }),
     "assignment.timeout": (params) => ({
       title: "หมดเวลางาน",
-      message: `หมดเวลารับงานหรือสแกน QR สำหรับ Ticket ${text(params.ticketNo)}`,
+      message: `หมดเวลารับงานหรือสแกน QR สำหรับ Ticket ${text(params.ticketNumber)}`,
     }),
     "assignment.cancelled": (params) => ({
       title: "งานถูกยกเลิก",
-      message: `งาน Ticket ${text(params.ticketNo)} ถูกยกเลิก`,
+      message: `งาน Ticket ${text(params.ticketNumber)} ถูกยกเลิก`,
     }),
     "assignment.scan_deadline_extended": (params) => ({
       title: "ต่อเวลาสแกน QR",
-      message: `ต่อเวลาสแกน QR สำหรับ Ticket ${text(params.ticketNo)} แล้ว`,
+      message: `ต่อเวลาสแกน QR สำหรับ Ticket ${text(params.ticketNumber)} แล้ว`,
     }),
     "assignment.scan_deadline_shortened": (params) => ({
       title: "เวลา Scan QR ถูกปรับ",
-      message: `กรุณาสแกน QR ภายใน ${numberText(params.remaining_minutes)} นาที สำหรับ Ticket ${text(params.ticketNo)}`,
+      message: `กรุณาสแกน QR ภายใน ${numberText(params.remaining_minutes)} นาที สำหรับ Ticket ${text(params.ticketNumber)}`,
     }),
     "ticket.completion_submitted": (params) => ({
       title: "ส่งยอดงานแล้ว",
@@ -142,7 +142,7 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
     }),
     "job.vehicle_cancelled": (params) => ({
       title: "งานรถถูกยกเลิก",
-      message: `งาน Ticket ${text(params.ticketNo)} ถูกยกเลิก`,
+      message: `งาน Ticket ${text(params.ticketNumber)} ถูกยกเลิก`,
     }),
     "auth.session_revoked": (params) => ({
       title: "บัญชีถูกเข้าสู่ระบบจากอุปกรณ์อื่น",
@@ -156,23 +156,23 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
   MN: {
     "worker.assigned": (params) => ({
       title: "အလုပ်အသစ် ရရှိပါသည်",
-      message: `Ticket ${text(params.ticketNo)} အတွက် အလုပ်အသစ် ရရှိပါသည်။ လက်ခံပါ။`,
+      message: `Ticket ${text(params.ticketNumber)} အတွက် အလုပ်အသစ် ရရှိပါသည်။ လက်ခံပါ။`,
     }),
     "assignment.timeout": (params) => ({
       title: "အချိန်ကျော်လွန်သွားပါသည်",
-      message: `Ticket ${text(params.ticketNo)} အတွက် အလုပ်လက်ခံရန် သို့မဟုတ် QR စကန်ရန် အချိန်ကျော်လွန်သွားပါသည်။`,
+      message: `Ticket ${text(params.ticketNumber)} အတွက် အလုပ်လက်ခံရန် သို့မဟုတ် QR စကန်ရန် အချိန်ကျော်လွန်သွားပါသည်။`,
     }),
     "assignment.cancelled": (params) => ({
       title: "အလုပ်ကို ပယ်ဖျက်ပြီးပါပြီ",
-      message: `Ticket ${text(params.ticketNo)} ကို ပယ်ဖျက်ပြီးပါပြီ။`,
+      message: `Ticket ${text(params.ticketNumber)} ကို ပယ်ဖျက်ပြီးပါပြီ။`,
     }),
     "assignment.scan_deadline_extended": (params) => ({
       title: "QR စကန်ချိန် တိုးပြီးပါပြီ",
-      message: `Ticket ${text(params.ticketNo)} အတွက် QR စကန်ချိန် တိုးပြီးပါပြီ။`,
+      message: `Ticket ${text(params.ticketNumber)} အတွက် QR စကန်ချိန် တိုးပြီးပါပြီ။`,
     }),
     "assignment.scan_deadline_shortened": (params) => ({
       title: "QR စကန်ချိန် ပြောင်းလဲပါသည်",
-      message: `Ticket ${text(params.ticketNo)} အတွက် ${numberText(params.remaining_minutes)} မိနစ်အတွင်း QR စကန်ပါ။`,
+      message: `Ticket ${text(params.ticketNumber)} အတွက် ${numberText(params.remaining_minutes)} မိနစ်အတွင်း QR စကန်ပါ။`,
     }),
     "ticket.completion_submitted": (params) => ({
       title: "အလုပ်ပမာဏ ပို့ပြီးပါပြီ",
@@ -200,7 +200,7 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
     }),
     "job.vehicle_cancelled": (params) => ({
       title: "ယာဉ်အလုပ် ပယ်ဖျက်ပြီးပါပြီ",
-      message: `Ticket ${text(params.ticketNo)} ကို ပယ်ဖျက်ပြီးပါပြီ။`,
+      message: `Ticket ${text(params.ticketNumber)} ကို ပယ်ဖျက်ပြီးပါပြီ။`,
     }),
     "auth.session_revoked": (params) => ({
       title: "အကောင့်ကို အခြားစက်မှ ဝင်ရောက်ထားပါသည်",
@@ -214,23 +214,23 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
   CN: {
     "worker.assigned": (params) => ({
       title: "មានការងារថ្មី",
-      message: `អ្នកទទួលបានការងារថ្មី Ticket ${text(params.ticketNo)} សូមចុចទទួលការងារ`,
+      message: `អ្នកទទួលបានការងារថ្មី Ticket ${text(params.ticketNumber)} សូមចុចទទួលការងារ`,
     }),
     "assignment.timeout": (params) => ({
       title: "ផុតពេលការងារ",
-      message: `ផុតពេលទទួលការងារ ឬ scan QR សម្រាប់ Ticket ${text(params.ticketNo)}`,
+      message: `ផុតពេលទទួលការងារ ឬ scan QR សម្រាប់ Ticket ${text(params.ticketNumber)}`,
     }),
     "assignment.cancelled": (params) => ({
       title: "ការងារត្រូវបានលុបចោល",
-      message: `ការងារ Ticket ${text(params.ticketNo)} ត្រូវបានលុបចោល`,
+      message: `ការងារ Ticket ${text(params.ticketNumber)} ត្រូវបានលុបចោល`,
     }),
     "assignment.scan_deadline_extended": (params) => ({
       title: "បានបន្ថែមពេល scan QR",
-      message: `បានបន្ថែមពេល scan QR សម្រាប់ Ticket ${text(params.ticketNo)}`,
+      message: `បានបន្ថែមពេល scan QR សម្រាប់ Ticket ${text(params.ticketNumber)}`,
     }),
     "assignment.scan_deadline_shortened": (params) => ({
       title: "ពេល Scan QR ត្រូវបានកែប្រែ",
-      message: `សូម scan QR ក្នុងរយៈពេល ${numberText(params.remaining_minutes)} នាទី សម្រាប់ Ticket ${text(params.ticketNo)}`,
+      message: `សូម scan QR ក្នុងរយៈពេល ${numberText(params.remaining_minutes)} នាទី សម្រាប់ Ticket ${text(params.ticketNumber)}`,
     }),
     "ticket.completion_submitted": (params) => ({
       title: "បានផ្ញើចំនួនការងារ",
@@ -258,7 +258,7 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
     }),
     "job.vehicle_cancelled": (params) => ({
       title: "ការងាររថយន្តត្រូវបានលុបចោល",
-      message: `ការងារ Ticket ${text(params.ticketNo)} ត្រូវបានលុបចោល`,
+      message: `ការងារ Ticket ${text(params.ticketNumber)} ត្រូវបានលុបចោល`,
     }),
     "auth.session_revoked": (params) => ({
       title: "គណនីបានចូលពីឧបករណ៍ផ្សេង",
@@ -272,23 +272,23 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
   EN: {
     "worker.assigned": (params) => ({
       title: "New assignment",
-      message: `You have a new assignment for ticket ${text(params.ticketNo)}. Please accept it.`,
+      message: `You have a new assignment for ticket ${text(params.ticketNumber)}. Please accept it.`,
     }),
     "assignment.timeout": (params) => ({
       title: "Assignment timed out",
-      message: `The acceptance or QR scan deadline expired for ticket ${text(params.ticketNo)}.`,
+      message: `The acceptance or QR scan deadline expired for ticket ${text(params.ticketNumber)}.`,
     }),
     "assignment.cancelled": (params) => ({
       title: "Assignment cancelled",
-      message: `Assignment ${text(params.ticketNo)} was cancelled.`,
+      message: `Assignment ${text(params.ticketNumber)} was cancelled.`,
     }),
     "assignment.scan_deadline_extended": (params) => ({
       title: "Scan deadline extended",
-      message: `The QR scan deadline was extended for ticket ${text(params.ticketNo)}.`,
+      message: `The QR scan deadline was extended for ticket ${text(params.ticketNumber)}.`,
     }),
     "assignment.scan_deadline_shortened": (params) => ({
       title: "Scan deadline updated",
-      message: `Please scan QR within ${numberText(params.remaining_minutes)} minutes for ticket ${text(params.ticketNo)}.`,
+      message: `Please scan QR within ${numberText(params.remaining_minutes)} minutes for ticket ${text(params.ticketNumber)}.`,
     }),
     "ticket.completion_submitted": (params) => ({
       title: "Ticket submitted",
@@ -316,7 +316,7 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
     }),
     "job.vehicle_cancelled": (params) => ({
       title: "Vehicle job cancelled",
-      message: `Ticket ${text(params.ticketNo)} was cancelled.`,
+      message: `Ticket ${text(params.ticketNumber)} was cancelled.`,
     }),
     "auth.session_revoked": (params) => ({
       title: "Signed in on another device",

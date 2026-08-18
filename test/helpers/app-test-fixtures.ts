@@ -6,6 +6,7 @@ import type {
   AssignmentRecord,
   GateClientRecord,
   GateTicketRecord,
+  MarketJobRecord,
   VehicleJobRecord,
 } from "./app-test-harness.records";
 
@@ -247,6 +248,7 @@ export function resetRouteTestState(): void {
   state.workers.clear();
   state.schedules.clear();
   state.vehicleJobs.length = 0;
+  state.marketJobs.length = 0;
   state.assignments.length = 0;
   state.workerAssignmentEvents.length = 0;
   state.gateTickets.length = 0;
@@ -278,6 +280,7 @@ export function resetRouteTestState(): void {
     process.env.BULLMQ_WORKER_BREAK_RETURN_QUEUE as string,
     new Map(),
   );
+  state.nextMarketJobId = 1;
   state.nextAssignmentId = 1;
   state.nextWorkerAssignmentEventId = 1;
   state.nextWorkerNotificationId = 1;
@@ -310,8 +313,11 @@ export function addWorker(
     email: null,
     phone: `081-${String(accountId).padStart(7, "0")}`,
     shirt_number: String(accountId),
+    shift_no: null,
     permission_level: null,
     lang: "TH",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 
   state.workers.set(accountId, worker);
@@ -351,6 +357,8 @@ export function addAdmin(
     phone: `081-000-${String(accountId).padStart(4, "0")}`,
     permission_level: "manager",
     lang: "TH",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 
   state.authAccountsByUsername.set(admin.username, admin);
@@ -396,25 +404,28 @@ export function addGateClient(
 }
 
 // Function จัดการ add dispatchable job สำหรับ test
+//
+// ticketsClosedAt ถูกตั้งค่าปิดรับ Ticket เพิ่มทันที (จำลองว่า Gate ส่ง Ticket เดียวจบ) เพื่อให้
+// Test เดิมที่คาดหวังว่า TicketNumber จบอัตโนมัติเมื่อ Ticket เดียวจบยังทำงานได้ตามเดิม
+// Test ที่ต้องการทดสอบ TicketNumber ที่ยังเปิดรับ Ticket เพิ่มต้อง set state.vehicleJobs
+// ตัวนั้น .tickets_closed_at = null เอง หรือใช้ addDispatchableJob แล้วปรับ field ทีหลัง
 export function addDispatchableJob(
   id: number,
   workersRequired: number,
 ): VehicleJobRecord {
   const now = new Date().toISOString();
-  const job = {
+  const job: VehicleJobRecord = {
     id,
-    ticketNo: `JOB-${id}`,
-    gate_transaction_ref: `GATE-${id}`,
+    ticket_number: `JOB-${id}`,
     license_plate: `TEST-${id}`,
     license_plate_province: "Bangkok",
     vehicle_type: "truck",
-    ticket_created_at: now,
-    booth_count: 1,
     workers_required: workersRequired,
     dispatch_now: true,
     status: "WORKING",
     driver_qr_token: `driver-qr-${id}`,
-    worker_qr_token: `JOB-${id}`,
+    expected_ticket_count: null,
+    tickets_closed_at: now,
     created_at: now,
     updated_at: now,
   };
@@ -422,6 +433,46 @@ export function addDispatchableJob(
   state.vehicleJobs.push(job);
 
   return job;
+}
+
+// Function จัดการ add Business Ticket (market job) สำหรับ vehicle job สำหรับ test
+export function addMarketJobForVehicle(
+  vehicleJobId: number,
+  overrides: Partial<MarketJobRecord> = {},
+): MarketJobRecord {
+  const now = new Date().toISOString();
+  const id = overrides.id ?? state.nextMarketJobId++;
+
+  if (id >= state.nextMarketJobId) {
+    state.nextMarketJobId = id + 1;
+  }
+
+  const marketJob: MarketJobRecord = {
+    id,
+    vehicle_job_id: vehicleJobId,
+    ticket_no: overrides.ticket_no ?? `TICKET-${vehicleJobId}-${id}`,
+    ticket_created_at: overrides.ticket_created_at ?? now,
+    booth_count: overrides.booth_count ?? 1,
+    gate_transaction_ref:
+      overrides.gate_transaction_ref ?? `GATE-${vehicleJobId}-${id}`,
+    workers_required: overrides.workers_required ?? 1,
+    marketCode: overrides.marketCode ?? `MARKET-${vehicleJobId}`,
+    marketName: overrides.marketName ?? "Market A",
+    dropoff_point:
+      overrides.dropoff_point === undefined ? "Dock A1" : overrides.dropoff_point,
+    status: overrides.status ?? "WORKING",
+    worker_qr_token: overrides.worker_qr_token ?? `WQR-${vehicleJobId}-${id}`,
+    worker_roster_locked_at: overrides.worker_roster_locked_at ?? null,
+    final_stall_amount: overrides.final_stall_amount ?? null,
+    financialized_at: overrides.financialized_at ?? null,
+    completed_at: overrides.completed_at ?? null,
+    created_at: now,
+    updated_at: now,
+  };
+
+  state.marketJobs.push(marketJob);
+
+  return marketJob;
 }
 
 // Function จัดการ add pending assignment สำหรับ test
@@ -451,19 +502,32 @@ export function addPendingAssignment(
   return assignment;
 }
 
-// Function จัดการ add ticket สำหรับ vehicle job สำหรับ test
+// Function จัดการ add booth (GateTicket) ให้ Business Ticket ของ vehicle job สำหรับ test
+//
+// ถ้าไม่ระบุ marketJobId จะ reuse/สร้าง Business Ticket เดียวที่ id = vehicleJobId + 2000
+// (พฤติกรรมเดิมก่อน Refactor: หนึ่ง vehicle job = หนึ่ง Business Ticket) เพื่อให้ Test เดิมที่
+// เรียกฟังก์ชันนี้หลายครั้งกับ vehicleJobId เดิมยัง append booth เข้า Business Ticket ใบเดียวกัน
+// Test ที่ต้องการหลาย Business Ticket ต่อหนึ่ง vehicle job ให้ส่ง marketJobId ที่ต่างกันมาเอง
+// (สร้างผ่าน addMarketJobForVehicle ก่อน)
 export function addTicketForVehicleJob(
   vehicleJobId: number,
   ticketId = vehicleJobId + 1000,
+  marketJobId = vehicleJobId + 2000,
 ): GateTicketRecord {
   const now = new Date().toISOString();
+  const marketJob =
+    state.marketJobs.find((candidate) => candidate.id === marketJobId) ??
+    addMarketJobForVehicle(vehicleJobId, {
+      id: marketJobId,
+      ticket_no: `TICKET-${vehicleJobId}`,
+    });
   const ticket = {
     id: ticketId,
     vehicle_job_id: vehicleJobId,
-    market_job_id: vehicleJobId + 2000,
-    marketCode: `MARKET-${vehicleJobId}`,
-    marketName: "Market A",
-    dropoff_point: "Dock A1",
+    market_job_id: marketJob.id,
+    marketCode: marketJob.marketCode,
+    marketName: marketJob.marketName,
+    dropoff_point: marketJob.dropoff_point,
     boothCode: `STALL-${ticketId}`,
     boothName: "Vendor A",
     vendor_line_id: "line-vendor-a",
@@ -555,11 +619,15 @@ export function findCurrentOpenTicketForVehicleJob(vehicleJobId: number): {
     return null;
   }
 
+  const marketJob = state.marketJobs.find(
+    (candidate) => candidate.id === ticket.market_job_id,
+  );
+
   return {
     ticket,
-    marketCode: ticket.marketCode ?? `MARKET-${ticket.market_job_id}`,
-    marketName: ticket.marketName ?? `Market ${ticket.market_job_id}`,
-    dropoff_point: ticket.dropoff_point ?? null,
+    marketCode: marketJob?.marketCode ?? ticket.marketCode ?? `MARKET-${ticket.market_job_id}`,
+    marketName: marketJob?.marketName ?? ticket.marketName ?? `Market ${ticket.market_job_id}`,
+    dropoff_point: marketJob?.dropoff_point ?? ticket.dropoff_point ?? null,
   };
 }
 

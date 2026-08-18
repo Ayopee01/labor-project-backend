@@ -51,6 +51,7 @@ async function loginWorker(accountId: number): Promise<{ token: string; worker: 
 // Function เธชเธฃเนเธฒเธ gate vehicle job body เธชเธณเธซเธฃเธฑเธ test
 function buildGateVehicleJobBody(suffix: string) {
   return {
+    TicketNumber: `TRUCK-20260723-${suffix}`,
     TicketNo: `TKT-20260723-${suffix}`,
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
     BoothCount: 1,
@@ -336,6 +337,7 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
     "Qr",
     "Result",
     "Ticket",
+    "TicketNumber",
     "WorkerCount",
   ]);
   assert.deepEqual(Object.keys(response.body.Ticket).sort(), [
@@ -347,8 +349,10 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
     "TicketNo",
     "VehicleTypeCode",
     "VehicleTypeName",
+    "WorkerQrToken",
   ]);
   assert.equal(response.body.Result, "CREATED");
+  assert.equal(response.body.TicketNumber, "TRUCK-20260723-001");
   assert.equal(response.body.Ticket.TicketNo, "TKT-20260723-001");
   assert.equal(response.body.Ticket.TicketCreatedAt, "2026-07-23T07:30:00.000Z");
   assert.equal(response.body.Ticket.BoothCount, 1);
@@ -391,17 +395,23 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(state.ticketProductFinancials.length, 0);
   assert.equal(state.ticketWorkerPayments.length, 0);
 
-  assert.equal(response.body.Qr.WorkerQrToken, "TKT-20260723-001");
+  assert.ok(response.body.Ticket.WorkerQrToken);
+  assert.equal(response.body.Qr.WorkerQrToken, undefined);
+  assert.ok(response.body.Qr.DriverQrToken);
   assert.equal(response.body.message, undefined);
   assert.equal(response.body.vehicle_job, undefined);
   assert.equal(response.body.gate_transaction_ref, undefined);
   assert.equal(response.body.markets, undefined);
 
   assert.equal(state.vehicleJobs.length, 1);
+  assert.equal(state.vehicleJobs[0].ticket_number, "TRUCK-20260723-001");
   assert.equal(state.vehicleJobs[0].vehicle_type, "Pickup truck");
-  assert.equal(state.vehicleJobs[0].ticket_created_at, "2026-07-23T07:30:00.000Z");
-  assert.equal(state.vehicleJobs[0].booth_count, 1);
-  assert.equal(state.vehicleJobs[0].worker_qr_token, "TKT-20260723-001");
+
+  assert.equal(state.marketJobs.length, 1);
+  assert.equal(state.marketJobs[0].ticket_no, "TKT-20260723-001");
+  assert.equal(state.marketJobs[0].ticket_created_at, "2026-07-23T07:30:00.000Z");
+  assert.equal(state.marketJobs[0].booth_count, 1);
+  assert.equal(state.marketJobs[0].worker_qr_token, response.body.Ticket.WorkerQrToken);
 
   assert.equal(state.gateTickets.length, 1);
   assert.equal(state.gateTickets[0].marketCode, "MARKET-001");
@@ -693,6 +703,7 @@ test("POST /api/gate/tickets replays the same Gate request", async () => {
     "Qr",
     "Result",
     "Ticket",
+    "TicketNumber",
     "WorkerCount",
   ]);
   assert.equal(replayed.body.Result, "REPLAYED");
@@ -801,8 +812,9 @@ test("POST /api/gate/tickets creates multiple booths and products in one request
   }
 
   assert.equal(state.vehicleJobs.length, 1);
-  assert.equal(state.vehicleJobs[0].booth_count, 2);
   assert.equal(state.vehicleJobs[0].workers_required, 7);
+  assert.equal(state.marketJobs.length, 1);
+  assert.equal(state.marketJobs[0].booth_count, 2);
 
   assert.equal(state.gateTickets.length, 2);
   assert.equal(state.gateTickets[0].boothCode, "STALL-004");
@@ -905,6 +917,250 @@ test("POST /api/gate/tickets rejects duplicate ProductCode + PackageCode in the 
 
   assert.equal(response.status, 400);
   assert.equal(response.body.code, "VALIDATION_ERROR");
+});
+
+/* -------------------------------------- TicketNumber -> Ticket (Business Ticket) Route Tests -------------------------------------- */
+
+test("POST /api/gate/tickets creates multiple Business Tickets under the same TicketNumber without creating a new VehicleJob, aggregating WorkerCount by SUM", async () => {
+  const headers = await gateAuthHeaders();
+  const ticketNumber = "TRUCK-MULTI-001";
+
+  const first = await server.request("POST", "/api/gate/tickets", {
+    body: {
+      TicketNumber: ticketNumber,
+      TicketNo: "TKT-MULTI-001",
+      TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+      BoothCount: 1,
+      MarketCode: "MARKET-010",
+      LicensePlate: "MULTI-001",
+      LicensePlateProvince: "Bangkok",
+      VehicleTypeCode: "PICKUP",
+      VehicleTypeName: "Pickup truck",
+      Booths: [
+        {
+          BoothCode: "STALL-010",
+          Products: [{ ProductCode: "02020300", PackageCode: "29", Quantity: 180 }],
+        },
+      ],
+      Dispatch: true,
+    },
+    headers,
+  });
+
+  assert.equal(first.status, 201);
+  assert.equal(first.body.TicketNumber, ticketNumber);
+  assert.equal(first.body.WorkerCount, 3);
+
+  const second = await server.request("POST", "/api/gate/tickets", {
+    body: {
+      TicketNumber: ticketNumber,
+      TicketNo: "TKT-MULTI-002",
+      TicketCreatedAt: "2026-07-23T14:35:00+07:00",
+      BoothCount: 1,
+      MarketCode: "MARKET-011",
+      LicensePlate: "MULTI-001",
+      LicensePlateProvince: "Bangkok",
+      VehicleTypeCode: "PICKUP",
+      VehicleTypeName: "Pickup truck",
+      Booths: [
+        {
+          BoothCode: "STALL-011",
+          Products: [{ ProductCode: "02030103", PackageCode: "19", Quantity: 100 }],
+        },
+      ],
+      Dispatch: true,
+    },
+    headers,
+  });
+
+  assert.equal(second.status, 201);
+  assert.equal(second.body.TicketNumber, ticketNumber);
+
+  // ต้องยังเป็น VehicleJob เดียว (TicketNumber เดียวกัน) ไม่สร้างใหม่ซ้ำ
+  assert.equal(
+    state.vehicleJobs.filter((job) => job.ticket_number === ticketNumber).length,
+    1
+  );
+  assert.equal(
+    state.marketJobs.filter((market) => market.vehicle_job_id === state.vehicleJobs.find((j) => j.ticket_number === ticketNumber)!.id).length,
+    2
+  );
+
+  // Worker requirement ของ TicketNumber = SUM ของทุก Business Ticket ห้ามใช้ MAX
+  const vehicleJob = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
+  const marketJobsOfVehicle = state.marketJobs.filter(
+    (market) => market.vehicle_job_id === vehicleJob.id
+  );
+  const sumOfMarketWorkersRequired = marketJobsOfVehicle.reduce(
+    (total, market) => total + market.workers_required,
+    0
+  );
+
+  assert.equal(vehicleJob.workers_required, sumOfMarketWorkersRequired);
+  // WorkerCount ที่ Gate response คืนกลับต้องเป็นยอดรวมสะสมของทั้ง TicketNumber (ไม่ใช่แค่ Ticket ล่าสุด)
+  assert.equal(second.body.WorkerCount, vehicleJob.workers_required);
+  assert.notEqual(vehicleJob.workers_required, Math.max(...marketJobsOfVehicle.map((m) => m.workers_required)));
+});
+
+test("POST /api/gate/tickets replay/mismatch idempotency is keyed by TicketNumber+TicketNo, never rejects a new TicketNo under the same TicketNumber", async () => {
+  const headers = await gateAuthHeaders();
+  const ticketNumber = "TRUCK-MULTI-002";
+  const buildBody = (ticketNo: string, marketSuffix: string) => ({
+    TicketNumber: ticketNumber,
+    TicketNo: ticketNo,
+    TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+    BoothCount: 1,
+    MarketCode: `MARKET-${marketSuffix}`,
+    LicensePlate: "MULTI-002",
+    LicensePlateProvince: "Bangkok",
+    VehicleTypeCode: "PICKUP",
+    VehicleTypeName: "Pickup truck",
+    Booths: [
+      {
+        BoothCode: `STALL-${marketSuffix}`,
+        Products: [{ ProductCode: "02020300", PackageCode: "29", Quantity: 180 }],
+      },
+    ],
+    Dispatch: true,
+  });
+
+  const created = await server.request("POST", "/api/gate/tickets", {
+    body: buildBody("TKT-A", "012"),
+    headers,
+  });
+
+  assert.equal(created.status, 201);
+
+  // Payload เดิมทุกอย่าง (TicketNumber+TicketNo เดิม) -> REPLAYED
+  const replayed = await server.request("POST", "/api/gate/tickets", {
+    body: buildBody("TKT-A", "012"),
+    headers,
+  });
+
+  assert.equal(replayed.status, 200);
+  assert.equal(replayed.body.Result, "REPLAYED");
+
+  // TicketNumber เดิม แต่ TicketNo ใหม่ -> ต้องสร้าง Ticket ใหม่เสมอ ห้าม Reject
+  const differentTicketNo = await server.request("POST", "/api/gate/tickets", {
+    body: buildBody("TKT-B", "013"),
+    headers,
+  });
+
+  assert.equal(differentTicketNo.status, 201);
+  assert.equal(differentTicketNo.body.Result, "CREATED");
+
+  // ref เดิม (TicketNumber+TicketNo เดิม) แต่ payload ต่างกัน -> 409
+  const sameRefDifferentPayload = await server.request("POST", "/api/gate/tickets", {
+    body: { ...buildBody("TKT-A", "012"), LicensePlate: "DIFFERENT-PLATE" },
+    headers,
+  });
+
+  assert.equal(sameRefDifferentPayload.status, 409);
+  assert.equal(sameRefDifferentPayload.body.code, "GATE_TRANSACTION_REF_PAYLOAD_MISMATCH");
+});
+
+test("POST /api/gate/tickets auto-closes TicketNumber once TicketCount is reached", async () => {
+  const headers = await gateAuthHeaders();
+  const ticketNumber = "TRUCK-COUNT-001";
+  const buildBody = (ticketNo: string, marketSuffix: string, ticketCount?: number) => ({
+    TicketNumber: ticketNumber,
+    TicketNo: ticketNo,
+    TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+    TicketCount: ticketCount,
+    BoothCount: 1,
+    MarketCode: `MARKET-${marketSuffix}`,
+    LicensePlate: "COUNT-001",
+    LicensePlateProvince: "Bangkok",
+    VehicleTypeCode: "PICKUP",
+    VehicleTypeName: "Pickup truck",
+    Booths: [
+      {
+        BoothCode: `STALL-${marketSuffix}`,
+        Products: [{ ProductCode: "02020300", PackageCode: "29", Quantity: 180 }],
+      },
+    ],
+    Dispatch: true,
+  });
+
+  await server.request("POST", "/api/gate/tickets", {
+    body: buildBody("TKT-1", "005", 2),
+    headers,
+  });
+
+  let vehicleJob = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
+  assert.equal(vehicleJob.tickets_closed_at ?? null, null);
+
+  await server.request("POST", "/api/gate/tickets", {
+    body: buildBody("TKT-2", "006", 2),
+    headers,
+  });
+
+  vehicleJob = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
+  assert.ok(vehicleJob.tickets_closed_at);
+});
+
+test("POST /api/gate/vehicle-jobs/:ticketNumber/close explicitly closes a TicketNumber and is idempotent", async () => {
+  const headers = await gateAuthHeaders();
+  const ticketNumber = "TRUCK-CLOSE-001";
+
+  await server.request("POST", "/api/gate/tickets", {
+    body: {
+      TicketNumber: ticketNumber,
+      TicketNo: "TKT-CLOSE-1",
+      TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+      BoothCount: 1,
+      MarketCode: "MARKET-007",
+      LicensePlate: "CLOSE-001",
+      LicensePlateProvince: "Bangkok",
+      VehicleTypeCode: "PICKUP",
+      VehicleTypeName: "Pickup truck",
+      Booths: [
+        {
+          BoothCode: "STALL-007",
+          Products: [{ ProductCode: "02020300", PackageCode: "29", Quantity: 180 }],
+        },
+      ],
+      Dispatch: true,
+    },
+    headers,
+  });
+
+  const closeResponse = await server.request(
+    "POST",
+    `/api/gate/vehicle-jobs/${ticketNumber}/close`,
+    { headers }
+  );
+
+  assert.equal(closeResponse.status, 200);
+  assert.equal(closeResponse.body.ticket_number, ticketNumber);
+  assert.ok(closeResponse.body.ticketsClosedAt);
+
+  const vehicleJob = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
+  assert.ok(vehicleJob.tickets_closed_at);
+  const firstClosedAt = vehicleJob.tickets_closed_at;
+
+  // เรียกซ้ำได้ (idempotent) ผลลัพธ์เหมือนเดิม ไม่เปลี่ยนเวลาปิด
+  const secondCloseResponse = await server.request(
+    "POST",
+    `/api/gate/vehicle-jobs/${ticketNumber}/close`,
+    { headers }
+  );
+
+  assert.equal(secondCloseResponse.status, 200);
+  assert.equal(vehicleJob.tickets_closed_at, firstClosedAt);
+});
+
+test("POST /api/gate/vehicle-jobs/:ticketNumber/close returns 404 for an unknown TicketNumber", async () => {
+  const headers = await gateAuthHeaders();
+
+  const response = await server.request(
+    "POST",
+    "/api/gate/vehicle-jobs/unknown-truck/close",
+    { headers }
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(response.body.code, "VEHICLE_JOB_NOT_FOUND");
 });
 
 /* -------------------------------------- Admin Worker Status Route Tests -------------------------------------- */

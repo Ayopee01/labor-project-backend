@@ -21,6 +21,9 @@ export const ADMIN_PERMISSIONS = [
   "jobs:assign",
   "jobs:cancel",
   "jobs:extend_deadline",
+  "jobs:override_count",
+  "jobs:wait",
+  "jobs:release_workers",
 ] as const;
 
 // Permission config สำหรับ admin user

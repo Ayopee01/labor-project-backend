@@ -84,7 +84,7 @@ interface GateProductCreateInput {
 }
 
 // Type ข้อมูลแผงก่อนบันทึกจาก Gate
-interface GateTicketCreateInput {
+interface GateBoothCreateInput {
   boothCode: string;
   boothName: string;
 
@@ -94,38 +94,45 @@ interface GateTicketCreateInput {
   products: GateProductCreateInput[];
 }
 
-// Type ข้อมูลตลาดก่อนบันทึกจาก Gate
+// Type ข้อมูล Business Ticket (market job) ก่อนบันทึกจาก Gate
+// หนึ่ง Business Ticket อยู่ได้เพียงหนึ่งตลาด แต่มีหลาย Booth ได้
 interface GateMarketCreateInput {
-  marketCode: string;
-  marketName: string;
-
-  dropoff_point?: string;
-
-  tickets: GateTicketCreateInput[];
-}
-
-// Type ข้อมูลสำหรับสร้าง VehicleJob จาก Gate
-export interface GateVehicleJobCreateInput {
-  gate_transaction_ref: string;
-
   ticketNo: string;
   ticket_created_at: Date;
 
   booth_count: number;
 
+  gate_transaction_ref: string;
+
+  // จำนวน Worker ที่ Master กำหนดสำหรับ Business Ticket นี้เท่านั้น
+  // ใช้สำหรับ Dispatch เท่านั้น (รวมเข้ากับ Ticket อื่นเป็น VehicleJob.workers_required ที่ repository)
+  //
+  // ห้ามใช้เป็นจำนวน Worker สำหรับหารเงินจริง
+  // เพราะ Financial จะใช้ Worker จริงที่อยู่ใน Roster ของ Business Ticket ตอน Lock
+  workers_required: number;
+
+  marketCode: string;
+  marketName: string;
+
+  dropoff_point?: string;
+
+  booths: GateBoothCreateInput[];
+}
+
+// Type ข้อมูลสำหรับสร้าง/เพิ่ม Business Ticket ใต้ VehicleJob (TicketNumber) จาก Gate
+export interface GateVehicleJobCreateInput {
+  ticketNumber: string;
+
   license_plate: string;
   license_plate_province: string;
   vehicle_type?: string;
 
-  // จำนวน Worker ที่ Master กำหนด
-  // ใช้สำหรับ Dispatch เท่านั้น
-  //
-  // ห้ามใช้เป็นจำนวน Worker สำหรับหารเงินจริง
-  // เพราะ Financial จะใช้ Worker จริงที่อยู่ใน Booth ตอน COMPLETE
-  workers_required: number;
-
   dispatch_now?: boolean;
 
+  // จำนวน Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ ถ้า Gate รู้ล่วงหน้า
+  expected_ticket_count?: number;
+
+  // เสมอมีสมาชิกเดียวใน array นี้ต่อหนึ่ง Gate request (หนึ่ง request = หนึ่ง Business Ticket)
   markets: GateMarketCreateInput[];
 }
 
@@ -149,8 +156,14 @@ export interface GateVehicleJobBoothBody {
 
 // Type request หลักจาก Gate
 export interface GateVehicleJobBody {
+  // TicketNumber = ระดับรถ, อาจถูกส่งมาหลายครั้งพร้อม TicketNo ใหม่ทุกครั้งที่มี Business Ticket ใหม่
+  TicketNumber: string;
+  // TicketNo = Business Ticket ใต้ TicketNumber นั้น (unique เฉพาะภายใน TicketNumber เดียวกัน)
   TicketNo: string;
   TicketCreatedAt: string;
+
+  // จำนวน Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ ถ้า Gate รู้ล่วงหน้า
+  TicketCount?: number;
 
   BoothCount: number;
 
@@ -193,6 +206,9 @@ interface GateVehicleJobResponseTicket {
   VehicleTypeName: string | null;
 
   Status: GateVehicleJobResponseStatus;
+
+  // QR เฉพาะของ Business Ticket ใบนี้ ใช้ให้คนงาน scan check-in
+  WorkerQrToken: string;
 }
 
 // Type ข้อมูล Market ที่คืนให้ Gate
@@ -244,21 +260,23 @@ interface GateVehicleJobResponseBooth {
 export interface GateVehicleJobResponse {
   Result: GateVehicleJobResult;
 
+  // เลขงานใหญ่ระดับรถ (VehicleJob)
+  TicketNumber: string;
+
   Ticket: GateVehicleJobResponseTicket;
 
   Market: GateVehicleJobResponseMarket;
 
   Booths: GateVehicleJobResponseBooth[];
 
-  // จำนวน Worker ที่ระบบต้อง Dispatch
-  // มาจาก Master Worker Range
+  // จำนวน Worker รวมทุก Business Ticket ของ TicketNumber นี้ที่ระบบต้อง Dispatch
+  // มาจาก Master Worker Range สรุปรวม
   //
   // ไม่ใช่จำนวน Worker ที่ใช้หารเงินจริง
   WorkerCount: number;
 
   Qr: {
     DriverQrToken: string;
-    WorkerQrToken: string;
   };
 }
 
@@ -285,17 +303,3 @@ export interface GateVendorLineTargetDto {
   | "member";
 }
 
-/* -------------------------------------- Gate Append -------------------------------------- */
-
-// Type สถานะการเพิ่มแผงใน Ticket เดิม
-export interface GateTicketAppendStateDto {
-  vehicle_job_id: number;
-
-  booth_count: number;
-  existing_booth_count: number;
-
-  duplicate_booth: {
-    boothCode: string;
-    marketCode: string;
-  } | null;
-}

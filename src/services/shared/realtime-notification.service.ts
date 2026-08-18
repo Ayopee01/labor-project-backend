@@ -92,7 +92,8 @@ export async function resolveTicketResultAudience(
   connection?: DbConnection
 ): Promise<number[]> {
   const [ticketWorkers, admins] = await Promise.all([
-    ticketWorkerRepository.listTicketWorkers(ticket.id, connection),
+    // Roster เป็นระดับ Business Ticket (market job) ไม่ใช่ระดับ Booth แล้ว
+    ticketWorkerRepository.listTicketWorkers(ticket.market_job_id, connection),
     accountRepository.listAdmins(connection),
   ]);
   const receiverIds = new Set<number>();

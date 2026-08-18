@@ -13,16 +13,12 @@ export interface DriverSessionDto {
 
 // Type ข้อมูลงานรถแบบย่อที่ driver เห็น
 export interface DriverVehicleJobResponse {
-  ticketNo: string;
-  gate_transaction_ref: string;
+  ticket_number: string;
   license_plate: string;
   license_plate_province: string | null;
   vehicle_type: string | null;
-  ticket_created_at: string;
-  booth_count: number;
   workers_required: number;
   status: string;
-  worker_qr_token: string;
   created_at: string;
   updated_at: string;
 }
@@ -45,12 +41,14 @@ interface DriverTicketResponse {
   products: DriverTicketProductResponse[];
 }
 
-// Type ตลาดที่รวม ticket สำหรับหน้ารายละเอียด driver
+// Type Business Ticket (market job) ที่รวม Booth สำหรับหน้ารายละเอียด driver
 interface DriverMarketJobResponse {
+  ticket_no: string;
+  boothCount: number;
   marketCode: string;
   marketName: string;
   status: string;
-  tickets: DriverTicketResponse[];
+  booths: DriverTicketResponse[];
 }
 
 // Type response รายละเอียดงานรถทั้งหมดสำหรับ driver
@@ -61,11 +59,10 @@ export interface DriverVehicleJobDetailResponse {
 
 // Type response หลัง driver scan ว่าพร้อมลงสินค้า
 export interface DriverJobReadyResponse {
-  ticketNo: string;
+  ticket_number: string;
   license_plate: string;
   license_plate_province: string | null;
   status: string;
-  worker_qr_token: string;
 }
 
 // Type response หลังสร้าง driver session สำเร็จ

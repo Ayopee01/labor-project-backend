@@ -3,13 +3,13 @@ import { Prisma, type MasterMarket, type MasterProduct, type MasterRate } from "
 
 // Import Dependencies
 import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
-import { mapVehicleJob } from "./shared/mappers";
+import { mapMarketJob, mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
 
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
-import type { GateRequestReplayRecord, GateTicketAppendStateDto, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVendorLineTargetDto, GateBoothOption } from "../types/gate.type";
-import type { VehicleJobDto } from "../types/worker.type";
+import type { GateRequestReplayRecord, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVendorLineTargetDto, GateBoothOption } from "../types/gate.type";
+import type { MarketJobDto, VehicleJobDto } from "../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -55,68 +55,19 @@ export async function findGateRequestReplayByRef(
   };
 }
 
-// Function ค้นหา vehicle job ตาม ref จาก DB
+// Function ค้นหา vehicle job (TicketNumber) ตาม ref จาก DB
 export async function findVehicleJobByRef(
-  ticketNo: string,
+  ticketNumber: string,
   connection?: DbConnection
 ): Promise<VehicleJobDto | null> {
   const db = client(connection);
   const vehicleJob = await db.vehicleJob.findUnique({
     where: {
-      ticketNo,
+      ticketNumber,
     },
   });
 
   return mapVehicleJob(vehicleJob);
-}
-
-// Function ดึง Gate ticket append state จาก DB
-export async function getGateTicketAppendState(
-  ticketNo: string,
-  boothCode: string,
-  connection?: DbConnection
-): Promise<GateTicketAppendStateDto | null> {
-  const db = client(connection);
-  const vehicleJob = await db.vehicleJob.findUnique({
-    where: {
-      ticketNo,
-    },
-    select: {
-      id: true,
-      boothCount: true,
-      tickets: {
-        select: {
-          boothCode: true,
-          marketJob: {
-            select: {
-              marketCode: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!vehicleJob) {
-    return null;
-  }
-
-  const boothCodes = new Set(vehicleJob.tickets.map((ticket) => ticket.boothCode));
-  const duplicateBooth = vehicleJob.tickets.find(
-    (ticket) => ticket.boothCode === boothCode
-  );
-
-  return {
-    vehicle_job_id: vehicleJob.id,
-    booth_count: vehicleJob.boothCount,
-    existing_booth_count: boothCodes.size,
-    duplicate_booth: duplicateBooth
-      ? {
-        boothCode: duplicateBooth.boothCode,
-        marketCode: duplicateBooth.marketJob.marketCode,
-      }
-      : null,
-  };
 }
 
 // Function ค้นหา active vendor LINE targets ตาม stall จาก DB
@@ -371,70 +322,70 @@ export async function findActiveRatesByMarketAndWeight(
   });
 }
 
-// Function สร้างหรืออัปเดต vehicle job, market, booth และสินค้า จาก payload ของ Gate
+// Function สร้าง VehicleJob (ถ้ายังไม่มี) และสร้าง Business Ticket (market job) ใหม่ใต้ VehicleJob นั้น
+// จาก payload ของ Gate
+//
+// หนึ่ง Gate request = หนึ่ง Business Ticket เสมอ ผู้เรียก (service) ต้องตรวจสอบมาก่อนแล้วว่า
+// [vehicleJobId, ticketNo] นี้ยังไม่เคยมี (ผ่าน findMarketJobByVehicleAndTicketNo) ฟังก์ชันนี้จึง
+// สร้าง MarketJob/GateTicket/TicketProduct ใหม่เสมอ ไม่ต้อง upsert
 export async function createVehicleJobFromGate(
   input: GateVehicleJobCreateInput,
   payloadSnapshot: Prisma.InputJsonValue,
   connection?: DbConnection
-): Promise<VehicleJobDto> {
+): Promise<{ vehicleJob: VehicleJobDto; marketJob: MarketJobDto }> {
   const db = client(connection);
+  const market = input.markets[0];
   const dispatchNow = input.dispatch_now === true;
   const vehicleStatus = dispatchNow ? VEHICLE_JOB_STATUS.WORKING : VEHICLE_JOB_STATUS.WAIT;
   const ticketStatus = TICKET_STATUS.WAIT;
-  const requestedWorkersRequired = Math.max(1, input.workers_required);
+  const requestedWorkersRequired = Math.max(1, market.workers_required);
+
   const existingVehicleJob = await db.vehicleJob.findUnique({
     where: {
-      ticketNo: input.ticketNo,
+      ticketNumber: input.ticketNumber,
     },
   });
+
   const vehicleJob =
     existingVehicleJob ??
     (await db.vehicleJob.create({
       data: {
-        ticketNo: input.ticketNo,
-        gateTransactionRef: input.gate_transaction_ref,
+        ticketNumber: input.ticketNumber,
         licensePlate: input.license_plate,
         licensePlateProvince: input.license_plate_province,
         vehicleType: input.vehicle_type ?? null,
-        ticketCreatedAt: input.ticket_created_at,
-        boothCount: input.booth_count,
         workersRequired: requestedWorkersRequired,
         dispatchNow,
         status: vehicleStatus,
         driverQrToken: createRandomToken("driver_qr"),
+        expectedTicketCount: input.expected_ticket_count ?? null,
       },
     }));
-  const savedWorkersRequired = existingVehicleJob
-    ? Math.max(existingVehicleJob.workersRequired, requestedWorkersRequired)
-    : requestedWorkersRequired;
+
   const shouldUpdateVehicle =
     existingVehicleJob &&
-    (existingVehicleJob.gateTransactionRef !== input.gate_transaction_ref ||
-      existingVehicleJob.licensePlate !== input.license_plate ||
+    (existingVehicleJob.licensePlate !== input.license_plate ||
       existingVehicleJob.licensePlateProvince !== input.license_plate_province ||
       existingVehicleJob.vehicleType !== (input.vehicle_type ?? null) ||
-      existingVehicleJob.ticketCreatedAt.getTime() !== input.ticket_created_at.getTime() ||
-      existingVehicleJob.boothCount !== input.booth_count ||
-      existingVehicleJob.workersRequired !== savedWorkersRequired ||
+      (input.expected_ticket_count !== undefined &&
+        existingVehicleJob.expectedTicketCount !== input.expected_ticket_count) ||
       (dispatchNow && !existingVehicleJob.dispatchNow) ||
       (dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT));
+
   const savedVehicleJob = shouldUpdateVehicle
     ? await db.vehicleJob.update({
       where: {
         id: vehicleJob.id,
       },
       data: {
-        gateTransactionRef: input.gate_transaction_ref,
         licensePlate: input.license_plate,
         licensePlateProvince: input.license_plate_province,
         vehicleType: input.vehicle_type ?? null,
-        ticketCreatedAt: input.ticket_created_at,
-        boothCount: input.booth_count,
-        workersRequired: savedWorkersRequired,
         dispatchNow: existingVehicleJob.dispatchNow || dispatchNow,
         status: dispatchNow && existingVehicleJob.status === VEHICLE_JOB_STATUS.WAIT
           ? vehicleStatus
           : existingVehicleJob.status,
+        expectedTicketCount: input.expected_ticket_count ?? existingVehicleJob.expectedTicketCount,
       },
     })
     : vehicleJob;
@@ -443,177 +394,136 @@ export async function createVehicleJobFromGate(
       ? VEHICLE_JOB_STATUS.WORKING
       : VEHICLE_JOB_STATUS.WAIT;
 
-  for (const market of input.markets) {
-    const createdMarket = await db.marketJob.upsert({
-      where: {
-        vehicleJobId_marketCode: {
-          vehicleJobId: savedVehicleJob.id,
-          marketCode: market.marketCode,
-        },
-      },
-      update: {
-        marketName: market.marketName,
-        dropoffPoint: market.dropoff_point ?? null,
-        status: marketStatus,
-      },
-      create: {
+  const createdMarket = await db.marketJob.create({
+    data: {
+      vehicleJobId: savedVehicleJob.id,
+      ticketNo: market.ticketNo,
+      ticketCreatedAt: market.ticket_created_at,
+      boothCount: market.booth_count,
+      gateTransactionRef: market.gate_transaction_ref,
+      workersRequired: requestedWorkersRequired,
+      marketCode: market.marketCode,
+      marketName: market.marketName,
+      dropoffPoint: market.dropoff_point ?? null,
+      status: marketStatus,
+      workerQrToken: createRandomToken("worker_qr"),
+    },
+  });
+
+  for (const booth of market.booths) {
+    const createdTicket = await db.gateTicket.create({
+      data: {
         vehicleJobId: savedVehicleJob.id,
-        marketCode: market.marketCode,
-        marketName: market.marketName,
-        dropoffPoint: market.dropoff_point ?? null,
-        status: marketStatus,
+        marketJobId: createdMarket.id,
+        boothCode: booth.boothCode,
+        boothName: booth.boothName ?? null,
+        vendorLineId: booth.vendor_line_id ?? null,
+        rejectReason: booth.reject_reason ?? null,
+        status: ticketStatus,
       },
     });
 
-    for (const ticket of market.tickets) {
-      const createdTicket = await db.gateTicket.upsert({
-        where: {
-          marketJobId_boothCode: {
-            marketJobId: createdMarket.id,
-            boothCode: ticket.boothCode,
-          },
-        },
-        update: {
-          vehicleJobId: savedVehicleJob.id,
-          boothName: ticket.boothName ?? null,
-          vendorLineId: ticket.vendor_line_id ?? null,
-          rejectReason: ticket.reject_reason ?? null,
-        },
-        create: {
-          vehicleJobId: savedVehicleJob.id,
-          marketJobId: createdMarket.id,
-          boothCode: ticket.boothCode,
-          boothName: ticket.boothName ?? null,
-          vendorLineId: ticket.vendor_line_id ?? null,
-          rejectReason: ticket.reject_reason ?? null,
-          status: ticketStatus,
+    for (const product of booth.products) {
+      await db.ticketProduct.create({
+        data: {
+          ticketId: createdTicket.id,
+          productCode: product.productCode,
+          productFullCode: product.productFullCode,
+          productName: product.productName,
+          packageCode: product.packageCode,
+          packageName: product.packageName,
+          quantity: product.quantity,
+          packageWeightSnapshot: product.packageWeightSnapshot,
+          rateIdSnapshot: product.rateIdSnapshot,
+          sourceRateIdSnapshot: product.sourceRateIdSnapshot,
+          rateMarketCode: product.rateMarketCode,
+          rateSource: product.rateSource,
+          weightRangeName: product.weightRangeName,
+          weightMinSnapshot: product.weightMinSnapshot,
+          weightMaxSnapshot: product.weightMaxSnapshot,
+          stallRateSnapshot: product.stallRateSnapshot,
+          laborRateSnapshot: product.laborRateSnapshot,
+          rateSnapshotAt: product.rateSnapshotAt,
         },
       });
-
-      for (const product of ticket.products) {
-        await db.ticketProduct.upsert({
-          where: {
-            ticketId_productCode_packageCode: {
-              ticketId: createdTicket.id,
-              productCode: product.productCode,
-              packageCode: product.packageCode,
-            },
-          },
-          update: {
-            productName:
-              product.productName,
-
-            productFullCode:
-              product.productFullCode,
-
-            packageName:
-              product.packageName,
-
-            quantity:
-              product.quantity,
-
-            packageWeightSnapshot:
-              product.packageWeightSnapshot,
-
-            rateIdSnapshot:
-              product.rateIdSnapshot,
-
-            sourceRateIdSnapshot:
-              product.sourceRateIdSnapshot,
-
-            rateMarketCode:
-              product.rateMarketCode,
-
-            rateSource:
-              product.rateSource,
-
-            weightRangeName:
-              product.weightRangeName,
-
-            weightMinSnapshot:
-              product.weightMinSnapshot,
-
-            weightMaxSnapshot:
-              product.weightMaxSnapshot,
-
-            stallRateSnapshot:
-              product.stallRateSnapshot,
-
-            laborRateSnapshot:
-              product.laborRateSnapshot,
-
-            rateSnapshotAt:
-              product.rateSnapshotAt,
-          },
-          create: {
-            ticketId:
-              createdTicket.id,
-
-            productCode:
-              product.productCode,
-
-            productFullCode:
-              product.productFullCode,
-
-            productName:
-              product.productName,
-
-            packageCode:
-              product.packageCode,
-
-            packageName:
-              product.packageName,
-
-            quantity:
-              product.quantity,
-
-            packageWeightSnapshot:
-              product.packageWeightSnapshot,
-
-            rateIdSnapshot:
-              product.rateIdSnapshot,
-
-            sourceRateIdSnapshot:
-              product.sourceRateIdSnapshot,
-
-            rateMarketCode:
-              product.rateMarketCode,
-
-            rateSource:
-              product.rateSource,
-
-            weightRangeName:
-              product.weightRangeName,
-
-            weightMinSnapshot:
-              product.weightMinSnapshot,
-
-            weightMaxSnapshot:
-              product.weightMaxSnapshot,
-
-            stallRateSnapshot:
-              product.stallRateSnapshot,
-
-            laborRateSnapshot:
-              product.laborRateSnapshot,
-
-            rateSnapshotAt:
-              product.rateSnapshotAt,
-          },
-        });
-      }
     }
   }
 
+  // Worker requirement ของ TicketNumber = ผลรวม (SUM) ของทุก Business Ticket ใต้รถคันนี้
+  // ห้ามใช้ MAX เพราะแต่ละ Business Ticket ต้องการ Worker เพิ่มเข้าไปจริง ไม่ใช่แทนที่กัน
+  const workersRequiredSum = await db.marketJob.aggregate({
+    where: {
+      vehicleJobId: savedVehicleJob.id,
+    },
+    _sum: {
+      workersRequired: true,
+    },
+  });
+  const totalWorkersRequired = workersRequiredSum._sum.workersRequired ?? requestedWorkersRequired;
+
+  // ปิดรับ Ticket เพิ่มอัตโนมัติถ้า Gate บอกจำนวน Ticket ทั้งหมดล่วงหน้าและตอนนี้มาครบแล้ว
+  const finalExpectedTicketCount =
+    input.expected_ticket_count ?? savedVehicleJob.expectedTicketCount ?? null;
+  let ticketsClosedAt = savedVehicleJob.ticketsClosedAt;
+
+  if (ticketsClosedAt === null && finalExpectedTicketCount !== null) {
+    const ticketCount = await db.marketJob.count({
+      where: {
+        vehicleJobId: savedVehicleJob.id,
+      },
+    });
+
+    if (ticketCount >= finalExpectedTicketCount) {
+      ticketsClosedAt = new Date();
+    }
+  }
+
+  const finalVehicleJob = await db.vehicleJob.update({
+    where: {
+      id: savedVehicleJob.id,
+    },
+    data: {
+      workersRequired: totalWorkersRequired,
+      expectedTicketCount: finalExpectedTicketCount,
+      ticketsClosedAt,
+    },
+  });
+
   await db.gateRequestLog.create({
     data: {
-      gateTransactionRef: input.gate_transaction_ref,
-      vehicleJobId: savedVehicleJob.id,
+      gateTransactionRef: market.gate_transaction_ref,
+      vehicleJobId: finalVehicleJob.id,
+      marketJobId: createdMarket.id,
       payloadSnapshot,
     },
   });
 
-  return requireDto(mapVehicleJob(savedVehicleJob), "vehicle job create");
+  return {
+    vehicleJob: requireDto(mapVehicleJob(finalVehicleJob), "vehicle job create"),
+    marketJob: requireDto(mapMarketJob(createdMarket), "market job create"),
+  };
+}
+
+// Function ปิดรับ Ticket เพิ่มของ TicketNumber นี้แบบ explicit (idempotent, no-op ถ้าปิดแล้ว)
+export async function closeVehicleJobTicketsIfOpen(
+  ticketNumber: string,
+  connection?: DbConnection
+): Promise<VehicleJobDto | null> {
+  const db = client(connection);
+
+  await db.vehicleJob.updateMany({
+    where: {
+      ticketNumber,
+      ticketsClosedAt: null,
+    },
+    data: {
+      ticketsClosedAt: new Date(),
+    },
+  });
+
+  const vehicleJob = await db.vehicleJob.findUnique({ where: { ticketNumber } });
+
+  return mapVehicleJob(vehicleJob);
 }
 
 // Function อัปเดต gate request response จาก DB

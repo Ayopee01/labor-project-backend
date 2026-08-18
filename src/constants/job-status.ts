@@ -7,6 +7,10 @@ export const ASSIGNMENT_STATUS = {
   DELIVERED: "DELIVERED",
   REJECT: "REJECT",
   COMPLETED: "COMPLETED",
+  // Admin released this worker back to the FIFO queue early (all their booths submitted,
+  // no unresolved reject) without waiting for the whole TicketNumber to close. Distinct
+  // from COMPLETED, which means the whole vehicle job finished.
+  RELEASED: "RELEASED",
   CANCELLED: "CANCELLED",
   TIMEOUT: "TIMEOUT",
 } as const;
@@ -80,6 +84,14 @@ export const FINISHED_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.DELIVERED,
   ASSIGNMENT_STATUS.REJECT,
   ASSIGNMENT_STATUS.COMPLETED,
+  ASSIGNMENT_STATUS.RELEASED,
+];
+
+// Config สถานะ assignment ที่ Admin ปล่อย Worker กลับคิวก่อนเวลาได้ (ทำงานอยู่ ยังไม่จบทั้งคัน)
+export const RELEASABLE_ASSIGNMENT_STATUSES: string[] = [
+  ASSIGNMENT_STATUS.SCANNED,
+  ASSIGNMENT_STATUS.WORKING,
+  ASSIGNMENT_STATUS.DELIVERED,
 ];
 
 // Config สถานะ ticket ที่ทำให้ booth ไม่ถูกเลือกเป็นงานเปิดอยู่

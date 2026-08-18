@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 export type TicketFinancializationResult = {
-  ticketId: number;
+  marketJobId: number;
   productCount: number;
   workerCount: number;
   finalStallAmount: Prisma.Decimal;

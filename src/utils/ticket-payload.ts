@@ -14,13 +14,13 @@ function formatWorkerTicketItems(products: TicketProductDto[]) {
   }));
 }
 
-// Function ค้นหา ticket market สำหรับ helper กลาง
+// Function ค้นหา Business Ticket (market) ที่ ticket/booth นี้สังกัดอยู่ สำหรับ helper กลาง
 export function findTicketMarket(
   detail: VehicleJobDetailResponse | null,
   ticket: GateTicketDto
 ): VehicleJobDetailResponse["markets"][number] | null {
   return detail?.markets.find((market) =>
-    market.tickets.some((marketTicket) => marketTicket.boothCode === ticket.boothCode)
+    market.booths.some((booth) => booth.boothCode === ticket.boothCode)
   ) ?? null;
 }
 
@@ -34,7 +34,8 @@ export function buildWorkerTicketPayload(
   const market = findTicketMarket(detail, ticket);
 
   return {
-    ticketNo: detail?.vehicle_job.ticketNo ?? null,
+    ticket_number: detail?.vehicle_job.ticket_number ?? null,
+    ticket_no: market?.ticket_no ?? null,
     ticket_completed_at:
       detail?.vehicle_job.status === "COMPLETED"
         ? detail.vehicle_job.updated_at

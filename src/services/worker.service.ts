@@ -35,6 +35,7 @@ import * as profileRepository from "../repositories/shared/profile.repository";
 import * as assignmentRepository from "../repositories/shared/vehicle-job-assignment.repository";
 import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
 import * as ticketWorkerRepository from "../repositories/shared/ticket-worker.repository";
+import * as marketJobRepository from "../repositories/shared/market-job.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import * as workerShiftAttendanceRepository from "../repositories/shared/worker-shift-attendance.repository";
 import * as vehicleJobLifecycleService from "./shared/vehicle-job-lifecycle.service";
@@ -89,6 +90,7 @@ import {
 import { parseWithSchema } from "../validation/parser";
 import {
   workerAssignmentHistoryQuerySchema,
+  workerCheckInQrBodySchema,
   workerEarningsSummaryQuerySchema,
   workerTicketCompleteBodySchema,
 } from "../validation/schemas";
@@ -145,14 +147,20 @@ function buildWorkerQueueActionResponse(
 }
 
 // Function สร้าง worker assignment accept response ใน service flow
+//
+// triggeredByTicketNo เป็น audit เท่านั้น (Ticket ที่ทำให้เกิดการ Dispatch นี้ ถ้ารู้)
+// ไม่ใช่การจำกัดสิทธิ์ worker ยังทำ Ticket อื่นในทีมเดียวกันได้ทั้งหมด
 function buildWorkerAssignmentAcceptResponse(
   detail: VehicleJobDetailResponse,
   team: WorkerAssignmentTeamMemberDto[],
   assignment: VehicleJobAssignmentDto,
   workerCode: string | null,
   shirtNumber: string | null,
+  triggeredByTicketNo: string | null,
 ): WorkerAssignmentAcceptResponse {
   return {
+    ticket_number: detail.vehicle_job.ticket_number,
+    triggered_by_ticket_no: triggeredByTicketNo,
     worker_code: workerCode,
     shirt_number: shirtNumber,
     accepted_at: assignment.accepted_at,
@@ -168,9 +176,10 @@ function buildWorkerAssignmentAcceptResponse(
       scan_status: member.scan_status,
     })),
     markets: detail.markets.map((market) => ({
+      ticket_no: market.ticket_no,
       marketName: market.marketName,
-      stall_count: market.tickets.length,
-        stalls: market.tickets.map((ticket) => ({
+      stall_count: market.booths.length,
+        stalls: market.booths.map((ticket) => ({
           boothCode: ticket.boothCode,
           boothName: ticket.boothName,
           status: ticket.status,
@@ -193,7 +202,7 @@ function buildWorkerAssignmentHistoryItemResponse(
   item: WorkerAssignmentHistoryItemDto,
 ): WorkerAssignmentHistoryItemResponse {
   return {
-    ticketNo: item.vehicle_job.ticketNo,
+    ticket_number: item.vehicle_job.ticket_number,
     ticket_completed_at:
       item.assignment.status === ASSIGNMENT_STATUS.COMPLETED
         ? item.assignment.completed_at ?? item.vehicle_job.updated_at
@@ -213,7 +222,7 @@ function buildWorkerCurrentJobResponse(
   teamScan: VehicleWorkReadinessDto,
 ): WorkerCurrentJobResponse {
   return {
-    ticketNo: detail.vehicle_job.ticketNo,
+    ticket_number: detail.vehicle_job.ticket_number,
     license_plate: detail.vehicle_job.license_plate,
     license_plate_province: detail.vehicle_job.license_plate_province,
     scan_deadline_at:
@@ -227,9 +236,10 @@ function buildWorkerCurrentJobResponse(
     vehicle_type: detail.vehicle_job.vehicle_type,
     team_scan: buildWorkerTeamScanResponse(teamScan),
     markets: detail.markets.map((market) => ({
+      ticket_no: market.ticket_no,
       marketCode: market.marketCode,
       marketName: market.marketName,
-      booths: market.tickets.map((ticket) => ({
+      booths: market.booths.map((ticket) => ({
         boothCode: ticket.boothCode,
         boothName: ticket.boothName,
         status: ticket.status,
@@ -277,12 +287,12 @@ function resolveTeamUpdatedWorkerStatus(
 }
 
 function buildAssignmentTeamUpdatedSocketPayload(
-  ticketNo: string,
+  ticketNumber: string,
   team: WorkerAssignmentTeamMemberDto[],
   teamScan: VehicleWorkReadinessDto,
 ) {
   return {
-    ticketNo,
+    ticketNumber,
     worker_status: resolveTeamUpdatedWorkerStatus(teamScan),
     team_scan: buildWorkerTeamScanResponse(teamScan),
     team: team.map((member) => ({
@@ -298,12 +308,12 @@ function buildAssignmentTeamUpdatedSocketPayload(
 }
 
 function sendAssignmentTeamUpdatedSocketEvents(
-  ticketNo: string,
+  ticketNumber: string,
   team: WorkerAssignmentTeamMemberDto[],
   teamScan: VehicleWorkReadinessDto,
 ): void {
   const payload = buildAssignmentTeamUpdatedSocketPayload(
-    ticketNo,
+    ticketNumber,
     team,
     teamScan,
   );
@@ -337,8 +347,7 @@ function buildAssignmentAcceptedSocketPayload(
   return {
     worker_code: workerCode,
     status: assignment.status,
-    ticketNo: detail.vehicle_job.ticketNo,
-    gate_transaction_ref: detail.vehicle_job.gate_transaction_ref,
+    ticketNumber: detail.vehicle_job.ticket_number,
     accepted_at: assignment.accepted_at,
     scan_deadline_at: assignment.scan_deadline_at,
     scan_deadline_unix_ms: toUnixMs(assignment.scan_deadline_at),
@@ -424,27 +433,27 @@ async function findWorkerAssignmentByReference(
   );
 }
 
-// Function ค้นหา Gate ticket สำหรับ completion ตาม ticket และ booth ใน service flow
+// Function ค้นหา Gate ticket สำหรับ completion ตาม TicketNumber และ booth ใน service flow
 async function findGateTicketForCompletionByTicketAndBooth(
-  ticketNoParam: unknown,
+  ticketNumberParam: unknown,
   boothCodeParam: unknown,
   connection?: Parameters<
     typeof gateTicketRepository.findGateTicketForCompletion
   >[1],
 ): Promise<GateTicketDto | null> {
-  const ticketNo = String(ticketNoParam ?? "").trim();
+  const ticketNumber = String(ticketNumberParam ?? "").trim();
   const boothCode = String(boothCodeParam ?? "").trim();
 
-  if (!ticketNo) {
-    throw new ApiError(400, "INVALID_TICKET_NO", "TicketNo is invalid.");
+  if (!ticketNumber) {
+    throw new ApiError(400, "INVALID_TICKET_NUMBER", "TicketNumber is invalid.");
   }
 
   if (!boothCode) {
     throw new ApiError(400, "INVALID_BOOTH_CODE", "BoothCode is invalid.");
   }
 
-  return gateTicketRepository.findGateTicketForCompletionByTicketNoAndBoothCode(
-    ticketNo,
+  return gateTicketRepository.findGateTicketForCompletionByTicketNumberAndBoothCode(
+    ticketNumber,
     boothCode,
     connection,
   );
@@ -1092,7 +1101,7 @@ export async function acceptWorkerAssignment(
     );
 
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
-      ticketNo: vehicleJob?.ticketNo ?? null,
+      ticketNumber: vehicleJob?.ticket_number ?? null,
       reason: timeoutResult.reason,
       timeout_count: timeoutResult.timeout_count,
       timeout_limit: timeoutResult.timeout_limit,
@@ -1102,7 +1111,7 @@ export async function acceptWorkerAssignment(
       title: "Assignment timed out",
       message: `Worker ${account.full_name} did not accept assignment ${assignment.id} in time.`,
       payload: {
-        ticketNo: vehicleJob?.ticketNo ?? null,
+        ticketNumber: vehicleJob?.ticket_number ?? null,
         worker_code: workerCode,
         status: ASSIGNMENT_STATUS.TIMEOUT,
         queue: buildWorkerQueueSocketPayload(timeoutResult.queue, workerCode),
@@ -1167,12 +1176,19 @@ export async function acceptWorkerAssignment(
     throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
   }
 
+  // Audit เท่านั้น: Ticket ที่ทำให้เกิดการ Dispatch นี้ ถ้ารู้ (ไม่ใช่การจำกัดสิทธิ์)
+  const triggeredByTicketNo =
+    vehicleJobDetail.markets.find(
+      (market) => market.id === acceptedAssignment.source_market_job_id,
+    )?.ticket_no ?? null;
+
   const response = buildWorkerAssignmentAcceptResponse(
     vehicleJobDetail,
     team,
     acceptedAssignment,
     account.username,
     account.shirt_number,
+    triggeredByTicketNo,
   );
   const workerCode = account.username;
 
@@ -1186,7 +1202,7 @@ export async function acceptWorkerAssignment(
     ),
   );
   sendAssignmentTeamUpdatedSocketEvents(
-    vehicleJobDetail.vehicle_job.ticketNo,
+    vehicleJobDetail.vehicle_job.ticket_number,
     team,
     teamScan,
   );
@@ -1195,7 +1211,7 @@ export async function acceptWorkerAssignment(
     title: "Assignment accepted",
     message: `Worker ${account.full_name} accepted assignment ${acceptedAssignment.id}.`,
     payload: {
-      ticketNo: vehicleJobDetail.vehicle_job.ticketNo,
+      ticketNumber: vehicleJobDetail.vehicle_job.ticket_number,
       worker_code: workerCode,
       status: acceptedAssignment.status,
       scan_deadline_at: acceptedAssignment.scan_deadline_at,
@@ -1210,17 +1226,18 @@ export async function acceptWorkerAssignment(
 
 // Function บันทึกการสแกน worker assignment ใน service flow
 export async function scanWorkerAssignment(
-  assignmentIdParam: unknown,
+  ticketNumberParam: unknown,
+  body: unknown,
   auth?: AccessTokenPayload,
 ): Promise<WorkerAssignmentCheckInResponse> {
   const account = await requireWorker(auth);
-  const qrToken = String(assignmentIdParam ?? "").trim();
+  const input = parseWithSchema(workerCheckInQrBodySchema, body);
   const settings = await getRuntimeSettings();
   const teamScanRemainingMinutes = settings.worker_scan_team_remaining_minutes;
 
   const result = await withTransaction(async (transaction) => {
     const assignment = await findWorkerAssignmentByReference(
-      assignmentIdParam,
+      ticketNumberParam,
       account.id,
       transaction,
     );
@@ -1266,17 +1283,37 @@ export async function scanWorkerAssignment(
       };
     }
 
-    const vehicleJob = await vehicleJobRepository.findVehicleJobById(
-      assignment.vehicle_job_id,
+    // Resolve QR -> Business Ticket (MarketJob) จาก DB จริง ห้ามเชื่อค่าที่ Client อ้างมาตรงๆ
+    // แล้วตรวจว่า Ticket ที่สแกนอยู่ภายใต้ TicketNumber เดียวกับ Assignment ของ worker คนนี้
+    // (worker scan Ticket ใบไหนในรถของตัวเองก็ได้ ไม่ต้อง scan ครบทุกใบ)
+    const scannedMarketJob = await marketJobRepository.findMarketJobByWorkerQrToken(
+      input.worker_qr_token,
       transaction,
     );
 
-    if (!vehicleJob || vehicleJob.worker_qr_token !== qrToken) {
+    if (!scannedMarketJob) {
       throw new ApiError(
         400,
         "INVALID_WORKER_QR",
         "Worker QR token is invalid.",
       );
+    }
+
+    if (scannedMarketJob.vehicle_job_id !== assignment.vehicle_job_id) {
+      throw new ApiError(
+        409,
+        "QR_TICKET_NUMBER_MISMATCH",
+        "Scanned ticket does not belong to this worker's vehicle job.",
+      );
+    }
+
+    const vehicleJob = await vehicleJobRepository.findVehicleJobById(
+      assignment.vehicle_job_id,
+      transaction,
+    );
+
+    if (!vehicleJob) {
+      throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
     }
 
     const scannedAssignment = await assignmentRepository.scanAssignment(
@@ -1341,7 +1378,7 @@ export async function scanWorkerAssignment(
     const workerCode = account.username;
 
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
-      ticketNo: result.vehicleJob?.ticketNo ?? null,
+      ticketNumber: result.vehicleJob?.ticket_number ?? null,
       reason: "scan_timeout",
       status: WORKER_WORK_STATUS.OPEN_APP,
     });
@@ -1350,7 +1387,7 @@ export async function scanWorkerAssignment(
       title: "Assignment scan timed out",
       message: `Worker ${account.full_name} did not scan QR in time.`,
       payload: {
-        ticketNo: result.vehicleJob?.ticketNo ?? null,
+        ticketNumber: result.vehicleJob?.ticket_number ?? null,
         worker_code: workerCode,
         status: result.timedOutAssignment.status,
         reason: "scan_timeout",
@@ -1389,16 +1426,16 @@ export async function scanWorkerAssignment(
     publishRealtimeEvent({
       type: "ASSIGNMENT_SCAN_DEADLINE_SHORTENED",
       title: "Scan deadline shortened",
-      message: `Remaining workers must scan QR within ${teamScanRemainingMinutes} minutes for vehicle job ${vehicleJob.ticketNo}.`,
+      message: `Remaining workers must scan QR within ${teamScanRemainingMinutes} minutes for vehicle job ${vehicleJob.ticket_number}.`,
       payload: {
-        ticketNo: vehicleJob.ticketNo,
+        ticketNumber: vehicleJob.ticket_number,
         remaining_minutes: teamScanRemainingMinutes,
         scan_deadline_at: firstShortenedAssignment.scan_deadline_at,
         scan_deadline_unix_ms: toUnixMs(firstShortenedAssignment.scan_deadline_at),
         assignment_count: shortenedAssignments.length,
       },
       worker_payload: {
-        ticketNo: vehicleJob.ticketNo,
+        ticketNumber: vehicleJob.ticket_number,
         remaining_minutes: teamScanRemainingMinutes,
         scan_deadline_at: firstShortenedAssignment.scan_deadline_at,
         scan_deadline_unix_ms: toUnixMs(firstShortenedAssignment.scan_deadline_at),
@@ -1413,14 +1450,14 @@ export async function scanWorkerAssignment(
     scannedAssignment.vehicle_job_id,
   );
 
-  sendAssignmentTeamUpdatedSocketEvents(vehicleJob.ticketNo, team, teamScan);
+  sendAssignmentTeamUpdatedSocketEvents(vehicleJob.ticket_number, team, teamScan);
 
   publishNotification({
     type: "ASSIGNMENT_CHECKED_IN",
     title: "Assignment checked in",
     message: `Worker ${account.full_name} checked in assignment ${scannedAssignment.id}.`,
     payload: {
-      ticketNo: vehicleJob.ticketNo,
+      ticketNumber: vehicleJob.ticket_number,
       worker_code: workerCode,
       status: scannedAssignment.status,
       scanned_at: scannedAssignment.scanned_at,
@@ -1434,15 +1471,14 @@ export async function scanWorkerAssignment(
     status: scannedAssignment.status,
     worker_status: resolveWorkerWorkStatus(null, scannedAssignment, teamScan),
     worker_code: workerCode,
-    ticketNo: vehicleJob.ticketNo,
-    worker_qr_token: vehicleJob.worker_qr_token,
+    ticket_number: vehicleJob.ticket_number,
     team_scan: buildWorkerTeamScanResponse(teamScan),
   };
 }
 
 // Function จบงาน worker assignment ticket ใน service flow
 async function completeWorkerAssignmentTicket(
-  ticketNoParam: unknown,
+  ticketNumberParam: unknown,
   boothCodeParam: unknown,
   body: unknown,
   auth?: AccessTokenPayload,
@@ -1450,7 +1486,7 @@ async function completeWorkerAssignmentTicket(
   return completeResolvedWorkerTicket(
     (connection) =>
       findGateTicketForCompletionByTicketAndBooth(
-        ticketNoParam,
+        ticketNumberParam,
         boothCodeParam,
         connection,
       ),
@@ -1460,13 +1496,13 @@ async function completeWorkerAssignmentTicket(
 }
 
 export async function completeWorkerAssignmentTicketFromBody(
-  ticketNoParam: unknown,
+  ticketNumberParam: unknown,
   body: unknown,
   auth?: AccessTokenPayload,
 ): Promise<TicketCompletionResponse> {
   const boothCode = (body as { boothCode?: unknown } | null)?.boothCode;
 
-  return completeWorkerAssignmentTicket(ticketNoParam, boothCode, body, auth);
+  return completeWorkerAssignmentTicket(ticketNumberParam, boothCode, body, auth);
 }
 
 // Function จบงาน resolved worker ticket ใน service flow
@@ -1523,12 +1559,13 @@ async function completeResolvedWorkerTicket(
 
     const ticketWorkers =
       await ticketWorkerRepository.syncTicketWorkersFromVehicleAssignments(
-        ticket.id,
+        ticket.market_job_id,
         ticket.vehicle_job_id,
         transaction,
       );
 
-    // ตรวจสอบว่า Worker ที่ส่งยอดยังเป็นสมาชิกที่ทำงานอยู่ใน Ticket/Booth นี้
+    // ตรวจสอบว่า Worker ที่ส่งยอดยังเป็นสมาชิกที่ทำงานอยู่ใน Business Ticket ของ Booth นี้
+    // (Worker อาจถูก Cancel เฉพาะ Business Ticket นี้ แต่ยัง Check-in รถและทำ Ticket อื่นได้)
     const isTicketWorker = ticketWorkers.some(
       (worker) =>
         worker.worker_account_id === account.id &&

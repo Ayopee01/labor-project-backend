@@ -43,9 +43,10 @@ model Account {
   permissions                AccountPermission[]
   ticketWorkers              TicketWorker[]
   submittedTicketCompletions TicketCompletionSubmission[] @relation("TicketCompletionSubmitter")
-  workerNotifications         WorkerNotification[]        @relation("WorkerNotificationAccount")
+  workerNotifications        WorkerNotification[]         @relation("WorkerNotificationAccount")
   createdGateClients         GateClient[]                 @relation("GateClientCreatedBy")
   updatedGateClients         GateClient[]                 @relation("GateClientUpdatedBy")
+  adminActionLogs            AdminActionLog[]             @relation("AdminActionLogActor")
 
   @@index([role, source])
   @@index([masterUpdatedAt])
@@ -146,30 +147,37 @@ model GateRequestLog {
   id                 Int      @id @default(autoincrement())
   gateTransactionRef String   @unique @map("gate_transaction_ref") @db.VarChar(100)
   vehicleJobId       Int?     @map("vehicle_job_id")
+  marketJobId        Int?     @map("market_job_id")
   payloadSnapshot    Json     @map("payload_snapshot")
   responseSnapshot   Json?    @map("response_snapshot")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(3)
 
   vehicleJob VehicleJob? @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  marketJob  MarketJob?  @relation(fields: [marketJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("gate_request_logs")
 }
 
 model VehicleJob {
-  id                   Int      @id @default(autoincrement())
-  ticketNo             String   @unique @map("ticket_no") @db.VarChar(100)
-  gateTransactionRef   String   @map("gate_transaction_ref") @db.VarChar(100)
-  licensePlate         String   @map("license_plate") @db.VarChar(50)
-  licensePlateProvince String?  @map("license_plate_province") @db.VarChar(100)
-  vehicleType          String?  @map("vehicle_type") @db.VarChar(100)
-  ticketCreatedAt      DateTime @map("ticket_created_at") @db.Timestamp(3)
-  boothCount           Int      @default(1) @map("booth_count")
-  workersRequired      Int      @map("workers_required")
-  dispatchNow          Boolean  @default(false) @map("dispatch_now")
-  status               String   @default("WAIT") @db.VarChar(30)
-  driverQrToken        String   @unique @map("driver_qr_token") @db.VarChar(255)
-  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+  id                   Int       @id @default(autoincrement())
+  ticketNumber         String    @unique @map("ticket_number") @db.VarChar(100)
+  licensePlate         String    @map("license_plate") @db.VarChar(50)
+  licensePlateProvince String?   @map("license_plate_province") @db.VarChar(100)
+  vehicleType          String?   @map("vehicle_type") @db.VarChar(100)
+  // Aggregate SUM of every MarketJob (Business Ticket) workersRequired under this vehicle,
+  // recomputed whenever a MarketJob is created/updated. Drives dispatch sizing only.
+  workersRequired      Int       @map("workers_required")
+  dispatchNow          Boolean   @default(false) @map("dispatch_now")
+  status               String    @default("WAIT") @db.VarChar(30)
+  driverQrToken        String    @unique @map("driver_qr_token") @db.VarChar(255)
+  // Gate-provided total Ticket count for this vehicle, if known upfront.
+  expectedTicketCount  Int?      @map("expected_ticket_count")
+  // Set once Gate signals no more Tickets are coming for this vehicle (via TicketCount
+  // reached or the explicit close endpoint). Required, alongside every Ticket/booth being
+  // terminal, before the vehicle can be marked COMPLETED and its workers returned to queue.
+  ticketsClosedAt      DateTime? @map("tickets_closed_at") @db.Timestamp(3)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
   gateRequests     GateRequestLog[]
   marketJobs       MarketJob[]
@@ -177,26 +185,48 @@ model VehicleJob {
   driverSessions   DriverSession[]
   assignments      VehicleJobAssignment[]
   assignmentEvents WorkerAssignmentEvent[]
+  adminActionLogs  AdminActionLog[]
 
   @@index([status])
   @@map("vehicle_jobs")
 }
 
+// MarketJob = Ticket (Business Ticket). One row per Gate-created Ticket, always
+// against exactly one market, nested under exactly one VehicleJob (TicketNumber).
+// A vehicle may own many MarketJob rows over time.
 model MarketJob {
-  id           Int      @id @default(autoincrement())
-  vehicleJobId Int      @map("vehicle_job_id")
-  marketCode   String   @map("market_code") @db.VarChar(100)
-  marketName   String   @map("market_name") @db.VarChar(255)
-  dropoffPoint String?  @map("dropoff_point") @db.VarChar(255)
-  status       String   @default("WAIT") @db.VarChar(30)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+  id                   Int       @id @default(autoincrement())
+  vehicleJobId         Int       @map("vehicle_job_id")
+  ticketNo             String    @map("ticket_no") @db.VarChar(100)
+  ticketCreatedAt      DateTime  @map("ticket_created_at") @db.Timestamp(3)
+  boothCount           Int       @default(1) @map("booth_count")
+  gateTransactionRef   String    @map("gate_transaction_ref") @db.VarChar(100)
+  // This Ticket's own worker requirement (summed onto VehicleJob.workersRequired).
+  workersRequired      Int       @map("workers_required")
+  marketCode           String    @map("market_code") @db.VarChar(100)
+  marketName           String    @map("market_name") @db.VarChar(255)
+  dropoffPoint         String?   @map("dropoff_point") @db.VarChar(255)
+  status               String    @default("WAIT") @db.VarChar(30)
+  // Opaque per-Ticket QR secret a worker scans to check in to this Ticket's parent vehicle.
+  workerQrToken        String    @unique @map("worker_qr_token") @db.VarChar(255)
+  // Set once, when this Ticket's financial finalize locks the worker roster. Roster sync
+  // and every roster mutation must respect this once it is non-null.
+  workerRosterLockedAt DateTime? @map("worker_roster_locked_at") @db.Timestamp(3)
+  finalStallAmount     Decimal?  @map("final_stall_amount") @db.Decimal(18, 2)
+  financializedAt      DateTime? @map("financialized_at") @db.Timestamp(3)
+  completedAt          DateTime? @map("completed_at") @db.Timestamp(3)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  vehicleJob VehicleJob   @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  tickets    GateTicket[]
+  vehicleJob      VehicleJob             @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tickets         GateTicket[]
+  ticketWorkers   TicketWorker[]
+  assignments     VehicleJobAssignment[] @relation("AssignmentSourceMarketJob")
+  gateRequestLogs GateRequestLog[]
 
-  @@unique([vehicleJobId, marketCode])
+  @@unique([vehicleJobId, ticketNo])
   @@index([vehicleJobId, status])
+  @@index([vehicleJobId, marketCode])
   @@map("market_jobs")
 }
 
@@ -218,10 +248,10 @@ model GateTicket {
   vehicleJob            VehicleJob                   @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   marketJob             MarketJob                    @relation(fields: [marketJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   products              TicketProduct[]
-  workers               TicketWorker[]
   completionSubmissions TicketCompletionSubmission[]
   rating                TicketRating?
   lineActionTokens      LineActionToken[]
+  adminActionLogs       AdminActionLog[]
 
   @@unique([marketJobId, boothCode])
   @@index([marketJobId, status])
@@ -344,9 +374,12 @@ model MasterRate {
   @@map("master_rate")
 }
 
+// TicketWorker = a worker's roster membership on one Business Ticket (MarketJob),
+// not one booth. This is the participation/financial-eligibility record — see
+// VehicleJobAssignment for the vehicle-level (TicketNumber) team membership.
 model TicketWorker {
   id                 Int                   @id @default(autoincrement())
-  ticketId           Int                   @map("ticket_id")
+  marketJobId        Int                   @map("market_job_id")
   workerAccountId    Int                   @map("worker_account_id")
   status             String                @default("WORKING") @db.VarChar(30)
   finalEarningAmount Decimal?              @map("final_earning_amount") @db.Decimal(18, 2)
@@ -355,13 +388,13 @@ model TicketWorker {
   completedAt        DateTime?             @map("completed_at") @db.Timestamp(3)
   createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamp(3)
-  ticket             GateTicket            @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  marketJob          MarketJob             @relation(fields: [marketJobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   worker             Account               @relation(fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payments           TicketWorkerPayment[]
 
-  @@unique([ticketId, workerAccountId])
+  @@unique([marketJobId, workerAccountId])
   @@index([workerAccountId, status])
-  @@index([ticketId, status])
+  @@index([marketJobId, status])
   @@map("ticket_workers")
 }
 
@@ -531,21 +564,31 @@ model DriverSession {
 }
 
 model VehicleJobAssignment {
-  id               Int       @id @default(autoincrement())
-  vehicleJobId     Int       @map("vehicle_job_id")
-  workerAccountId  Int       @map("worker_account_id")
-  status           String    @default("PENDING") @db.VarChar(30)
-  acceptDeadlineAt DateTime? @map("accept_deadline_at") @db.Timestamp(3)
-  scanDeadlineAt   DateTime? @map("scan_deadline_at") @db.Timestamp(3)
-  acceptedAt       DateTime? @map("accepted_at") @db.Timestamp(3)
-  scannedAt        DateTime? @map("scanned_at") @db.Timestamp(3)
-  completedAt      DateTime? @map("completed_at") @db.Timestamp(3)
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+  id                Int       @id @default(autoincrement())
+  vehicleJobId      Int       @map("vehicle_job_id")
+  workerAccountId   Int       @map("worker_account_id")
+  status            String    @default("PENDING") @db.VarChar(30)
+  // Audit-only: which Ticket's worker shortfall triggered this dispatch, if any.
+  // Immutable once set; never used for access control — a worker may work any
+  // Ticket under the same TicketNumber regardless of this value.
+  sourceMarketJobId Int?      @map("source_market_job_id")
+  acceptDeadlineAt  DateTime? @map("accept_deadline_at") @db.Timestamp(3)
+  scanDeadlineAt    DateTime? @map("scan_deadline_at") @db.Timestamp(3)
+  acceptedAt        DateTime? @map("accepted_at") @db.Timestamp(3)
+  scannedAt         DateTime? @map("scanned_at") @db.Timestamp(3)
+  completedAt       DateTime? @map("completed_at") @db.Timestamp(3)
+  // Set when Admin explicitly releases this worker back to the FIFO queue after they have
+  // submitted all their assigned booths, without waiting for the whole TicketNumber to close.
+  // Distinct from completedAt: completed means the whole vehicle job finished; released means
+  // only this worker's own work is done early.
+  releasedAt        DateTime? @map("released_at") @db.Timestamp(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  vehicleJob VehicleJob              @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  worker     Account                 @relation("AssignmentWorker", fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  events     WorkerAssignmentEvent[]
+  vehicleJob      VehicleJob              @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  worker          Account                 @relation("AssignmentWorker", fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sourceMarketJob MarketJob?              @relation("AssignmentSourceMarketJob", fields: [sourceMarketJobId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  events          WorkerAssignmentEvent[]
 
   @@index([workerAccountId, status])
   @@index([vehicleJobId, status])
@@ -618,4 +661,29 @@ model WorkerPushToken {
   @@index([workerCode, isActive])
   @@index([sessionId, isActive])
   @@map("worker_push_tokens")
+}
+
+// Central audit log for Admin actions on a VehicleJob that need a reason + actor + timeline
+// entry (override count, force wait, release workers, ...). Kept generic/append-only rather
+// than adding cancelled_by/waited_by/released_by columns scattered across multiple tables —
+// Work History's Timeline reads this directly as ADMIN_ACTION entries.
+model AdminActionLog {
+  id             Int      @id @default(autoincrement())
+  vehicleJobId   Int      @map("vehicle_job_id")
+  gateTicketId   Int?     @map("gate_ticket_id")
+  actionType     String   @map("action_type") @db.VarChar(40)
+  reasonCode     String?  @map("reason_code") @db.VarChar(50)
+  reasonText     String?  @map("reason_text") @db.Text
+  actorAccountId Int      @map("actor_account_id")
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+
+  vehicleJob VehicleJob  @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  gateTicket GateTicket? @relation(fields: [gateTicketId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  actor      Account     @relation("AdminActionLogActor", fields: [actorAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([vehicleJobId, createdAt])
+  @@index([gateTicketId, createdAt])
+  @@index([actionType, createdAt])
+  @@map("admin_action_logs")
 }

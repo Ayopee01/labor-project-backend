@@ -3,7 +3,6 @@ import * as assignmentRepository from "../../repositories/shared/vehicle-job-ass
 import * as gateTicketRepository from "../../repositories/shared/gate-ticket.repository";
 import * as vehicleJobRepository from "../../repositories/shared/vehicle-job.repository";
 import * as vehicleJobLifecycleService from "./vehicle-job-lifecycle.service";
-import { finalizeTicketFinancials } from "./ticket-financial.service";
 import { ASSIGNMENT_STATUS } from "../../constants/job-status";
 import { resolveTicketResultAudience } from "./realtime-notification.service";
 
@@ -42,9 +41,10 @@ export async function applyVendorTicketCompletionResult(input: {
         input.resolvedByLineUserId,
       );
 
-  const financial = isConfirmed
-    ? await finalizeTicketFinancials(updated.ticket.id, input.connection)
-    : null;
+  // Financial finalize ไม่เกิดที่นี่อีกต่อไป (booth เดียวไม่พอ ต้องรอทุก Booth ของ Business
+  // Ticket จบก่อน) — closeCompletedVehicleJobIfReady จะเป็นคนเรียก finalizeMarketJobFinancials
+  // เองเมื่อ Business Ticket ที่ booth นี้สังกัดอยู่ Terminal ครบทุก Booth แล้ว
+  const financial = null;
 
   const completedVehicleJob = isConfirmed
     ? await vehicleJobLifecycleService.closeCompletedVehicleJobIfReady(

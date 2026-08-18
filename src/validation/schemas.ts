@@ -290,8 +290,14 @@ const gateVehicleJobBoothSchema = z
 // Schema request หลักสำหรับสร้างงานจาก Gate
 export const gateVehicleJobBodySchema = z
   .object({
+    // TicketNumber = ระดับรถ (VehicleJob), TicketNo = Business Ticket ใต้รถคันนั้น (MarketJob)
+    TicketNumber: trimmedString,
     TicketNo: trimmedString,
     TicketCreatedAt: dateTimeString,
+
+    // จำนวน Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ ถ้า Gate รู้ล่วงหน้า
+    // ใช้ร่วมกับ POST /api/gate/vehicle-jobs/:ticketNumber/close เพื่อรู้ว่า Gate ส่ง Ticket ครบแล้ว
+    TicketCount: z.coerce.number().int().positive().optional(),
 
     BoothCount: z.coerce.number().int().positive(),
 
@@ -336,6 +342,11 @@ export const gateVehicleJobBodySchema = z
 
 export const driverQrSessionBodySchema = z.object({
   qr_token: trimmedString,
+});
+
+// Schema body สำหรับ worker scan QR check-in ของ Business Ticket ใบใดใบหนึ่งในรถ
+export const workerCheckInQrBodySchema = z.object({
+  worker_qr_token: trimmedString,
 });
 
 const workerTicketCompleteItemSchema = z.object({
@@ -550,6 +561,59 @@ export const adminJobCancelBodySchema = z
 export const adminAssignWorkersBodySchema = z.object({
   worker_codes: z.array(trimmedString).min(1),
 });
+
+const adminOverrideCountItemSchema = z.object({
+  productCode: trimmedString,
+  packageCode: trimmedString,
+  actual_quantity: z.coerce.number().min(0),
+});
+
+export const adminOverrideCountBodySchema = z.object({
+  reason_code: trimmedString,
+  reason_text: optionalTrimmedString,
+  counts: z.array(adminOverrideCountItemSchema).min(1),
+});
+
+export const adminVehicleWaitBodySchema = z.object({
+  reason_code: trimmedString,
+  reason_text: optionalTrimmedString,
+});
+
+export const adminReleaseWorkersBodySchema = z.object({
+  reason_code: trimmedString,
+  reason_text: optionalTrimmedString,
+});
+
+// Query "from/to/workerCode/keyword/pageSize" คือ Alias ให้ตรง Contract ที่ Frontend คุ้นเคย
+// (Query string ไม่ผ่าน normalizeApiRequestBody เหมือน Body จึงต้องรองรับทั้งสองชื่อที่นี่)
+export const adminDailyWorkerIncomeQuerySchema = z
+  .object({
+    date: optionalDateString,
+    date_from: optionalDateString,
+    date_to: optionalDateString,
+    from: optionalDateString,
+    to: optionalDateString,
+    worker_code: optionalTrimmedString,
+    workerCode: optionalTrimmedString,
+    status: optionalTrimmedString,
+    shift: z.coerce.number().int().positive().optional(),
+    search: optionalLowercaseString,
+    keyword: optionalLowercaseString,
+    page: optionalPageNumber,
+    limit: optionalLimitNumber,
+    pageSize: optionalLimitNumber,
+  })
+  .transform((input) => ({
+    date: input.date,
+    date_from: input.date_from ?? input.from,
+    date_to: input.date_to ?? input.to,
+    worker_code: input.worker_code ?? input.workerCode,
+    status: input.status,
+    shift: input.shift,
+    search: input.search ?? input.keyword,
+    page: input.page,
+    limit: input.limit ?? input.pageSize,
+  }));
 
 export const adminExtendScanDeadlineBodySchema = z.object({
   minutes: z.coerce.number().int().positive().max(240),

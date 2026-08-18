@@ -842,6 +842,10 @@
         full_name:
           type: string
           example: Worker Name
+        phone:
+          type: string
+          nullable: true
+          example: "0812345678"
         work_start_date:
           type: string
           nullable: true
@@ -2686,7 +2690,506 @@
         data:
           type: array
           items:
-            $ref: "#/components/schemas/VehicleJobDetailResponse"
+            $ref: "#/components/schemas/AdminVehicleJobHistoryItemResponse"
+        pagination:
+          nullable: true
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            total_pages:
+              type: integer
+
+    AdminHistoryRejection:
+      type: object
+      description: One resolved-or-pending rejection of a booth submission, derived from TicketCompletionSubmission rows in submitted order.
+      properties:
+        rejectedAt:
+          type: string
+          format: date-time
+        reject_reason:
+          type: string
+          nullable: true
+          description: GateTicket.reject_reason stores only the latest reason text, not a per-event history. This is only populated for the most recent rejection that has not yet been followed by a corrective resubmission; earlier resolved rejections in the same list will have this as null.
+        corrected_by_worker_code:
+          type: string
+          nullable: true
+          description: Worker who submitted the next resubmission after this rejection, if any.
+
+    AdminHistoryBooth:
+      description: Booth (GateTicket) inside a Work History Business Ticket. Extends the same persisted financial fields as AdminFinancialBooth (reused verbatim, not recalculated) with submission/rejection tracking that the /financials endpoint does not need.
+      allOf:
+        - $ref: "#/components/schemas/AdminFinancialBooth"
+        - type: object
+          properties:
+            vendor_line_id:
+              type: string
+              nullable: true
+            reject_reason:
+              type: string
+              nullable: true
+              description: Latest reject reason on the booth, if any.
+            submitted_worker_codes:
+              type: array
+              items:
+                type: string
+              description: Distinct worker codes that submitted counts for this booth.
+            submitted_at:
+              type: string
+              format: date-time
+              nullable: true
+              description: Timestamp of the latest submission.
+            confirmedAt:
+              type: string
+              format: date-time
+              nullable: true
+              description: Vendor confirmation timestamp of the latest submission.
+            rejection_history:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdminHistoryRejection"
+
+    AdminHistoryMarket:
+      type: object
+      description: One Business Ticket (MarketJob) inside a Work History vehicle job, with its booths formatted as AdminHistoryBooth.
+      properties:
+        ticket_no:
+          type: string
+          example: TKT-20260723-000125
+        marketCode:
+          type: string
+          example: "1123"
+        marketName:
+          type: string
+          example: Market A
+        dropoff_point:
+          type: string
+          nullable: true
+        status:
+          type: string
+          example: COMPLETED
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryBooth"
+
+    AdminHistoryWorkerCancellation:
+      type: object
+      nullable: true
+      properties:
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        reason_code:
+          type: string
+          nullable: true
+          description: Only populated when the cancellation was made through an endpoint that writes to AdminActionLog. Cancellations made via the pre-existing assignment/ticket-worker cancel endpoints (out of scope for this change) do not carry a reason here.
+        reason_text:
+          type: string
+          nullable: true
+
+    AdminHistoryWorker:
+      type: object
+      description: One worker who was ever dispatched (VehicleJobAssignment) to this vehicle job, with derived lifecycle timestamps.
+      properties:
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        full_name:
+          type: string
+          example: Worker Name
+        shirt_number:
+          type: string
+          nullable: true
+          example: "4"
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        scanned_at:
+          type: string
+          format: date-time
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: No distinct "work started" signal exists in the data model separate from scan; this mirrors scanned_at.
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of this worker's own latest booth submission across the vehicle job, if any.
+        released_at:
+          type: string
+          format: date-time
+          nullable: true
+        final_status:
+          type: string
+          example: COMPLETED
+        cancellation:
+          $ref: "#/components/schemas/AdminHistoryWorkerCancellation"
+
+    AdminHistoryTimelineItem:
+      type: object
+      description: One event on the vehicle job's chronological timeline, merged from WorkerAssignmentEvent, TicketCompletionSubmission, and AdminActionLog and sorted by occurred_at.
+      properties:
+        type:
+          type: string
+          enum:
+            - GATE_ARRIVAL
+            - WORKER_ASSIGNED
+            - WORKER_ACCEPTED
+            - WORKER_SCANNED
+            - WORKER_ACCEPT_TIMEOUT
+            - WORKER_SCAN_TIMEOUT
+            - WORKER_COMPLETED
+            - WORKER_RELEASED
+            - COUNT_SUBMITTED
+            - TICKET_REJECTED
+            - TICKET_CONFIRMED
+            - ADMIN_ACTION
+            - JOB_COMPLETED
+        occurred_at:
+          type: string
+          format: date-time
+        actor_type:
+          type: string
+          enum:
+            - worker
+            - admin
+            - system
+        actor_name:
+          type: string
+          nullable: true
+        description:
+          type: string
+
+    AdminHistoryFinance:
+      type: object
+      description: Job-level finance totals for the whole vehicle job (all Business Tickets), summed from the same persisted TicketProductFinancial/TicketWorkerPayment values as AdminFinancialBooth. Never recalculated from a formula.
+      properties:
+        stall_fee_total:
+          type: string
+          example: "34.00"
+        labor_fee_total:
+          type: string
+          example: "12.6000"
+        total_worker_share:
+          type: string
+          example: "12.00"
+        fund_amount:
+          type: string
+          example: "0.6000"
+        worker_count:
+          type: integer
+          description: Count of distinct workers who were ever on the roster of any Business Ticket of this vehicle job.
+          example: 1
+
+    AdminVehicleJobHistoryItemResponse:
+      type: object
+      properties:
+        vehicle_job:
+          allOf:
+            - $ref: "#/components/schemas/VehicleJob"
+            - type: object
+              properties:
+                work_start:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Earliest scanned_at across all workers ever assigned to this vehicle job.
+                submitted_complete_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Latest booth submission timestamp, only set once every Business Ticket has at least one submission.
+                vendor_confirmed_complete_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Latest vendor confirmation timestamp, only set once every non-cancelled Business Ticket is confirmed.
+                completed_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                duration_seconds:
+                  type: integer
+                  nullable: true
+                  description: completed_at minus work_start, in seconds. Null unless both are known.
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryMarket"
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryWorker"
+        timeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryTimelineItem"
+        finance:
+          $ref: "#/components/schemas/AdminHistoryFinance"
+
+    AdminOverrideCountItemRequest:
+      type: object
+      required:
+        - productCode
+        - packageCode
+        - actual_quantity
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        packageCode:
+          type: string
+          example: "29"
+        actual_quantity:
+          type: number
+          minimum: 0
+          example: 7
+
+    AdminOverrideCountRequest:
+      type: object
+      required:
+        - reason_code
+        - counts
+      properties:
+        reason_code:
+          type: string
+          example: R001
+        reason_text:
+          type: string
+          nullable: true
+          example: Worker entered the wrong count.
+        counts:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/AdminOverrideCountItemRequest"
+
+    AdminOverrideCountItemResponse:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        packageCode:
+          type: string
+          example: "29"
+        previous_quantity:
+          type: string
+          nullable: true
+          example: "10.00"
+        confirmed_quantity:
+          type: string
+          nullable: true
+          example: "7.00"
+
+    AdminOverrideCountResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        boothCode:
+          type: string
+          example: OM3/40
+        status:
+          type: string
+          example: WORKING
+        reason_code:
+          type: string
+          example: R001
+        reason_text:
+          type: string
+          nullable: true
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminOverrideCountItemResponse"
+
+    AdminVehicleWaitRequest:
+      type: object
+      required:
+        - reason_code
+      properties:
+        reason_code:
+          type: string
+          example: DRIVER_NOT_READY
+        reason_text:
+          type: string
+          nullable: true
+          example: Driver requested more time before unloading.
+
+    AdminVehicleWaitResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        status:
+          type: string
+          example: WAIT
+        reason_code:
+          type: string
+          example: DRIVER_NOT_READY
+        reason_text:
+          type: string
+          nullable: true
+
+    AdminReleaseWorkersRequest:
+      type: object
+      required:
+        - reason_code
+      properties:
+        reason_code:
+          type: string
+          example: ALL_BOOTHS_RESOLVED
+        reason_text:
+          type: string
+          nullable: true
+
+    AdminReleaseWorkersResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        released_worker_codes:
+          type: array
+          items:
+            type: string
+            nullable: true
+          example:
+            - MN000115
+        reason_code:
+          type: string
+          example: ALL_BOOTHS_RESOLVED
+        reason_text:
+          type: string
+          nullable: true
+
+    DailyWorkerIncomeWorker:
+      type: object
+      properties:
+        code:
+          type: string
+          nullable: true
+          example: MN000115
+        name:
+          type: string
+          example: Worker Name
+        shirt:
+          type: string
+          nullable: true
+          example: "4"
+
+    DailyWorkerIncomeCancellation:
+      type: object
+      nullable: true
+      properties:
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        reason_code:
+          type: string
+          nullable: true
+        reason_text:
+          type: string
+          nullable: true
+
+    DailyWorkerIncomeItem:
+      type: object
+      description: One Worker's membership (TicketWorker) in one Business Ticket. payable is TicketWorker.final_earning_amount taken as-is, never recomputed.
+      properties:
+        id:
+          type: string
+          example: TKT-20260723-000125-1123
+        business_date:
+          type: string
+          format: date
+        shift:
+          type: integer
+          nullable: true
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        marketJobNo:
+          type: string
+          example: TKT-20260723-000125
+        plate:
+          type: string
+          example: ABC-1234
+        worker:
+          $ref: "#/components/schemas/DailyWorkerIncomeWorker"
+        assigned_stalls:
+          type: integer
+        confirmed_stalls:
+          type: integer
+        collected:
+          type: string
+          example: "34.00"
+        payable:
+          type: string
+          example: "12.00"
+        status:
+          type: string
+          example: COMPLETED
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        scanned_at:
+          type: string
+          format: date-time
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        released_at:
+          type: string
+          format: date-time
+          nullable: true
+        cancellation:
+          $ref: "#/components/schemas/DailyWorkerIncomeCancellation"
+
+    AdminDailyWorkerIncomeListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyWorkerIncomeItem"
         pagination:
           nullable: true
           type: object

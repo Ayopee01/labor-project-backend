@@ -208,6 +208,9 @@ function resolveVehicleOperationStatus(
 }
 
 // Function คำนวณเวลาผ่าน Gate และเวลาทำงานหลัง worker scan QR
+//
+// gate_elapsed_seconds นับจาก Business Ticket ใบแรกที่ Gate ส่งเข้ามาสำหรับ TicketNumber นี้
+// (ticketCreatedAt ย้ายไปอยู่ระดับ MarketJob แล้ว เพราะ TicketNumber เดียวมีหลาย Ticket ได้)
 function buildOperationTiming(record: VehicleJobOperationRecord): {
   gate_elapsed_seconds: number;
   working_elapsed_seconds: number | null;
@@ -222,11 +225,18 @@ function buildOperationTiming(record: VehicleJobOperationRecord): {
     .map((assignment) => assignment.scannedAt?.getTime())
     .filter((value): value is number => typeof value === "number");
   const firstScannedAt = scannedTimes.length > 0 ? Math.min(...scannedTimes) : null;
+  const ticketCreatedTimes = record.marketJobs.map((market) =>
+    market.ticketCreatedAt.getTime()
+  );
+  const earliestTicketCreatedAt =
+    ticketCreatedTimes.length > 0
+      ? Math.min(...ticketCreatedTimes)
+      : record.createdAt.getTime();
 
   return {
     gate_elapsed_seconds: Math.max(
       0,
-      Math.floor((endTime - record.ticketCreatedAt.getTime()) / 1000)
+      Math.floor((endTime - earliestTicketCreatedAt) / 1000)
     ),
     working_elapsed_seconds:
       firstScannedAt === null
@@ -261,6 +271,7 @@ function formatOperationMarkets(
     }));
 
     return {
+      ticket_no: market.ticketNo,
       marketCode: market.marketCode,
       marketName: market.marketName,
       dropoff_point: market.dropoffPoint,
@@ -274,7 +285,7 @@ function formatOperationMarkets(
         confirmed: market.tickets.filter(isTicketCompleted).length,
         rejected: market.tickets.filter(isTicketRejected).length,
       },
-      tickets,
+      booths: tickets,
     };
   });
 }
@@ -290,13 +301,10 @@ export function formatVehicleOperationItem(
   return {
     operation_status: operationStatus,
     vehicle_job: {
-      ticketNo: record.ticketNo,
-      gate_transaction_ref: record.gateTransactionRef,
+      ticket_number: record.ticketNumber,
       license_plate: record.licensePlate,
       license_plate_province: record.licensePlateProvince,
       vehicle_type: record.vehicleType,
-      ticket_created_at: record.ticketCreatedAt.toISOString(),
-      booth_count: record.boothCount,
       workers_required: record.workersRequired,
       dispatch_now: record.dispatchNow,
       status: record.status,

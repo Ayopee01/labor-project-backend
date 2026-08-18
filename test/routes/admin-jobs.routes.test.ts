@@ -51,6 +51,7 @@ async function loginWorker(accountId: number): Promise<{ token: string; worker: 
 // Function เธชเธฃเนเธฒเธ gate vehicle job body เธชเธณเธซเธฃเธฑเธ test
 function buildGateVehicleJobBody(suffix: string) {
   return {
+    TicketNumber: `TRUCK-20260723-${suffix}`,
     TicketNo: `TKT-20260723-${suffix}`,
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
     BoothCount: 1,
@@ -98,6 +99,9 @@ async function loginJobAdmin(accountId: number): Promise<{ token: string }> {
     "jobs:read",
     "jobs:assign",
     "jobs:cancel",
+    "jobs:override_count",
+    "jobs:wait",
+    "jobs:release_workers",
     "workers:force_status",
   ]);
 
@@ -291,7 +295,7 @@ test("GET /api/admin/vehicle-jobs/:ticketNo/financials returns finalized persist
 
   const ticketWorker = {
     id: state.nextTicketWorkerId++,
-    ticket_id: ticket.id,
+    market_job_id: ticket.market_job_id,
     worker_account_id: worker.id,
     status: "COMPLETED",
     joined_at: finalizedAt,
@@ -355,7 +359,7 @@ test("GET /api/admin/vehicle-jobs/:ticketNo/financials returns finalized persist
 
   const response = await server.request(
     "GET",
-    `/api/admin/vehicle-jobs/${job.ticketNo}/financials`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/financials`,
     {
       token,
     }
@@ -364,13 +368,8 @@ test("GET /api/admin/vehicle-jobs/:ticketNo/financials returns finalized persist
   assert.equal(response.status, 200);
 
   assert.equal(
-    response.body.vehicle_job.ticketNo,
-    job.ticketNo
-  );
-
-  assert.equal(
-    response.body.vehicle_job.gate_transaction_ref,
-    job.gate_transaction_ref
+    response.body.vehicle_job.ticket_number,
+    job.ticket_number
   );
 
   assert.equal(
@@ -509,7 +508,7 @@ test("GET /api/admin/vehicle-jobs/:ticketNo/financials returns pending financial
 
   const response = await server.request(
     "GET",
-    `/api/admin/vehicle-jobs/${job.ticketNo}/financials`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/financials`,
     {
       token,
     }
@@ -518,8 +517,8 @@ test("GET /api/admin/vehicle-jobs/:ticketNo/financials returns pending financial
   assert.equal(response.status, 200);
 
   assert.equal(
-    response.body.vehicle_job.ticketNo,
-    job.ticketNo
+    response.body.vehicle_job.ticket_number,
+    job.ticket_number
   );
 
   assert.equal(
@@ -612,7 +611,7 @@ test("GET /api/admin/vehicle-jobs/:ticketNo/financials returns partial financial
   const finalizedAt = "2026-08-07T11:00:00.000Z";
 
   job.status = "WORKING";
-  job.booth_count = 2;
+  state.marketJobs.find((item) => item.id === firstTicket.market_job_id)!.booth_count = 2;
 
   firstTicket.status = "COMPLETED";
   firstTicket.confirmation_status = "COMPLETED";
@@ -658,7 +657,7 @@ test("GET /api/admin/vehicle-jobs/:ticketNo/financials returns partial financial
 
   const response = await server.request(
     "GET",
-    `/api/admin/vehicle-jobs/${job.ticketNo}/financials`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/financials`,
     {
       token,
     }
@@ -813,7 +812,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
 
   const firstTicketWorker = {
     id: state.nextTicketWorkerId++,
-    ticket_id: ticket.id,
+    market_job_id: ticket.market_job_id,
     worker_account_id: firstWorker.id,
     status: "WORKING",
     final_earning_amount: null,
@@ -824,7 +823,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
 
   const cancelledTicketWorker = {
     id: state.nextTicketWorkerId++,
-    ticket_id: ticket.id,
+    market_job_id: ticket.market_job_id,
     worker_account_id: secondWorker.id,
     status: "WORKING",
     final_earning_amount: null,
@@ -841,7 +840,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   // Admin cancel Worker B
   const cancelResponse = await server.request(
     "POST",
-    `/api/admin/vehicle-jobs/${job.ticketNo}/workers/${secondWorker.username}/assignment/cancel`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/workers/${secondWorker.username}/assignment/cancel`,
     {
       token: adminToken,
       body: {
@@ -877,7 +876,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   // Admin เนเธชเน Worker C เธกเธฒเนเธ—เธ
   const assignResponse = await server.request(
     "POST",
-    `/api/admin/vehicle-jobs/${job.ticketNo}/assign-workers`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/assign-workers`,
     {
       token: adminToken,
       body: {
@@ -909,7 +908,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   // Worker A เธชเนเธเธขเธญเธ”เธเธฃเธดเธ
   const submitResponse = await server.request(
     "POST",
-    `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`,
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
     {
       token: workerToken,
       body: {
@@ -962,7 +961,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   const replacementTicketWorker =
     state.ticketWorkers.find(
       (ticketWorker) =>
-        ticketWorker.ticket_id === ticket.id &&
+        ticketWorker.market_job_id === ticket.market_job_id &&
         ticketWorker.worker_account_id ===
         replacementWorker.id
     );
@@ -1082,7 +1081,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
 
   const financialResponse = await server.request(
     "GET",
-    `/api/admin/vehicle-jobs/${job.ticketNo}/financials`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/financials`,
     {
       token: adminToken,
     }
@@ -1172,636 +1171,247 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   );
 });
 
-test("admin cancel on next booth preserves worker earnings from completed booth", async () => {
-  const { token: workerToken, worker } =
-    await loginWorker(9801);
+test("worker globally cancelled before Business Ticket roster locks forfeits earnings from an already-completed booth of that ticket", async () => {
+  const { token: workerToken, worker } = await loginWorker(9801);
+  const { token: replacementToken, worker: replacementWorker } = await loginWorker(9802);
+  const { token: adminToken } = await loginJobAdmin(9800);
 
-  const replacementWorker =
-    addWorker(9802);
+  const job = addDispatchableJob(980, 1);
+  const firstTicket = addTicketForVehicleJob(job.id, 19800);
+  const secondTicket = addTicketForVehicleJob(job.id, 19801);
 
-  const { token: adminToken } =
-    await loginJobAdmin(9800);
+  // firstTicket / secondTicket ใช้ market_job_id เดียวกัน (Business Ticket ใบเดียว สองแผง)
+  assert.equal(firstTicket.market_job_id, secondTicket.market_job_id);
 
-  const job =
-    addDispatchableJob(980, 1);
-
-  const firstTicket =
-    addTicketForVehicleJob(
-      job.id,
-      19800
-    );
-
-  const secondTicket =
-    addTicketForVehicleJob(
-      job.id,
-      19801
-    );
-
-  // Booth 2 เธ•เนเธญเธเธฃเธญ Booth 1 เธเธเธเนเธญเธ
+  // Booth 2 ยังไม่เริ่ม รอ Booth 1 เสร็จก่อน
   secondTicket.status = "WAIT";
+  state.marketJobs.find((item) => item.id === firstTicket.market_job_id)!.booth_count = 2;
 
-  job.booth_count = 2;
-
-  const assignment =
-    addPendingAssignment(
-      19802,
-      job.id,
-      worker.id
-    );
-
+  const assignment = addPendingAssignment(19802, job.id, worker.id);
   assignment.status = "SCANNED";
-  assignment.scanned_at =
-    new Date().toISOString();
+  assignment.scanned_at = new Date().toISOString();
 
-  const firstProducts =
-    state.ticketProducts.filter(
-      (product) =>
-        product.ticket_id ===
-        firstTicket.id
-    );
+  const firstProducts = state.ticketProducts.filter(
+    (product) => product.ticket_id === firstTicket.id
+  );
 
   /* -------------------------------------- Complete Booth 1 -------------------------------------- */
 
-  const firstSubmitResponse =
-    await server.request(
-      "POST",
-      `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`,
-      {
-        token: workerToken,
-        body: {
-          boothCode: firstTicket.boothCode,
-          items: firstProducts.map(
-            (product, index) => ({
-              productCode:
-                product.productCode,
-
-              packageCode:
-                product.packageCode,
-
-              confirmed_quantity:
-                index === 0 ? 10 : 4,
-            })
-          ),
-        },
-      }
-    );
-
-  assert.equal(
-    firstSubmitResponse.status,
-    200
+  const firstSubmitResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
+    {
+      token: workerToken,
+      body: {
+        boothCode: firstTicket.boothCode,
+        items: firstProducts.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    }
   );
 
-  assert.equal(
-    firstTicket.status,
-    "DELIVERED"
-  );
+  assert.equal(firstSubmitResponse.status, 200);
+  assert.equal(firstTicket.status, "DELIVERED");
 
-  /* -------------------------------------- Vendor Auto Confirm Booth 1 -------------------------------------- */
+  workerDispatch.startAssignmentTimeoutProcessing();
 
-  workerDispatch
-    .startAssignmentTimeoutProcessing();
+  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  const processor = state.workerProcessors.get(queueName);
 
-  const queueName =
-    process.env
-      .BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  assert.ok(processor, "Assignment timeout processor must be registered.");
 
-  const processor =
-    state.workerProcessors.get(
-      queueName
-    );
+  const firstSubmission = state.completionSubmissions.at(-1);
 
-  assert.ok(
-    processor,
-    "Assignment timeout processor must be registered."
-  );
-
-  const firstSubmission =
-    state.completionSubmissions.at(-1);
-
-  assert.ok(
-    firstSubmission,
-    "First booth completion submission must exist."
-  );
+  assert.ok(firstSubmission, "First booth completion submission must exist.");
 
   await processor({
     data: {
-      ticketId:
-        firstTicket.id,
-
-      submissionId:
-        firstSubmission.id,
-
-      kind:
-        "vendor_confirm",
+      ticketId: firstTicket.id,
+      submissionId: firstSubmission.id,
+      kind: "vendor_confirm",
     },
   });
 
-  /* -------------------------------------- เธ•เธฃเธงเธ Booth 1 เธเนเธญเธ Cancel -------------------------------------- */
+  // Booth 1 COMPLETED เองได้ แต่ Business Ticket ห้าม Finalize จนกว่า Booth 2 จะ Terminal ด้วย
+  assert.equal(firstTicket.status, "COMPLETED");
+  assert.equal(firstTicket.final_stall_amount ?? null, null);
+  assert.equal(firstTicket.financialized_at ?? null, null);
+  assert.equal(state.ticketProductFinancials.length, 0);
+  assert.equal(state.ticketWorkerPayments.length, 0);
 
+  const sharedTicketWorker = state.ticketWorkers.find(
+    (ticketWorker) =>
+      ticketWorker.market_job_id === firstTicket.market_job_id &&
+      ticketWorker.worker_account_id === worker.id
+  );
+
+  assert.ok(sharedTicketWorker);
+  // Roster ยังไม่ Lock: worker คนเดิมยังเป็น WORKING แม้ Booth ที่ตัวเองทำจะ COMPLETED แล้ว
+  assert.equal(sharedTicketWorker.status, "WORKING");
+
+  /* -------------------------------------- Admin ยกเลิก Worker ทั้ง TicketNumber -------------------------------------- */
+
+  const cancelResponse = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/workers/${worker.username}/assignment/cancel`,
+    {
+      token: adminToken,
+      body: {
+        reason: "replace worker before ticket locks",
+      },
+    }
+  );
+
+  assert.equal(cancelResponse.status, 200);
+  assert.equal(assignment.status, "CANCELLED");
+
+  // Ticket ยังไม่ Lock -> Global Cancel ต้อง Cascade มาถอด Roster ของ Ticket นี้ด้วย
+  assert.equal(sharedTicketWorker.status, "CANCELLED");
+  assert.ok(sharedTicketWorker.cancelled_at);
+  assert.equal(sharedTicketWorker.completed_at, null);
+
+  /* -------------------------------------- Admin เพิ่ม Worker ทดแทน -------------------------------------- */
+
+  await workerQueue.enqueueWorker(replacementWorker.id);
+
+  const replacementResponse = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/assign-workers`,
+    {
+      token: adminToken,
+      body: {
+        worker_codes: [replacementWorker.username],
+      },
+    }
+  );
+
+  assert.equal(replacementResponse.status, 201);
+
+  const replacementAssignment = state.assignments.find(
+    (item) =>
+      item.vehicle_job_id === job.id &&
+      item.worker_account_id === replacementWorker.id &&
+      item.status === "PENDING"
+  );
+
+  assert.ok(replacementAssignment);
+
+  /* -------------------------------------- Complete Booth 2 -------------------------------------- */
+
+  replacementAssignment.status = "SCANNED";
+  replacementAssignment.scanned_at = new Date().toISOString();
+  secondTicket.status = "WORKING";
+
+  const secondProducts = state.ticketProducts.filter(
+    (product) => product.ticket_id === secondTicket.id
+  );
+
+  // syncTicketWorkersFromVehicleAssignments เกิดตอน submit นี้เอง เพิ่ม Roster ของ Worker ทดแทน
+  const secondSubmitResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
+    {
+      token: replacementToken,
+      body: {
+        boothCode: secondTicket.boothCode,
+        items: secondProducts.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    }
+  );
+
+  assert.equal(secondSubmitResponse.status, 200);
+
+  const replacementTicketWorker = state.ticketWorkers.find(
+    (ticketWorker) =>
+      ticketWorker.market_job_id === firstTicket.market_job_id &&
+      ticketWorker.worker_account_id === replacementWorker.id
+  );
+
+  assert.ok(replacementTicketWorker);
+  assert.equal(secondTicket.status, "DELIVERED");
+
+  const secondSubmission = state.completionSubmissions.at(-1);
+
+  assert.ok(secondSubmission, "Second booth completion submission must exist.");
+
+  await processor({
+    data: {
+      ticketId: secondTicket.id,
+      submissionId: secondSubmission.id,
+      kind: "vendor_confirm",
+    },
+  });
+
+  /* -------------------------------------- ตรวจผล Finalize ทั้ง Ticket -------------------------------------- */
+
+  assert.equal(secondTicket.status, "COMPLETED");
+  // ตอนนี้ทั้ง 2 Booth Terminal แล้ว -> Finalize ทั้ง Ticket รวมทั้ง Booth 1 ที่เสร็จไปก่อนหน้า
+  assert.ok(firstTicket.final_stall_amount);
+  assert.ok(firstTicket.financialized_at);
+  assert.ok(secondTicket.final_stall_amount);
+  assert.ok(secondTicket.financialized_at);
+
+  // Worker เดิมถูก Cancel ก่อน Lock -> ไม่ได้รับเงินจาก Ticket นี้เลย แม้จะเป็นคนส่งของ Booth 1
+  assert.equal(sharedTicketWorker.status, "CANCELLED");
+  assert.equal(sharedTicketWorker.final_earning_amount ?? null, null);
   assert.equal(
-    firstTicket.status,
-    "COMPLETED"
+    state.ticketWorkerPayments.some(
+      (payment) => payment.ticket_worker_id === sharedTicketWorker.id
+    ),
+    false
   );
 
+  // Worker ทดแทนเป็นคนเดียวใน Roster ตอน Lock -> ได้เงินเต็มจากสินค้าของ "ทั้งสอง" Booth
+  assert.equal(replacementTicketWorker.status, "COMPLETED");
+  assert.ok(replacementTicketWorker.final_earning_amount);
   assert.equal(
-    firstTicket.final_stall_amount,
-    "34.00"
-  );
-
-  assert.ok(
-    firstTicket.financialized_at
-  );
-
-  assert.equal(
-    secondTicket.status,
-    "WORKING"
-  );
-
-  assert.equal(
-    assignment.status,
-    "WORKING"
-  );
-
-  const firstTicketWorker =
-    state.ticketWorkers.find(
-      (ticketWorker) =>
-        ticketWorker.ticket_id ===
-        firstTicket.id &&
-        ticketWorker.worker_account_id ===
-        worker.id
-    );
-
-  assert.ok(
-    firstTicketWorker
-  );
-
-  assert.equal(
-    firstTicketWorker.status,
-    "COMPLETED"
-  );
-
-  const firstBoothPaymentsBeforeCancel =
-    state.ticketWorkerPayments
-      .filter(
-        (payment) =>
-          payment.ticket_worker_id ===
-          firstTicketWorker.id
-      )
-      .map((payment) => ({
-        id:
-          payment.id,
-
-        ticket_product_financial_id:
-          payment.ticket_product_financial_id,
-
-        raw_amount:
-          payment.raw_amount,
-
-        remainder_amount:
-          payment.remainder_amount,
-
-        final_amount:
-          payment.final_amount,
-      }));
-
-  assert.equal(
-    firstBoothPaymentsBeforeCancel.length,
-    2
-  );
-
-  const firstBoothAmountBeforeCancel =
-    firstBoothPaymentsBeforeCancel.reduce(
-      (total, payment) =>
-        total +
-        Number(
-          payment.final_amount
-        ),
-      0
-    );
-
-  assert.equal(
-    firstBoothAmountBeforeCancel,
-    12
-  );
-
-  /*
-   * Production activateNextTicketIfReady()
-   * เธเธฐ sync Worker เน€เธเนเธฒ Booth เธ–เธฑเธ”เนเธเธญเธฑเธ•เนเธเธกเธฑเธ•เธด
-   *
-   * Route-test harness เธเธฑเธเธเธธเธเธฑเธ activate เน€เธเธเธฒเธฐเธชเธ–เธฒเธเธฐ Ticket
-   * เธเธถเธเธชเธฃเนเธฒเธ membership เธเธญเธ Booth 2 เธ•เธฃเธเธเธตเน
-   * เน€เธเธทเนเธญเธเธณเธฅเธญเธ state เธเธญเธ DB เธเธฃเธดเธเธเนเธญเธ Admin Cancel
-   */
-  const secondTicketWorker = {
-    id:
-      state.nextTicketWorkerId++,
-
-    ticket_id:
-      secondTicket.id,
-
-    worker_account_id:
-      worker.id,
-
-    status:
-      "WORKING",
-
-    joined_at:
-      new Date().toISOString(),
-
-    cancelled_at:
-      null,
-
-    completed_at:
-      null,
-  };
-
-  state.ticketWorkers.push(
-    secondTicketWorker
-  );
-
-  /* -------------------------------------- Admin Cancel Worker A เธ—เธตเน Booth 2 -------------------------------------- */
-
-  const cancelResponse =
-    await server.request(
-      "POST",
-      `/api/admin/vehicle-jobs/${job.ticketNo}/workers/${worker.username}/assignment/cancel`,
-      {
-        token:
-          adminToken,
-
-        body: {
-          reason:
-            "replace worker for next booth",
-        },
-      }
-    );
-
-  assert.equal(
-    cancelResponse.status,
-    200
-  );
-
-  assert.equal(
-    assignment.status,
-    "CANCELLED"
-  );
-
-  // Booth 1 เธ•เนเธญเธเนเธกเนเธ–เธนเธเธขเนเธญเธเธเธฅเธฑเธเนเธเนเธเน
-  assert.equal(
-    firstTicketWorker.status,
-    "COMPLETED"
-  );
-
-  assert.equal(
-    firstTicketWorker.cancelled_at,
-    null
-  );
-
-  assert.ok(
-    firstTicketWorker.completed_at
-  );
-
-  // Booth 2 เน€เธ—เนเธฒเธเธฑเนเธเธ—เธตเนเธ–เธนเธ Cancel
-  assert.equal(
-    secondTicketWorker.status,
-    "CANCELLED"
-  );
-
-  assert.ok(
-    secondTicketWorker.cancelled_at
-  );
-
-  assert.equal(
-    secondTicketWorker.completed_at,
-    null
-  );
-
-  /* -------------------------------------- Admin Replace Worker C -------------------------------------- */
-
-  await workerQueue.enqueueWorker(
-    replacementWorker.id
-  );
-
-  const replacementResponse =
-    await server.request(
-      "POST",
-      `/api/admin/vehicle-jobs/${job.ticketNo}/assign-workers`,
-      {
-        token:
-          adminToken,
-
-        body: {
-          worker_codes: [
-            replacementWorker.username,
-          ],
-        },
-      }
-    );
-
-  assert.equal(
-    replacementResponse.status,
-    201
-  );
-
-  const replacementAssignment =
-    state.assignments.find(
-      (item) =>
-        item.vehicle_job_id ===
-        job.id &&
-        item.worker_account_id ===
-        replacementWorker.id &&
-        item.status ===
-        "PENDING"
-    );
-
-  assert.ok(
-    replacementAssignment
-  );
-
-  /* -------------------------------------- เน€เธเธดเธ Booth 1 เธ•เนเธญเธเนเธกเนเน€เธเธฅเธตเนเธขเธ -------------------------------------- */
-
-  const firstBoothPaymentsAfterCancel =
-    state.ticketWorkerPayments
-      .filter(
-        (payment) =>
-          payment.ticket_worker_id ===
-          firstTicketWorker.id
-      )
-      .map((payment) => ({
-        id:
-          payment.id,
-
-        ticket_product_financial_id:
-          payment.ticket_product_financial_id,
-
-        raw_amount:
-          payment.raw_amount,
-
-        remainder_amount:
-          payment.remainder_amount,
-
-        final_amount:
-          payment.final_amount,
-      }));
-
-  assert.deepEqual(
-    firstBoothPaymentsAfterCancel,
-    firstBoothPaymentsBeforeCancel
-  );
-
-  const firstBoothAmountAfterCancel =
-    firstBoothPaymentsAfterCancel.reduce(
-      (total, payment) =>
-        total +
-        Number(
-          payment.final_amount
-        ),
-      0
-    );
-
-  assert.equal(
-    firstBoothAmountAfterCancel,
-    12
-  );
-
-  /* -------------------------------------- Worker History -------------------------------------- */
-
-  const assignmentCreatedAt =
-    assignment.created_at;
-
-  assert.ok(
-    assignmentCreatedAt
-  );
-
-  const historyDate =
-    new Intl.DateTimeFormat(
-      "en-CA",
-      {
-        timeZone:
-          "Asia/Bangkok",
-
-        year:
-          "numeric",
-
-        month:
-          "2-digit",
-
-        day:
-          "2-digit",
-      }
-    ).format(
-      new Date(
-        assignmentCreatedAt
-      )
-    );
-
-  const historyResponse =
-    await server.request(
-      "GET",
-      `/api/workers/me/assignments/history?date=${historyDate}`,
-      {
-        token:
-          workerToken,
-      }
-    );
-
-  assert.equal(
-    historyResponse.status,
-    200
-  );
-
-  const historyItem =
-    historyResponse.body.data.find(
-      (item: {
-        ticketNo: string;
-      }) =>
-        item.ticketNo ===
-        job.ticketNo
-    );
-
-  assert.ok(
-    historyItem
-  );
-
-  // เธ–เธถเธ Assignment เธเธฐเธ–เธนเธ Cancel เธ•เธญเธ Booth 2
-  // เน€เธเธดเธ Booth 1 เธ•เนเธญเธเธขเธฑเธเธญเธขเธนเน
-  assert.equal(
-    historyItem.status,
-    "CANCELLED"
-  );
-
-  assert.equal(
-    historyResponse.body.total_earnings,
-    undefined
-  );
-
-  assert.equal(
-    historyItem.earnings,
-    undefined
-  );
-
-  const firstBoothEarning =
-    state.ticketWorkers.find(
-      (ticketWorker) =>
-        ticketWorker.ticket_id === firstTicket.id &&
-        ticketWorker.worker_account_id === worker.id
-    );
-
-  const secondBoothEarning =
-    state.ticketWorkers.find(
-      (ticketWorker) =>
-        ticketWorker.ticket_id === secondTicket.id &&
-        ticketWorker.worker_account_id === worker.id
-    );
-
-  assert.ok(
-    firstBoothEarning
-  );
-
-  assert.ok(
-    secondBoothEarning
-  );
-
-  // Booth 1 = เน€เธเธดเธเน€เธเนเธฒเธ•เนเธญเธเธญเธขเธนเนเธเธฃเธ
-  assert.equal(
-    firstBoothEarning.status,
-    "COMPLETED"
-  );
-
-  assert.equal(
-    firstBoothEarning.final_earning_amount,
-    "12.00"
-  );
-
-  // Booth 2 = Cancel เนเธฅเนเธงเธเธถเธเนเธกเนเธกเธตเน€เธเธดเธ
-  assert.equal(
-    secondBoothEarning.status,
-    "CANCELLED"
-  );
-
-  assert.equal(
-    secondBoothEarning.final_earning_amount ?? null,
-    null
+    state.ticketWorkerPayments.filter(
+      (payment) => payment.ticket_worker_id === replacementTicketWorker.id
+    ).length,
+    4 // 2 booths x 2 products
   );
 
   /* -------------------------------------- Admin Financial API -------------------------------------- */
 
-  const financialResponse =
-    await server.request(
-      "GET",
-      `/api/admin/vehicle-jobs/${job.ticketNo}/financials`,
-      {
-        token:
-          adminToken,
-      }
-    );
-
-  assert.equal(
-    financialResponse.status,
-    200
-  );
-
-  // Booth 1 เธเธ เนเธ•เน Booth 2 เธขเธฑเธเนเธกเนเธเธ
-  assert.equal(
-    financialResponse.body
-      .financial_status,
-    "PARTIAL"
-  );
-
-  assert.deepEqual(
-    financialResponse.body.summary,
+  const financialResponse = await server.request(
+    "GET",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/financials`,
     {
-      booth_count:
-        2,
-
-      financialized_booth_count:
-        1,
-
-      final_stall_amount:
-        "34.00",
-
-      labor_fee_raw:
-        "12.6000",
-
-      worker_payout_total:
-        "12.00",
-
-      fund_amount:
-        "0.6000",
+      token: adminToken,
     }
   );
 
-  const financialFirstBooth =
-    financialResponse.body.booths.find(
-      (booth: {
-        ticket_id: number;
-      }) =>
-        booth.ticket_id ===
-        firstTicket.id
-    );
+  assert.equal(financialResponse.status, 200);
+  assert.equal(financialResponse.body.financial_status, "FINALIZED");
+  assert.equal(financialResponse.body.summary.financialized_booth_count, 2);
 
-  const financialSecondBooth =
-    financialResponse.body.booths.find(
-      (booth: {
-        ticket_id: number;
-      }) =>
-        booth.ticket_id ===
-        secondTicket.id
-    );
-
-  assert.ok(
-    financialFirstBooth
+  const financialFirstBooth = financialResponse.body.booths.find(
+    (booth: { ticket_id: number }) => booth.ticket_id === firstTicket.id
   );
 
-  assert.ok(
-    financialSecondBooth
+  assert.ok(financialFirstBooth);
+
+  const cancelledWorkerRow = financialFirstBooth.workers.find(
+    (item: { worker_code: string }) => item.worker_code === worker.username
+  );
+  const replacementWorkerRow = financialFirstBooth.workers.find(
+    (item: { worker_code: string }) => item.worker_code === replacementWorker.username
   );
 
-  const completedWorker =
-    financialFirstBooth.workers.find(
-      (item: {
-        worker_code: string;
-      }) =>
-        item.worker_code ===
-        worker.username
-    );
+  // Worker ที่ถูก Cancel ยังต้องมองเห็นได้ใน Roster เพื่อการตรวจสอบ แต่ total_amount ของ Booth ต้องเป็น 0
+  assert.ok(cancelledWorkerRow);
+  assert.equal(cancelledWorkerRow.membership_status, "CANCELLED");
+  assert.equal(cancelledWorkerRow.total_amount, "0.00");
 
-  const cancelledWorker =
-    financialSecondBooth.workers.find(
-      (item: {
-        worker_code: string;
-      }) =>
-        item.worker_code ===
-        worker.username
-    );
-
-  assert.ok(
-    completedWorker
-  );
-
-  assert.ok(
-    cancelledWorker
-  );
-
-  assert.equal(
-    completedWorker.membership_status,
-    "COMPLETED"
-  );
-
-  assert.equal(
-    completedWorker.total_amount,
-    "12.00"
-  );
-
-  assert.equal(
-    cancelledWorker.membership_status,
-    "CANCELLED"
-  );
-
-  assert.equal(
-    cancelledWorker.total_amount,
-    "0.00"
-  );
+  assert.ok(replacementWorkerRow);
+  assert.equal(replacementWorkerRow.membership_status, "COMPLETED");
 });
 
 test("ticket financialization keeps Gate rate snapshot after MasterRate changes", async () => {
@@ -1848,8 +1458,8 @@ test("ticket financialization keeps Gate rate snapshot after MasterRate changes"
   const job =
     state.vehicleJobs.find(
       (item) =>
-        item.ticketNo ===
-        gateBody.TicketNo
+        item.ticket_number ===
+        gateBody.TicketNumber
     );
 
   assert.ok(job);
@@ -1977,7 +1587,7 @@ test("ticket financialization keeps Gate rate snapshot after MasterRate changes"
   const submitResponse =
     await server.request(
       "POST",
-      `/api/workers/me/assignments/${job.ticketNo}/tickets/complete`,
+      `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
       {
         token:
           workerToken,
@@ -2189,7 +1799,7 @@ test("ticket financialization keeps Gate rate snapshot after MasterRate changes"
   const financialResponse =
     await server.request(
       "GET",
-      `/api/admin/vehicle-jobs/${job.ticketNo}/financials`,
+      `/api/admin/vehicle-jobs/${job.ticket_number}/financials`,
       {
         token:
           adminToken,
@@ -2383,8 +1993,8 @@ test("ticket financialization rejects partial financial state without overwritin
     id:
       state.nextTicketWorkerId++,
 
-    ticket_id:
-      ticket.id,
+    market_job_id:
+      ticket.market_job_id,
 
     worker_account_id:
       worker.id,
@@ -2519,8 +2129,8 @@ test("ticket financialization rejects partial financial state without overwritin
   await assert.rejects(
     () =>
       ticketFinancialService
-        .finalizeTicketFinancials(
-          ticket.id
+        .finalizeMarketJobFinancials(
+          ticket.market_job_id
         ),
 
     (error) =>
@@ -2591,8 +2201,8 @@ test("ticket financialization rejects partial financial state without overwritin
   await assert.rejects(
     () =>
       ticketFinancialService
-        .finalizeTicketFinancials(
-          ticket.id
+        .finalizeMarketJobFinancials(
+          ticket.market_job_id
         ),
 
     (error) =>
@@ -2645,6 +2255,805 @@ test("ticket financialization rejects partial financial state without overwritin
     ticket.financialized_at,
     null
   );
+});
+
+/* -------------------------------------- Ticket-Level Worker Cancel Route Tests -------------------------------------- */
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:workerCode/cancel removes the worker from only that Business Ticket's roster, leaving the VehicleJobAssignment and the worker's other Business Ticket untouched", async () => {
+  const { token: workerToken, worker } = await loginWorker(9601);
+  const { token: adminToken } = await loginJobAdmin(9600);
+
+  const job = addDispatchableJob(960, 1);
+  const firstTicket = addTicketForVehicleJob(job.id, 19601, 296001);
+  const secondTicket = addTicketForVehicleJob(job.id, 19602, 296002);
+
+  assert.notEqual(firstTicket.market_job_id, secondTicket.market_job_id);
+
+  const firstMarket = state.marketJobs.find((item) => item.id === firstTicket.market_job_id)!;
+
+  const assignment = addPendingAssignment(19603, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+
+  const now = new Date().toISOString();
+
+  state.ticketWorkers.push(
+    {
+      id: state.nextTicketWorkerId++,
+      market_job_id: firstTicket.market_job_id,
+      worker_account_id: worker.id,
+      status: "WORKING",
+      joined_at: now,
+      cancelled_at: null,
+      completed_at: null,
+    },
+    {
+      id: state.nextTicketWorkerId++,
+      market_job_id: secondTicket.market_job_id,
+      worker_account_id: worker.id,
+      status: "WORKING",
+      joined_at: now,
+      cancelled_at: null,
+      completed_at: null,
+    }
+  );
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/tickets/${firstMarket.ticket_no}/workers/${worker.username}/cancel`,
+    {
+      token: adminToken,
+      body: {
+        reason: "vendor requested a different worker for this ticket only",
+      },
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "CANCELLED");
+  assert.equal(response.body.worker_code, worker.username);
+  assert.equal(response.body.ticket_number, job.ticket_number);
+  assert.equal(response.body.ticket_no, firstMarket.ticket_no);
+
+  const firstTicketWorker = state.ticketWorkers.find(
+    (item) =>
+      item.market_job_id === firstTicket.market_job_id &&
+      item.worker_account_id === worker.id
+  );
+  const secondTicketWorker = state.ticketWorkers.find(
+    (item) =>
+      item.market_job_id === secondTicket.market_job_id &&
+      item.worker_account_id === worker.id
+  );
+
+  assert.equal(firstTicketWorker?.status, "CANCELLED");
+  assert.ok(firstTicketWorker?.cancelled_at);
+
+  // ต่างจาก Global Cancel: Assignment ระดับรถและ Roster ของ Ticket อื่นต้องไม่ถูกแตะ
+  assert.equal(secondTicketWorker?.status, "WORKING");
+  assert.equal(secondTicketWorker?.cancelled_at, null);
+  assert.equal(assignment.status, "SCANNED");
+
+  // Worker ยังส่งของ Ticket ที่สอง (ที่ยังไม่ถูก Cancel) ได้ตามปกติ
+  const secondProducts = state.ticketProducts.filter(
+    (product) => product.ticket_id === secondTicket.id
+  );
+  const submitResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
+    {
+      token: workerToken,
+      body: {
+        boothCode: secondTicket.boothCode,
+        items: secondProducts.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    }
+  );
+
+  assert.equal(submitResponse.status, 200);
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:workerCode/cancel returns 404 when the worker is not an active member of that Business Ticket", async () => {
+  const { token: adminToken } = await loginJobAdmin(9610);
+  const worker = addWorker(9611);
+
+  const job = addDispatchableJob(961, 1);
+  const ticket = addTicketForVehicleJob(job.id, 19611);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/tickets/${market.ticket_no}/workers/${worker.username}/cancel`,
+    {
+      token: adminToken,
+      body: {},
+    }
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(response.body.code, "TICKET_WORKER_NOT_FOUND");
+});
+
+/* -------------------------------------- Admin Override Count Route Tests -------------------------------------- */
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count overrides product quantities and records the admin action", async () => {
+  const { token } = await loginJobAdmin(9800);
+  const job = addDispatchableJob(980, 1);
+  const ticket = addTicketForVehicleJob(job.id, 19800);
+  const products = state.ticketProducts.filter(
+    (product) => product.ticket_id === ticket.id,
+  );
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    {
+      token,
+      body: {
+        reason_code: "R001",
+        reason_text: "กรอกข้อมูลผิดพลาด",
+        counts: [
+          {
+            productCode: products[0].productCode,
+            packageCode: products[0].packageCode,
+            actual_quantity: 15,
+          },
+        ],
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ticket_number, job.ticket_number);
+  assert.equal(response.body.boothCode, ticket.boothCode);
+  assert.equal(response.body.reason_code, "R001");
+  assert.equal(response.body.products.length, 1);
+  assert.equal(response.body.products[0].confirmed_quantity, "15");
+  assert.equal(response.body.products[0].previous_quantity, null);
+
+  const updatedProduct = state.ticketProducts.find(
+    (product) => product.id === products[0].id,
+  );
+
+  assert.equal(updatedProduct?.confirmed_quantity, "15");
+
+  const log = state.adminActionLogs.find(
+    (item) => item.vehicle_job_id === job.id,
+  );
+
+  assert.ok(log);
+  assert.equal(log.action_type, "OVERRIDE_COUNT");
+  assert.equal(log.gate_ticket_id, ticket.id);
+  assert.equal(log.reason_code, "R001");
+  assert.equal(log.reason_text, "กรอกข้อมูลผิดพลาด");
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count returns 404 for an unknown booth", async () => {
+  const { token } = await loginJobAdmin(9810);
+  const job = addDispatchableJob(981, 1);
+  addTicketForVehicleJob(job.id, 19810);
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/UNKNOWN-STALL/override-count`,
+    {
+      token,
+      body: {
+        reason_code: "R001",
+        counts: [{ productCode: "X", packageCode: "Y", actual_quantity: 1 }],
+      },
+    },
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(response.body.code, "TICKET_NOT_FOUND");
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count returns 404 for an unknown product", async () => {
+  const { token } = await loginJobAdmin(9820);
+  const job = addDispatchableJob(982, 1);
+  const ticket = addTicketForVehicleJob(job.id, 19820);
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    {
+      token,
+      body: {
+        reason_code: "R001",
+        counts: [
+          { productCode: "UNKNOWN", packageCode: "UNKNOWN", actual_quantity: 1 },
+        ],
+      },
+    },
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(response.body.code, "PRODUCT_NOT_FOUND");
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count rejects a booth that already completed", async () => {
+  const { token } = await loginJobAdmin(9830);
+  const job = addDispatchableJob(983, 1);
+  const ticket = addTicketForVehicleJob(job.id, 19830);
+  const products = state.ticketProducts.filter(
+    (product) => product.ticket_id === ticket.id,
+  );
+
+  ticket.status = "COMPLETED";
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    {
+      token,
+      body: {
+        reason_code: "R001",
+        counts: [
+          {
+            productCode: products[0].productCode,
+            packageCode: products[0].packageCode,
+            actual_quantity: 5,
+          },
+        ],
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "INVALID_TICKET_STATUS");
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count rejects a booth that is already financialized", async () => {
+  const { token } = await loginJobAdmin(9840);
+  const job = addDispatchableJob(984, 1);
+  const ticket = addTicketForVehicleJob(job.id, 19840);
+  const products = state.ticketProducts.filter(
+    (product) => product.ticket_id === ticket.id,
+  );
+
+  ticket.status = "WORKING";
+  ticket.financialized_at = new Date().toISOString();
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    {
+      token,
+      body: {
+        reason_code: "R001",
+        counts: [
+          {
+            productCode: products[0].productCode,
+            packageCode: products[0].packageCode,
+            actual_quantity: 5,
+          },
+        ],
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "TICKET_ALREADY_FINANCIALIZED");
+});
+
+/* -------------------------------------- Admin Vehicle Wait Route Tests -------------------------------------- */
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/wait sets the vehicle job back to WAIT and records the admin action", async () => {
+  const { token } = await loginJobAdmin(9850);
+  const job = addDispatchableJob(985, 1);
+  const ticket = addTicketForVehicleJob(job.id, 19850);
+  job.status = "WORKING";
+  // Booth ยังไม่เริ่มทำงานจริง (Fixture ปกติสร้าง Booth เป็น WORKING) จึงต้องปรับกลับเป็น WAIT
+  // เพื่อจำลองสถานการณ์ "รถยังไม่พร้อมเข้าจุดลงสินค้า" ที่ยัง Change to Wait ได้
+  ticket.status = "WAIT";
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/wait`,
+    {
+      token,
+      body: {
+        reason_code: "R003",
+        reason_text: "รถยังไม่พร้อมเข้าจุดลงสินค้า",
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "WAIT");
+  assert.equal(response.body.reason_code, "R003");
+  assert.equal(job.status, "WAIT");
+
+  const log = state.adminActionLogs.find(
+    (item) => item.vehicle_job_id === job.id,
+  );
+
+  assert.ok(log);
+  assert.equal(log.action_type, "VEHICLE_WAIT");
+  assert.equal(log.reason_text, "รถยังไม่พร้อมเข้าจุดลงสินค้า");
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/wait rejects a vehicle job that already has a booth in progress", async () => {
+  const { token } = await loginJobAdmin(9860);
+  const job = addDispatchableJob(986, 1);
+  const ticket = addTicketForVehicleJob(job.id, 19860);
+  job.status = "WORKING";
+  ticket.status = "WORKING";
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/wait`,
+    {
+      token,
+      body: {
+        reason_code: "R003",
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "VEHICLE_JOB_ALREADY_STARTED");
+  assert.equal(job.status, "WORKING");
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/wait rejects a vehicle job that is already completed", async () => {
+  const { token } = await loginJobAdmin(9870);
+  const job = addDispatchableJob(987, 1);
+  addTicketForVehicleJob(job.id, 19870);
+  job.status = "COMPLETED";
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/wait`,
+    {
+      token,
+      body: {
+        reason_code: "R003",
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "VEHICLE_JOB_CLOSED");
+});
+
+/* -------------------------------------- Admin Release Workers Route Tests -------------------------------------- */
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers releases workers back to the FIFO queue once every booth is resolved", async () => {
+  const { token: adminToken } = await loginJobAdmin(9880);
+  const { token: workerToken, worker } = await loginWorker(9881);
+  const job = addDispatchableJob(988, 1);
+  job.tickets_closed_at = null;
+  const ticket = addTicketForVehicleJob(job.id, 19880);
+  const assignment = addPendingAssignment(19881, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.markWorkerAssigned(worker.id);
+
+  const products = state.ticketProducts.filter(
+    (product) => product.ticket_id === ticket.id,
+  );
+
+  const submitResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
+    {
+      token: workerToken,
+      body: {
+        boothCode: ticket.boothCode,
+        items: products.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    },
+  );
+
+  assert.equal(submitResponse.status, 200);
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  const processor = state.workerProcessors.get(queueName);
+  const submission = state.completionSubmissions.at(-1);
+
+  assert.ok(submission);
+
+  await processor!({
+    data: {
+      ticketId: ticket.id,
+      submissionId: submission.id,
+      kind: "vendor_confirm",
+    },
+  });
+
+  // Booth เสร็จแล้ว แต่ Gate ยังไม่ปิดรับ Ticket เพิ่ม -> assignment ยังไม่ COMPLETED, worker ยังไม่กลับคิว
+  assert.equal(assignment.status, "WORKING");
+  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "assigned");
+
+  // Booth ทุกใบเสร็จแล้วจริง ไม่มีความต้องการ Worker เพิ่มสำหรับรถคันนี้อีก (จำลอง SUM ที่ควรจะ
+  // ลดลงเหลือ 0 เมื่อไม่มี Booth เหลือให้ทำ) เพื่อไม่ให้ Dispatch จับ Worker ที่เพิ่ง Release กลับมาทันที
+  job.workers_required = 0;
+
+  const releaseResponse = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/release-workers`,
+    {
+      token: adminToken,
+      body: {
+        reason_code: "R004",
+        reason_text: "แรงงานส่งยอดครบแล้ว",
+      },
+    },
+  );
+
+  assert.equal(releaseResponse.status, 200);
+  assert.deepEqual(releaseResponse.body.released_worker_codes, [worker.username]);
+  assert.equal(assignment.status, "RELEASED");
+  assert.ok(assignment.released_at);
+  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");
+
+  const log = state.adminActionLogs.find(
+    (item) => item.vehicle_job_id === job.id,
+  );
+
+  assert.ok(log);
+  assert.equal(log.action_type, "WORKERS_RELEASED");
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers rejects when a booth is still pending submission", async () => {
+  const { token: adminToken } = await loginJobAdmin(9890);
+  const { worker } = await loginWorker(9891);
+  const job = addDispatchableJob(989, 1);
+  addTicketForVehicleJob(job.id, 19890);
+  addPendingAssignment(19891, job.id, worker.id);
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/release-workers`,
+    {
+      token: adminToken,
+      body: {
+        reason_code: "R004",
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "BOOTHS_NOT_SUBMITTED");
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers rejects a vehicle job that is already completed", async () => {
+  const { token: adminToken } = await loginJobAdmin(9900);
+  const job = addDispatchableJob(990, 1);
+  addTicketForVehicleJob(job.id, 19900);
+  job.status = "COMPLETED";
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/release-workers`,
+    {
+      token: adminToken,
+      body: {
+        reason_code: "R004",
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "VEHICLE_JOB_CLOSED");
+});
+
+/* -------------------------------------- Work History Route Tests -------------------------------------- */
+
+test("GET /api/admin/vehicle-jobs/history returns Workers, Timeline, Finance and job-level timestamps once a Business Ticket finalizes", async () => {
+  const { token: adminToken } = await loginJobAdmin(9950);
+  const { token: workerToken, worker } = await loginWorker(9951);
+  const job = addDispatchableJob(995, 1);
+  job.tickets_closed_at = new Date().toISOString();
+  const ticket = addTicketForVehicleJob(job.id, 19950);
+  const assignment = addPendingAssignment(19951, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.accepted_at = new Date().toISOString();
+  assignment.scanned_at = new Date().toISOString();
+  state.workerAssignmentEvents.push({
+    id: state.nextWorkerAssignmentEventId++,
+    assignment_id: assignment.id,
+    worker_account_id: assignment.worker_account_id,
+    vehicle_job_id: assignment.vehicle_job_id,
+    event_type: "ASSIGNED",
+    occurred_at: new Date().toISOString(),
+    metadata: null,
+    created_at: new Date().toISOString(),
+  });
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.markWorkerAssigned(worker.id);
+
+  const products = state.ticketProducts.filter(
+    (product) => product.ticket_id === ticket.id,
+  );
+
+  const submitResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
+    {
+      token: workerToken,
+      body: {
+        boothCode: ticket.boothCode,
+        items: products.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    },
+  );
+
+  assert.equal(submitResponse.status, 200);
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  const processor = state.workerProcessors.get(queueName);
+  const submission = state.completionSubmissions.at(-1);
+
+  assert.ok(submission);
+
+  await processor!({
+    data: {
+      ticketId: ticket.id,
+      submissionId: submission.id,
+      kind: "vendor_confirm",
+    },
+  });
+
+  const historyResponse = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history",
+    { token: adminToken },
+  );
+
+  assert.equal(historyResponse.status, 200);
+  assert.equal(historyResponse.body.data.length, 1);
+
+  const item = historyResponse.body.data[0];
+
+  assert.equal(item.vehicle_job.ticket_number, job.ticket_number);
+  assert.ok(item.vehicle_job.work_start);
+  assert.ok(item.vehicle_job.submitted_complete_at);
+  assert.ok(item.vehicle_job.vendor_confirmed_complete_at);
+
+  // Workers
+  assert.equal(item.workers.length, 1);
+  assert.equal(item.workers[0].worker_code, worker.username);
+  assert.ok(item.workers[0].accepted_at);
+  assert.ok(item.workers[0].scanned_at);
+  assert.ok(item.workers[0].submitted_at);
+  assert.equal(item.workers[0].cancellation, null);
+
+  // Timeline
+  const timelineTypes = item.timeline.map((entry: { type: string }) => entry.type);
+
+  assert.ok(timelineTypes.includes("GATE_ARRIVAL"));
+  assert.ok(timelineTypes.includes("WORKER_ASSIGNED"));
+  assert.ok(timelineTypes.includes("COUNT_SUBMITTED"));
+  assert.ok(timelineTypes.includes("TICKET_CONFIRMED"));
+  // Timeline ต้องเรียงตามเวลาจริง
+  const occurredAts = item.timeline.map((entry: { occurred_at: string }) => entry.occurred_at);
+  const sortedOccurredAts = [...occurredAts].sort();
+
+  assert.deepEqual(occurredAts, sortedOccurredAts);
+
+  // Booth-level Finance (Reuse จาก formatAdminFinancialBooth)
+  assert.equal(item.markets.length, 1);
+  assert.equal(item.markets[0].booths.length, 1);
+
+  const booth = item.markets[0].booths[0];
+
+  assert.equal(booth.financialized, true);
+  assert.ok(booth.final_stall_amount);
+  assert.equal(booth.submitted_worker_codes.length, 1);
+  assert.equal(booth.submitted_worker_codes[0], worker.username);
+  assert.ok(booth.submitted_at);
+  assert.ok(booth.confirmedAt);
+  assert.deepEqual(booth.rejection_history, []);
+
+  // Job-level Finance
+  assert.equal(item.finance.worker_count, 1);
+  assert.equal(item.finance.total_worker_share, booth.summary.worker_payout_total);
+  assert.equal(item.finance.stall_fee_total, booth.final_stall_amount);
+});
+
+test("GET /api/admin/vehicle-jobs/history reflects Admin actions (override count) in the Timeline", async () => {
+  const { token: adminToken } = await loginJobAdmin(9960);
+  const job = addDispatchableJob(996, 1);
+  const ticket = addTicketForVehicleJob(job.id, 19960);
+  const products = state.ticketProducts.filter(
+    (product) => product.ticket_id === ticket.id,
+  );
+
+  const overrideResponse = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    {
+      token: adminToken,
+      body: {
+        reason_code: "R001",
+        reason_text: "กรอกข้อมูลผิดพลาด",
+        counts: [
+          {
+            productCode: products[0].productCode,
+            packageCode: products[0].packageCode,
+            actual_quantity: 7,
+          },
+        ],
+      },
+    },
+  );
+
+  assert.equal(overrideResponse.status, 200);
+
+  const historyResponse = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history",
+    { token: adminToken },
+  );
+
+  assert.equal(historyResponse.status, 200);
+
+  const item = historyResponse.body.data[0];
+  const adminEntry = item.timeline.find(
+    (entry: { type: string }) => entry.type === "ADMIN_ACTION",
+  );
+
+  assert.ok(adminEntry);
+  assert.equal(adminEntry.actor_type, "admin");
+
+  const overriddenProduct = item.markets[0].booths[0].products.find(
+    (product: { productCode: string }) => product.productCode === products[0].productCode,
+  );
+
+  assert.equal(overriddenProduct.confirmed_quantity, "7.00");
+});
+
+/* -------------------------------------- Daily Worker Income Route Tests -------------------------------------- */
+
+test("GET /api/admin/vehicle-jobs/history/daily-worker-income lists one row per Worker per Business Ticket with the locked payout", async () => {
+  const { token: adminToken } = await loginJobAdmin(9970);
+  const { token: workerToken, worker } = await loginWorker(9971);
+  const job = addDispatchableJob(997, 1);
+  job.tickets_closed_at = new Date().toISOString();
+  const ticket = addTicketForVehicleJob(job.id, 19970);
+  const assignment = addPendingAssignment(19971, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.accepted_at = new Date().toISOString();
+  assignment.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.markWorkerAssigned(worker.id);
+
+  const products = state.ticketProducts.filter(
+    (product) => product.ticket_id === ticket.id,
+  );
+
+  const submitResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
+    {
+      token: workerToken,
+      body: {
+        boothCode: ticket.boothCode,
+        items: products.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    },
+  );
+
+  assert.equal(submitResponse.status, 200);
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  const processor = state.workerProcessors.get(queueName);
+  const submission = state.completionSubmissions.at(-1);
+
+  assert.ok(submission);
+
+  await processor!({
+    data: {
+      ticketId: ticket.id,
+      submissionId: submission.id,
+      kind: "vendor_confirm",
+    },
+  });
+
+  const marketJob = state.marketJobs.find(
+    (item) => item.id === ticket.market_job_id,
+  );
+  const ticketWorker = state.ticketWorkers.find(
+    (item) => item.market_job_id === ticket.market_job_id,
+  );
+
+  assert.ok(marketJob);
+  assert.ok(ticketWorker);
+  assert.ok(ticketWorker.final_earning_amount);
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-worker-income",
+    { token: adminToken },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.length, 1);
+
+  const row = response.body.data[0];
+
+  assert.equal(row.id, `${marketJob.ticket_no}-${marketJob.marketCode}`);
+  assert.equal(row.ticket_number, job.ticket_number);
+  assert.equal(row.marketJobNo, marketJob.ticket_no);
+  assert.equal(row.plate, job.license_plate);
+  assert.equal(row.worker.code, worker.username);
+  assert.equal(row.assigned_stalls, 1);
+  assert.equal(row.confirmed_stalls, 1);
+  assert.equal(row.payable, ticketWorker.final_earning_amount);
+  assert.equal(row.status, "COMPLETED");
+  assert.ok(row.accepted_at);
+  assert.ok(row.scanned_at);
+  assert.ok(row.submitted_at);
+  assert.ok(row.confirmedAt);
+  assert.equal(row.cancellation, null);
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-worker-income supports workerCode/from/to alias filters", async () => {
+  const { token: adminToken } = await loginJobAdmin(9980);
+  const workerA = addWorker(9981);
+  const workerB = addWorker(9982);
+  const jobA = addDispatchableJob(998, 1);
+  const ticketA = addTicketForVehicleJob(jobA.id, 19980);
+  const jobB = addDispatchableJob(999, 1);
+  const ticketB = addTicketForVehicleJob(jobB.id, 19990);
+  const now = new Date().toISOString();
+
+  state.ticketWorkers.push(
+    {
+      id: state.nextTicketWorkerId++,
+      market_job_id: ticketA.market_job_id,
+      worker_account_id: workerA.id,
+      status: "COMPLETED",
+      final_earning_amount: "12.00",
+      joined_at: now,
+      cancelled_at: null,
+      completed_at: now,
+    },
+    {
+      id: state.nextTicketWorkerId++,
+      market_job_id: ticketB.market_job_id,
+      worker_account_id: workerB.id,
+      status: "COMPLETED",
+      final_earning_amount: "8.00",
+      joined_at: now,
+      cancelled_at: null,
+      completed_at: now,
+    },
+  );
+
+  const response = await server.request(
+    "GET",
+    `/api/admin/vehicle-jobs/history/daily-worker-income?workerCode=${workerA.username}`,
+    { token: adminToken },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.length, 1);
+  assert.equal(response.body.data[0].worker.code, workerA.username);
+  assert.equal(response.body.data[0].payable, "12.00");
 });
 
 /* -------------------------------------- Worker Queue Route Tests -------------------------------------- */

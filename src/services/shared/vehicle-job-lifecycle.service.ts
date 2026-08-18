@@ -11,6 +11,7 @@ import * as ticketWorkerRepository from "../../repositories/shared/ticket-worker
 import * as assignmentRepository from "../../repositories/shared/vehicle-job-assignment.repository";
 import * as vehicleJobRepository from "../../repositories/shared/vehicle-job.repository";
 import * as workerAssignmentEventRepository from "../../repositories/shared/worker-assignment-event.repository";
+import { finalizeMarketJobFinancials } from "./ticket-financial.service";
 
 import type { DbConnection } from "../../types/shared/common.type";
 import type {
@@ -20,6 +21,38 @@ import type {
 } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
+
+// Function Sync Worker Roster ของทุก Business Ticket ที่ยัง Active และยังไม่ Lock ของ TicketNumber
+// นี้ ให้ตรงกับทีม Worker ปัจจุบัน เรียกทุกครั้งที่ทีมของ TicketNumber เปลี่ยน (Ticket ใหม่มา,
+// Worker accept/scan ใหม่) เพื่อให้สมาชิกใหม่ถูกเพิ่มเข้า Ticket อื่นที่ยังเปิดอยู่ด้วย ไม่ใช่แค่
+// Ticket ที่เพิ่ง Activate
+export async function syncAllOpenMarketJobRosters(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<void> {
+  const vehicleJob = await vehicleJobRepository.findVehicleJobLifecycleState(
+    vehicleJobId,
+    connection,
+  );
+
+  if (!vehicleJob) {
+    return;
+  }
+
+  const openMarketJobs = vehicleJob.marketJobs.filter(
+    (market) =>
+      !TERMINAL_JOB_STATUSES.includes(market.status) &&
+      market.workerRosterLockedAt === null,
+  );
+
+  for (const market of openMarketJobs) {
+    await ticketWorkerRepository.syncTicketWorkersFromVehicleAssignments(
+      market.id,
+      vehicleJobId,
+      connection,
+    );
+  }
+}
 
 export async function activateNextTicketIfReady(
   vehicleJobId: number,
@@ -43,11 +76,7 @@ export async function activateNextTicketIfReady(
   const activatableTicketStatuses: string[] = [TICKET_STATUS.WAIT];
 
   if (!activatableTicketStatuses.includes(current.ticket.status)) {
-    await ticketWorkerRepository.syncTicketWorkersFromVehicleAssignments(
-      current.ticket.id,
-      vehicleJobId,
-      connection,
-    );
+    await syncAllOpenMarketJobRosters(vehicleJobId, connection);
 
     return current;
   }
@@ -58,11 +87,7 @@ export async function activateNextTicketIfReady(
     connection,
   );
 
-  await ticketWorkerRepository.syncTicketWorkersFromVehicleAssignments(
-    ticket.id,
-    vehicleJobId,
-    connection,
-  );
+  await syncAllOpenMarketJobRosters(vehicleJobId, connection);
 
   return {
     ...current,
@@ -111,17 +136,22 @@ export async function closeCompletedVehicleJobIfReady(
       );
 
     if (allTicketsTerminal && !TERMINAL_JOB_STATUSES.includes(market.status)) {
-      const marketStatus = market.tickets.every(
+      const allCancelled = market.tickets.every(
         (ticket) => ticket.status === TICKET_STATUS.CANCELLED,
-      )
-        ? VEHICLE_JOB_STATUS.CANCELLED
-        : VEHICLE_JOB_STATUS.COMPLETED;
-
-      await vehicleJobRepository.updateMarketJobStatus(
-        market.id,
-        marketStatus,
-        connection,
       );
+
+      if (allCancelled) {
+        await vehicleJobRepository.updateMarketJobStatus(
+          market.id,
+          VEHICLE_JOB_STATUS.CANCELLED,
+          connection,
+        );
+      } else {
+        // อย่างน้อยหนึ่ง Booth COMPLETED และทุก Booth Terminal แล้ว
+        // -> Lock Roster และ Finalize การเงินของ Business Ticket นี้ทั้งใบ
+        // (finalizeMarketJobFinancials จะเซ็ต MarketJob.status = COMPLETED เอง)
+        await finalizeMarketJobFinancials(market.id, connection);
+      }
     }
   }
 
@@ -135,7 +165,11 @@ export async function closeCompletedVehicleJobIfReady(
     return null;
   }
 
+  // TicketNumber จบได้ก็ต่อเมื่อทุก Business Ticket ที่มีอยู่ Terminal ครบ
+  // "และ" Gate ยืนยันแล้วว่าไม่มี Business Ticket เพิ่มเข้ามาอีก (ticketsClosedAt)
+  // ห้ามใช้แค่ "Ticket ที่เห็นตอนนี้ครบ" เพราะ Gate อาจยังส่ง Ticket ใหม่มาอีกก็ได้
   const isVehicleComplete =
+    refreshedVehicleJob.ticketsClosedAt !== null &&
     refreshedVehicleJob.marketJobs.length > 0 &&
     refreshedVehicleJob.marketJobs.every(
       (market) =>

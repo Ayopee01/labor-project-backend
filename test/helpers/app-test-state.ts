@@ -1,10 +1,12 @@
 import type {
   AccountRecord,
+  AdminActionLogRecord,
   AssignmentRecord,
   GateClientRecord,
   GateRequestLogRecord,
   GateTicketRecord,
   LineActionTokenRecord,
+  MarketJobRecord,
   MasterMarketRecord,
   MasterProductRecord,
   MasterRateRecord,
@@ -45,6 +47,7 @@ export const state = {
   workers: new Map<number, AccountRecord>(),
   schedules: new Map<number, unknown>(),
   vehicleJobs: [] as VehicleJobRecord[],
+  marketJobs: [] as MarketJobRecord[],
   assignments: [] as AssignmentRecord[],
   workerAssignmentEvents: [] as WorkerAssignmentEventRecord[],
   gateTickets: [] as GateTicketRecord[],
@@ -55,6 +58,7 @@ export const state = {
   ticketWorkerPayments: [] as TicketWorkerPaymentRecord[],
   completionSubmissions: [] as TicketCompletionSubmissionRecord[],
 
+  adminActionLogs: [] as AdminActionLogRecord[],
   ticketRatings: [] as TicketRatingRecord[],
   lineActionTokens: [] as LineActionTokenRecord[],
   gateRequestLogs: [] as GateRequestLogRecord[],
@@ -77,6 +81,7 @@ export const state = {
     string,
     (job: { data: unknown }) => Promise<void>
   >(),
+  nextMarketJobId: 1,
   nextAssignmentId: 1,
   nextWorkerAssignmentEventId: 1,
   nextWorkerNotificationId: 1,
@@ -89,4 +94,5 @@ export const state = {
   nextLineActionTokenId: 1,
   nextGateClientId: 1,
   nextShiftAttendanceId: 1,
+  nextAdminActionLogId: 1,
 };
