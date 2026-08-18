@@ -112,9 +112,10 @@ async function buildMeResponse(
   return {
     role: "worker",
     full_name: account.full_name,
-    employee_code: account.username,
     worker_code: account.username,
     nationality: profile?.nationality ?? null,
+    shirt_number: profile?.shirt_number ?? null,
+    shirt_type: profile?.shirt_type ?? null,
     work_start_date: profile?.work_start_date ?? null,
     phone: account.phone,
     lang: account.lang,

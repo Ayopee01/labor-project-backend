@@ -107,9 +107,10 @@ interface AdminMeResponse {
 interface WorkerMeResponse {
   role: "worker";
   full_name: string;
-  employee_code: string | null;
   worker_code: string | null;
   nationality: string | null;
+  shirt_number: string | null;
+  shirt_type: string | null;
   work_start_date: string | null;
   phone: string | null;
   lang: string;
