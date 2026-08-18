@@ -227,6 +227,15 @@ export async function handleLineWebhook(
     const { action, token, rejectReason, score } = parseLinePostback(event.postback?.data);
     const lineUserId = getLineUserId(event);
 
+    // Temporary: ดู LINE User ID สำหรับทดสอบ
+    if (lineUserId) {
+      console.log("LINE TEST USER:", {
+        eventType: event.type,
+        userId: lineUserId,
+        message: event.message?.text ?? null,
+      });
+    }
+
     if (
       event.type !== "postback" ||
       !lineUserId ||
@@ -295,7 +304,7 @@ export async function handleLineWebhook(
             },
             transaction
           ),
-            gateTicketRepository.listTicketProducts(ticket.id, transaction),
+          gateTicketRepository.listTicketProducts(ticket.id, transaction),
           vehicleJobRepository.getVehicleJobDetail(
             ticket.vehicle_job_id,
             transaction
