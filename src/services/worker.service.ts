@@ -147,20 +147,15 @@ function buildWorkerQueueActionResponse(
 }
 
 // Function สร้าง worker assignment accept response ใน service flow
-//
-// triggeredByTicketNo เป็น audit เท่านั้น (Ticket ที่ทำให้เกิดการ Dispatch นี้ ถ้ารู้)
-// ไม่ใช่การจำกัดสิทธิ์ worker ยังทำ Ticket อื่นในทีมเดียวกันได้ทั้งหมด
 function buildWorkerAssignmentAcceptResponse(
   detail: VehicleJobDetailResponse,
   team: WorkerAssignmentTeamMemberDto[],
   assignment: VehicleJobAssignmentDto,
   workerCode: string | null,
   shirtNumber: string | null,
-  triggeredByTicketNo: string | null,
 ): WorkerAssignmentAcceptResponse {
   return {
     ticket_number: detail.vehicle_job.ticket_number,
-    triggered_by_ticket_no: triggeredByTicketNo,
     worker_code: workerCode,
     shirt_number: shirtNumber,
     accepted_at: assignment.accepted_at,
@@ -178,6 +173,7 @@ function buildWorkerAssignmentAcceptResponse(
     markets: detail.markets.map((market) => ({
       ticket_no: market.ticket_no,
       marketName: market.marketName,
+      worker_qr_token: market.worker_qr_token,
       stall_count: market.booths.length,
         stalls: market.booths.map((ticket) => ({
           boothCode: ticket.boothCode,
@@ -239,6 +235,7 @@ function buildWorkerCurrentJobResponse(
       ticket_no: market.ticket_no,
       marketCode: market.marketCode,
       marketName: market.marketName,
+      worker_qr_token: market.worker_qr_token,
       booths: market.booths.map((ticket) => ({
         boothCode: ticket.boothCode,
         boothName: ticket.boothName,
@@ -1176,19 +1173,12 @@ export async function acceptWorkerAssignment(
     throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
   }
 
-  // Audit เท่านั้น: Ticket ที่ทำให้เกิดการ Dispatch นี้ ถ้ารู้ (ไม่ใช่การจำกัดสิทธิ์)
-  const triggeredByTicketNo =
-    vehicleJobDetail.markets.find(
-      (market) => market.id === acceptedAssignment.source_market_job_id,
-    )?.ticket_no ?? null;
-
   const response = buildWorkerAssignmentAcceptResponse(
     vehicleJobDetail,
     team,
     acceptedAssignment,
     account.username,
     account.shirt_number,
-    triggeredByTicketNo,
   );
   const workerCode = account.username;
 

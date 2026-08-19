@@ -91,19 +91,15 @@ export async function getWorkerDailyAssignmentCounts(
 }
 
 // Function สร้าง assignment จาก DB
-//
-// sourceMarketJobId เป็น audit เท่านั้น (Ticket ที่ทำให้เกิดการ Dispatch รอบนี้ ถ้ารู้)
-// ไม่ใช่การจำกัดสิทธิ์ worker คนไหนก็ทำ Ticket อื่นในทีมเดียวกันได้ทั้งหมด
 export async function createAssignment(
   vehicleJobId: number,
   workerAccountId: number,
   acceptDeadlineAt: Date,
-  connection?: DbConnection,
-  sourceMarketJobId?: number
+  connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto> {
   if (!connection) {
     return withTransaction((transaction) =>
-      createAssignment(vehicleJobId, workerAccountId, acceptDeadlineAt, transaction, sourceMarketJobId)
+      createAssignment(vehicleJobId, workerAccountId, acceptDeadlineAt, transaction)
     );
   }
 
@@ -114,7 +110,6 @@ export async function createAssignment(
       workerAccountId,
       status: "PENDING",
       acceptDeadlineAt,
-      sourceMarketJobId: sourceMarketJobId ?? null,
     },
   });
   await workerAssignmentEventRepository.createOnce(

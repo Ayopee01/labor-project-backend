@@ -332,7 +332,6 @@ export const workerApplicationRepositoryMock = {
     workerAccountId: number,
     acceptDeadlineAt: Date,
     _connection?: unknown,
-    sourceMarketJobId?: number,
   ) => {
     const now = new Date().toISOString();
     const assignment = {
@@ -340,7 +339,6 @@ export const workerApplicationRepositoryMock = {
       vehicle_job_id: vehicleJobId,
       worker_account_id: workerAccountId,
       status: "PENDING",
-      source_market_job_id: sourceMarketJobId ?? null,
       accept_deadline_at: acceptDeadlineAt.toISOString(),
       scan_deadline_at: null,
       accepted_at: null,

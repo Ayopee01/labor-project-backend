@@ -50,8 +50,6 @@ export type AssignmentRecord = {
   vehicle_job_id: number;
   worker_account_id: number;
   status: string;
-  // Audit-only: Business Ticket ที่ทำให้เกิดการ Dispatch นี้ ถ้ารู้
-  source_market_job_id?: number | null;
   accept_deadline_at: string | null;
   scan_deadline_at: string | null;
   accepted_at?: string | null;

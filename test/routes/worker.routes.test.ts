@@ -969,6 +969,7 @@ test("GET /api/workers/me/status maps pending assignment to assigned", async () 
     isReady: false,
   });
   assert.equal(response.body.currentJob.markets[0].marketCode, `MARKET-${job.id}`);
+  assert.ok(response.body.currentJob.markets[0].worker_qr_token);
   assert.equal(response.body.currentJob.markets[0].booths[0].boothCode, "STALL-10900");
   assert.equal(response.body.currentJob.markets[0].booths[0].products[0].quantity, "10");
   assert.deepEqual(
@@ -1238,13 +1239,11 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     "shirt_number",
     "team",
     "ticket_number",
-    "triggeredByTicketNo",
     "worker_code",
   ]);
   assert.equal(response.body.worker_code, `W${worker.id}`);
   assert.equal(response.body.shirt_number, String(worker.id));
   assert.equal(response.body.ticket_number, job.ticket_number);
-  assert.equal(response.body.triggeredByTicketNo, null);
   assert.ok(response.body.accepted_at);
   assert.equal(response.body.license_plate, job.license_plate);
   assert.equal(response.body.license_plate_province, job.license_plate_province);
@@ -1266,9 +1265,11 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     "stall_count",
     "stalls",
     "ticket_no",
+    "worker_qr_token",
   ]);
   assert.equal(response.body.markets[0].marketName, "Market A");
   assert.equal(response.body.markets[0].stall_count, 1);
+  assert.ok(response.body.markets[0].worker_qr_token);
   assert.deepEqual(Object.keys(response.body.markets[0].stalls[0]).sort(), [
     "boothCode",
     "boothName",

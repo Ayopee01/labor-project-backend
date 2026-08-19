@@ -3715,9 +3715,21 @@
     WorkerAssignmentMarket:
       type: object
       properties:
+        ticket_no:
+          type: string
+          example: TKT-20260804-000001
+          description: Business Ticket id this market entry belongs to.
         marketName:
           type: string
           example: Market A
+        worker_qr_token:
+          type: string
+          example: WQR-abc123
+          description: >
+            Opaque QR secret for this Business Ticket only, generated at Gate Create
+            (not derived from ticket_no). Send this value as worker_qr_token in
+            POST /api/workers/me/assignments/{ticketNumber}/check-in-qr. Scanning
+            any one of the vehicle's Business Tickets checks in the whole team.
         stall_count:
           type: integer
           example: 1
@@ -3771,14 +3783,27 @@
           type: array
           items:
             $ref: "#/components/schemas/WorkerAssignmentMarket"
+    WorkerCheckInQrRequest:
+      type: object
+      required:
+        - worker_qr_token
+      properties:
+        worker_qr_token:
+          type: string
+          example: WQR-abc123
+          description: >
+            One Business Ticket's worker_qr_token, read from
+            markets[].worker_qr_token in the accept response (POST
+            .../accept) or from current_job.markets[].worker_qr_token in GET
+            /api/workers/me/status. Any one Business Ticket under the same
+            TicketNumber may be scanned to check in the whole team.
     WorkerAssignmentCheckInResponse:
       type: object
       required:
         - status
         - worker_status
         - worker_code
-        - ticketNo
-        - worker_qr_token
+        - ticket_number
         - team_scan
       properties:
         status:
@@ -3794,13 +3819,10 @@
           type: string
           nullable: true
           example: MN000142
-        ticketNo:
+        ticket_number:
           type: string
-          example: TKT-20260723-000125
-        worker_qr_token:
-          type: string
-          description: Worker QR value that was just scanned. For Gate-created jobs this is the same value as ticketNo, and the mobile app can render it as a QR for other assigned workers in the same vehicle job.
-          example: TKT-20260723-000125
+          example: TRUCK-20260804-001
+          description: Vehicle-level job reference (TicketNumber), not the Business Ticket used to check in.
         team_scan:
           $ref: "#/components/schemas/WorkerTeamScan"
     WorkerAssignmentEarningProduct:
@@ -4039,12 +4061,24 @@
     WorkerCurrentJobMarket:
       type: object
       properties:
+        ticket_no:
+          type: string
+          example: TKT-20260804-000001
+          description: Business Ticket id this market entry belongs to.
         marketCode:
           type: string
           example: "1110"
         marketName:
           type: string
           example: Market A
+        worker_qr_token:
+          type: string
+          example: WQR-abc123
+          description: >
+            Opaque QR secret for this Business Ticket only, generated at Gate Create
+            (not derived from ticket_no). Send this value as worker_qr_token in
+            POST /api/workers/me/assignments/{ticketNumber}/check-in-qr. Scanning
+            any one of the vehicle's Business Tickets checks in the whole team.
         booths:
           type: array
           items:

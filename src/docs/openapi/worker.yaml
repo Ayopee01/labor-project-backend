@@ -294,9 +294,13 @@
     post:
       tags:
         - Worker Application
-      summary: Check in to an accepted assignment with worker QR.
+      summary: Check in to an accepted assignment with a Business Ticket's worker QR.
       description: |
-        This endpoint uses the ticketNo path value as the scanned worker QR token and does not require a request body.
+        Requires worker_qr_token in the request body — read it from markets[].worker_qr_token
+        in the accept response, or current_job.markets[].worker_qr_token from GET
+        /api/workers/me/status. It is an opaque per-Business-Ticket secret generated at Gate
+        Create, not derived from ticketNo/ticketNumber. Scanning any one Business Ticket under
+        the vehicle checks in the whole team, since dispatch is vehicle-scoped.
         Worker can check in only while scan_deadline_at is valid. Countdown-capable responses and events include scan_deadline_unix_ms in Unix milliseconds.
         After this worker checks in, worker_status is waiting_team until every active/eligible team assignment has scanned, then working.
         For multi-worker vehicle jobs, the first successful check-in shortens remaining ACCEPTED workers to the configured worker_scan_team_remaining_minutes window and emits ASSIGNMENT_SCAN_DEADLINE_SHORTENED.
@@ -308,11 +312,17 @@
       parameters:
         - in: path
           name: ticketNo
-          description: ticketNo from WORKER_ASSIGNED. The mobile app scans this same value from the worker QR code.
+          description: TicketNumber (vehicle-level job reference) of the worker's current assignment.
           required: true
           schema:
             type: string
-            example: TKT-20260723-000125
+            example: TRUCK-20260804-001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerCheckInQrRequest"
       responses:
         "200":
           description: Checked-in assignment status.

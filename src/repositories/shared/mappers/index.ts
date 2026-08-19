@@ -348,7 +348,6 @@ export function mapVehicleJobAssignment(
     vehicle_job_id: record.vehicleJobId,
     worker_account_id: record.workerAccountId,
     status: record.status,
-    source_market_job_id: record.sourceMarketJobId,
     accept_deadline_at: toIsoString(record.acceptDeadlineAt),
     scan_deadline_at: toIsoString(record.scanDeadlineAt),
     accepted_at: toIsoString(record.acceptedAt),

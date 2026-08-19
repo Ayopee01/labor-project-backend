@@ -278,9 +278,6 @@ export interface VehicleJobAssignmentDto {
   vehicle_job_id: number;
   worker_account_id: number;
   status: string;
-  // Audit-only: which Ticket's shortfall triggered this dispatch, if any. Never used
-  // for access control — a worker can work any Ticket under the same TicketNumber.
-  source_market_job_id: number | null;
   accept_deadline_at: string | null;
   scan_deadline_at: string | null;
   accepted_at: string | null;
@@ -411,6 +408,9 @@ export interface WorkerCurrentJobMarketResponse {
   ticket_no: string;
   marketCode: string;
   marketName: string;
+  // Opaque per-Business-Ticket QR secret. Scanning any one Business Ticket's
+  // worker_qr_token via check-in-qr satisfies check-in for the whole team.
+  worker_qr_token: string;
   booths: WorkerCurrentJobBoothResponse[];
 }
 
@@ -460,6 +460,9 @@ interface WorkerAssignmentStallDto {
 interface WorkerAssignmentMarketDto {
   ticket_no: string;
   marketName: string;
+  // Opaque per-Business-Ticket QR secret. Scanning any one Business Ticket's
+  // worker_qr_token via check-in-qr satisfies check-in for the whole team.
+  worker_qr_token: string;
   stall_count: number;
   stalls: WorkerAssignmentStallDto[];
 }
@@ -467,8 +470,6 @@ interface WorkerAssignmentMarketDto {
 // Type response หลัง worker accept งาน
 export interface WorkerAssignmentAcceptResponse {
   ticket_number: string;
-  // Audit-only: which Ticket (if any) triggered this specific assignment's dispatch.
-  triggered_by_ticket_no: string | null;
   worker_code: string | null;
   shirt_number: string | null;
   accepted_at: string | null;

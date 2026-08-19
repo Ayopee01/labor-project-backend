@@ -1342,9 +1342,6 @@ export async function createVehicleJobFromGate(
               ? vehicleJob.id
               : null,
 
-          dispatch_source_market_job_id:
-            marketJob.id,
-
           response,
         };
       }
@@ -1366,10 +1363,6 @@ export async function createVehicleJobFromGate(
             createResult
               .dispatch_vehicle_job_id,
           ],
-
-          source_market_job_id:
-            createResult
-              .dispatch_source_market_job_id,
         }
       );
     } catch (error) {

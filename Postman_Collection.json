@@ -171,7 +171,7 @@
       "key": "workerQrToken",
       "value": "",
       "type": "string",
-      "description": "Worker QR value returned by POST /api/gate/tickets or WORKER_ASSIGNED. For Gate-created jobs this equals ticketNo and is used as the check-in-qr path value."
+      "description": "One Business Ticket's opaque worker QR secret, saved from Markets[].WorkerQrToken in POST /api/workers/me/assignments/{{ticketNo}}/accept (or CurrentJob.Markets[].WorkerQrToken from GET /api/workers/me/status). Sent as WorkerQrToken to POST .../check-in-qr. Not derived from ticketNo — do not assume it equals ticketNo."
     },
     {
       "key": "driverSessionToken",
@@ -2567,8 +2567,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "const body = pm.response.json();",
-                  "const firstStall = body.Markets?.[0]?.Stalls?.[0];",
+                  "const firstMarket = body.Markets?.[0];",
+                  "const firstStall = firstMarket?.Stalls?.[0];",
                   "if (firstStall?.BoothCode) pm.collectionVariables.set('boothCode', String(firstStall.BoothCode));",
+                  "if (firstMarket?.WorkerQrToken) pm.collectionVariables.set('workerQrToken', String(firstMarket.WorkerQrToken));",
                   "pm.test('accepted worker detail response', () => {",
                   "  pm.expect(body).to.have.keys(['LicensePlate', 'LicensePlateProvince', 'ScanDeadlineAt', 'ScanDeadlineUnixMs', 'Team', 'Markets']);",
                   "});"
@@ -2602,7 +2604,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/accept\nAuth: Worker access token\nBody: None\nPath: {{ticketNo}} comes from WORKER_ASSIGNED.ticketNo.\nNotes: Assignment must be PENDING and accepted within WorkerAcceptDeadlineSeconds, default 60 seconds. If not accepted in time, assignment becomes TIMEOUT and the worker returns to the tail of the queue even when the Worker WebSocket is disconnected. The consecutive accept-timeout streak resets after a successful accept. After WorkerAcceptTimeoutLimit consecutive accept timeouts, default 3, the worker is moved to open_app and cannot re-enter the queue in the same shift. Response is trimmed for the worker job detail screen only: LicensePlate, LicensePlateProvince, ScanDeadlineAt, ScanDeadlineUnixMs, team[].FullName/WorkerCode/ImageUrl/ScanStatus, markets[].marketName/StallCount/stalls[].boothCode/boothName/ProductCount/products[].productCode/productName/quantity/packageName. ScanDeadlineAt is the persisted assignment QR scan deadline in ISO 8601 UTC; ScanDeadlineUnixMs is the same value in Unix milliseconds for mobile countdown. Use the same {{ticketNo}} plus stalls[].BoothCode later with POST /api/workers/me/assignments/{{ticketNo}}/tickets/complete and send BoothCode in the body."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/accept\nAuth: Worker access token\nBody: None\nPath: {{ticketNo}} comes from WORKER_ASSIGNED.ticketNo.\nNotes: Assignment must be PENDING and accepted within WorkerAcceptDeadlineSeconds, default 60 seconds. If not accepted in time, assignment becomes TIMEOUT and the worker returns to the tail of the queue even when the Worker WebSocket is disconnected. The consecutive accept-timeout streak resets after a successful accept. After WorkerAcceptTimeoutLimit consecutive accept timeouts, default 3, the worker is moved to open_app and cannot re-enter the queue in the same shift. Response is trimmed for the worker job detail screen only: LicensePlate, LicensePlateProvince, ScanDeadlineAt, ScanDeadlineUnixMs, team[].FullName/WorkerCode/ImageUrl/ScanStatus, markets[].TicketNo/marketName/WorkerQrToken/StallCount/stalls[].boothCode/boothName/ProductCount/products[].productCode/productName/quantity/packageName. ScanDeadlineAt is the persisted assignment QR scan deadline in ISO 8601 UTC; ScanDeadlineUnixMs is the same value in Unix milliseconds for mobile countdown. markets[].WorkerQrToken is an opaque per-Business-Ticket QR secret (not derived from ticketNo) — send it as WorkerQrToken to POST .../check-in-qr next. Use the same {{ticketNo}} plus stalls[].BoothCode later with POST /api/workers/me/assignments/{{ticketNo}}/tickets/complete and send BoothCode in the body."
           },
           "response": []
         },
@@ -2614,6 +2616,11 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
                 "type": "text"
               }
             ],
@@ -2634,7 +2641,16 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/check-in-qr\nAuth: Worker access token\nPath: {{ticketNo}} is the scanned Worker QR token from WORKER_ASSIGNED.ticketNo / WorkerQrToken.\nBody: None.\nResponse: status, WorkerStatus, WorkerCode, ticketNo, WorkerQrToken, TeamScan. Normally { \"status\": \"SCANNED\", \"WorkerStatus\": \"waiting_team\", \"WorkerCode\": \"MN000142\", \"ticketNo\": \"TKT-20260723-000125\", \"WorkerQrToken\": \"TKT-20260723-000125\", \"TeamScan\": { \"WorkersRequired\": 3, \"CheckedInCount\": 1, \"RemainingCount\": 2, \"IsReady\": false } }.\nNotes: Checks worker into the job only while ScanDeadlineAt is still valid. Default scan window comes from WorkerScanDeadlineMinutes after accept. After this worker scans, WorkerStatus is waiting_team until every active/eligible assignment in the team has scanned, then working. Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING when an ACCEPTED worker has not checked in and remaining scan time is below WorkerScanWarningBeforeMinutes. In a multi-worker team, once the first worker checks in, remaining ACCEPTED workers receive ASSIGNMENT_SCAN_DEADLINE_SHORTENED and their ScanDeadlineAt/ScanDeadlineUnixMs is shortened by WorkerScanTeamRemainingMinutes from that first check-in. If scan time expires by API call or background timeout, the assignment becomes TIMEOUT and worker status returns to open_app. Admin can extend ScanDeadlineAt/ScanDeadlineUnixMs and the worker can retry using the same ticketNo QR value if the assignment is still ACCEPTED. The returned WorkerQrToken is the same ticketNo QR value that was scanned and can be rendered by the mobile app so other assigned workers can scan from this worker screen. If active/eligible team scan is ready, vehicle job moves to WORKING."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/check-in-qr\nAuth: Worker access token\nPath: {{ticketNo}} is the vehicle-level TicketNumber of the worker's current assignment (same value used by accept).\nBody: WorkerQrToken (required) — one Business Ticket's opaque QR secret, read from Markets[].WorkerQrToken in the accept response or CurrentJob.Markets[].WorkerQrToken from GET /api/workers/me/status. It is generated at Gate Create and is NOT derived from ticketNo/TicketNumber. Scanning any one Business Ticket under the vehicle checks in the whole team.\nResponse: Status, WorkerStatus, WorkerCode, TicketNumber, TeamScan. Normally { \"Status\": \"SCANNED\", \"WorkerStatus\": \"waiting_team\", \"WorkerCode\": \"MN000142\", \"TicketNumber\": \"TRUCK-20260804-001\", \"TeamScan\": { \"WorkersRequired\": 3, \"CheckedInCount\": 1, \"RemainingCount\": 2, \"IsReady\": false } }.\nNotes: Checks worker into the job only while ScanDeadlineAt is still valid. Default scan window comes from WorkerScanDeadlineMinutes after accept. After this worker scans, WorkerStatus is waiting_team until every active/eligible assignment in the team has scanned, then working. Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING when an ACCEPTED worker has not checked in and remaining scan time is below WorkerScanWarningBeforeMinutes. In a multi-worker team, once the first worker checks in, remaining ACCEPTED workers receive ASSIGNMENT_SCAN_DEADLINE_SHORTENED and their ScanDeadlineAt/ScanDeadlineUnixMs is shortened by WorkerScanTeamRemainingMinutes from that first check-in. If scan time expires by API call or background timeout, the assignment becomes TIMEOUT and worker status returns to open_app. Admin can extend ScanDeadlineAt/ScanDeadlineUnixMs and the worker can retry with the same WorkerQrToken if the assignment is still ACCEPTED. If active/eligible team scan is ready, vehicle job moves to WORKING.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"WorkerQrToken\": \"{{workerQrToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         },

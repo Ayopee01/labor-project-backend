@@ -221,7 +221,6 @@ model MarketJob {
   vehicleJob      VehicleJob             @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tickets         GateTicket[]
   ticketWorkers   TicketWorker[]
-  assignments     VehicleJobAssignment[] @relation("AssignmentSourceMarketJob")
   gateRequestLogs GateRequestLog[]
 
   @@unique([vehicleJobId, ticketNo])
@@ -568,10 +567,6 @@ model VehicleJobAssignment {
   vehicleJobId      Int       @map("vehicle_job_id")
   workerAccountId   Int       @map("worker_account_id")
   status            String    @default("PENDING") @db.VarChar(30)
-  // Audit-only: which Ticket's worker shortfall triggered this dispatch, if any.
-  // Immutable once set; never used for access control — a worker may work any
-  // Ticket under the same TicketNumber regardless of this value.
-  sourceMarketJobId Int?      @map("source_market_job_id")
   acceptDeadlineAt  DateTime? @map("accept_deadline_at") @db.Timestamp(3)
   scanDeadlineAt    DateTime? @map("scan_deadline_at") @db.Timestamp(3)
   acceptedAt        DateTime? @map("accepted_at") @db.Timestamp(3)
@@ -587,7 +582,6 @@ model VehicleJobAssignment {
 
   vehicleJob      VehicleJob              @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   worker          Account                 @relation("AssignmentWorker", fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  sourceMarketJob MarketJob?              @relation("AssignmentSourceMarketJob", fields: [sourceMarketJobId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   events          WorkerAssignmentEvent[]
 
   @@index([workerAccountId, status])

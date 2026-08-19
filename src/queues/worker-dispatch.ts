@@ -29,9 +29,6 @@ export async function dispatchReadyWorkers(
   connection?: Parameters<typeof vehicleJobRepository.listDispatchableVehicleJobs>[0],
   options: {
     vehicle_job_ids?: number[];
-    // Business Ticket ที่ทำให้เกิดการ Dispatch รอบนี้ (ถ้ารู้) ใช้เป็น audit เท่านั้น
-    // ไม่ใช่การจำกัดสิทธิ์ worker คนไหนก็ทำ Ticket อื่นในทีมเดียวกันได้ทั้งหมด
-    source_market_job_id?: number;
   } = {}
 ): Promise<void> {
   const settings = await getRuntimeSettings();
@@ -71,8 +68,7 @@ export async function dispatchReadyWorkers(
           vehicleJob.id,
           worker.account_id,
           buildDeadline(acceptDeadlineMs),
-          connection,
-          options.source_market_job_id
+          connection
         );
         await markWorkerAssigned(worker.account_id);
         await scheduleAssignmentTimeout(

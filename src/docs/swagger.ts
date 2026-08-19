@@ -132,9 +132,12 @@ const swaggerDescriptionReplacements: Array<[string, string]> = [
   ["refresh_token", "RefreshToken"],
   ["login_challenge_token", "LoginChallengeToken"],
   ["target_type", "TargetType"],
-  ["qr_token", "QrToken"],
+  // Longer/more specific patterns must run before shorter ones they contain as a
+  // substring (e.g. worker_qr_token contains qr_token), otherwise the shorter
+  // rule fires first and the longer rule can never match the already-replaced text.
   ["worker_qr_token", "WorkerQrToken"],
   ["driver_qr_token", "DriverQrToken"],
+  ["qr_token", "QrToken"],
   ["client_id", "ClientId"],
   ["client_secret", "ClientSecret"],
   ["secret_hash", "SecretHash"],
