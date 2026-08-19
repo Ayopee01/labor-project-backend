@@ -129,8 +129,9 @@ export interface GateVehicleJobCreateInput {
 
   dispatch_now?: boolean;
 
-  // จำนวน Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ ถ้า Gate รู้ล่วงหน้า
-  expected_ticket_count?: number;
+  // จำนวน Business Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ (= จำนวนตลาดที่ต่างกัน
+  // ในออเดอร์นั้น) Gate รู้ค่านี้เสมอตั้งแต่ตอนสร้างออเดอร์
+  expected_ticket_count: number;
 
   // เสมอมีสมาชิกเดียวใน array นี้ต่อหนึ่ง Gate request (หนึ่ง request = หนึ่ง Business Ticket)
   markets: GateMarketCreateInput[];
@@ -162,8 +163,9 @@ export interface GateVehicleJobBody {
   TicketNo: string;
   TicketCreatedAt: string;
 
-  // จำนวน Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ ถ้า Gate รู้ล่วงหน้า
-  TicketCount?: number;
+  // จำนวน Business Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ (= จำนวนตลาดที่ต่างกัน
+  // ในออเดอร์นั้น) Gate รู้ค่านี้เสมอตั้งแต่ตอนสร้างออเดอร์
+  TicketCount: number;
 
   BoothCount: number;
 

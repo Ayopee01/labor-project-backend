@@ -162,7 +162,7 @@ VehicleJob (TicketNumber)                 = "รถหนึ่งคัน" ท
 รถคันหนึ่งจะถูกมองว่า "จบงานทั้งคัน" ต่อเมื่อครบ 2 เงื่อนไข:
 
 1. ทุก Business Ticket ของรถคันนั้น terminal หมดแล้ว (`COMPLETED`/`CANCELLED`)
-2. Gate ได้ "ปิดรับ Ticket เพิ่ม" แล้ว (`ticketsClosedAt` ถูกตั้งค่า — ผ่าน `POST /api/gate/vehicle-jobs/:ticketNumber/close` หรือถึงจำนวน `TicketCount` ที่ Gate แจ้งไว้ล่วงหน้า)
+2. Gate ได้ "ปิดรับ Ticket เพิ่ม" แล้ว (`ticketsClosedAt` ถูกตั้งค่าอัตโนมัติเมื่อจำนวน Business Ticket ที่สร้างจริงถึง `TicketCount` ที่ Gate ระบุมาใน `POST /api/gate/tickets` — Gate รู้ค่านี้เสมอตั้งแต่ตอนสร้างออเดอร์ เพราะเท่ากับจำนวนตลาดที่ต่างกันในออเดอร์นั้น จึงเป็น required field ไม่มี endpoint close แยกต่างหากอีกต่อไป)
 
 เมื่อครบทั้งสองเงื่อนไข: `VehicleJob.status = COMPLETED`, ทุก assignment เปลี่ยนเป็น `COMPLETED`, และคนงานถูกคืนเข้าคิว Redis (`returnCompletedWorkersToQueue`)
 
@@ -330,7 +330,7 @@ npm run test:all           # ทั้งหมดต่อกัน
 | Admin Audit | `/api/admin/audit` | สถิติผลงานคนงาน |
 | Admin Settings | `/api/admin/settings`, `/api/admin/gate-clients` | ตั้งค่าระบบ, จัดการ Gate client |
 | Admin Realtime | `/api/admin/events` | SSE stream |
-| Gate | `/api/gate` | สร้างตั๋ว, ปิดรับตั๋วของรถ, ตัวเลือก market/booth/product |
+| Gate | `/api/gate` | สร้างตั๋ว (ปิดรับตั๋วเพิ่มอัตโนมัติผ่าน `TicketCount` ในคำขอเดียวกัน), ตัวเลือก market/booth/product |
 | Driver | `/api/driver` | สแกน QR คนขับ, ดูงานปัจจุบัน |
 | Worker Application | `/api/workers/me` | online/offline/break, รับงาน, สแกน QR, ส่งยอด, ประวัติ, รายได้ |
 | LINE | `/api/line/webhook` | vendor confirm/reject/rating |

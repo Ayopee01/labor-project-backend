@@ -54,6 +54,7 @@ function buildGateVehicleJobBody(suffix: string) {
     TicketNumber: `TRUCK-20260723-${suffix}`,
     TicketNo: `TKT-20260723-${suffix}`,
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+    TicketCount: 1,
     BoothCount: 1,
     MarketCode: `MARKET-${suffix}`,
     LicensePlate: `ABC-${suffix}`,

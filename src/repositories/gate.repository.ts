@@ -461,19 +461,18 @@ export async function createVehicleJobFromGate(
   });
   const totalWorkersRequired = workersRequiredSum._sum.workersRequired ?? requestedWorkersRequired;
 
-  // ปิดรับ Ticket เพิ่มอัตโนมัติถ้า Gate บอกจำนวน Ticket ทั้งหมดล่วงหน้าและตอนนี้มาครบแล้ว
-  const finalExpectedTicketCount =
-    input.expected_ticket_count ?? savedVehicleJob.expectedTicketCount ?? null;
+  // ปิดรับ Ticket เพิ่มอัตโนมัติทันทีที่จำนวน Business Ticket ที่สร้างจริงถึง TicketCount ที่ Gate
+  // แจ้งไว้ (ไม่มี endpoint close แยกต่างหากอีกต่อไป — Gate รู้จำนวนนี้แน่นอนตั้งแต่ตอนสร้างออเดอร์)
   let ticketsClosedAt = savedVehicleJob.ticketsClosedAt;
 
-  if (ticketsClosedAt === null && finalExpectedTicketCount !== null) {
+  if (ticketsClosedAt === null) {
     const ticketCount = await db.marketJob.count({
       where: {
         vehicleJobId: savedVehicleJob.id,
       },
     });
 
-    if (ticketCount >= finalExpectedTicketCount) {
+    if (ticketCount >= input.expected_ticket_count) {
       ticketsClosedAt = new Date();
     }
   }
@@ -484,7 +483,7 @@ export async function createVehicleJobFromGate(
     },
     data: {
       workersRequired: totalWorkersRequired,
-      expectedTicketCount: finalExpectedTicketCount,
+      expectedTicketCount: input.expected_ticket_count,
       ticketsClosedAt,
     },
   });
@@ -502,28 +501,6 @@ export async function createVehicleJobFromGate(
     vehicleJob: requireDto(mapVehicleJob(finalVehicleJob), "vehicle job create"),
     marketJob: requireDto(mapMarketJob(createdMarket), "market job create"),
   };
-}
-
-// Function ปิดรับ Ticket เพิ่มของ TicketNumber นี้แบบ explicit (idempotent, no-op ถ้าปิดแล้ว)
-export async function closeVehicleJobTicketsIfOpen(
-  ticketNumber: string,
-  connection?: DbConnection
-): Promise<VehicleJobDto | null> {
-  const db = client(connection);
-
-  await db.vehicleJob.updateMany({
-    where: {
-      ticketNumber,
-      ticketsClosedAt: null,
-    },
-    data: {
-      ticketsClosedAt: new Date(),
-    },
-  });
-
-  const vehicleJob = await db.vehicleJob.findUnique({ where: { ticketNumber } });
-
-  return mapVehicleJob(vehicleJob);
 }
 
 // Function อัปเดต gate request response จาก DB

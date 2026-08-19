@@ -1722,19 +1722,6 @@ export const gateRepositoryMock = {
       (market) =>
         market.vehicle_job_id === vehicleJobId && market.ticket_no === ticketNo,
     ) ?? null,
-  closeVehicleJobTicketsIfOpen: async (ticketNumber: string) => {
-    const job = state.vehicleJobs.find(
-      (item) => item.ticket_number === ticketNumber,
-    );
-
-    if (job && !job.tickets_closed_at) {
-      job.tickets_closed_at = new Date().toISOString();
-      job.updated_at = job.tickets_closed_at;
-    }
-
-    return job ?? null;
-  },
-
   listGateMarketOptions: async (marketCode?: string) => {
     const seen = new Set<string>();
 

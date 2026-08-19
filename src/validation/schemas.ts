@@ -295,9 +295,10 @@ export const gateVehicleJobBodySchema = z
     TicketNo: trimmedString,
     TicketCreatedAt: dateTimeString,
 
-    // จำนวน Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ ถ้า Gate รู้ล่วงหน้า
-    // ใช้ร่วมกับ POST /api/gate/vehicle-jobs/:ticketNumber/close เพื่อรู้ว่า Gate ส่ง Ticket ครบแล้ว
-    TicketCount: z.coerce.number().int().positive().optional(),
+    // จำนวน Business Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ (= จำนวนตลาดที่ต่างกัน
+    // ในออเดอร์นั้น) Gate รู้ค่านี้เสมอตั้งแต่ตอนสร้างออเดอร์ ใช้ปิดรับ Ticket เพิ่มอัตโนมัติทันทีที่
+    // จำนวน Business Ticket ที่สร้างจริงถึงค่านี้ ไม่มี endpoint close แยกต่างหากอีกต่อไป
+    TicketCount: z.coerce.number().int().positive(),
 
     BoothCount: z.coerce.number().int().positive(),
 

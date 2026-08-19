@@ -51,9 +51,21 @@
         Use HTTP Basic Auth where username is ClientId and password is
         ClientSecret.
 
-        Gate sends one PascalCase request per TicketNo. One request can contain
-        multiple booths using Booths[], and each booth can contain multiple
-        products using Products[].
+        Gate sends one PascalCase request per Business Ticket (TicketNo), always
+        against exactly one MarketCode. A vehicle (TicketNumber) may generate
+        multiple Business Tickets over time as it unloads at different markets —
+        send the same TicketNumber again with a new TicketNo; no duplicate
+        vehicle job is created. One request can contain multiple booths using
+        Booths[] (all in that one MarketCode), and each booth can contain
+        multiple products using Products[].
+
+        TicketCount is the total number of Business Tickets Gate will send for
+        this TicketNumber (the number of distinct markets in the order) — Gate
+        always knows this upfront. Send the same value on every request for the
+        same TicketNumber. Once the number of Business Tickets actually created
+        reaches TicketCount, and every booth across all of them is terminal, the
+        vehicle job completes and its workers return to queue automatically.
+        There is no separate "close" endpoint.
 
         Gate must send LicensePlateProvince together with LicensePlate.
 
@@ -85,9 +97,11 @@
         dispatch by the current business rule.
 
         Backend returns only operational data:
-        Result, Ticket, Market, Booths, WorkerCount and Qr.
+        Result, TicketNumber, Ticket, Market, Booths, WorkerCount and Qr.
 
-        The idempotency key is derived from TicketNo + MarketCode.
+        The idempotency key is derived from TicketNumber + TicketNo (not
+        MarketCode, since one Business Ticket is already always one market,
+        but one TicketNumber can have several Business Tickets).
 
         Sending the same payload again returns REPLAYED. Sending the same
         idempotency key with a different payload returns a conflict.
@@ -96,7 +110,10 @@
         true = unload_now,
         false = waiting_unload.
 
-        Qr.WorkerQrToken uses TicketNo for worker check-in.
+        Ticket.WorkerQrToken is an opaque secret generated per Business Ticket
+        (not derived from TicketNo) — a worker scans any one of the vehicle's
+        Business Tickets' WorkerQrToken to check in the whole team. Qr.DriverQrToken
+        stays shared across the whole vehicle (TicketNumber).
       operationId: createGateTicket
       security:
         - gateBasicAuth: []

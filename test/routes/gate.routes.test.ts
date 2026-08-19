@@ -54,6 +54,7 @@ function buildGateVehicleJobBody(suffix: string) {
     TicketNumber: `TRUCK-20260723-${suffix}`,
     TicketNo: `TKT-20260723-${suffix}`,
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+    TicketCount: 1,
     BoothCount: 1,
     MarketCode: `MARKET-${suffix}`,
     LicensePlate: `ABC-${suffix}`,
@@ -930,6 +931,7 @@ test("POST /api/gate/tickets creates multiple Business Tickets under the same Ti
       TicketNumber: ticketNumber,
       TicketNo: "TKT-MULTI-001",
       TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+      TicketCount: 2,
       BoothCount: 1,
       MarketCode: "MARKET-010",
       LicensePlate: "MULTI-001",
@@ -956,6 +958,7 @@ test("POST /api/gate/tickets creates multiple Business Tickets under the same Ti
       TicketNumber: ticketNumber,
       TicketNo: "TKT-MULTI-002",
       TicketCreatedAt: "2026-07-23T14:35:00+07:00",
+      TicketCount: 2,
       BoothCount: 1,
       MarketCode: "MARKET-011",
       LicensePlate: "MULTI-001",
@@ -1009,6 +1012,7 @@ test("POST /api/gate/tickets replay/mismatch idempotency is keyed by TicketNumbe
     TicketNumber: ticketNumber,
     TicketNo: ticketNo,
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+    TicketCount: 2,
     BoothCount: 1,
     MarketCode: `MARKET-${marketSuffix}`,
     LicensePlate: "MULTI-002",
@@ -1097,70 +1101,6 @@ test("POST /api/gate/tickets auto-closes TicketNumber once TicketCount is reache
 
   vehicleJob = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
   assert.ok(vehicleJob.tickets_closed_at);
-});
-
-test("POST /api/gate/vehicle-jobs/:ticketNumber/close explicitly closes a TicketNumber and is idempotent", async () => {
-  const headers = await gateAuthHeaders();
-  const ticketNumber = "TRUCK-CLOSE-001";
-
-  await server.request("POST", "/api/gate/tickets", {
-    body: {
-      TicketNumber: ticketNumber,
-      TicketNo: "TKT-CLOSE-1",
-      TicketCreatedAt: "2026-07-23T14:30:00+07:00",
-      BoothCount: 1,
-      MarketCode: "MARKET-007",
-      LicensePlate: "CLOSE-001",
-      LicensePlateProvince: "Bangkok",
-      VehicleTypeCode: "PICKUP",
-      VehicleTypeName: "Pickup truck",
-      Booths: [
-        {
-          BoothCode: "STALL-007",
-          Products: [{ ProductCode: "02020300", PackageCode: "29", Quantity: 180 }],
-        },
-      ],
-      Dispatch: true,
-    },
-    headers,
-  });
-
-  const closeResponse = await server.request(
-    "POST",
-    `/api/gate/vehicle-jobs/${ticketNumber}/close`,
-    { headers }
-  );
-
-  assert.equal(closeResponse.status, 200);
-  assert.equal(closeResponse.body.ticket_number, ticketNumber);
-  assert.ok(closeResponse.body.ticketsClosedAt);
-
-  const vehicleJob = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
-  assert.ok(vehicleJob.tickets_closed_at);
-  const firstClosedAt = vehicleJob.tickets_closed_at;
-
-  // เรียกซ้ำได้ (idempotent) ผลลัพธ์เหมือนเดิม ไม่เปลี่ยนเวลาปิด
-  const secondCloseResponse = await server.request(
-    "POST",
-    `/api/gate/vehicle-jobs/${ticketNumber}/close`,
-    { headers }
-  );
-
-  assert.equal(secondCloseResponse.status, 200);
-  assert.equal(vehicleJob.tickets_closed_at, firstClosedAt);
-});
-
-test("POST /api/gate/vehicle-jobs/:ticketNumber/close returns 404 for an unknown TicketNumber", async () => {
-  const headers = await gateAuthHeaders();
-
-  const response = await server.request(
-    "POST",
-    "/api/gate/vehicle-jobs/unknown-truck/close",
-    { headers }
-  );
-
-  assert.equal(response.status, 404);
-  assert.equal(response.body.code, "VEHICLE_JOB_NOT_FOUND");
 });
 
 /* -------------------------------------- Admin Worker Status Route Tests -------------------------------------- */

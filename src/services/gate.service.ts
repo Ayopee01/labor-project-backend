@@ -6,11 +6,10 @@ import { Prisma, type MasterMarket, type MasterProduct, type MasterRate } from "
 import { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 import { withTransaction } from "../db/prisma";
 import { enqueueLoggedLineMessage } from "../queues/notification-queue";
-import { dispatchReadyWorkers, returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
+import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import * as gateRepository from "../repositories/gate.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
 import { publishNotification } from "./notifications.service";
-import * as vehicleJobLifecycleService from "./shared/vehicle-job-lifecycle.service";
 
 // Import Types
 import type { GateOptionsResponse, GateProductOption, GateVehicleJobBody, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVehicleJobResponseStatus, GateVehicleJobResult } from "../types/gate.type";
@@ -1438,55 +1437,3 @@ export async function createVehicleJobFromGate(
   return response;
 }
 
-// Function ปิดรับ Business Ticket เพิ่มของ TicketNumber นี้แบบ explicit
-//
-// ใช้เมื่อ Gate ไม่สามารถบอกจำนวน Ticket ทั้งหมดล่วงหน้าผ่าน TicketCount ได้
-// เรียกซ้ำได้ (idempotent) ผลลัพธ์เหมือนเดิมถ้าปิดไปแล้ว
-export async function closeVehicleJobTickets(
-  ticketNumberParam: unknown
-): Promise<{ ticketNumber: string; tickets_closed_at: string | null }> {
-  const ticketNumber =
-    typeof ticketNumberParam === "string"
-      ? ticketNumberParam.trim()
-      : "";
-
-  if (!ticketNumber) {
-    throw new ApiError(
-      400,
-      "INVALID_TICKET_NUMBER",
-      "TicketNumber is invalid."
-    );
-  }
-
-  const vehicleJob =
-    await gateRepository.closeVehicleJobTicketsIfOpen(
-      ticketNumber
-    );
-
-  if (!vehicleJob) {
-    throw new ApiError(
-      404,
-      "VEHICLE_JOB_NOT_FOUND",
-      "Vehicle job not found."
-    );
-  }
-
-  // Ticket ทุกใบอาจ Terminal ครบอยู่แล้วก่อน Gate ปิดรับ Ticket เพิ่ม (ลำดับเหตุการณ์สลับกับ
-  // เคสปกติที่ Booth สุดท้าย Complete แล้วค่อยครบ) ต้องเช็คซ้ำที่นี่ ไม่งั้นรถจะค้าง WORKING
-  // และ Worker จะไม่ถูกคืนคิวตลอดไป
-  const completedVehicleJob = await withTransaction((transaction) =>
-    vehicleJobLifecycleService.closeCompletedVehicleJobIfReady(
-      vehicleJob.id,
-      transaction
-    )
-  );
-
-  if (completedVehicleJob) {
-    await returnCompletedWorkersToQueue(completedVehicleJob);
-  }
-
-  return {
-    ticketNumber: vehicleJob.ticket_number,
-    tickets_closed_at: vehicleJob.tickets_closed_at,
-  };
-}

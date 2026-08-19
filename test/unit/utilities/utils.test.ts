@@ -160,6 +160,7 @@ test("gate vehicle job schema accepts multi booth PascalCase Gate body", () => {
     TicketNumber: "TRUCK-DISPATCH-NOW",
     TicketNo: "TKT-DISPATCH-NOW",
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+    TicketCount: 1,
     BoothCount: 2,
     MarketCode: "MARKET-A",
     LicensePlate: "ABC-1234",

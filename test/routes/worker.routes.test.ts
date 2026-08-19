@@ -4,7 +4,6 @@ import { after, before, beforeEach, test } from "node:test";
 import {
   addAdmin,
   addDispatchableJob,
-  addGateClient,
   addPendingAssignment,
   addTicketForVehicleJob,
   addWorker,
@@ -64,48 +63,6 @@ function addHistoryAssignment(
   assignment.updated_at = createdAt;
 
   return job;
-}
-
-// Function เธชเธฃเนเธฒเธ gate vehicle job body เธชเธณเธซเธฃเธฑเธ test
-function buildGateVehicleJobBody(suffix: string) {
-  return {
-    TicketNo: `TKT-20260723-${suffix}`,
-    TicketCreatedAt: "2026-07-23T14:30:00+07:00",
-    BoothCount: 1,
-    MarketCode: `MARKET-${suffix}`,
-    LicensePlate: `ABC-${suffix}`,
-    LicensePlateProvince: "Bangkok",
-    VehicleTypeCode: "PICKUP",
-    VehicleTypeName: "Pickup truck",
-    Booths: [
-      {
-        BoothCode: `STALL-${suffix}`,
-        Products: [
-          {
-            ProductCode: "02020300",
-            PackageCode: "29",
-            Quantity: 180,
-          },
-        ],
-      },
-    ],
-    Dispatch: true,
-  };
-}
-
-// Function เธเธฑเธ”เธเธฒเธฃ gate auth headers เธชเธณเธซเธฃเธฑเธ test
-async function gateAuthHeaders(
-  clientId = "gate-test",
-  clientSecret = "GateSecret@123456",
-  status: "active" | "inactive" = "active"
-): Promise<Record<string, string>> {
-  if (!state.gateClients.has(clientId)) {
-    addGateClient(clientId, await password.hashPassword(clientSecret), status);
-  }
-
-  return {
-    Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
-  };
 }
 
 // Function เธเธฑเธ”เธเธฒเธฃ login job admin เธชเธณเธซเธฃเธฑเธ test
@@ -2696,37 +2653,23 @@ test("worker assignment audit events are immutable and distinguish accept timeou
   );
 });
 
-test("worker only returns to the FIFO queue once every Business Ticket is terminal AND Gate has explicitly closed the TicketNumber", async () => {
+test("worker only returns to the FIFO queue once every Business Ticket is terminal AND Gate's TicketCount has been reached", async () => {
+  // Gate ไม่มี endpoint close แยกต่างหากอีกแล้ว — ticketsClosedAt ถูกตั้งค่าได้ทางเดียวคือตอนสร้าง
+  // Business Ticket ใบที่ทำให้จำนวน Ticket ที่มีอยู่ถึง TicketCount ที่ Gate แจ้งไว้ (ดู
+  // gate.routes.test.ts สำหรับ test ของกลไกนับ TicketCount นี้โดยตรง) จำลองเคสนี้ด้วยรถที่มี
+  // 2 Business Ticket คนละตลาด แล้วตั้ง tickets_closed_at เอง ณ จุดที่ Gate ควรจะตั้งให้จริง
+  // (ตอนสร้าง Ticket ใบที่ 2 ซึ่งทำให้ครบ TicketCount) เพื่อพิสูจน์ว่า Worker ยังไม่ถูกคืนคิว
+  // จนกว่าทั้งสองเงื่อนไขจะครบพร้อมกัน
   const { token: workerToken, worker } = await loginWorker(9950);
   const job = addDispatchableJob(9950, 1);
   // Gate ยังไม่ได้ยืนยันว่าไม่มี Business Ticket เพิ่ม (ต่างจาก default ของ addDispatchableJob)
   job.tickets_closed_at = null;
-  const ticket = addTicketForVehicleJob(job.id, 19950);
+  const ticketA = addTicketForVehicleJob(job.id, 19950);
   const assignment = addPendingAssignment(19951, job.id, worker.id);
   assignment.status = "SCANNED";
   assignment.scanned_at = new Date().toISOString();
   state.connectedWorkers.add(worker.id);
   await workerQueue.markWorkerAssigned(worker.id);
-
-  const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
-
-  const submitResponse = await server.request(
-    "POST",
-    `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
-    {
-      token: workerToken,
-      body: {
-        boothCode: ticket.boothCode,
-        items: products.map((product, index) => ({
-          productCode: product.productCode,
-          packageCode: product.packageCode,
-          confirmed_quantity: index === 0 ? 10 : 4,
-        })),
-      },
-    }
-  );
-
-  assert.equal(submitResponse.status, 200);
 
   workerDispatch.startAssignmentTimeoutProcessing();
   const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
@@ -2734,33 +2677,56 @@ test("worker only returns to the FIFO queue once every Business Ticket is termin
 
   assert.ok(processor, "Assignment timeout processor must be registered.");
 
-  const submission = state.completionSubmissions.at(-1);
+  const submitTicketA = async (ticket: ReturnType<typeof addTicketForVehicleJob>) => {
+    const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+    const submitResponse = await server.request(
+      "POST",
+      `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
+      {
+        token: workerToken,
+        body: {
+          boothCode: ticket.boothCode,
+          items: products.map((product, index) => ({
+            productCode: product.productCode,
+            packageCode: product.packageCode,
+            confirmed_quantity: index === 0 ? 10 : 4,
+          })),
+        },
+      }
+    );
 
-  assert.ok(submission, "Completion submission must exist.");
+    assert.equal(submitResponse.status, 200);
 
-  await processor({
-    data: {
-      ticketId: ticket.id,
-      submissionId: submission.id,
-      kind: "vendor_confirm",
-    },
-  });
+    const submission = state.completionSubmissions.at(-1);
 
-  // Business Ticket (booth) เดียวของ TicketNumber นี้ Terminal ครบแล้ว
-  // แต่ Gate ยังไม่ได้ปิดรับ Ticket เพิ่ม -> ห้ามถือว่ารถจบ ห้ามคืนคิว Worker
-  assert.equal(ticket.status, "COMPLETED");
+    assert.ok(submission, "Completion submission must exist.");
+
+    await processor({
+      data: {
+        ticketId: ticket.id,
+        submissionId: submission.id,
+        kind: "vendor_confirm",
+      },
+    });
+  };
+
+  await submitTicketA(ticketA);
+
+  // Business Ticket ใบแรกของ TicketNumber นี้ Terminal แล้ว แต่ Gate ยังไม่ครบ TicketCount
+  // (Ticket ใบที่สองยังไม่ถูกสร้าง) -> ห้ามถือว่ารถจบ ห้ามคืนคิว Worker
+  assert.equal(ticketA.status, "COMPLETED");
   assert.equal(job.status, "WORKING");
   assert.equal(assignment.status, "WORKING");
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "assigned");
 
-  // Gate ยืนยันว่าไม่มี Business Ticket เพิ่มเข้ามาอีกสำหรับ TicketNumber นี้
-  const closeResponse = await server.request(
-    "POST",
-    `/api/gate/vehicle-jobs/${job.ticket_number}/close`,
-    { headers: await gateAuthHeaders() }
-  );
+  // Gate สร้าง Business Ticket ใบที่สอง (ตลาดอื่น) ซึ่งทำให้ครบ TicketCount = 2 พอดี
+  const ticketB = addTicketForVehicleJob(job.id, 19960, 21960);
+  job.tickets_closed_at = new Date().toISOString();
 
-  assert.equal(closeResponse.status, 200);
+  await submitTicketA(ticketB);
+
+  // ทุก Business Ticket Terminal ครบ และ Gate ครบ TicketCount แล้ว -> ปิดงานทั้งคัน คืนคิว Worker
+  assert.equal(ticketB.status, "COMPLETED");
   assert.equal(job.status, "COMPLETED");
   assert.equal(assignment.status, "COMPLETED");
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");

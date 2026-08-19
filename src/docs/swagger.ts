@@ -71,7 +71,6 @@ function sortSwaggerOperations(
     // Gate
     "get /api/gate/options": 49,
     "post /api/gate/tickets": 50,
-    "post /api/gate/vehicle-jobs/{ticketNumber}/close": 51,
     // Driver
     "post /api/driver/qr-sessions": 60,
     "get /api/driver/jobs/current": 61,

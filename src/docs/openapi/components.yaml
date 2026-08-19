@@ -1425,8 +1425,10 @@
     GateTicketRequest:
       type: object
       required:
+        - TicketNumber
         - TicketNo
         - TicketCreatedAt
+        - TicketCount
         - BoothCount
         - MarketCode
         - LicensePlate
@@ -1436,21 +1438,47 @@
         - Booths
         - Dispatch
       properties:
+        TicketNumber:
+          type: string
+          example: TRUCK-20260804-001
+          description: >
+            Vehicle-level job reference. May be sent multiple times, each with a new TicketNo,
+            as the same vehicle generates more Business Tickets over time (one Gate request per
+            Business Ticket, all against exactly one market). An existing VehicleJob is reused;
+            no duplicate vehicle job is created.
+
         TicketNo:
           type: string
           example: TKT-20260804-000001
-          description: Gate ticket number used as the vehicle-level job reference.
+          description: >
+            Business Ticket reference for this one request, unique within TicketNumber. One
+            request = one Business Ticket = one market (all Booths in this request must belong
+            to MarketCode) = BoothCount booths.
 
         TicketCreatedAt:
           type: string
           format: date-time
           example: "2026-08-04T14:30:00+07:00"
 
+        TicketCount:
+          type: integer
+          minimum: 1
+          example: 1
+          description: >
+            Total number of Business Tickets Gate will send for this TicketNumber, equal to the
+            number of distinct markets in the order (Gate always knows this upfront when the
+            order is created, even before splitting it into per-market requests). Send the same
+            value on every request for the same TicketNumber. Once the number of Business
+            Tickets actually created for this TicketNumber reaches TicketCount, the backend
+            automatically stops accepting new ones for it and, once every booth across all of
+            them is also terminal, completes the vehicle job and returns its workers to queue.
+            There is no separate "close" endpoint.
+
         BoothCount:
           type: integer
           minimum: 1
           example: 2
-          description: Must equal the number of items in Booths.
+          description: Must equal the number of items in Booths. All Booths in this request share MarketCode.
 
         MarketCode:
           type: string
@@ -1939,6 +1967,7 @@
       type: object
       required:
         - Result
+        - TicketNumber
         - Ticket
         - Market
         - Booths
@@ -1953,6 +1982,11 @@
             - REPLAYED
           example: CREATED
 
+        TicketNumber:
+          type: string
+          example: TRUCK-20260804-001
+          description: Vehicle-level job reference, echoed back from the request.
+
         Ticket:
           type: object
           required:
@@ -1964,6 +1998,7 @@
             - VehicleTypeCode
             - VehicleTypeName
             - Status
+            - WorkerQrToken
           properties:
             TicketNo:
               type: string
@@ -2004,6 +2039,14 @@
                 - waiting_unload
               example: unload_now
 
+            WorkerQrToken:
+              type: string
+              example: TKT-20260804-000001
+              description: >
+                Opaque QR secret for this Business Ticket only. A worker scans any one of the
+                vehicle's Business Tickets' WorkerQrToken to check in the whole team — not
+                shared vehicle-wide like DriverQrToken.
+
         Market:
           type: object
           required:
@@ -2032,15 +2075,11 @@
           type: object
           required:
             - DriverQrToken
-            - WorkerQrToken
           properties:
             DriverQrToken:
               type: string
               example: driver-qr-1
-
-            WorkerQrToken:
-              type: string
-              example: TKT-20260804-000001
+              description: Shared across the whole vehicle (TicketNumber), unlike Ticket.WorkerQrToken which is per Business Ticket.
 
     DriverSessionResponse:
       type: object
