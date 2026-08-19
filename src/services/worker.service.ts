@@ -36,9 +36,11 @@ import * as assignmentRepository from "../repositories/shared/vehicle-job-assign
 import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
 import * as ticketWorkerRepository from "../repositories/shared/ticket-worker.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
+import * as masterDataRepository from "../repositories/shared/master-data.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import * as workerShiftAttendanceRepository from "../repositories/shared/worker-shift-attendance.repository";
 import * as vehicleJobLifecycleService from "./shared/vehicle-job-lifecycle.service";
+import * as rateResolutionService from "./shared/rate-resolution.service";
 import { publishNotification } from "./notifications.service";
 import { resolveTicketResultAudience } from "./shared/realtime-notification.service";
 import { publishRealtimeEvent } from "./shared/realtime-notification.service";
@@ -72,6 +74,7 @@ import type {
   WorkerCurrentJobResponse,
   WorkerEarningsSummaryResponse,
   WorkerOnlineResponse,
+  WorkerProductPackageOptionsResponse,
   WorkerQueueEntryDto,
   WorkerStatusResponse,
 } from "../types/worker.type";
@@ -118,6 +121,7 @@ import { buildVendorCompletionReviewFlexMessage } from "../utils/line-flex-messa
 import { buildWorkerTicketPayload } from "../utils/ticket-payload";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 import { resolveWorkerWorkStatus } from "../utils/worker-status";
+import { packageWeightToDecimal } from "../utils/labor-job-pricing";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -498,6 +502,7 @@ function buildVendorCompletionMessages(
   postbackData: { confirm: string; reject: string },
   detail: VehicleJobDetailResponse | null,
   products: TicketProductDto[],
+  originalProducts: TicketProductDto[],
 ): LineMessage[] {
   return [
     buildVendorCompletionReviewFlexMessage({
@@ -505,6 +510,7 @@ function buildVendorCompletionMessages(
       postbackData,
       detail,
       products,
+      originalProducts,
     }),
   ];
 }
@@ -518,6 +524,10 @@ function buildTicketProductKey(
 }
 
 // Function ตรวจสอบ ticket completion items ใน service flow
+//
+// รองรับ Worker เปลี่ยน PackageCode ของสินค้าเดิม: original_package_code (ถ้ามี) คือ PackageCode
+// ที่ Gate เคยประกาศไว้ ใช้จับคู่กับ TicketProduct เดิมที่มีอยู่แล้ว ส่วน packageCode คือค่าที่
+// Worker เลือกส่งจริง (เดิมหรือใหม่ก็ได้) — ProductCode ต้องเป็นตัวเดียวกับเดิมเสมอ ห้ามสลับสินค้า
 function validateTicketCompletionItems(
   products: TicketProductDto[],
   items: TicketProductConfirmationInput[],
@@ -528,12 +538,16 @@ function validateTicketCompletionItems(
     ),
   );
 
-  const itemKeys = new Set<string>();
+  const matchedOriginalKeys = new Set<string>();
+  const finalKeys = new Set<string>();
 
   for (const item of items) {
-    const itemKey = buildTicketProductKey(item.productCode, item.packageCode);
+    const originalKey = buildTicketProductKey(
+      item.productCode,
+      item.original_package_code ?? item.packageCode,
+    );
 
-    if (!productKeys.has(itemKey)) {
+    if (!productKeys.has(originalKey)) {
       throw new ApiError(
         400,
         "INVALID_TICKET_PRODUCT",
@@ -541,7 +555,7 @@ function validateTicketCompletionItems(
       );
     }
 
-    if (itemKeys.has(itemKey)) {
+    if (matchedOriginalKeys.has(originalKey)) {
       throw new ApiError(
         400,
         "DUPLICATE_TICKET_PRODUCT",
@@ -549,16 +563,141 @@ function validateTicketCompletionItems(
       );
     }
 
-    itemKeys.add(itemKey);
+    matchedOriginalKeys.add(originalKey);
+
+    const finalKey = buildTicketProductKey(item.productCode, item.packageCode);
+
+    if (finalKeys.has(finalKey)) {
+      throw new ApiError(
+        400,
+        "DUPLICATE_TICKET_PRODUCT",
+        "Two ticket products cannot be switched to the same product and package.",
+      );
+    }
+
+    finalKeys.add(finalKey);
   }
 
-  if (itemKeys.size !== products.length) {
+  if (matchedOriginalKeys.size !== products.length) {
     throw new ApiError(
       400,
       "INCOMPLETE_TICKET_PRODUCTS",
       "All ticket products must be sent with confirmed quantities.",
     );
   }
+}
+
+// Function หา Rate Snapshot ใหม่ให้ item ที่ Worker เปลี่ยน PackageCode ก่อนบันทึกลง TicketProduct
+//
+// Rate Snapshot เดิมผูกกับ PackageCode เดิมเท่านั้น (น้ำหนัก/Rate ต่างกันตาม Package) จึงต้อง Query
+// Master Product + Master Rate ใหม่ทันทีที่ Worker เปลี่ยน PackageCode ห้ามเก็บ Rate Snapshot เดิม
+// ไว้ใช้กับ PackageCode ใหม่ — item ที่ไม่ได้เปลี่ยน PackageCode จะผ่านฟังก์ชันนี้โดยไม่แตะต้อง
+async function resolvePackageSwitchesForItems(
+  items: TicketProductConfirmationInput[],
+  marketCode: string,
+  connection: DbConnection,
+): Promise<TicketProductConfirmationInput[]> {
+  return Promise.all(
+    items.map(async (item) => {
+      const originalPackageCode = item.original_package_code;
+
+      if (!originalPackageCode || originalPackageCode === item.packageCode) {
+        return item;
+      }
+
+      const product = await rateResolutionService.findActiveMasterProduct(
+        item.productCode,
+        item.packageCode,
+        connection,
+      );
+
+      const packageWeight = packageWeightToDecimal(product.packageWeight);
+      const applicableRate = await rateResolutionService.findApplicableRate(
+        marketCode,
+        packageWeight,
+        connection,
+      );
+      const rateSnapshotAt = new Date();
+
+      return {
+        ...item,
+        package_switch: {
+          packageName: product.packageName,
+          packageWeightSnapshot: packageWeight.toString(),
+          rateIdSnapshot: applicableRate.rate.id,
+          sourceRateIdSnapshot: applicableRate.rate.sourceRateId,
+          rateMarketCode: applicableRate.appliedMarketCode,
+          rateSource: applicableRate.rateSource,
+          weightRangeName: applicableRate.rate.weightRangeName,
+          weightMinSnapshot: applicableRate.rate.weightMin.toString(),
+          weightMaxSnapshot: applicableRate.rate.weightMax.toString(),
+          stallRateSnapshot: applicableRate.rate.stallRate.toString(),
+          laborRateSnapshot: applicableRate.rate.laborRate.toString(),
+          rateSnapshotAt,
+        },
+      };
+    }),
+  );
+}
+
+// Function ดึงรายการ PackageCode ที่ยังใช้งานอยู่ของ ProductCode เดียว ให้ Worker เลือกตอนแก้ไข
+// ยอดส่ง — ProductCode ต้องเป็นตัวเดียวกับสินค้าที่ปรากฏอยู่แล้วในแผงที่กำลังจะส่งยอด (ดูได้จาก
+// current job detail) PackageName ไว้แสดงบน UI เท่านั้น ต้องส่ง PackageCode กลับตอน submit จริง
+export async function getWorkerProductPackageOptions(
+  productCodeParam: unknown,
+  auth?: AccessTokenPayload,
+): Promise<WorkerProductPackageOptionsResponse> {
+  await requireWorker(auth);
+
+  const productCode = String(productCodeParam ?? "").trim();
+
+  if (!productCode) {
+    throw new ApiError(400, "INVALID_PRODUCT_CODE", "ProductCode is invalid.");
+  }
+
+  const rows =
+    await masterDataRepository.findActiveMasterProductPackagesByProductCode(
+      productCode,
+    );
+
+  if (rows.length === 0) {
+    throw new ApiError(
+      404,
+      "PRODUCT_NOT_FOUND",
+      "Active product was not found.",
+    );
+  }
+
+  // ตัด ProductCode+PackageCode ที่ ambiguous ออก (ตรงกับ master_product มากกว่า 1 แถว) เพราะถ้า
+  // Worker เลือกมา submit จะไม่ผ่านแน่นอน (จะชน AMBIGUOUS_PRODUCT_PACKAGE)
+  const pairCounts = new Map<string, number>();
+
+  for (const row of rows) {
+    const key = `${row.productCode}:${row.packageCode}`;
+    pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1);
+  }
+
+  const packages = rows.flatMap((row) => {
+    const key = `${row.productCode}:${row.packageCode}`;
+
+    if (pairCounts.get(key) !== 1) {
+      return [];
+    }
+
+    return [
+      {
+        PackageCode: row.packageCode,
+        PackageName: row.packageName,
+        PackageWeight: row.packageWeight,
+      },
+    ];
+  });
+
+  return {
+    ProductCode: productCode,
+    ProductName: rows[0].productName,
+    Packages: packages,
+  };
 }
 
 // Function จัดการ worker online ใน service flow
@@ -1590,6 +1729,27 @@ async function completeResolvedWorkerTicket(
 
     validateTicketCompletionItems(products, input.items);
 
+    const marketJob = await marketJobRepository.findMarketJobById(
+      ticket.market_job_id,
+      transaction,
+    );
+
+    if (!marketJob) {
+      throw new ApiError(
+        404,
+        "MARKET_JOB_NOT_FOUND",
+        "Business ticket not found.",
+      );
+    }
+
+    // Resolve ก่อน markTicketDelivered เสมอ: ถ้า PackageCode ใหม่ไม่ valid หรือหา Rate ไม่ได้
+    // ต้องล้มก่อน ticket จะถูกเปลี่ยนสถานะเป็น DELIVERED
+    const resolvedItems = await resolvePackageSwitchesForItems(
+      input.items,
+      marketJob.marketCode,
+      transaction,
+    );
+
     const canSubmit = await gateTicketRepository.markTicketDelivered(
       ticket.id,
       transaction,
@@ -1624,7 +1784,7 @@ async function completeResolvedWorkerTicket(
     const confirmedProducts =
       await gateTicketRepository.updateTicketProductConfirmations(
         ticket.id,
-        input.items,
+        resolvedItems,
         transaction,
       );
     const waitingTicket =
@@ -1645,6 +1805,8 @@ async function completeResolvedWorkerTicket(
       },
       submission,
       products: confirmedProducts,
+      // ค่าก่อนอัปเดต ใช้เทียบ PackageCode เดิม vs ใหม่ในข้อความ LINE ให้ Vendor เห็นการเปลี่ยนแปลง
+      originalProducts: products,
       receiverAccountIds,
       vendorLineTargets,
       vendorTimeoutMs: getVendorConfirmationTimeoutMs(ticket, settings),
@@ -1702,6 +1864,7 @@ async function completeResolvedWorkerTicket(
     linePostbackData,
     detail,
     result.products,
+    result.originalProducts,
   );
 
   for (const target of result.vendorLineTargets) {

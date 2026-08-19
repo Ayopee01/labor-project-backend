@@ -87,6 +87,7 @@ import ApiError from "../utils/api-error";
 import {
   ACTIVE_ASSIGNMENT_STATUSES,
   ASSIGNMENT_STATUS,
+  SUBMITTED_TICKET_STATUSES,
   TERMINAL_JOB_STATUSES,
   TERMINAL_TICKET_STATUSES,
   TICKET_STATUS,
@@ -1980,15 +1981,18 @@ export async function releaseVehicleJobWorkers(
       );
     }
 
+    // Worker ทางกายทำงานเสร็จตั้งแต่ "ส่งยอดครบ" (DELIVERED) แล้ว ไม่ต้องรอ Vendor ยืนยัน
+    // (COMPLETED) หรือรอ TicketNumber ปิดทั้งคัน — REJECT ยังนับเป็น unresolved เพราะ Worker
+    // ต้องแก้ไขและส่งยอดใหม่ก่อน
     const hasUnresolvedBooth = tickets.some(
-      (ticket) => !TERMINAL_TICKET_STATUSES.includes(ticket.status),
+      (ticket) => !SUBMITTED_TICKET_STATUSES.includes(ticket.status),
     );
 
     if (hasUnresolvedBooth) {
       throw new ApiError(
         409,
         "BOOTHS_NOT_SUBMITTED",
-        "Every booth must be confirmed or cancelled (no pending submission or unresolved reject) before releasing workers.",
+        "Every booth must be submitted, confirmed, or cancelled (no pending submission or unresolved reject) before releasing workers.",
       );
     }
 

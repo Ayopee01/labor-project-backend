@@ -178,15 +178,36 @@ export async function updateTicketProductConfirmations(
   const db = client(connection);
 
   for (const item of items) {
+    // original_package_code ระบุแถว TicketProduct เดิมที่ Gate เคยประกาศ PackageCode ไว้ — ถ้าไม่ได้
+    // เปลี่ยน PackageCode ก็คือ packageCode ตัวเดียวกับที่ส่งมา (พฤติกรรมเดิม)
+    const originalPackageCode = item.original_package_code ?? item.packageCode;
+
     const result =
       await db.ticketProduct.updateMany({
         where: {
           ticketId,
           productCode: item.productCode,
-          packageCode: item.packageCode,
+          packageCode: originalPackageCode,
         },
         data: {
           confirmedQuantity: item.confirmed_quantity,
+          ...(item.package_switch
+            ? {
+                packageCode: item.packageCode,
+                packageName: item.package_switch.packageName,
+                packageWeightSnapshot: item.package_switch.packageWeightSnapshot,
+                rateIdSnapshot: item.package_switch.rateIdSnapshot,
+                sourceRateIdSnapshot: item.package_switch.sourceRateIdSnapshot,
+                rateMarketCode: item.package_switch.rateMarketCode,
+                rateSource: item.package_switch.rateSource,
+                weightRangeName: item.package_switch.weightRangeName,
+                weightMinSnapshot: item.package_switch.weightMinSnapshot,
+                weightMaxSnapshot: item.package_switch.weightMaxSnapshot,
+                stallRateSnapshot: item.package_switch.stallRateSnapshot,
+                laborRateSnapshot: item.package_switch.laborRateSnapshot,
+                rateSnapshotAt: item.package_switch.rateSnapshotAt,
+              }
+            : {}),
         },
       });
 

@@ -85,6 +85,7 @@ function sortSwaggerOperations(
     "post /api/workers/me/break": 76,
     "post /api/workers/me/assignments/{ticketNumber}/accept": 77,
     "post /api/workers/me/assignments/{ticketNumber}/check-in-barcode": 78,
+    "get /api/workers/me/products/{productCode}/packages": 78.5,
     "post /api/workers/me/assignments/{ticketNumber}/tickets/complete": 79,
     "get /api/admin/events": 85,
     "post /api/line/webhook": 90,

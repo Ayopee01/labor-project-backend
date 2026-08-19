@@ -1,5 +1,5 @@
 // Import Library
-import { Prisma, type MasterMarket, type MasterProduct, type MasterRate } from "@prisma/client";
+import { Prisma, type MasterMarket } from "@prisma/client";
 
 // Import Dependencies
 import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
@@ -278,50 +278,6 @@ export async function findActiveMarketBoothByCodes(
 }
 
 // Function ค้นหา master_product จาก productCode + packageCode ที่ยังใช้งานอยู่
-export async function findActiveProductsByProductCodeAndPackageCode(
-  productCode: string,
-  packageCode: string,
-  connection?: DbConnection
-): Promise<MasterProduct[]> {
-  const db = client(connection);
-
-  return db.masterProduct.findMany({
-    where: {
-      productCode,
-      packageCode,
-      status: "ACTIVE",
-    },
-    orderBy: {
-      id: "asc",
-    },
-  });
-}
-
-// Function ค้นหา master_rate ที่ตรง market และช่วงน้ำหนักที่ยังใช้งานอยู่
-export async function findActiveRatesByMarketAndWeight(
-  marketCode: string,
-  packageWeight: Prisma.Decimal,
-  connection?: DbConnection
-): Promise<MasterRate[]> {
-  const db = client(connection);
-
-  return db.masterRate.findMany({
-    where: {
-      marketCode,
-      status: 1,
-      weightMin: {
-        lt: packageWeight,
-      },
-      weightMax: {
-        gte: packageWeight,
-      },
-    },
-    orderBy: {
-      id: "asc",
-    },
-  });
-}
-
 // Function สร้าง VehicleJob (ถ้ายังไม่มี) และสร้าง Business Ticket (market job) ใหม่ใต้ VehicleJob นั้น
 // จาก payload ของ Gate
 //

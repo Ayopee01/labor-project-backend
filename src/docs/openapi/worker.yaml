@@ -356,6 +356,44 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/products/{productCode}/packages:
+    get:
+      tags:
+        - Worker Application
+      summary: List active PackageCode options for one ProductCode, for switching a product's package on submit.
+      description: |
+        Use when a worker counts the produce at a booth and finds it is actually a different
+        package size than what Gate originally declared for that product line (not just a
+        different quantity). productCode must be one already present on the ticket being
+        edited (from current_job.markets[]... product lines or the earlier accept/status
+        response) — this endpoint only looks up alternate packages of that same product, it
+        does not let a worker switch to a different product entirely.
+        Response Packages[].PackageCode is the value to send back as the new packageCode in
+        POST .../tickets/complete; PackageName is for UI display only.
+      operationId: getWorkerProductPackageOptions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: productCode
+          required: true
+          schema:
+            type: string
+            example: "02020300"
+          description: ProductCode of the product line being edited, from the ticket's existing products.
+      responses:
+        "200":
+          description: Active package options for this ProductCode.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerProductPackageOptionsResponse"
+        "404":
+          description: No active product matches this ProductCode.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/workers/me/assignments/{ticketNumber}/tickets/complete:
     post:
       tags:
@@ -369,7 +407,17 @@
         exact booth unambiguously.
         After worker submits quantities, the ticket and assignment status become DELIVERED.
         Workers can submit any stall/market in the same vehicle job once the assigned team has checked in; the API no longer requires waiting for the previous stall to close first.
-        Vendor receives a LINE Flex card with Confirm/Reject buttons. If vendor confirms through LINE, the ticket closes and backend sends an optional 1-5 satisfaction rating Flex prompt to the confirming LINE user. If vendor rejects, the assignment status becomes REJECT and the same endpoint can be used to resubmit.
+        To switch a product's package (not just its quantity), first call
+        GET /api/workers/me/products/{ProductCode}/packages to find a valid new PackageCode,
+        then send that item with packageCode set to the new value and original_package_code
+        set to the PackageCode Gate originally declared for that product line. The backend
+        looks up a fresh rate snapshot for the new package (weight/rate can differ by
+        package) before accepting the submission; a PackageCode with no active master data
+        for that ProductCode is rejected with 409 PRODUCT_PACKAGE_NOT_FOUND. Items that are
+        not switching a package only need packageCode (existing behavior, unchanged).
+        Vendor receives a LINE Flex card with Confirm/Reject buttons, showing both the
+        originally declared package and the new one when a product's package was switched.
+        If vendor confirms through LINE, the ticket closes and backend sends an optional 1-5 satisfaction rating Flex prompt to the confirming LINE user. If vendor rejects, the assignment status becomes REJECT and the same endpoint can be used to resubmit.
         If vendor does not respond, the timeout is controlled by vendor_confirm_timeout_hours for the first submission and vendor_reconfirm_timeout_hours after a rejected resubmission.
       operationId: completeWorkerAssignmentTicketWithBodyBoothCode
       security:
@@ -402,7 +450,7 @@
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Ticket is already waiting for vendor confirmation, closed, or not ready for completion.
+          description: Ticket is already waiting for vendor confirmation, closed, or not ready for completion; or, when switching a product's package, the new PackageCode has no active/unambiguous master data or no rate is configured for it (PRODUCT_PACKAGE_NOT_FOUND, AMBIGUOUS_PRODUCT_PACKAGE, RATE_NOT_FOUND).
           content:
             application/json:
               schema:

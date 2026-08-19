@@ -584,14 +584,21 @@
     post:
       tags:
         - Admin Jobs
-      summary: Admin releases the dispatched worker team back to the FIFO queue once every booth is resolved.
+      summary: Admin releases the dispatched worker team back to the FIFO queue once every booth has been submitted.
       description: >
-        Usable once every booth on the vehicle job is terminal (confirmed or cancelled, no
-        pending submission or unresolved reject) — the team does not need to wait for the whole
-        vehicle job to close, Gate to signal no more Business Tickets, or per-Business-Ticket
-        financial finalize, since the worker's physical duty is already done; money is settled
-        later independently. Recorded in AdminActionLog and appears in Work History's Timeline
-        both as an ADMIN_ACTION event and as a WORKER_RELEASED event per worker.
+        Usable once every booth on the vehicle job has been submitted by the worker — status
+        DELIVERED (submitted, awaiting vendor confirmation), COMPLETED (vendor confirmed), or
+        CANCELLED. Does NOT require vendor confirmation first: the worker's physical duty ends
+        the moment they submit counted quantities, so the team can be released while a booth is
+        still DELIVERED and waiting on the vendor. A booth still WAIT/WORKING (not yet
+        submitted) or REJECT (an unresolved vendor rejection the worker must fix and resubmit)
+        blocks release with BOOTHS_NOT_SUBMITTED. Also does not require the whole vehicle job to
+        close, Gate to signal no more Business Tickets, or per-Business-Ticket financial
+        finalize — money is settled later independently, and releasing workers does not change
+        the booth/vehicle job's own status (it stays DELIVERED/WORKING in Work History until the
+        vendor actually confirms or times out). Recorded in AdminActionLog and appears in Work
+        History's Timeline both as an ADMIN_ACTION event and as a WORKER_RELEASED event per
+        worker.
       operationId: releaseAdminVehicleJobWorkers
       security:
         - bearerAuth: []
@@ -628,7 +635,7 @@
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Vehicle job is already closed, has an unresolved booth, or has no releasable workers.
+          description: Vehicle job is already closed (VEHICLE_JOB_CLOSED), has no booths yet (NO_SUBMITTED_BOOTHS), has a booth still WAIT/WORKING/REJECT (BOOTHS_NOT_SUBMITTED), or has no releasable workers (NO_RELEASABLE_WORKERS).
           content:
             application/json:
               schema:

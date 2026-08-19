@@ -1526,7 +1526,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/release-workers\nAuth: Admin access token with jobs:release_workers permission\nBody: ReasonCode (required), ReasonText (optional)\nNotes: Releases the dispatched worker team back to the FIFO queue once every booth is terminal (confirmed or cancelled, no pending submission or unresolved reject) — does not wait for the whole vehicle job to close, Gate to signal no more Business Tickets, or per-Business-Ticket financial finalize. Returns 409 if the vehicle job is already closed, has an unresolved booth, or has no releasable workers. Recorded in AdminActionLog and appears in GET /api/admin/vehicle-jobs/history Timeline as an ADMIN_ACTION event plus a WORKER_RELEASED event per worker.\nResponse: Message, TicketNumber, ReleasedWorkerCodes[], ReasonCode, ReasonText."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/release-workers\nAuth: Admin access token with jobs:release_workers permission\nBody: ReasonCode (required), ReasonText (optional)\nNotes: Releases the dispatched worker team back to the FIFO queue once every booth has been submitted — status DELIVERED (submitted, awaiting vendor confirmation), COMPLETED (vendor confirmed), or CANCELLED. Does NOT require vendor confirmation first: the worker's physical duty ends the moment they submit counted quantities, so the team can be released while a booth is still DELIVERED and waiting on the vendor. Also does not wait for the whole vehicle job to close, Gate to signal no more Business Tickets, or per-Business-Ticket financial finalize — money is settled later independently, and releasing workers does not change the booth/vehicle job's own status (it stays DELIVERED/WORKING in Work History until the vendor actually confirms or times out). Returns 409 if the vehicle job is already closed (VEHICLE_JOB_CLOSED), has no booths yet (NO_SUBMITTED_BOOTHS), has a booth still WAIT/WORKING/REJECT — REJECT means an unresolved vendor rejection the worker must fix and resubmit first (BOOTHS_NOT_SUBMITTED), or has no releasable workers (NO_RELEASABLE_WORKERS). Recorded in AdminActionLog and appears in GET /api/admin/vehicle-jobs/history Timeline as an ADMIN_ACTION event plus a WORKER_RELEASED event per worker.\nResponse: Message, TicketNumber, ReleasedWorkerCodes[], ReasonCode, ReasonText."
           },
           "response": []
         }
@@ -2648,6 +2648,36 @@
           "response": []
         },
         {
+          "name": "GET /api/workers/me/products/:productCode/packages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{workerAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/products/{{productCode}}/packages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "products",
+                "{{productCode}}",
+                "packages"
+              ]
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/products/{{productCode}}/packages\nAuth: Worker access token\nUse when a worker counts produce at a booth and finds it is actually a different package size than what Gate originally declared for that product line (not just a different quantity). productCode must be one already present on the ticket being edited (from the accept/check-in/status response's product lines) — this only looks up alternate packages of that same product, it does not switch to a different product.\nResponse: productCode, productName, and packages[] with packageCode (send back as the new PackageCode on submit), packageName (UI display only), packageWeight.\nNotes: 404 if no active product matches productCode.",
+            "response": []
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/workers/me/assignments/:ticketNumber/tickets/complete",
           "event": [
             {
@@ -2677,7 +2707,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"TicketNo\": \"{{ticketNo}}\",\n  \"BoothCode\": \"{{boothCode}}\",\n  \"Items\": [\n    {\n      \"ProductCode\": \"{{productCode}}\",\n      \"PackageCode\": \"{{packageCode}}\",\n      \"ConfirmedQuantity\": 8\n    }\n  ]\n}",
+              "raw": "{\n  \"TicketNo\": \"{{ticketNo}}\",\n  \"BoothCode\": \"{{boothCode}}\",\n  \"Items\": [\n    {\n      \"ProductCode\": \"{{productCode}}\",\n      \"PackageCode\": \"{{packageCode}}\",\n      \"ConfirmedQuantity\": 8\n    }\n    // To switch this product's package instead of just its quantity: call GET\n    // /api/workers/me/products/{ProductCode}/packages first, then send the new\n    // PackageCode plus OriginalPackageCode (the PackageCode Gate originally declared\n    // for this product line), e.g. { \"ProductCode\": \"{{productCode}}\", \"PackageCode\": \"<new>\", \"OriginalPackageCode\": \"{{packageCode}}\", \"ConfirmedQuantity\": 8 }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2702,7 +2732,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/tickets/complete\nAuth: Worker access token\nBody: TicketNo, BoothCode and Items required. TicketNo names which Business Ticket this submission belongs to — required because two Business Tickets under the same vehicle, against different markets, can legitimately share the same BoothCode; TicketNo plus BoothCode together resolve the exact booth unambiguously. Send BoothCode in body so codes containing / such as OM3/40 do not need URL encoding. Send every ProductCode + PackageCode in the ticket with ConfirmedQuantity counted by the worker.\nFinancial boundary: This request only records confirmed actual quantities and starts vendor confirmation. It must not create final financial records before vendor confirm or timeout auto-confirm.\nNotes: {{ticketNumber}} is the vehicle-level TicketNumber of the worker's current assignment. TicketNo and BoothCode come from the accepted/check-in job payload (Markets[].TicketNo / Markets[].Stalls[].BoothCode). Backend resolves each product by ProductCode + PackageCode. The response does not expose LINE postback tokens. Vendor confirm completes financialization; vendor reject returns the ticket to REJECT for resubmission."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/tickets/complete\nAuth: Worker access token\nBody: TicketNo, BoothCode and Items required. TicketNo names which Business Ticket this submission belongs to — required because two Business Tickets under the same vehicle, against different markets, can legitimately share the same BoothCode; TicketNo plus BoothCode together resolve the exact booth unambiguously. Send BoothCode in body so codes containing / such as OM3/40 do not need URL encoding. Send every ProductCode + PackageCode in the ticket with ConfirmedQuantity counted by the worker.\nPackage switch: to change a product's package (not just quantity), first call GET /api/workers/me/products/{ProductCode}/packages to find a valid new PackageCode, then send that item with PackageCode set to the new value and OriginalPackageCode set to the PackageCode Gate originally declared for that product line. Backend re-derives the rate snapshot (weight/rate can differ by package) before accepting — an invalid/inactive PackageCode is rejected with 409 PRODUCT_PACKAGE_NOT_FOUND. Items not switching a package only need PackageCode as before.\nFinancial boundary: This request only records confirmed actual quantities and starts vendor confirmation. It must not create final financial records before vendor confirm or timeout auto-confirm.\nNotes: {{ticketNumber}} is the vehicle-level TicketNumber of the worker's current assignment. TicketNo and BoothCode come from the accepted/check-in job payload (Markets[].TicketNo / Markets[].Stalls[].BoothCode). Backend resolves each product by ProductCode + PackageCode. The LINE message to the vendor shows both the originally declared package and the new one when a product's package was switched. The response does not expose LINE postback tokens. Vendor confirm completes financialization; vendor reject returns the ticket to REJECT for resubmission."
           },
           "response": []
         },

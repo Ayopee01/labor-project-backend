@@ -134,8 +134,9 @@ VehicleJob (TicketNumber)                 = "รถหนึ่งคัน" ท
 `POST /api/workers/me/assignments/:ticketNumber/tickets/complete`
 
 1. คนงานกรอกจำนวนสินค้าที่ขนจริงของบูธหนึ่งบูธ ระบบตรวจว่าคนงานคนนี้เป็นสมาชิก (`TicketWorker`) ที่ยัง active ของ Business Ticket นั้นจริง
-2. บันทึกเป็น `TicketCompletionSubmission` หนึ่งแถวต่อการส่งยอดหนึ่งครั้ง (เก็บประวัติทุกครั้ง ไม่เขียนทับ)
-3. บูธเปลี่ยนสถานะเป็น `DELIVERED` รอ vendor ยืนยัน และส่ง LINE Flex Message ไปหา vendor ของบูธนั้นพร้อมปุ่มยืนยัน/ปฏิเสธ
+2. คนงานแก้ไขได้ทั้ง **จำนวน** และ **Package** ของสินค้าแต่ละรายการ — ถ้านับแล้วพบว่าเป็นแพ็กเกจคนละขนาดกับที่ Gate ประกาศไว้ (ไม่ใช่แค่จำนวนต่างกัน) ให้เรียก `GET /api/workers/me/products/:productCode/packages` ก่อนเพื่อดู `PackageCode`/`PackageName` ที่ใช้งานได้จริงของสินค้านั้น (จำกัดเฉพาะ ProductCode เดิม เปลี่ยนสินค้าไม่ได้) แล้วส่ง item นั้นพร้อม `packageCode` ใหม่ + `original_package_code` (ค่าเดิมที่ Gate ประกาศไว้ ใช้ระบุว่าแก้ไข TicketProduct แถวไหน) — backend จะ query rate snapshot ใหม่ให้ตรงกับ package ที่เลือกเสมอ (น้ำหนัก/rate ต่างกันตาม package จึงห้ามใช้ snapshot เดิม) ก่อนบันทึก
+3. บันทึกเป็น `TicketCompletionSubmission` หนึ่งแถวต่อการส่งยอดหนึ่งครั้ง (เก็บประวัติทุกครั้ง ไม่เขียนทับ)
+4. บูธเปลี่ยนสถานะเป็น `DELIVERED` รอ vendor ยืนยัน และส่ง LINE Flex Message ไปหา vendor ของบูธนั้นพร้อมปุ่มยืนยัน/ปฏิเสธ — ถ้ามีการเปลี่ยน package จะแสดงทั้ง package เดิมและ package ใหม่ในข้อความให้ vendor เห็นก่อนกดยืนยัน
 
 ### 4.4 Vendor ยืนยัน/ปฏิเสธผ่าน LINE
 
@@ -166,7 +167,7 @@ VehicleJob (TicketNumber)                 = "รถหนึ่งคัน" ท
 
 เมื่อครบทั้งสองเงื่อนไข: `VehicleJob.status = COMPLETED`, ทุก assignment เปลี่ยนเป็น `COMPLETED`, และคนงานถูกคืนเข้าคิว Redis (`returnCompletedWorkersToQueue`)
 
-นอกจากนี้ **Admin ปล่อยคนงานกลับคิวก่อนเวลาได้** ผ่าน `POST /api/admin/vehicle-jobs/:ticketNumber/release-workers` โดยไม่ต้องรอให้รถทั้งคันปิดงาน — ใช้ได้เมื่อทุกบูธ terminal หมดแล้วเท่านั้น (ดูหัวข้อ 6)
+นอกจากนี้ **Admin ปล่อยคนงานกลับคิวก่อนเวลาได้** ผ่าน `POST /api/admin/vehicle-jobs/:ticketNumber/release-workers` โดยไม่ต้องรอให้รถทั้งคันปิดงาน — ใช้ได้ทันทีที่ทุกบูธ**ส่งยอดครบแล้ว** (`DELIVERED`/`COMPLETED`/`CANCELLED`) **ไม่ต้องรอ Vendor ยืนยันก่อน** เพราะงานทางกายภาพของคนงานจบตั้งแต่ส่งยอด ปล่อยแล้วสถานะบูธ/งานยังไม่เปลี่ยนเป็น complete จนกว่า Vendor จะยืนยันหรือ timeout จริง (ดูหัวข้อ 6)
 
 ---
 

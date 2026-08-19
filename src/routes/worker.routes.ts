@@ -105,6 +105,21 @@ router.get(
   }
 );
 
+router.get(
+  "/me/products/:productCode/packages",
+  async (req, res, next) => {
+    try {
+      const result = await workerService.getWorkerProductPackageOptions(
+        req.params.productCode,
+        req.auth
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.post(
   "/me/assignments/:ticketNumber/accept",
   async (req, res, next) => {

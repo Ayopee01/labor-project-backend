@@ -186,8 +186,18 @@ function productSummaryRow(input: {
 
 // Function สร้าง block สินค้าสำหรับ Vendor ตรวจยอด
 function completionProductBlock(
-  product: TicketProductDto
+  product: TicketProductDto,
+  originalProduct?: TicketProductDto
 ): LineFlexComponent {
+  // originalProduct คือแถวก่อนอัปเดต ใช้แสดง PackageCode ที่ Gate เคยประกาศไว้จริง เพราะถ้า Worker
+  // เปลี่ยน PackageCode แล้ว product.packageName จะถูกเขียนทับเป็นค่าใหม่ไปแล้ว
+  const declaredPackageName = asDisplayText(
+    originalProduct?.packageName ?? product.packageName
+  );
+  const isPackageChanged =
+    originalProduct !== undefined &&
+    originalProduct.packageCode !== product.packageCode;
+
   return {
     type: "box",
     layout: "vertical",
@@ -203,10 +213,18 @@ function completionProductBlock(
       },
       fieldRow(
         "ตามใบงาน",
-        `${formatQuantity(product.quantity)} ${asDisplayText(
-          product.packageName
-        )}`
+        `${formatQuantity(
+          originalProduct?.quantity ?? product.quantity
+        )} ${declaredPackageName}`
       ),
+      ...(isPackageChanged
+        ? [
+            fieldRow(
+              "แพ็กเกจใหม่",
+              asDisplayText(product.packageName)
+            ),
+          ]
+        : []),
       fieldRow(
         "ส่งยอด",
         `${formatQuantity(
@@ -364,10 +382,17 @@ export function buildVendorCompletionReviewFlexMessage(input: {
   };
   detail: VehicleJobDetailResponse | null;
   products: TicketProductDto[];
+  // แถวก่อนอัปเดต (ก่อน Worker เปลี่ยน PackageCode) จับคู่กับ products ด้วย id เพื่อเทียบ
+  // PackageCode เดิม vs ใหม่ให้ Vendor เห็นตอนตรวจสอบ ไม่บังคับส่งเพื่อไม่ผูก caller เดิมทุกจุด
+  originalProducts?: TicketProductDto[];
 }): LineMessage {
   const market = findTicketMarket(
     input.detail,
     input.ticket
+  );
+
+  const originalProductById = new Map(
+    (input.originalProducts ?? []).map((product) => [product.id, product])
   );
 
   const footer: LineFlexComponent = {
@@ -441,7 +466,10 @@ export function buildVendorCompletionReviewFlexMessage(input: {
               ? [separator("md")]
               : []),
 
-            completionProductBlock(product),
+            completionProductBlock(
+              product,
+              originalProductById.get(product.id)
+            ),
           ]
         ),
       ],

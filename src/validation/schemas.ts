@@ -352,9 +352,14 @@ export const workerCheckInBarcodeBodySchema = z.object({
   ticket_no: trimmedString,
 });
 
+// original_package_code ใส่เฉพาะตอน Worker เปลี่ยน PackageCode ของสินค้าเดิมในแผง (ProductCode
+// ต้องเป็นตัวเดียวกัน) — ใช้ระบุว่ากำลังแก้ไข TicketProduct เดิมแถวไหน (Gate เคยประกาศ PackageCode
+// นี้ไว้) ส่วน packageCode คือค่าใหม่ที่ Worker เลือกจริง หากไม่ได้เปลี่ยน PackageCode ให้ส่งแค่
+// packageCode ตามเดิม ไม่ต้องส่ง original_package_code
 const workerTicketCompleteItemSchema = z.object({
   productCode: trimmedString,
   packageCode: trimmedString,
+  original_package_code: trimmedString.optional(),
   confirmed_quantity: z.coerce.number().min(0),
 });
 

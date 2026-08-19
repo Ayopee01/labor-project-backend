@@ -2639,7 +2639,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/wait rejects a vehicle job that
 
 /* -------------------------------------- Admin Release Workers Route Tests -------------------------------------- */
 
-test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers releases workers back to the FIFO queue once every booth is resolved", async () => {
+test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers releases workers back to the FIFO queue right after submit, without waiting for vendor confirmation", async () => {
   const { token: adminToken } = await loginJobAdmin(9880);
   const { token: workerToken, worker } = await loginWorker(9881);
   const job = addDispatchableJob(988, 1);
@@ -2675,26 +2675,14 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers releases worker
 
   assert.equal(submitResponse.status, 200);
 
-  workerDispatch.startAssignmentTimeoutProcessing();
-  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
-  const processor = state.workerProcessors.get(queueName);
-  const submission = state.completionSubmissions.at(-1);
-
-  assert.ok(submission);
-
-  await processor!({
-    data: {
-      ticketId: ticket.id,
-      submissionId: submission.id,
-      kind: "vendor_confirm",
-    },
-  });
-
-  // Booth เสร็จแล้ว แต่ Gate ยังไม่ปิดรับ Ticket เพิ่ม -> assignment ยังไม่ COMPLETED, worker ยังไม่กลับคิว
-  assert.equal(assignment.status, "WORKING");
+  // Worker ส่งยอดครบแล้ว (DELIVERED) แต่ Vendor ยังไม่ได้กดยืนยันหรือ timeout เลย — งานทางกาย
+  // ของ Worker จบแล้ว ไม่ต้องรอ Vendor ก่อนถึงจะ release ได้
+  assert.equal(ticket.status, "DELIVERED");
+  assert.equal(job.status, "WORKING");
+  assert.equal(assignment.status, "DELIVERED");
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "assigned");
 
-  // Booth ทุกใบเสร็จแล้วจริง ไม่มีความต้องการ Worker เพิ่มสำหรับรถคันนี้อีก (จำลอง SUM ที่ควรจะ
+  // Booth ทุกใบส่งยอดครบแล้ว ไม่มีความต้องการ Worker เพิ่มสำหรับรถคันนี้อีก (จำลอง SUM ที่ควรจะ
   // ลดลงเหลือ 0 เมื่อไม่มี Booth เหลือให้ทำ) เพื่อไม่ให้ Dispatch จับ Worker ที่เพิ่ง Release กลับมาทันที
   job.workers_required = 0;
 
@@ -2716,12 +2704,39 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers releases worker
   assert.ok(assignment.released_at);
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");
 
+  // ปล่อย Worker ไปแล้ว แต่ตัวงาน/Ticket ยังไม่ complete จนกว่า Vendor จะยืนยันหรือ timeout จริง
+  assert.equal(ticket.status, "DELIVERED");
+  assert.equal(job.status, "WORKING");
+
   const log = state.adminActionLogs.find(
     (item) => item.vehicle_job_id === job.id,
   );
 
   assert.ok(log);
   assert.equal(log.action_type, "WORKERS_RELEASED");
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers rejects when a booth has an unresolved vendor rejection", async () => {
+  const { token: adminToken } = await loginJobAdmin(9885);
+  const { worker } = await loginWorker(9886);
+  const job = addDispatchableJob(9885, 1);
+  const ticket = addTicketForVehicleJob(job.id, 198850);
+  addPendingAssignment(198851, job.id, worker.id);
+  ticket.status = "REJECT";
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/release-workers`,
+    {
+      token: adminToken,
+      body: {
+        reason_code: "R004",
+      },
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "BOOTHS_NOT_SUBMITTED");
 });
 
 test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers rejects when a booth is still pending submission", async () => {

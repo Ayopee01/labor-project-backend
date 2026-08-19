@@ -174,6 +174,18 @@ export interface TicketProductDto {
   updated_at: string;
 }
 
+// Type response รายการ PackageCode ที่ยังใช้งานอยู่ของ ProductCode เดียว — ใช้ให้ Worker เลือก
+// PackageCode ใหม่ตอนแก้ไขยอดส่ง (PackageName ไว้แสดงบน UI เท่านั้น ส่งจริงต้องใช้ PackageCode)
+export interface WorkerProductPackageOptionsResponse {
+  ProductCode: string;
+  ProductName: string;
+  Packages: Array<{
+    PackageCode: string;
+    PackageName: string;
+    PackageWeight: number;
+  }>;
+}
+
 // Type DTO ความสัมพันธ์ระหว่าง Business Ticket (market job) กับ worker
 export interface TicketWorkerDto {
   id: number;
@@ -557,11 +569,32 @@ export interface TicketCompletionResponse {
   }>;
 }
 
+// Type ค่า Rate Snapshot ใหม่ที่คำนวณจากการเปลี่ยน PackageCode ตอน Worker ส่งยอด — service layer
+// เป็นคนคำนวณค่านี้จาก master data ก่อนส่งต่อให้ repository เขียนทับแถว TicketProduct เดิม
+export interface TicketProductPackageSwitchSnapshot {
+  packageName: string;
+  packageWeightSnapshot: string;
+  rateIdSnapshot: number;
+  sourceRateIdSnapshot: number;
+  rateMarketCode: string;
+  rateSource: string;
+  weightRangeName: string;
+  weightMinSnapshot: string;
+  weightMaxSnapshot: string;
+  stallRateSnapshot: string;
+  laborRateSnapshot: string;
+  rateSnapshotAt: Date;
+}
+
 // Type input รายการสินค้าที่ worker ยืนยันจำนวนตอนส่งยอด
 export interface TicketProductConfirmationInput {
   productCode: string;
   packageCode: string;
   confirmed_quantity: number;
+  // ระบุเฉพาะตอน Worker เปลี่ยน PackageCode: original_package_code คือ PackageCode เดิมที่ Gate
+  // เคยประกาศไว้ (ใช้หาแถว TicketProduct เดิม), package_switch คือ Rate Snapshot ใหม่ที่คำนวณแล้ว
+  original_package_code?: string;
+  package_switch?: TicketProductPackageSwitchSnapshot;
 }
 
 // Type event ที่ Worker WebSocket ส่งให้ Mobile ได้

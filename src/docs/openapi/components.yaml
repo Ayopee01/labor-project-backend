@@ -1654,7 +1654,19 @@
               packageCode:
                 type: string
                 example: "29"
-                description: PackageCode must match the ProductCode in the GateTicket.
+                description: >
+                  PackageCode being submitted for this ProductCode. Normally the same
+                  PackageCode Gate originally declared. To switch to a different package for
+                  this product, set this to the new PackageCode (see
+                  GET /api/workers/me/products/{ProductCode}/packages for valid options) and
+                  also send original_package_code.
+              original_package_code:
+                type: string
+                example: "29"
+                description: >
+                  Set only when switching this product's package: the PackageCode Gate
+                  originally declared for this product line, used to identify which existing
+                  line item is being edited. Omit when packageCode is unchanged.
               confirmed_quantity:
                 type: number
                 minimum: 0
@@ -1681,6 +1693,31 @@
               type: string
               example: OM3/40
               description: BoothCode from the accepted job payload. Send in body so values containing "/" do not need URL encoding.
+    WorkerProductPackageOptionsResponse:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        productName:
+          type: string
+          example: Rambutan
+        packages:
+          type: array
+          items:
+            type: object
+            properties:
+              packageCode:
+                type: string
+                example: "30"
+                description: Send this value back as packageCode when switching a product's package on submit.
+              packageName:
+                type: string
+                example: Crate 40
+                description: For UI display only.
+              packageWeight:
+                type: number
+                example: 40
     TicketCompletionResponse:
       type: object
       properties:

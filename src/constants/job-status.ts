@@ -100,6 +100,17 @@ export const TERMINAL_TICKET_STATUSES: string[] = [
   TICKET_STATUS.CANCELLED,
 ];
 
+// Config สถานะ ticket ที่แปลว่า Worker ไม่มีอะไรต้องทำที่ booth นี้อีกแล้ว (ส่งยอดแล้วรอ Vendor
+// ยืนยัน, Vendor ยืนยันแล้ว, หรือถูกยกเลิกไปแล้ว) ใช้เป็นเงื่อนไข release-workers — ต่างจาก
+// TERMINAL_TICKET_STATUSES ตรงที่รวม DELIVERED (ส่งยอดแล้ว ยังไม่ยืนยัน) ด้วย เพราะงานทางกาย
+// ของ Worker จบตั้งแต่ส่งยอด ไม่ต้องรอ Vendor คลิกยืนยันถึงจะปล่อยกลับคิวได้ — REJECT ไม่รวม
+// เพราะยังมี "unresolved rejection" ที่ Worker ต้องแก้ไขและส่งยอดใหม่
+export const SUBMITTED_TICKET_STATUSES: string[] = [
+  TICKET_STATUS.DELIVERED,
+  TICKET_STATUS.COMPLETED,
+  TICKET_STATUS.CANCELLED,
+];
+
 // Config สถานะรถที่ทำให้ history/operation ไม่มองว่าเป็นงาน active
 export const TERMINAL_JOB_STATUSES: string[] = [
   VEHICLE_JOB_STATUS.COMPLETED,

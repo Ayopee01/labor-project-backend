@@ -27,3 +27,19 @@ export async function findMarketJobByVehicleAndTicketNo(
 
   return mapMarketJob(marketJob);
 }
+
+// Function ค้นหา Business Ticket (market job) ตาม id — ใช้หา marketCode ตอน Worker
+// เปลี่ยน PackageCode ระหว่างส่งยอด (ต้องรู้ตลาดเพื่อหา Rate ใหม่ให้ถูกต้อง)
+export async function findMarketJobById(
+  id: number,
+  connection?: DbConnection
+): Promise<MarketJobDto | null> {
+  const db = client(connection);
+  const marketJob = await db.marketJob.findUnique({
+    where: {
+      id,
+    },
+  });
+
+  return mapMarketJob(marketJob);
+}

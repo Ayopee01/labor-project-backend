@@ -1,6 +1,6 @@
 // Import Library
 import { createHash } from "crypto";
-import { Prisma, type MasterMarket, type MasterProduct, type MasterRate } from "@prisma/client";
+import { Prisma, type MasterMarket } from "@prisma/client";
 
 // Import Dependencies
 import { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
@@ -10,6 +10,7 @@ import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import * as gateRepository from "../repositories/gate.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
 import { publishNotification } from "./notifications.service";
+import * as rateResolutionService from "./shared/rate-resolution.service";
 
 // Import Types
 import type { GateOptionsResponse, GateProductOption, GateVehicleJobBody, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVehicleJobResponseStatus, GateVehicleJobResult } from "../types/gate.type";
@@ -23,7 +24,7 @@ import { gateVehicleJobBodySchema } from "../validation/schemas";
 
 // Import Utils
 import ApiError from "../utils/api-error";
-import { calculateRequiredWorkerCount, decimalToWeightString, packageWeightToDecimal, parseMasterProductRange } from "../utils/labor-job-pricing";
+import { calculateRequiredWorkerCount, packageWeightToDecimal, parseMasterProductRange } from "../utils/labor-job-pricing";
 import { logger } from "../utils/logger";
 
 // Import Flex Message Builder
@@ -210,126 +211,6 @@ async function findActiveMasterMarketBooth(
   return marketBooth;
 }
 
-// Function หา Product + Package จาก master
-async function findActiveMasterProduct(
-  productCode: string,
-  packageCode: string,
-  connection?: DbConnection
-): Promise<MasterProduct> {
-  const products =
-    await gateRepository.findActiveProductsByProductCodeAndPackageCode(
-      productCode,
-      packageCode,
-      connection
-    );
-
-  if (products.length === 0) {
-    throw new ApiError(
-      409,
-      "PRODUCT_PACKAGE_NOT_FOUND",
-      "Active product package was not found.",
-      {
-        productCode,
-        packageCode,
-      }
-    );
-  }
-
-  if (products.length > 1) {
-    throw new ApiError(
-      409,
-      "AMBIGUOUS_PRODUCT_PACKAGE",
-      "ProductCode + PackageCode matched more than one active product.",
-      {
-        productCode,
-        packageCode,
-        matched_count: products.length,
-      }
-    );
-  }
-
-  return products[0];
-}
-
-// Function หา rate ตามตลาดและน้ำหนักสินค้า
-async function findApplicableRate(
-  marketCode: string,
-  packageWeight: Prisma.Decimal,
-  connection?: DbConnection
-): Promise<{
-  rate: MasterRate;
-  requestedMarketCode: string;
-  appliedMarketCode: string;
-  rateSource: "MARKET_RATE" | "CENTRAL_RATE";
-}> {
-  const marketRates =
-    await gateRepository.findActiveRatesByMarketAndWeight(
-      marketCode,
-      packageWeight,
-      connection
-    );
-
-  if (marketRates.length > 1) {
-    throw new ApiError(
-      409,
-      "DUPLICATE_RATE_CONFIGURATION",
-      "More than one active rate matched this market and package weight.",
-      {
-        marketCode,
-        packageWeight: decimalToWeightString(packageWeight),
-      }
-    );
-  }
-
-  if (marketRates.length === 1) {
-    return {
-      rate: marketRates[0],
-      requestedMarketCode: marketCode,
-      appliedMarketCode: marketRates[0].marketCode,
-      rateSource: "MARKET_RATE",
-    };
-  }
-
-  const centralRates =
-    await gateRepository.findActiveRatesByMarketAndWeight(
-      "0000",
-      packageWeight,
-      connection
-    );
-
-  if (centralRates.length > 1) {
-    throw new ApiError(
-      409,
-      "DUPLICATE_RATE_CONFIGURATION",
-      "More than one active central rate matched this package weight.",
-      {
-        marketCode: "0000",
-        packageWeight: decimalToWeightString(packageWeight),
-      }
-    );
-  }
-
-  if (centralRates.length === 0) {
-    throw new ApiError(
-      409,
-      "RATE_NOT_FOUND",
-      "No active rate matched this market or central rate.",
-      {
-        requestedMarketCode: marketCode,
-        fallbackMarketCode: "0000",
-        packageWeight: decimalToWeightString(packageWeight),
-      }
-    );
-  }
-
-  return {
-    rate: centralRates[0],
-    requestedMarketCode: marketCode,
-    appliedMarketCode: centralRates[0].marketCode,
-    rateSource: "CENTRAL_RATE",
-  };
-}
-
 // Function เตรียมข้อมูล Master สำหรับสร้างงานจาก Gate
 //
 // หน้าที่:
@@ -374,7 +255,7 @@ async function prepareLaborJob(
       of boothInput.Products
     ) {
       const product =
-        await findActiveMasterProduct(
+        await rateResolutionService.findActiveMasterProduct(
           productInput.ProductCode,
           productInput.PackageCode,
           connection
@@ -404,7 +285,7 @@ async function prepareLaborJob(
 
       // หา Rate ที่ใช้ ณ ตอนสร้างงาน
       const applicableRate =
-        await findApplicableRate(
+        await rateResolutionService.findApplicableRate(
           input.MarketCode,
           packageWeight,
           connection

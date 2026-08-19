@@ -1038,8 +1038,12 @@ export const workerApplicationRepositoryMock = {
 
   listTicketWorkers: async (marketJobId: number) =>
     state.ticketWorkers.filter((worker) => worker.market_job_id === marketJobId),
+  // คืน shallow copy เสมอ (ไม่ใช่ reference ตรงไปยัง state.ticketProducts) ให้ตรงกับพฤติกรรม DB
+  // จริงที่ query แต่ละครั้งได้ snapshot ใหม่ — ไม่ใช่ mutate object เดิมที่ caller เก็บไว้ก่อนหน้า
   listTicketProducts: async (ticketId: number) =>
-    state.ticketProducts.filter((product) => product.ticket_id === ticketId),
+    state.ticketProducts
+      .filter((product) => product.ticket_id === ticketId)
+      .map((product) => ({ ...product })),
   markTicketDelivered: async (ticketId: number) => {
     const ticket = state.gateTickets.find((item) => item.id === ticketId);
 
@@ -1489,14 +1493,30 @@ export const workerApplicationRepositoryMock = {
       productCode: string;
       packageCode: string;
       confirmed_quantity: number;
+      original_package_code?: string;
+      package_switch?: {
+        packageName: string;
+        packageWeightSnapshot: string;
+        rateIdSnapshot: number;
+        sourceRateIdSnapshot: number;
+        rateMarketCode: string;
+        rateSource: string;
+        weightRangeName: string;
+        weightMinSnapshot: string;
+        weightMaxSnapshot: string;
+        stallRateSnapshot: string;
+        laborRateSnapshot: string;
+        rateSnapshotAt: Date;
+      };
     }>,
   ) => {
     for (const item of items) {
+      const originalPackageCode = item.original_package_code ?? item.packageCode;
       const product = state.ticketProducts.find(
         (candidate) =>
           candidate.ticket_id === ticketId &&
           candidate.productCode === item.productCode &&
-          candidate.packageCode === item.packageCode,
+          candidate.packageCode === originalPackageCode,
       );
 
       if (!product) {
@@ -1504,6 +1524,22 @@ export const workerApplicationRepositoryMock = {
       }
 
       product.confirmed_quantity = String(item.confirmed_quantity);
+
+      if (item.package_switch) {
+        product.packageCode = item.packageCode;
+        product.packageName = item.package_switch.packageName;
+        product.package_weight_snapshot = item.package_switch.packageWeightSnapshot;
+        product.rate_id_snapshot = item.package_switch.rateIdSnapshot;
+        product.source_rate_id_snapshot = item.package_switch.sourceRateIdSnapshot;
+        product.rate_market_code = item.package_switch.rateMarketCode;
+        product.rate_source = item.package_switch.rateSource;
+        product.weight_range_name = item.package_switch.weightRangeName;
+        product.weight_min_snapshot = item.package_switch.weightMinSnapshot;
+        product.weight_max_snapshot = item.package_switch.weightMaxSnapshot;
+        product.stall_rate_snapshot = item.package_switch.stallRateSnapshot;
+        product.labor_rate_snapshot = item.package_switch.laborRateSnapshot;
+        product.rate_snapshot_at = item.package_switch.rateSnapshotAt.toISOString();
+      }
     }
 
     return state.ticketProducts.filter(
@@ -1822,27 +1858,6 @@ export const gateRepositoryMock = {
         product.packageCode === packageCode &&
         product.status === "ACTIVE",
     ) ?? null,
-  findActiveProductsByProductCodeAndPackageCode: async (
-    productCode: string,
-    packageCode: string,
-  ) =>
-    state.masterProducts.filter(
-      (product) =>
-        product.productCode === productCode &&
-        product.packageCode === packageCode &&
-        product.status === "ACTIVE",
-    ),
-  findActiveRatesByMarketAndWeight: async (
-    marketCode: string,
-    packageWeight: Prisma.Decimal,
-  ) =>
-    state.masterRates.filter(
-      (rate) =>
-        rate.marketCode === marketCode &&
-        rate.status === 1 &&
-        rate.weightMin.lt(packageWeight) &&
-        rate.weightMax.gte(packageWeight),
-    ),
   findActiveVendorLineTargetsByStall: async (
     _marketCode: string,
     boothCode: string,
@@ -2090,6 +2105,45 @@ export const gateRepositoryMock = {
   },
 };
 
+// Mock ของ src/repositories/shared/master-data.repository.ts
+export const masterDataRepositoryMock = {
+  findActiveProductsByProductCodeAndPackageCode: async (
+    productCode: string,
+    packageCode: string,
+  ) =>
+    state.masterProducts.filter(
+      (product) =>
+        product.productCode === productCode &&
+        product.packageCode === packageCode &&
+        product.status === "ACTIVE",
+    ),
+  findActiveRatesByMarketAndWeight: async (
+    marketCode: string,
+    packageWeight: Prisma.Decimal,
+  ) =>
+    state.masterRates.filter(
+      (rate) =>
+        rate.marketCode === marketCode &&
+        rate.status === 1 &&
+        rate.weightMin.lt(packageWeight) &&
+        rate.weightMax.gte(packageWeight),
+    ),
+  findActiveMasterProductPackagesByProductCode: async (productCode: string) =>
+    state.masterProducts
+      .filter(
+        (product) =>
+          product.productCode === productCode && product.status === "ACTIVE",
+      )
+      .map((product) => ({
+        productCode: product.productCode,
+        productName: product.productName,
+        packageCode: product.packageCode,
+        packageName: product.packageName,
+        packageWeight: product.packageWeight,
+      }))
+      .sort((left, right) => left.packageCode.localeCompare(right.packageCode)),
+};
+
 // Mock ของ src/repositories/shared/market-job.repository.ts
 export const marketJobRepositoryMock = {
   findMarketJobByVehicleAndTicketNo: async (
@@ -2100,6 +2154,8 @@ export const marketJobRepositoryMock = {
       (market) =>
         market.vehicle_job_id === vehicleJobId && market.ticket_no === ticketNo,
     ) ?? null,
+  findMarketJobById: async (id: number) =>
+    state.marketJobs.find((market) => market.id === id) ?? null,
 };
 
 // Mock ของ src/repositories/shared/admin-action-log.repository.ts

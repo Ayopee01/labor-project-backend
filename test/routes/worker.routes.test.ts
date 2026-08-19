@@ -2223,6 +2223,178 @@ test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete submits qu
   assert.doesNotMatch(JSON.stringify(ratingResultMessage.data?.messages?.[1]?.contents), /0\.00 บาท/);
 });
 
+test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete allows switching PackageCode and re-snapshots the rate", async () => {
+  const { token, worker } = await loginWorker(78);
+  const job = addDispatchableJob(878, 1);
+  const ticket = addTicketForVehicleJob(job.id, 978);
+  const assignment = addPendingAssignment(1078, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.markWorkerAssigned(worker.id);
+
+  const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+  const switchedProduct = products[0];
+
+  state.masterProducts.push({
+    id: 9001,
+    productCode: switchedProduct.productCode,
+    productFullCode: `${switchedProduct.productCode}-FULL`,
+    productName: switchedProduct.productName,
+    packageCode: "fruit-large",
+    packageName: "Crate 40",
+    packageWeight: 30,
+    range: {
+      workerRanges: {
+        range1To50: 1,
+        range51To100: 2,
+        range101To200: 3,
+        range201To400: 4,
+        range401To600: 4,
+        rangeOver600: 5,
+      },
+    },
+    status: "ACTIVE",
+  });
+
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
+    token,
+    body: {
+      ticket_no: market.ticket_no,
+      boothCode: ticket.boothCode,
+      items: products.map((product) =>
+        product.id === switchedProduct.id
+          ? {
+              productCode: product.productCode,
+              packageCode: "fruit-large",
+              original_package_code: product.packageCode,
+              confirmed_quantity: 8,
+            }
+          : {
+              productCode: product.productCode,
+              packageCode: product.packageCode,
+              confirmed_quantity: 4,
+            }
+      ),
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "DELIVERED");
+
+  const updatedProduct = state.ticketProducts.find(
+    (product) => product.id === switchedProduct.id
+  )!;
+  assert.equal(updatedProduct.packageCode, "fruit-large");
+  assert.equal(updatedProduct.packageName, "Crate 40");
+  assert.equal(updatedProduct.confirmed_quantity, "8");
+  assert.equal(updatedProduct.package_weight_snapshot, "30");
+  assert.equal(updatedProduct.rate_market_code, "0000");
+  assert.equal(updatedProduct.rate_source, "CENTRAL_RATE");
+  assert.equal(updatedProduct.weight_range_name, "25.1-50.0");
+  // Prisma.Decimal#toString() ตัด trailing zero ("3.50" -> "3.5") ตัวจริง DB column
+  // NUMERIC(10,2) จะ normalize ค่ากลับเป็น "3.50" เสมอ (ตรงกับ TicketProduct.stallRateSnapshot
+  // ตอน Gate สร้าง Ticket ที่ผ่าน flow เดียวกันนี้) แต่ test double ไม่ได้จำลอง DB scale
+  assert.equal(updatedProduct.stall_rate_snapshot, "3.5");
+  assert.equal(updatedProduct.labor_rate_snapshot, "2.59");
+
+  const lineMessage = state.lineMessages.at(-1) as {
+    data?: { messages?: Array<{ contents?: unknown }> };
+  };
+  const flexContents = JSON.stringify(lineMessage.data?.messages?.[0]?.contents);
+  assert.match(flexContents ?? "", /แพ็กเกจใหม่/);
+  assert.match(flexContents ?? "", /Crate 40/);
+  assert.match(flexContents ?? "", /kg/);
+});
+
+test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete rejects switching to a PackageCode with no active master product", async () => {
+  const { token, worker } = await loginWorker(79);
+  const job = addDispatchableJob(879, 1);
+  const ticket = addTicketForVehicleJob(job.id, 979);
+  const assignment = addPendingAssignment(1079, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.markWorkerAssigned(worker.id);
+
+  const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+  const switchedProduct = products[0];
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
+
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
+    token,
+    body: {
+      ticket_no: market.ticket_no,
+      boothCode: ticket.boothCode,
+      items: products.map((product) =>
+        product.id === switchedProduct.id
+          ? {
+              productCode: product.productCode,
+              packageCode: "does-not-exist",
+              original_package_code: product.packageCode,
+              confirmed_quantity: 8,
+            }
+          : {
+              productCode: product.productCode,
+              packageCode: product.packageCode,
+              confirmed_quantity: 4,
+            }
+      ),
+    },
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, "PRODUCT_PACKAGE_NOT_FOUND");
+  assert.equal(ticket.status, "WORKING");
+  const untouchedProduct = state.ticketProducts.find(
+    (product) => product.id === switchedProduct.id
+  )!;
+  assert.equal(untouchedProduct.confirmed_quantity, null);
+  assert.equal(untouchedProduct.packageCode, switchedProduct.packageCode);
+});
+
+test("GET /api/workers/me/products/:productCode/packages returns active package options for one ProductCode", async () => {
+  const { token } = await loginWorker(80);
+
+  state.masterProducts.push({
+    id: 9002,
+    productCode: "02020300",
+    productFullCode: "02020300000000000099",
+    productName: "Rambutan",
+    packageCode: "30",
+    packageName: "Crate 40",
+    packageWeight: 40,
+    range: {},
+    status: "ACTIVE",
+  });
+
+  const response = await server.request("GET", "/api/workers/me/products/02020300/packages", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.productCode, "02020300");
+  assert.equal(response.body.productName, "Rambutan");
+  assert.deepEqual(
+    response.body.packages.map((item: { packageCode: string }) => item.packageCode).sort(),
+    ["29", "30"]
+  );
+});
+
+test("GET /api/workers/me/products/:productCode/packages returns 404 for an unknown ProductCode", async () => {
+  const { token } = await loginWorker(81);
+
+  const response = await server.request(
+    "GET",
+    "/api/workers/me/products/UNKNOWN-CODE/packages",
+    { token }
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(response.body.code, "PRODUCT_NOT_FOUND");
+});
+
 test("vendor confirmation timeout auto-confirms ticket and financializes only once", async () => {
   const { token, worker } = await loginWorker(76);
   const job = addDispatchableJob(876, 1);

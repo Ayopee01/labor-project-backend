@@ -23,6 +23,7 @@ import {
   gateTicketRepositoryMock,
   gateRepositoryMock,
   marketJobRepositoryMock,
+  masterDataRepositoryMock,
   systemSettingRepositoryMock,
   ticketFinancialRepositoryMock,
   ticketWorkerRepositoryMock,
@@ -208,6 +209,13 @@ function patchModuleLoader(): void {
       request === "../../repositories/shared/market-job.repository"
     ) {
       return marketJobRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/master-data.repository" ||
+      request === "../../repositories/shared/master-data.repository"
+    ) {
+      return masterDataRepositoryMock;
     }
 
     if (
