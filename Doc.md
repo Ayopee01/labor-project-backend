@@ -9,7 +9,7 @@
 ระบบนี้เป็น **Backend ของระบบบริหารแรงงานขนถ่ายสินค้า (Labor Management)** ที่เชื่อมโยง 4 ฝั่งเข้าด้วยกัน:
 
 1. **Gate** — จุดชั่ง/รับรถที่หน้างาน ยิง request สร้างงานเข้ามาเมื่อรถมาถึงและแจ้งรายการสินค้าที่ต้องขน
-2. **Worker (คนงาน)** — แอปมือถือของคนงาน รับงาน สแกน QR เช็คอิน และส่งยอดสินค้าที่ขนจริง
+2. **Worker (คนงาน)** — แอปมือถือของคนงาน รับงาน สแกน barcode เช็คอิน และส่งยอดสินค้าที่ขนจริง
 3. **Vendor ผ่าน LINE** — เจ้าของบูธ/แผงยืนยันหรือปฏิเสธยอดที่คนงานส่งมา ผ่านปุ่มใน LINE Flex Message
 4. **Admin (เจ้าหน้าที่)** — เว็บฝั่ง Admin จัดการ ควบคุม ตรวจสอบ และดูประวัติ/การเงินของงานทั้งหมด
 
@@ -125,8 +125,8 @@ VehicleJob (TicketNumber)                 = "รถหนึ่งคัน" ท
 - `dispatchReadyWorkers()` (`worker-dispatch.ts`) จะไล่ดึงคนงานจากคิวมาใส่ `VehicleJobAssignment` ทีละคนจนครบ `workers_required` ของแต่ละรถ ที่ยังขาดคน
 - แต่ละ assignment มี deadline สองช่วง ควบคุมด้วย BullMQ delayed job:
   - **Accept deadline** — ถ้าคนงานไม่กดรับงานทันเวลา → `ASSIGNMENT_STATUS.TIMEOUT` แล้วเรียก dispatch ใหม่แทนที่
-  - **Scan deadline** — คนงานรับงานแล้วแต่ไม่สแกน QR เช็คอินทันเวลา → timeout เช่นกัน
-- คนงานเช็คอินด้วยการสแกน QR เฉพาะของแต่ละ `MarketJob` (`workerQrToken`) — สแกนใบใดใบหนึ่งของรถคันนั้นสำเร็จ ถือว่าทั้งทีมเช็คอินสำเร็จ (เพราะ dispatch ผูกที่ระดับรถ)
+  - **Scan deadline** — คนงานรับงานแล้วแต่ไม่สแกน barcode เช็คอินทันเวลา → timeout เช่นกัน
+- คนงานเช็คอินด้วยการสแกน **barcode บนตั๋วกระดาษจริงที่ Gate ออกให้** ซึ่งคือเลข `ticket_no` ของแต่ละ `MarketJob` (Business Ticket) นั้นเอง ไม่ใช่ token ลับที่ระบบสร้างขึ้นแยกต่างหาก — ปลอดภัยเพราะ backend จำกัดการค้นหาด้วย `vehicle_job_id` ของ assignment ผู้สแกนอยู่แล้ว (ไม่ใช่ค้นหาแบบ global) สแกนใบใดใบหนึ่งของรถคันนั้นสำเร็จ ถือว่าทั้งทีมเช็คอินสำเร็จ (เพราะ dispatch ผูกที่ระดับรถ) ผ่าน `POST /api/workers/me/assignments/:ticketNumber/check-in-barcode`
 - แจ้งเตือนคนงานผ่าน **WebSocket** (`/ws/workers`) แบบ real-time (งานใหม่, ใกล้หมดเวลา, ถูกยกเลิก ฯลฯ) และสำรองด้วย **FCM push** เมื่อแอปปิดอยู่
 
 ### 4.3 คนงานทำงานและส่งยอด
@@ -332,7 +332,7 @@ npm run test:all           # ทั้งหมดต่อกัน
 | Admin Realtime | `/api/admin/events` | SSE stream |
 | Gate | `/api/gate` | สร้างตั๋ว (ปิดรับตั๋วเพิ่มอัตโนมัติผ่าน `TicketCount` ในคำขอเดียวกัน), ตัวเลือก market/booth/product |
 | Driver | `/api/driver` | สแกน QR คนขับ, ดูงานปัจจุบัน |
-| Worker Application | `/api/workers/me` | online/offline/break, รับงาน, สแกน QR, ส่งยอด, ประวัติ, รายได้ |
+| Worker Application | `/api/workers/me` | online/offline/break, รับงาน, สแกน barcode เช็คอิน, ส่งยอด, ประวัติ, รายได้ |
 | LINE | `/api/line/webhook` | vendor confirm/reject/rating |
 
 รายละเอียด request/response ทุก field ดูได้ที่ Swagger UI: รันเซิร์ฟเวอร์แล้วเปิด `/api-docs` (ไฟล์ต้นทางอยู่ที่ `src/docs/openapi/*.yaml`) หรือดู collection ทดสอบสำเร็จรูปที่ `Postman_Collection.json` ที่ root โปรเจกต์

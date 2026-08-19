@@ -218,7 +218,6 @@ export function mapMarketJob(record: MarketJob | null): MarketJobDto | null {
     marketName: record.marketName,
     dropoff_point: record.dropoffPoint,
     status: record.status,
-    worker_qr_token: record.workerQrToken,
     worker_roster_locked_at: record.workerRosterLockedAt ? toIsoString(record.workerRosterLockedAt) : null,
     final_stall_amount: record.finalStallAmount?.toFixed(2) ?? null,
     financialized_at: record.financializedAt ? toIsoString(record.financializedAt) : null,

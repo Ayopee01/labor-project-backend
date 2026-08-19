@@ -113,7 +113,6 @@ export interface MarketJobDto {
   marketName: string;
   dropoff_point: string | null;
   status: string;
-  worker_qr_token: string;
   worker_roster_locked_at: string | null;
   final_stall_amount: string | null;
   financialized_at: string | null;
@@ -405,12 +404,11 @@ export interface WorkerCurrentJobBoothResponse {
 }
 
 export interface WorkerCurrentJobMarketResponse {
+  // Scan this Business Ticket's ticket_no (barcode on the Gate paper ticket) via
+  // check-in-barcode to check in the whole team.
   ticket_no: string;
   marketCode: string;
   marketName: string;
-  // Opaque per-Business-Ticket QR secret. Scanning any one Business Ticket's
-  // worker_qr_token via check-in-qr satisfies check-in for the whole team.
-  worker_qr_token: string;
   booths: WorkerCurrentJobBoothResponse[];
 }
 
@@ -432,6 +430,10 @@ export interface WorkerCurrentJobResponse {
   ticket_number: string;
   license_plate: string;
   license_plate_province: string | null;
+  // Set only while the assignment is still PENDING (worker has not pressed accept yet).
+  accept_deadline_at: string | null;
+  accept_deadline_unix_ms: number | null;
+  // Set only once the assignment is ACCEPTED (worker is waiting to scan the QR check-in).
   scan_deadline_at: string | null;
   scan_deadline_unix_ms: number | null;
   vehicle_type: string | null;
@@ -458,11 +460,10 @@ interface WorkerAssignmentStallDto {
 
 // Type ตลาดใน assignment ที่รวมแผงของตลาดนั้น (หนึ่งรายการ = หนึ่ง Business Ticket)
 interface WorkerAssignmentMarketDto {
+  // Scan this Business Ticket's ticket_no (barcode on the Gate paper ticket) via
+  // check-in-barcode to check in the whole team.
   ticket_no: string;
   marketName: string;
-  // Opaque per-Business-Ticket QR secret. Scanning any one Business Ticket's
-  // worker_qr_token via check-in-qr satisfies check-in for the whole team.
-  worker_qr_token: string;
   stall_count: number;
   stalls: WorkerAssignmentStallDto[];
 }

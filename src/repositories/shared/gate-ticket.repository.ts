@@ -52,6 +52,34 @@ export async function findGateTicketForCompletionByTicketNumberAndBoothCode(
   return mapGateTicket(ticket);
 }
 
+// Function ค้นหา Booth สำหรับส่งยอด โดย scope ด้วย Business Ticket (ticketNo) ด้วย ไม่ใช่แค่
+// TicketNumber + boothCode เฉยๆ เพราะ boothCode ไม่ unique ข้าม Business Ticket คนละตลาดของรถ
+// คันเดียวกัน (unique แค่ภายใน MarketJob เดียว) — worker ต้องระบุ ticket_no มาด้วยเสมอ
+export async function findGateTicketForCompletionByTicketNumberAndTicketNoAndBoothCode(
+  ticketNumber: string,
+  ticketNo: string,
+  boothCode: string,
+  connection?: DbConnection
+): Promise<GateTicketDto | null> {
+  const db = client(connection);
+  const ticket = await db.gateTicket.findFirst({
+    where: {
+      boothCode,
+      marketJob: {
+        ticketNo,
+      },
+      vehicleJob: {
+        ticketNumber,
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+
+  return mapGateTicket(ticket);
+}
+
 export async function listActiveVendorLineTargetsForTicket(
   ticketId: number,
   connection?: DbConnection

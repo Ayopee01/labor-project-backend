@@ -110,10 +110,10 @@
         true = unload_now,
         false = waiting_unload.
 
-        Ticket.WorkerQrToken is an opaque secret generated per Business Ticket
-        (not derived from TicketNo) — a worker scans any one of the vehicle's
-        Business Tickets' WorkerQrToken to check in the whole team. Qr.DriverQrToken
-        stays shared across the whole vehicle (TicketNumber).
+        Workers check in by scanning the barcode printed on the physical Gate paper ticket,
+        which encodes Ticket.TicketNo — the same value Gate receives in this request, no
+        separate QR field is generated or returned. Qr.DriverQrToken stays shared across
+        the whole vehicle (TicketNumber) and is unrelated to worker check-in.
       operationId: createGateTicket
       security:
         - gateBasicAuth: []

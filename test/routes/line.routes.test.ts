@@ -204,9 +204,11 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
   assignment.status = "SCANNED";
   assignment.scanned_at = new Date().toISOString();
   const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
   const submitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
+      ticket_no: market.ticket_no,
       boothCode: ticket.boothCode,
       items: products.map((product) => ({
         productCode: product.productCode,
@@ -284,6 +286,7 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
   const resubmitResponse = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
+      ticket_no: market.ticket_no,
       boothCode: ticket.boothCode,
       items: products.map((product) => ({
         productCode: product.productCode,

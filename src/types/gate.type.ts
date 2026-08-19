@@ -208,9 +208,6 @@ interface GateVehicleJobResponseTicket {
   VehicleTypeName: string | null;
 
   Status: GateVehicleJobResponseStatus;
-
-  // QR เฉพาะของ Business Ticket ใบนี้ ใช้ให้คนงาน scan check-in
-  WorkerQrToken: string;
 }
 
 // Type ข้อมูล Market ที่คืนให้ Gate

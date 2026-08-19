@@ -84,7 +84,7 @@ function sortSwaggerOperations(
     "post /api/workers/me/offline": 75,
     "post /api/workers/me/break": 76,
     "post /api/workers/me/assignments/{ticketNumber}/accept": 77,
-    "post /api/workers/me/assignments/{ticketNumber}/check-in-qr": 78,
+    "post /api/workers/me/assignments/{ticketNumber}/check-in-barcode": 78,
     "post /api/workers/me/assignments/{ticketNumber}/tickets/complete": 79,
     "get /api/admin/events": 85,
     "post /api/line/webhook": 90,
@@ -133,9 +133,8 @@ const swaggerDescriptionReplacements: Array<[string, string]> = [
   ["login_challenge_token", "LoginChallengeToken"],
   ["target_type", "TargetType"],
   // Longer/more specific patterns must run before shorter ones they contain as a
-  // substring (e.g. worker_qr_token contains qr_token), otherwise the shorter
+  // substring (e.g. driver_qr_token contains qr_token), otherwise the shorter
   // rule fires first and the longer rule can never match the already-replaced text.
-  ["worker_qr_token", "WorkerQrToken"],
   ["driver_qr_token", "DriverQrToken"],
   ["qr_token", "QrToken"],
   ["client_id", "ClientId"],

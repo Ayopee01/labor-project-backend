@@ -121,7 +121,7 @@ router.post(
 );
 
 router.post(
-  "/me/assignments/:ticketNumber/check-in-qr",
+  "/me/assignments/:ticketNumber/check-in-barcode",
   async (req, res, next) => {
     try {
       const result = await workerService.scanWorkerAssignment(

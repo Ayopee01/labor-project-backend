@@ -21,10 +21,12 @@
         `SESSION_REVOKED`.
         Events that are intended for mobile display include a localized `Notification`
         object with `Key`, `Lang`, `Title`, and `Message`.
-        `WORKER_ASSIGNED` sends `TicketNo`, `GateTransactionRef`,
-        `WorkerQrToken`, and `Assignment.CreatedAt/AcceptDeadlineAt/AcceptDeadlineUnixMs`.
-        `ASSIGNMENT_TEAM_UPDATED` is sent to every worker assigned to the same vehicle job after accept/check-in and includes the latest `TicketNo`, `WorkerStatus`, `TeamScan`, and `Team` snapshot.
-        For Gate-created jobs, `WorkerQrToken` is the same value as `TicketNo`.
+        `WORKER_ASSIGNED` sends `TicketNumber` and
+        `Assignment.CreatedAt/AcceptDeadlineAt/AcceptDeadlineUnixMs` only — no per-Business-Ticket
+        detail, since a vehicle's Business Tickets can arrive after the worker is already
+        assigned. Call `GET /api/workers/me/status` (or the accept response) to read
+        `Markets[].TicketNo`, the value scanned via `POST .../check-in-barcode`.
+        `ASSIGNMENT_TEAM_UPDATED` is sent to every worker assigned to the same vehicle job after accept/check-in and includes the latest `TicketNumber`, `WorkerStatus`, `TeamScan`, and `Team` snapshot.
         It does not send `DriverQrToken`.
         Important worker notification events are also sent through FCM when the worker has an active registered FCM token.
         Worker actions such as accept/check-in/complete still use the REST endpoints.
@@ -119,6 +121,15 @@
       tags:
         - Worker Application
       summary: Get current worker profile, shift, status, and daily summary.
+      description: >
+        Safe to call any time, including right after the app is closed and reopened, since
+        current_job is always re-derived live from persisted assignment state (not from a
+        one-time push payload). While status is "assigned", current_job.accept_deadline_at /
+        accept_deadline_unix_ms are set if the assignment is still PENDING (worker has not
+        pressed accept yet), or current_job.scan_deadline_at / scan_deadline_unix_ms are set
+        once ACCEPTED (worker is waiting to scan check-in) — never both at once. Once the
+        worker scans, status becomes waiting_team (teammates still scanning) or working (team
+        ready), and both deadline pairs return null.
       operationId: getWorkerStatus
       security:
         - bearerAuth: []
@@ -266,23 +277,23 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/workers/me/assignments/{ticketNo}/accept:
+  /api/workers/me/assignments/{ticketNumber}/accept:
     post:
       tags:
         - Worker Application
       summary: Accept a pending worker assignment within the configured accept deadline.
-      description: If the worker misses the accept deadline, the assignment becomes TIMEOUT and the worker is moved to the queue tail even when the Worker WebSocket is disconnected. The accept-timeout streak resets after a successful accept. After worker_accept_timeout_limit consecutive accept timeouts, the worker is moved to open_app and cannot re-enter the queue in the same shift. A successful response includes accepted_at, worker_code, shirt_number, scan_deadline_at, and scan_deadline_unix_ms from the persisted assignment so the frontend can calculate the QR scan countdown locally.
+      description: If the worker misses the accept deadline, the assignment becomes TIMEOUT and the worker is moved to the queue tail even when the Worker WebSocket is disconnected. The accept-timeout streak resets after a successful accept. After worker_accept_timeout_limit consecutive accept timeouts, the worker is moved to open_app and cannot re-enter the queue in the same shift. A successful response includes accepted_at, worker_code, shirt_number, scan_deadline_at, and scan_deadline_unix_ms from the persisted assignment so the frontend can calculate the scan countdown locally.
       operationId: acceptWorkerAssignment
       security:
         - bearerAuth: []
       parameters:
         - in: path
-          name: ticketNo
-          description: ticketNo from WORKER_ASSIGNED.
+          name: ticketNumber
+          description: ticketNumber from the WORKER_ASSIGNED push/socket payload.
           required: true
           schema:
             type: string
-            example: TKT-20260723-000125
+            example: TRUCK-20260804-001
       responses:
         "200":
           description: Accepted assignment and job detail for the worker job screen.
@@ -290,28 +301,31 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkerAssignmentAcceptResponse"
-  /api/workers/me/assignments/{ticketNo}/check-in-qr:
+  /api/workers/me/assignments/{ticketNumber}/check-in-barcode:
     post:
       tags:
         - Worker Application
-      summary: Check in to an accepted assignment with a Business Ticket's worker QR.
+      summary: Check in to an accepted assignment by scanning a Business Ticket's barcode.
       description: |
-        Requires worker_qr_token in the request body — read it from markets[].worker_qr_token
-        in the accept response, or current_job.markets[].worker_qr_token from GET
-        /api/workers/me/status. It is an opaque per-Business-Ticket secret generated at Gate
-        Create, not derived from ticketNo/ticketNumber. Scanning any one Business Ticket under
-        the vehicle checks in the whole team, since dispatch is vehicle-scoped.
+        Requires ticket_no in the request body — the Business Ticket number printed as a
+        barcode on the physical paper ticket Gate hands the worker (the same value also
+        available at markets[].ticket_no in the accept response, or
+        current_job.markets[].ticket_no from GET /api/workers/me/status). It is a real
+        business identifier, not an opaque secret, but is resolved safely by scoping the
+        lookup to this worker's own vehicle (from the ticketNumber path param + auth) rather
+        than trusting a system-wide match. Scanning any one Business Ticket under the vehicle
+        checks in the whole team, since dispatch is vehicle-scoped.
         Worker can check in only while scan_deadline_at is valid. Countdown-capable responses and events include scan_deadline_unix_ms in Unix milliseconds.
         After this worker checks in, worker_status is waiting_team until every active/eligible team assignment has scanned, then working.
         For multi-worker vehicle jobs, the first successful check-in shortens remaining ACCEPTED workers to the configured worker_scan_team_remaining_minutes window and emits ASSIGNMENT_SCAN_DEADLINE_SHORTENED.
         Backend emits ASSIGNMENT_SCAN_DEADLINE_WARNING to Admin SSE when an ACCEPTED worker has not checked in and remaining scan time is below worker_scan_warning_before_minutes.
         If the scan window expires by API call or background timeout, the assignment becomes TIMEOUT and the worker returns to open_app.
-      operationId: checkInWorkerAssignmentQr
+      operationId: checkInWorkerAssignmentBarcode
       security:
         - bearerAuth: []
       parameters:
         - in: path
-          name: ticketNo
+          name: ticketNumber
           description: TicketNumber (vehicle-level job reference) of the worker's current assignment.
           required: true
           schema:
@@ -322,7 +336,7 @@
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/WorkerCheckInQrRequest"
+              $ref: "#/components/schemas/WorkerCheckInBarcodeRequest"
       responses:
         "200":
           description: Checked-in assignment status.
@@ -330,19 +344,29 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkerAssignmentCheckInResponse"
-        "409":
-          description: Assignment is not accepted or QR scan window expired.
+        "404":
+          description: Assignment not found, or ticket_no does not match any Business Ticket under this worker's vehicle.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/workers/me/assignments/{ticketNo}/tickets/complete:
+        "409":
+          description: Assignment is not accepted or scan window expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/assignments/{ticketNumber}/tickets/complete:
     post:
       tags:
         - Worker Application
-      summary: Submit counted product quantities for a GateTicket using BoothCode in body.
+      summary: Submit counted product quantities for a GateTicket using ticket_no and BoothCode in body.
       description: |
         Preferred endpoint for mobile clients. Send boothCode in the JSON body so BoothCode values containing "/" such as OM3/40 do not need URL encoding.
+        ticket_no (required) names which Business Ticket this submission belongs to — needed
+        because two Business Tickets under the same vehicle, against different markets, can
+        legitimately share the same BoothCode; ticket_no plus boothCode together resolve the
+        exact booth unambiguously.
         After worker submits quantities, the ticket and assignment status become DELIVERED.
         Workers can submit any stall/market in the same vehicle job once the assigned team has checked in; the API no longer requires waiting for the previous stall to close first.
         Vendor receives a LINE Flex card with Confirm/Reject buttons. If vendor confirms through LINE, the ticket closes and backend sends an optional 1-5 satisfaction rating Flex prompt to the confirming LINE user. If vendor rejects, the assignment status becomes REJECT and the same endpoint can be used to resubmit.
@@ -352,12 +376,12 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: ticketNo
+          name: ticketNumber
           required: true
           schema:
             type: string
-            example: TKT-20260723-000125
-          description: TicketNo from the accepted/check-in assignment.
+            example: TRUCK-20260804-001
+          description: TicketNumber (vehicle-level job reference) of the worker's current assignment.
       requestBody:
         required: true
         content:

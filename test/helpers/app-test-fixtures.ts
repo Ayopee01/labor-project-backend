@@ -461,7 +461,6 @@ export function addMarketJobForVehicle(
     dropoff_point:
       overrides.dropoff_point === undefined ? "Dock A1" : overrides.dropoff_point,
     status: overrides.status ?? "WORKING",
-    worker_qr_token: overrides.worker_qr_token ?? `WQR-${vehicleJobId}-${id}`,
     worker_roster_locked_at: overrides.worker_roster_locked_at ?? null,
     final_stall_amount: overrides.final_stall_amount ?? null,
     financialized_at: overrides.financialized_at ?? null,
@@ -515,11 +514,15 @@ export function addTicketForVehicleJob(
   marketJobId = vehicleJobId + 2000,
 ): GateTicketRecord {
   const now = new Date().toISOString();
+  // ticket_no ต้อง unique ภายใน vehicleJobId เดียวกันเสมอ (ตรงกับ @@unique([vehicleJobId,
+  // ticketNo]) จริงใน DB) จึงต้องผูกกับ marketJobId ด้วย ไม่ใช่แค่ vehicleJobId เฉยๆ มิฉะนั้น
+  // Test ที่สร้างหลาย Business Ticket ต่อรถคันเดียวกัน (ส่ง marketJobId ต่างกันมาเอง) จะได้
+  // ticket_no ซ้ำกันโดยไม่ตั้งใจ
   const marketJob =
     state.marketJobs.find((candidate) => candidate.id === marketJobId) ??
     addMarketJobForVehicle(vehicleJobId, {
       id: marketJobId,
-      ticket_no: `TICKET-${vehicleJobId}`,
+      ticket_no: `TICKET-${vehicleJobId}-${marketJobId}`,
     });
   const ticket = {
     id: ticketId,

@@ -128,7 +128,6 @@ const requestKeyMap: Record<string, string> = {
   WorkerCode: "worker_code",
   WorkerCodes: "worker_codes",
   WorkerPresenceStaleSeconds: "worker_presence_stale_seconds",
-  WorkerQrToken: "worker_qr_token",
   WorkerScanDeadlineMinutes: "worker_scan_deadline_minutes",
   WorkerScanTeamRemainingMinutes: "worker_scan_team_remaining_minutes",
   WorkerScanWarningBeforeMinutes: "worker_scan_warning_before_minutes",

@@ -90,7 +90,7 @@ import {
 import { parseWithSchema } from "../validation/parser";
 import {
   workerAssignmentHistoryQuerySchema,
-  workerCheckInQrBodySchema,
+  workerCheckInBarcodeBodySchema,
   workerEarningsSummaryQuerySchema,
   workerTicketCompleteBodySchema,
 } from "../validation/schemas";
@@ -173,7 +173,6 @@ function buildWorkerAssignmentAcceptResponse(
     markets: detail.markets.map((market) => ({
       ticket_no: market.ticket_no,
       marketName: market.marketName,
-      worker_qr_token: market.worker_qr_token,
       stall_count: market.booths.length,
         stalls: market.booths.map((ticket) => ({
           boothCode: ticket.boothCode,
@@ -214,19 +213,26 @@ function buildWorkerCurrentJobResponse(
   detail: VehicleJobDetailResponse,
   team: WorkerAssignmentTeamMemberDto[],
   assignment: VehicleJobAssignmentDto,
-  status: WorkerWorkStatus,
   teamScan: VehicleWorkReadinessDto,
 ): WorkerCurrentJobResponse {
   return {
     ticket_number: detail.vehicle_job.ticket_number,
     license_plate: detail.vehicle_job.license_plate,
     license_plate_province: detail.vehicle_job.license_plate_province,
+    accept_deadline_at:
+      assignment.status === ASSIGNMENT_STATUS.PENDING
+        ? assignment.accept_deadline_at
+        : null,
+    accept_deadline_unix_ms:
+      assignment.status === ASSIGNMENT_STATUS.PENDING
+        ? toUnixMs(assignment.accept_deadline_at)
+        : null,
     scan_deadline_at:
-      status === WORKER_WORK_STATUS.ASSIGNED
+      assignment.status === ASSIGNMENT_STATUS.ACCEPTED
         ? assignment.scan_deadline_at
         : null,
     scan_deadline_unix_ms:
-      status === WORKER_WORK_STATUS.ASSIGNED
+      assignment.status === ASSIGNMENT_STATUS.ACCEPTED
         ? toUnixMs(assignment.scan_deadline_at)
         : null,
     vehicle_type: detail.vehicle_job.vehicle_type,
@@ -235,7 +241,6 @@ function buildWorkerCurrentJobResponse(
       ticket_no: market.ticket_no,
       marketCode: market.marketCode,
       marketName: market.marketName,
-      worker_qr_token: market.worker_qr_token,
       booths: market.booths.map((ticket) => ({
         boothCode: ticket.boothCode,
         boothName: ticket.boothName,
@@ -433,24 +438,31 @@ async function findWorkerAssignmentByReference(
 // Function ค้นหา Gate ticket สำหรับ completion ตาม TicketNumber และ booth ใน service flow
 async function findGateTicketForCompletionByTicketAndBooth(
   ticketNumberParam: unknown,
+  ticketNoParam: unknown,
   boothCodeParam: unknown,
   connection?: Parameters<
     typeof gateTicketRepository.findGateTicketForCompletion
   >[1],
 ): Promise<GateTicketDto | null> {
   const ticketNumber = String(ticketNumberParam ?? "").trim();
+  const ticketNo = String(ticketNoParam ?? "").trim();
   const boothCode = String(boothCodeParam ?? "").trim();
 
   if (!ticketNumber) {
     throw new ApiError(400, "INVALID_TICKET_NUMBER", "TicketNumber is invalid.");
   }
 
+  if (!ticketNo) {
+    throw new ApiError(400, "INVALID_TICKET_NO", "ticket_no is invalid.");
+  }
+
   if (!boothCode) {
     throw new ApiError(400, "INVALID_BOOTH_CODE", "BoothCode is invalid.");
   }
 
-  return gateTicketRepository.findGateTicketForCompletionByTicketNumberAndBoothCode(
+  return gateTicketRepository.findGateTicketForCompletionByTicketNumberAndTicketNoAndBoothCode(
     ticketNumber,
+    ticketNo,
     boothCode,
     connection,
   );
@@ -932,7 +944,6 @@ export async function getWorkerStatus(
         detail,
         team,
         currentAssignment,
-        status,
         teamScan,
       );
     }
@@ -1221,7 +1232,7 @@ export async function scanWorkerAssignment(
   auth?: AccessTokenPayload,
 ): Promise<WorkerAssignmentCheckInResponse> {
   const account = await requireWorker(auth);
-  const input = parseWithSchema(workerCheckInQrBodySchema, body);
+  const input = parseWithSchema(workerCheckInBarcodeBodySchema, body);
   const settings = await getRuntimeSettings();
   const teamScanRemainingMinutes = settings.worker_scan_team_remaining_minutes;
 
@@ -1273,27 +1284,21 @@ export async function scanWorkerAssignment(
       };
     }
 
-    // Resolve QR -> Business Ticket (MarketJob) จาก DB จริง ห้ามเชื่อค่าที่ Client อ้างมาตรงๆ
-    // แล้วตรวจว่า Ticket ที่สแกนอยู่ภายใต้ TicketNumber เดียวกับ Assignment ของ worker คนนี้
-    // (worker scan Ticket ใบไหนในรถของตัวเองก็ได้ ไม่ต้อง scan ครบทุกใบ)
-    const scannedMarketJob = await marketJobRepository.findMarketJobByWorkerQrToken(
-      input.worker_qr_token,
+    // หา Business Ticket (MarketJob) จาก barcode ticket_no ที่สแกน โดย scope ด้วย vehicle_job_id
+    // ของ assignment worker คนนี้อยู่แล้ว (รู้จาก TicketNumber ใน path + ตัว worker เอง) ปลอดภัย
+    // แม้ ticket_no จะไม่ unique ทั้งระบบ เพราะ unique แค่ภายในคันเดียว (worker scan Ticket ใบไหน
+    // ในรถของตัวเองก็ได้ ไม่ต้อง scan ครบทุกใบ)
+    const scannedMarketJob = await marketJobRepository.findMarketJobByVehicleAndTicketNo(
+      assignment.vehicle_job_id,
+      input.ticket_no,
       transaction,
     );
 
     if (!scannedMarketJob) {
       throw new ApiError(
-        400,
-        "INVALID_WORKER_QR",
-        "Worker QR token is invalid.",
-      );
-    }
-
-    if (scannedMarketJob.vehicle_job_id !== assignment.vehicle_job_id) {
-      throw new ApiError(
-        409,
-        "QR_TICKET_NUMBER_MISMATCH",
-        "Scanned ticket does not belong to this worker's vehicle job.",
+        404,
+        "MARKET_JOB_NOT_FOUND",
+        "Business Ticket not found for this worker's vehicle job.",
       );
     }
 
@@ -1469,6 +1474,7 @@ export async function scanWorkerAssignment(
 // Function จบงาน worker assignment ticket ใน service flow
 async function completeWorkerAssignmentTicket(
   ticketNumberParam: unknown,
+  ticketNoParam: unknown,
   boothCodeParam: unknown,
   body: unknown,
   auth?: AccessTokenPayload,
@@ -1477,6 +1483,7 @@ async function completeWorkerAssignmentTicket(
     (connection) =>
       findGateTicketForCompletionByTicketAndBooth(
         ticketNumberParam,
+        ticketNoParam,
         boothCodeParam,
         connection,
       ),
@@ -1490,9 +1497,15 @@ export async function completeWorkerAssignmentTicketFromBody(
   body: unknown,
   auth?: AccessTokenPayload,
 ): Promise<TicketCompletionResponse> {
-  const boothCode = (body as { boothCode?: unknown } | null)?.boothCode;
+  const parsedBody = body as { ticket_no?: unknown; boothCode?: unknown } | null;
 
-  return completeWorkerAssignmentTicket(ticketNumberParam, boothCode, body, auth);
+  return completeWorkerAssignmentTicket(
+    ticketNumberParam,
+    parsedBody?.ticket_no,
+    parsedBody?.boothCode,
+    body,
+    auth,
+  );
 }
 
 // Function จบงาน resolved worker ticket ใน service flow

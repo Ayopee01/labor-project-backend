@@ -406,7 +406,6 @@ export async function createVehicleJobFromGate(
       marketName: market.marketName,
       dropoffPoint: market.dropoff_point ?? null,
       status: marketStatus,
-      workerQrToken: createRandomToken("worker_qr"),
     },
   });
 

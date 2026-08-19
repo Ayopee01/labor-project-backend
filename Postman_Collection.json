@@ -168,12 +168,6 @@
       "description": "Driver QR token returned by POST /api/gate/tickets."
     },
     {
-      "key": "workerQrToken",
-      "value": "",
-      "type": "string",
-      "description": "One Business Ticket's opaque worker QR secret, saved from Markets[].WorkerQrToken in POST /api/workers/me/assignments/{{ticketNo}}/accept (or CurrentJob.Markets[].WorkerQrToken from GET /api/workers/me/status). Sent as WorkerQrToken to POST .../check-in-qr. Not derived from ticketNo — do not assume it equals ticketNo."
-    },
-    {
       "key": "driverSessionToken",
       "value": "",
       "type": "string",
@@ -1347,7 +1341,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/scan-deadline/extend\nAuth: Admin access token\nBody: minutes required. Omit WorkerCodes to extend all ACCEPTED workers whose scan deadline has not expired; send WorkerCodes to extend selected workers only.\nExample selected worker body: { \"minutes\": 10, \"WorkerCodes\": [\"MN000115\"] }\nResponse: ticketNo, WorkerQrToken, assignments[].WorkerCode/status/ScanDeadlineAt/ScanDeadlineUnixMs.\nNotes: Extends ScanDeadlineAt and ScanDeadlineUnixMs, then reschedules the background scan timeout for the updated ACCEPTED assignments. Expired assignments are not extended. For Gate-created jobs, WorkerQrToken equals ticketNo and is reused for check-in after extension."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNo}}/scan-deadline/extend\nAuth: Admin access token\nBody: minutes required. Omit WorkerCodes to extend all ACCEPTED workers whose scan deadline has not expired; send WorkerCodes to extend selected workers only.\nExample selected worker body: { \"minutes\": 10, \"WorkerCodes\": [\"MN000115\"] }\nResponse: ticketNo, assignments[].WorkerCode/status/ScanDeadlineAt/ScanDeadlineUnixMs.\nNotes: Extends ScanDeadlineAt and ScanDeadlineUnixMs, then reschedules the background scan timeout for the updated ACCEPTED assignments. Expired assignments are not extended."
           },
           "response": []
         },
@@ -2221,8 +2215,7 @@
                   "if (firstProduct?.ProductCode) pm.collectionVariables.set('productCode', firstProduct.ProductCode);",
                   "if (firstProduct?.PackageCode) pm.collectionVariables.set('packageCode', firstProduct.PackageCode);",
                   "if (body.WorkerCount !== undefined) pm.collectionVariables.set('workerCount', String(body.WorkerCount));",
-                  "if (body.Qr?.DriverQrToken) pm.collectionVariables.set('driverQrToken', body.Qr.DriverQrToken);",
-                  "if (body.Ticket?.WorkerQrToken) pm.collectionVariables.set('workerQrToken', body.Ticket.WorkerQrToken);"
+                  "if (body.Qr?.DriverQrToken) pm.collectionVariables.set('driverQrToken', body.Qr.DriverQrToken);"
                 ]
               }
             }
@@ -2271,7 +2264,7 @@
                 }
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create credentials with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: One request per Business Ticket (TicketNo), always against exactly one MarketCode. A vehicle (TicketNumber) may generate multiple Business Tickets over time as it unloads at different markets — send the same TicketNumber again with a new TicketNo; no duplicate vehicle job is created. Required root fields: TicketNumber, TicketNo, TicketCreatedAt, TicketCount, BoothCount, MarketCode, LicensePlate, LicensePlateProvince, VehicleTypeCode, VehicleTypeName, Booths, Dispatch. TicketCount is the total number of Business Tickets Gate will send for this TicketNumber (the number of distinct markets in the order) — Gate always knows this upfront; send the same value on every request for the same TicketNumber. Each Booth requires BoothCode and Products. Each Product requires ProductCode, PackageCode, Quantity. BoothCount must equal Booths.length. BoothCode cannot be duplicated in the same request. ProductCode + PackageCode cannot be duplicated inside the same booth.\nFinancial boundary: Gate Quantity is operational/dispatch quantity only. The backend may snapshot the applicable Master rate internally at Gate Create, but Gate Create does not calculate or expose StallPayment, WorkerPayment, OrderRemainder, Fund, or final financial amounts. Financialization happens only after worker-confirmed quantities are vendor-confirmed or auto-confirmed.\nResponse: Result, TicketNumber, Ticket (includes WorkerQrToken — an opaque per-Business-Ticket QR secret, not derived from TicketNo), Market, Booths with operational product data, WorkerCount for dispatch, and Qr (DriverQrToken only, shared across the whole vehicle). Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload.\nIdempotency: Gate transaction ref is derived from TicketNumber + TicketNo (not MarketCode, since one Business Ticket is already always one market). Same payload returns REPLAYED. Same idempotency key with a different payload returns 409.\nVehicle closing: once the number of Business Tickets created for a TicketNumber reaches TicketCount, and every booth across all of them is terminal, the vehicle job completes and its workers return to queue automatically. There is no separate close endpoint.\nNotes: Saves gateResult, ticketNumber, ticketNo, marketCode, first BoothCode, first ProductCode, first PackageCode, workerCount, driverQrToken, and workerQrToken into collection variables."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create credentials with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: One request per Business Ticket (TicketNo), always against exactly one MarketCode. A vehicle (TicketNumber) may generate multiple Business Tickets over time as it unloads at different markets — send the same TicketNumber again with a new TicketNo; no duplicate vehicle job is created. Required root fields: TicketNumber, TicketNo, TicketCreatedAt, TicketCount, BoothCount, MarketCode, LicensePlate, LicensePlateProvince, VehicleTypeCode, VehicleTypeName, Booths, Dispatch. TicketCount is the total number of Business Tickets Gate will send for this TicketNumber (the number of distinct markets in the order) — Gate always knows this upfront; send the same value on every request for the same TicketNumber. Each Booth requires BoothCode and Products. Each Product requires ProductCode, PackageCode, Quantity. BoothCount must equal Booths.length. BoothCode cannot be duplicated in the same request. ProductCode + PackageCode cannot be duplicated inside the same booth.\nFinancial boundary: Gate Quantity is operational/dispatch quantity only. The backend may snapshot the applicable Master rate internally at Gate Create, but Gate Create does not calculate or expose StallPayment, WorkerPayment, OrderRemainder, Fund, or final financial amounts. Financialization happens only after worker-confirmed quantities are vendor-confirmed or auto-confirmed.\nResponse: Result, TicketNumber, Ticket, Market, Booths with operational product data, WorkerCount for dispatch, and Qr (DriverQrToken only, shared across the whole vehicle). Workers check in by scanning the barcode already printed on the physical Gate paper ticket (Ticket.TicketNo) — no separate QR field is generated. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload.\nIdempotency: Gate transaction ref is derived from TicketNumber + TicketNo (not MarketCode, since one Business Ticket is already always one market). Same payload returns REPLAYED. Same idempotency key with a different payload returns 409.\nVehicle closing: once the number of Business Tickets created for a TicketNumber reaches TicketCount, and every booth across all of them is terminal, the vehicle job completes and its workers return to queue automatically. There is no separate close endpoint.\nNotes: Saves gateResult, ticketNumber, ticketNo, marketCode, first BoothCode, first ProductCode, first PackageCode, workerCount, and driverQrToken into collection variables."
           },
           "response": []
         }
@@ -2388,7 +2381,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/driver/jobs/{{ticketNo}}/ready\nAuth: Driver guest session\nBody: None\nResponse: ticketNo, LicensePlate, LicensePlateProvince, status, WorkerQrToken.\nNotes: Marks vehicle job WORKING and dispatches ready workers from Redis FIFO queue. For Gate-created jobs, WorkerQrToken equals ticketNo and is the value Worker scans into the check-in-qr path."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/driver/jobs/{{ticketNo}}/ready\nAuth: Driver guest session\nBody: None\nResponse: ticketNo, LicensePlate, LicensePlateProvince, status.\nNotes: Marks vehicle job WORKING and dispatches ready workers from Redis FIFO queue. Workers check in separately by scanning each Business Ticket's own barcode via POST /api/workers/me/assignments/{ticketNumber}/check-in-barcode."
           },
           "response": []
         }
@@ -2514,7 +2507,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, waiting_team, working, break. When Status is break, response includes BreakUntil, BreakUntilUnixMs, and RemainingBreakTime. When Status is assigned, response includes CurrentJob.ScanDeadlineAt and CurrentJob.ScanDeadlineUnixMs. When Status is waiting_team or working, CurrentJob.ScanDeadlineAt and CurrentJob.ScanDeadlineUnixMs are null. When Status is assigned, waiting_team, or working, response includes CurrentJob with TicketNo, LicensePlate, LicensePlateProvince, VehicleType, TeamScan, Markets[].Booths[].Products[] using Gate Quantity, and Team[].ShirtNumber/FullName/ScanStatus/ScannedAt."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nSafe to call any time, including right after the app is closed and reopened, since CurrentJob is always re-derived live from persisted assignment state (not from a one-time push payload).\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, waiting_team, working, break. When Status is break, response includes BreakUntil, BreakUntilUnixMs, and RemainingBreakTime. Status is assigned both while the assignment is still PENDING (worker has not pressed accept yet) and once it is ACCEPTED (waiting to scan) — the two sub-cases are told apart by which deadline pair is non-null: while PENDING, CurrentJob.AcceptDeadlineAt/AcceptDeadlineUnixMs are set and ScanDeadlineAt/ScanDeadlineUnixMs are null; once ACCEPTED, ScanDeadlineAt/ScanDeadlineUnixMs are set and AcceptDeadlineAt/AcceptDeadlineUnixMs are null. When Status is waiting_team or working (worker has already scanned), all four deadline fields are null. When Status is assigned, waiting_team, or working, response includes CurrentJob with TicketNumber, LicensePlate, LicensePlateProvince, VehicleType, TeamScan, Markets[] (each with TicketNo — scan its barcode via check-in-barcode, Booths[].Products[] using Gate Quantity), and Team[].ShirtNumber/FullName/ScanStatus/ScannedAt."
           },
           "response": [],
           "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, waiting_team, working, break. When Status is break, response includes BreakUntil, BreakUntilUnixMs, and RemainingBreakTime. When Status is assigned, response includes CurrentJob.ScanDeadlineAt and CurrentJob.ScanDeadlineUnixMs. When Status is waiting_team or working, CurrentJob.ScanDeadlineAt and CurrentJob.ScanDeadlineUnixMs are null. When Status is assigned, waiting_team, or working, response includes CurrentJob with TicketNo, LicensePlate, LicensePlateProvince, VehicleType, TeamScan, Markets[].Booths[].Products[] using Gate Quantity, and Team[].ShirtNumber/FullName/ScanStatus/ScannedAt."
@@ -2559,7 +2552,7 @@
           "description": "Method: GET\nURL single date: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nURL date range: {{baseUrl}}/api/workers/me/assignments/history?date_from=2026-08-01&date_to=2026-08-14\nAuth: Worker access token\nQuery: send either date, or date_from + date_to together. All fields use YYYY-MM-DD. date cannot be combined with date_from/date_to. Range is inclusive and limited to 31 calendar days. Body: None\nResponse: Date, Summary.JobCount, Summary.AcceptTimeoutJobCount, Summary.CompletedJobCount, and Data[]. Each assignment includes TicketNo, LicensePlate, Status, Markets[].Booths[].CompletedAt, Markets[].Booths[].Products[].ConfirmedQuantity, and Rating as a single integer 1-5 or null. CompletedAt is the per-booth GateTicket completion timestamp and is null when that booth/case is not complete. No earnings, TotalEarnings, booth amount, product FinalAmount, or worker payment breakdown are returned. Dates are interpreted in Asia/Bangkok time and filter by assignment CreatedAt using [startAt, dayAfterEndAt)."
         },
         {
-          "name": "POST /api/workers/me/assignments/:ticketNo/accept",
+          "name": "POST /api/workers/me/assignments/:ticketNumber/accept",
           "event": [
             {
               "listen": "test",
@@ -2570,7 +2563,7 @@
                   "const firstMarket = body.Markets?.[0];",
                   "const firstStall = firstMarket?.Stalls?.[0];",
                   "if (firstStall?.BoothCode) pm.collectionVariables.set('boothCode', String(firstStall.BoothCode));",
-                  "if (firstMarket?.WorkerQrToken) pm.collectionVariables.set('workerQrToken', String(firstMarket.WorkerQrToken));",
+                  "if (firstMarket?.TicketNo) pm.collectionVariables.set('ticketNo', String(firstMarket.TicketNo));",
                   "pm.test('accepted worker detail response', () => {",
                   "  pm.expect(body).to.have.keys(['LicensePlate', 'LicensePlateProvince', 'ScanDeadlineAt', 'ScanDeadlineUnixMs', 'Team', 'Markets']);",
                   "});"
@@ -2588,7 +2581,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/accept",
+              "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/accept",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2597,19 +2590,19 @@
                 "workers",
                 "me",
                 "assignments",
-                "{{ticketNo}}",
+                "{{ticketNumber}}",
                 "accept"
               ]
             },
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/accept\nAuth: Worker access token\nBody: None\nPath: {{ticketNo}} comes from WORKER_ASSIGNED.ticketNo.\nNotes: Assignment must be PENDING and accepted within WorkerAcceptDeadlineSeconds, default 60 seconds. If not accepted in time, assignment becomes TIMEOUT and the worker returns to the tail of the queue even when the Worker WebSocket is disconnected. The consecutive accept-timeout streak resets after a successful accept. After WorkerAcceptTimeoutLimit consecutive accept timeouts, default 3, the worker is moved to open_app and cannot re-enter the queue in the same shift. Response is trimmed for the worker job detail screen only: LicensePlate, LicensePlateProvince, ScanDeadlineAt, ScanDeadlineUnixMs, team[].FullName/WorkerCode/ImageUrl/ScanStatus, markets[].TicketNo/marketName/WorkerQrToken/StallCount/stalls[].boothCode/boothName/ProductCount/products[].productCode/productName/quantity/packageName. ScanDeadlineAt is the persisted assignment QR scan deadline in ISO 8601 UTC; ScanDeadlineUnixMs is the same value in Unix milliseconds for mobile countdown. markets[].WorkerQrToken is an opaque per-Business-Ticket QR secret (not derived from ticketNo) — send it as WorkerQrToken to POST .../check-in-qr next. Use the same {{ticketNo}} plus stalls[].BoothCode later with POST /api/workers/me/assignments/{{ticketNo}}/tickets/complete and send BoothCode in the body."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/accept\nAuth: Worker access token\nBody: None\nPath: {{ticketNumber}} comes from WORKER_ASSIGNED.ticketNumber.\nNotes: Assignment must be PENDING and accepted within WorkerAcceptDeadlineSeconds, default 60 seconds. If not accepted in time, assignment becomes TIMEOUT and the worker returns to the tail of the queue even when the Worker WebSocket is disconnected. The consecutive accept-timeout streak resets after a successful accept. After WorkerAcceptTimeoutLimit consecutive accept timeouts, default 3, the worker is moved to open_app and cannot re-enter the queue in the same shift. Response is trimmed for the worker job detail screen only: LicensePlate, LicensePlateProvince, ScanDeadlineAt, ScanDeadlineUnixMs, team[].FullName/WorkerCode/ImageUrl/ScanStatus, markets[].TicketNo/marketName/StallCount/stalls[].boothCode/boothName/ProductCount/products[].productCode/productName/quantity/packageName. ScanDeadlineAt is the persisted assignment QR scan deadline in ISO 8601 UTC; ScanDeadlineUnixMs is the same value in Unix milliseconds for mobile countdown. markets[].TicketNo is the Business Ticket id printed as a barcode on the physical Gate paper ticket — send it as TicketNo to POST .../check-in-barcode next. Use the same {{ticketNumber}} plus TicketNo and stalls[].BoothCode later with POST /api/workers/me/assignments/{{ticketNumber}}/tickets/complete."
           },
           "response": []
         },
         {
-          "name": "POST /api/workers/me/assignments/:ticketNo/check-in-qr",
+          "name": "POST /api/workers/me/assignments/:ticketNumber/check-in-barcode",
           "request": {
             "method": "POST",
             "header": [
@@ -2625,7 +2618,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/check-in-qr",
+              "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/check-in-barcode",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2634,17 +2627,17 @@
                 "workers",
                 "me",
                 "assignments",
-                "{{ticketNo}}",
-                "check-in-qr"
+                "{{ticketNumber}}",
+                "check-in-barcode"
               ]
             },
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/check-in-qr\nAuth: Worker access token\nPath: {{ticketNo}} is the vehicle-level TicketNumber of the worker's current assignment (same value used by accept).\nBody: WorkerQrToken (required) — one Business Ticket's opaque QR secret, read from Markets[].WorkerQrToken in the accept response or CurrentJob.Markets[].WorkerQrToken from GET /api/workers/me/status. It is generated at Gate Create and is NOT derived from ticketNo/TicketNumber. Scanning any one Business Ticket under the vehicle checks in the whole team.\nResponse: Status, WorkerStatus, WorkerCode, TicketNumber, TeamScan. Normally { \"Status\": \"SCANNED\", \"WorkerStatus\": \"waiting_team\", \"WorkerCode\": \"MN000142\", \"TicketNumber\": \"TRUCK-20260804-001\", \"TeamScan\": { \"WorkersRequired\": 3, \"CheckedInCount\": 1, \"RemainingCount\": 2, \"IsReady\": false } }.\nNotes: Checks worker into the job only while ScanDeadlineAt is still valid. Default scan window comes from WorkerScanDeadlineMinutes after accept. After this worker scans, WorkerStatus is waiting_team until every active/eligible assignment in the team has scanned, then working. Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING when an ACCEPTED worker has not checked in and remaining scan time is below WorkerScanWarningBeforeMinutes. In a multi-worker team, once the first worker checks in, remaining ACCEPTED workers receive ASSIGNMENT_SCAN_DEADLINE_SHORTENED and their ScanDeadlineAt/ScanDeadlineUnixMs is shortened by WorkerScanTeamRemainingMinutes from that first check-in. If scan time expires by API call or background timeout, the assignment becomes TIMEOUT and worker status returns to open_app. Admin can extend ScanDeadlineAt/ScanDeadlineUnixMs and the worker can retry with the same WorkerQrToken if the assignment is still ACCEPTED. If active/eligible team scan is ready, vehicle job moves to WORKING.",
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/check-in-barcode\nAuth: Worker access token\nPath: {{ticketNumber}} is the vehicle-level TicketNumber of the worker's current assignment (same value used by accept).\nBody: TicketNo (required) — one Business Ticket's ticket_no, the value printed as a barcode on the physical Gate paper ticket. Also readable from Markets[].TicketNo in the accept response or CurrentJob.Markets[].TicketNo from GET /api/workers/me/status. It is a real business identifier (not a generated secret), resolved safely by scoping the lookup to this worker's own vehicle. Scanning any one Business Ticket under the vehicle checks in the whole team.\nResponse: Status, WorkerStatus, WorkerCode, TicketNumber, TeamScan. Normally { \"Status\": \"SCANNED\", \"WorkerStatus\": \"waiting_team\", \"WorkerCode\": \"MN000142\", \"TicketNumber\": \"TRUCK-20260804-001\", \"TeamScan\": { \"WorkersRequired\": 3, \"CheckedInCount\": 1, \"RemainingCount\": 2, \"IsReady\": false } }.\nNotes: Checks worker into the job only while ScanDeadlineAt is still valid. Default scan window comes from WorkerScanDeadlineMinutes after accept. After this worker scans, WorkerStatus is waiting_team until every active/eligible assignment in the team has scanned, then working. Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING when an ACCEPTED worker has not checked in and remaining scan time is below WorkerScanWarningBeforeMinutes. In a multi-worker team, once the first worker checks in, remaining ACCEPTED workers receive ASSIGNMENT_SCAN_DEADLINE_SHORTENED and their ScanDeadlineAt/ScanDeadlineUnixMs is shortened by WorkerScanTeamRemainingMinutes from that first check-in. If scan time expires by API call or background timeout, the assignment becomes TIMEOUT and worker status returns to open_app. Admin can extend ScanDeadlineAt/ScanDeadlineUnixMs and the worker can retry with the same TicketNo if the assignment is still ACCEPTED. If active/eligible team scan is ready, vehicle job moves to WORKING.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"WorkerQrToken\": \"{{workerQrToken}}\"\n}",
+              "raw": "{\n  \"TicketNo\": \"{{ticketNo}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2655,7 +2648,7 @@
           "response": []
         },
         {
-          "name": "POST /api/workers/me/assignments/:ticketNo/tickets/complete",
+          "name": "POST /api/workers/me/assignments/:ticketNumber/tickets/complete",
           "event": [
             {
               "listen": "test",
@@ -2684,7 +2677,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"BoothCode\": \"{{boothCode}}\",\n  \"Items\": [\n    {\n      \"ProductCode\": \"{{productCode}}\",\n      \"PackageCode\": \"{{packageCode}}\",\n      \"ConfirmedQuantity\": 8\n    }\n  ]\n}",
+              "raw": "{\n  \"TicketNo\": \"{{ticketNo}}\",\n  \"BoothCode\": \"{{boothCode}}\",\n  \"Items\": [\n    {\n      \"ProductCode\": \"{{productCode}}\",\n      \"PackageCode\": \"{{packageCode}}\",\n      \"ConfirmedQuantity\": 8\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2692,7 +2685,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/tickets/complete",
+              "raw": "{{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/tickets/complete",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2701,7 +2694,7 @@
                 "workers",
                 "me",
                 "assignments",
-                "{{ticketNo}}",
+                "{{ticketNumber}}",
                 "tickets",
                 "complete"
               ]
@@ -2709,7 +2702,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNo}}/tickets/complete\nAuth: Worker access token\nBody: BoothCode and Items required. Send BoothCode in body so codes containing / such as OM3/40 do not need URL encoding. Send every ProductCode + PackageCode in the ticket with ConfirmedQuantity counted by the worker.\nFinancial boundary: This request only records confirmed actual quantities and starts vendor confirmation. It must not create final financial records before vendor confirm or timeout auto-confirm.\nNotes: {{ticketNo}} is the TicketNo from the accepted/check-in assignment and BoothCode is from that accepted job payload. Backend resolves each product by ProductCode + PackageCode. The response does not expose LINE postback tokens. Vendor confirm completes financialization; vendor reject returns the ticket to REJECT for resubmission."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/tickets/complete\nAuth: Worker access token\nBody: TicketNo, BoothCode and Items required. TicketNo names which Business Ticket this submission belongs to — required because two Business Tickets under the same vehicle, against different markets, can legitimately share the same BoothCode; TicketNo plus BoothCode together resolve the exact booth unambiguously. Send BoothCode in body so codes containing / such as OM3/40 do not need URL encoding. Send every ProductCode + PackageCode in the ticket with ConfirmedQuantity counted by the worker.\nFinancial boundary: This request only records confirmed actual quantities and starts vendor confirmation. It must not create final financial records before vendor confirm or timeout auto-confirm.\nNotes: {{ticketNumber}} is the vehicle-level TicketNumber of the worker's current assignment. TicketNo and BoothCode come from the accepted/check-in job payload (Markets[].TicketNo / Markets[].Stalls[].BoothCode). Backend resolves each product by ProductCode + PackageCode. The response does not expose LINE postback tokens. Vendor confirm completes financialization; vendor reject returns the ticket to REJECT for resubmission."
           },
           "response": []
         },

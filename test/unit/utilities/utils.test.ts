@@ -376,7 +376,7 @@ test("API case utilities normalize PascalCase request payloads", () => {
 test("API case utilities transform response payloads to PascalCase", () => {
   const payload = apiCase.toPascalCasePayload({
     access_token: "access",
-    worker_qr_token: "TKT-001",
+    driver_qr_token: "DRV-001",
     vehicle_job: {
       ticketNo: "TKT-001",
       latest_activity_at: "2026-07-24T10:00:00.000Z",
@@ -385,7 +385,7 @@ test("API case utilities transform response payloads to PascalCase", () => {
 
   assert.deepEqual(payload, {
     AccessToken: "access",
-    WorkerQrToken: "TKT-001",
+    DriverQrToken: "DRV-001",
     VehicleJob: {
       TicketNo: "TKT-001",
       LatestActivityAt: "2026-07-24T10:00:00.000Z",

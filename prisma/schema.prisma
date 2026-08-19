@@ -207,8 +207,6 @@ model MarketJob {
   marketName           String    @map("market_name") @db.VarChar(255)
   dropoffPoint         String?   @map("dropoff_point") @db.VarChar(255)
   status               String    @default("WAIT") @db.VarChar(30)
-  // Opaque per-Ticket QR secret a worker scans to check in to this Ticket's parent vehicle.
-  workerQrToken        String    @unique @map("worker_qr_token") @db.VarChar(255)
   // Set once, when this Ticket's financial finalize locks the worker roster. Roster sync
   // and every roster mutation must respect this once it is non-null.
   workerRosterLockedAt DateTime? @map("worker_roster_locked_at") @db.Timestamp(3)

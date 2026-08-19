@@ -786,6 +786,9 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
 
   const job = addDispatchableJob(970, 2);
   const ticket = addTicketForVehicleJob(job.id, 19700);
+  const market = state.marketJobs.find(
+    (item) => item.id === ticket.market_job_id
+  )!;
 
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === ticket.id
@@ -913,6 +916,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
     {
       token: workerToken,
       body: {
+        ticket_no: market.ticket_no,
         boothCode: ticket.boothCode,
         items: products.map(
           (product, index) => ({
@@ -1183,6 +1187,9 @@ test("worker globally cancelled before Business Ticket roster locks forfeits ear
 
   // firstTicket / secondTicket ใช้ market_job_id เดียวกัน (Business Ticket ใบเดียว สองแผง)
   assert.equal(firstTicket.market_job_id, secondTicket.market_job_id);
+  const sharedMarket = state.marketJobs.find(
+    (item) => item.id === firstTicket.market_job_id
+  )!;
 
   // Booth 2 ยังไม่เริ่ม รอ Booth 1 เสร็จก่อน
   secondTicket.status = "WAIT";
@@ -1204,6 +1211,7 @@ test("worker globally cancelled before Business Ticket roster locks forfeits ear
     {
       token: workerToken,
       body: {
+        ticket_no: sharedMarket.ticket_no,
         boothCode: firstTicket.boothCode,
         items: firstProducts.map((product, index) => ({
           productCode: product.productCode,
@@ -1317,6 +1325,7 @@ test("worker globally cancelled before Business Ticket roster locks forfeits ear
     {
       token: replacementToken,
       body: {
+        ticket_no: sharedMarket.ticket_no,
         boothCode: secondTicket.boothCode,
         items: secondProducts.map((product, index) => ({
           productCode: product.productCode,
@@ -1594,6 +1603,9 @@ test("ticket financialization keeps Gate rate snapshot after MasterRate changes"
           workerToken,
 
         body: {
+          ticket_no:
+            gateBody.TicketNo,
+
           boothCode:
             ticket.boothCode,
 
@@ -2339,12 +2351,14 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:work
   const secondProducts = state.ticketProducts.filter(
     (product) => product.ticket_id === secondTicket.id
   );
+  const secondMarket = state.marketJobs.find((item) => item.id === secondTicket.market_job_id)!;
   const submitResponse = await server.request(
     "POST",
     `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
     {
       token: workerToken,
       body: {
+        ticket_no: secondMarket.ticket_no,
         boothCode: secondTicket.boothCode,
         items: secondProducts.map((product, index) => ({
           productCode: product.productCode,
@@ -2640,6 +2654,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers releases worker
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === ticket.id,
   );
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
 
   const submitResponse = await server.request(
     "POST",
@@ -2647,6 +2662,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers releases worker
     {
       token: workerToken,
       body: {
+        ticket_no: market.ticket_no,
         boothCode: ticket.boothCode,
         items: products.map((product, index) => ({
           productCode: product.productCode,
@@ -2779,6 +2795,7 @@ test("GET /api/admin/vehicle-jobs/history returns Workers, Timeline, Finance and
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === ticket.id,
   );
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
 
   const submitResponse = await server.request(
     "POST",
@@ -2786,6 +2803,7 @@ test("GET /api/admin/vehicle-jobs/history returns Workers, Timeline, Finance and
     {
       token: workerToken,
       body: {
+        ticket_no: market.ticket_no,
         boothCode: ticket.boothCode,
         items: products.map((product, index) => ({
           productCode: product.productCode,
@@ -2940,6 +2958,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income lists one row per 
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === ticket.id,
   );
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
 
   const submitResponse = await server.request(
     "POST",
@@ -2947,6 +2966,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income lists one row per 
     {
       token: workerToken,
       body: {
+        ticket_no: market.ticket_no,
         boothCode: ticket.boothCode,
         items: products.map((product, index) => ({
           productCode: product.productCode,

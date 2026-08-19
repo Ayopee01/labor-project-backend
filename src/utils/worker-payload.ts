@@ -6,8 +6,8 @@ import { toUnixMs } from "./time";
 
 // Function สร้าง worker assigned payload สำหรับ helper กลาง
 //
-// ไม่มี worker_qr_token เดี่ยวให้ส่งอีกต่อไป เพราะ QR check-in เป็นระดับ Business Ticket
-// (หลายใบ) ไม่ใช่ระดับ TicketNumber แล้ว — client ต้อง re-fetch current job detail เอง
+// ไม่มี ticket_no เดี่ยวให้ส่งเพราะ check-in เป็นระดับ Business Ticket (หลายใบ) ไม่ใช่ระดับ
+// TicketNumber — client ต้อง re-fetch current job detail เองเพื่อดูว่ามี Business Ticket ไหนบ้าง
 export function buildWorkerAssignedPayload(
   assignment: VehicleJobAssignmentDto,
   vehicleJob: VehicleJobDto

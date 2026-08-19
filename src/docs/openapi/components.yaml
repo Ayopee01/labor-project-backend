@@ -1549,9 +1549,6 @@
         driver_qr_token:
           type: string
           description: Present only in admin/gate QR contexts.
-        worker_qr_token:
-          type: string
-          description: Present only in admin/gate/driver QR contexts. For Gate-created jobs this value is the ticketNo that workers scan for check-in.
         created_at:
           type: string
           format: date-time
@@ -1668,8 +1665,18 @@
         - $ref: "#/components/schemas/WorkerTicketCompleteRequest"
         - type: object
           required:
+            - ticket_no
             - boothCode
           properties:
+            ticket_no:
+              type: string
+              example: TKT-20260804-000001
+              description: >
+                Business Ticket this submission belongs to (from markets[].ticket_no in the
+                accept response). Required because two Business Tickets under the same
+                vehicle, against different markets, can legitimately share the same
+                BoothCode — ticket_no plus BoothCode together resolve the exact booth
+                unambiguously.
             boothCode:
               type: string
               example: OM3/40
@@ -1998,7 +2005,6 @@
             - VehicleTypeCode
             - VehicleTypeName
             - Status
-            - WorkerQrToken
           properties:
             TicketNo:
               type: string
@@ -2039,14 +2045,6 @@
                 - waiting_unload
               example: unload_now
 
-            WorkerQrToken:
-              type: string
-              example: TKT-20260804-000001
-              description: >
-                Opaque QR secret for this Business Ticket only. A worker scans any one of the
-                vehicle's Business Tickets' WorkerQrToken to check in the whole team — not
-                shared vehicle-wide like DriverQrToken.
-
         Market:
           type: object
           required:
@@ -2079,7 +2077,7 @@
             DriverQrToken:
               type: string
               example: driver-qr-1
-              description: Shared across the whole vehicle (TicketNumber), unlike Ticket.WorkerQrToken which is per Business Ticket.
+              description: Shared across the whole vehicle (TicketNumber). Workers check in with each Business Ticket's own TicketNo (a barcode printed on the physical Gate paper ticket) instead — see POST /api/workers/me/assignments/{ticketNumber}/check-in-barcode.
 
     DriverSessionResponse:
       type: object
@@ -2116,10 +2114,6 @@
         status:
           type: string
           example: WORKING
-        worker_qr_token:
-          type: string
-          description: Worker QR value. For Gate-created jobs this is the same value as ticketNo.
-          example: TKT-20260723-000125
     AdminCancelRequest:
       type: object
       properties:
@@ -3341,10 +3335,6 @@
         ticketNo:
           type: string
           example: TKT-20260723-000125
-        worker_qr_token:
-          type: string
-          description: Existing worker QR value for this vehicle job. For Gate-created jobs this is the same value as ticketNo and is not rotated by scan deadline extension.
-          example: TKT-20260723-000125
         assignments:
           type: array
           items:
@@ -3718,18 +3708,14 @@
         ticket_no:
           type: string
           example: TKT-20260804-000001
-          description: Business Ticket id this market entry belongs to.
+          description: >
+            Business Ticket id this market entry belongs to. This is the value printed as a
+            barcode on the physical Gate paper ticket — send it as ticket_no to
+            POST /api/workers/me/assignments/{ticketNumber}/check-in-barcode. Scanning any
+            one of the vehicle's Business Tickets checks in the whole team.
         marketName:
           type: string
           example: Market A
-        worker_qr_token:
-          type: string
-          example: WQR-abc123
-          description: >
-            Opaque QR secret for this Business Ticket only, generated at Gate Create
-            (not derived from ticket_no). Send this value as worker_qr_token in
-            POST /api/workers/me/assignments/{ticketNumber}/check-in-qr. Scanning
-            any one of the vehicle's Business Tickets checks in the whole team.
         stall_count:
           type: integer
           example: 1
@@ -3783,18 +3769,18 @@
           type: array
           items:
             $ref: "#/components/schemas/WorkerAssignmentMarket"
-    WorkerCheckInQrRequest:
+    WorkerCheckInBarcodeRequest:
       type: object
       required:
-        - worker_qr_token
+        - ticket_no
       properties:
-        worker_qr_token:
+        ticket_no:
           type: string
-          example: WQR-abc123
+          example: TKT-20260804-000001
           description: >
-            One Business Ticket's worker_qr_token, read from
-            markets[].worker_qr_token in the accept response (POST
-            .../accept) or from current_job.markets[].worker_qr_token in GET
+            One Business Ticket's ticket_no, scanned from the barcode on the physical Gate
+            paper ticket. Also readable from markets[].ticket_no in the accept response
+            (POST .../accept) or from current_job.markets[].ticket_no in GET
             /api/workers/me/status. Any one Business Ticket under the same
             TicketNumber may be scanned to check in the whole team.
     WorkerAssignmentCheckInResponse:
@@ -4064,21 +4050,17 @@
         ticket_no:
           type: string
           example: TKT-20260804-000001
-          description: Business Ticket id this market entry belongs to.
+          description: >
+            Business Ticket id this market entry belongs to. This is the value printed as a
+            barcode on the physical Gate paper ticket — send it as ticket_no to
+            POST /api/workers/me/assignments/{ticketNumber}/check-in-barcode. Scanning any
+            one of the vehicle's Business Tickets checks in the whole team.
         marketCode:
           type: string
           example: "1110"
         marketName:
           type: string
           example: Market A
-        worker_qr_token:
-          type: string
-          example: WQR-abc123
-          description: >
-            Opaque QR secret for this Business Ticket only, generated at Gate Create
-            (not derived from ticket_no). Send this value as worker_qr_token in
-            POST /api/workers/me/assignments/{ticketNumber}/check-in-qr. Scanning
-            any one of the vehicle's Business Tickets checks in the whole team.
         booths:
           type: array
           items:
@@ -4121,9 +4103,10 @@
     WorkerCurrentJob:
       type: object
       properties:
-        ticketNo:
+        ticket_number:
           type: string
-          example: TKT-20260810-001
+          example: TRUCK-20260810-001
+          description: Vehicle-level job reference (TicketNumber).
         license_plate:
           type: string
           example: ABC-1234
@@ -4131,11 +4114,23 @@
           type: string
           nullable: true
           example: Bangkok
+        accept_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Persisted accept deadline. Non-null only while the assignment is still PENDING (worker has not pressed accept yet); null once accepted.
+          example: "2026-08-14T04:16:00.000Z"
+        accept_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as accept_deadline_at, represented as Unix timestamp in milliseconds for countdown timers. Returns null when accept_deadline_at is null.
+          example: 1786681560000
         scan_deadline_at:
           type: string
           format: date-time
           nullable: true
-          description: Latest persisted scan deadline for assigned workers. Returns null when the worker is waiting_team or working.
+          description: Persisted scan deadline. Non-null only while the assignment is ACCEPTED (worker is waiting to scan check-in); null before accept and after scanning (waiting_team/working).
           example: "2026-08-14T04:30:00.000Z"
         scan_deadline_unix_ms:
           type: integer

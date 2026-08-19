@@ -935,6 +935,35 @@ export const workerApplicationRepositoryMock = {
       ) ?? null
     );
   },
+  findGateTicketForCompletionByTicketNumberAndTicketNoAndBoothCode: async (
+    ticketNumber: string,
+    ticketNo: string,
+    boothCode: string,
+  ) => {
+    const vehicleJob = state.vehicleJobs.find(
+      (job) => job.ticket_number === ticketNumber,
+    );
+
+    if (!vehicleJob) {
+      return null;
+    }
+
+    const marketJob = state.marketJobs.find(
+      (market) =>
+        market.vehicle_job_id === vehicleJob.id && market.ticket_no === ticketNo,
+    );
+
+    if (!marketJob) {
+      return null;
+    }
+
+    return (
+      state.gateTickets.find(
+        (ticket) =>
+          ticket.market_job_id === marketJob.id && ticket.boothCode === boothCode,
+      ) ?? null
+    );
+  },
   // Sync Worker Roster ของ Business Ticket ให้ตรงกับทีมปัจจุบันของ TicketNumber แบบ Additive
   // เท่านั้น: เพิ่มสมาชิกใหม่ที่ยัง Active กับ TicketNumber, ตัดสมาชิกที่ Assignment หลุดจากทีม
   // แล้ว (WORKING -> CANCELLED) แต่ห้าม Reactivate แถวที่ CANCELLED อยู่แล้ว และห้ามแตะ Roster
@@ -1525,7 +1554,6 @@ export const workerApplicationRepositoryMock = {
           marketName: marketJob.marketName,
           dropoff_point: marketJob.dropoff_point,
           status: marketJob.status,
-          worker_qr_token: marketJob.worker_qr_token,
           worker_roster_locked_at: marketJob.worker_roster_locked_at,
           final_stall_amount: marketJob.final_stall_amount,
           financialized_at: marketJob.financialized_at,
@@ -1561,6 +1589,7 @@ const {
   findCurrentOpenTicketByVehicleJob,
   findGateTicketForCompletion,
   findGateTicketForCompletionByTicketNumberAndBoothCode,
+  findGateTicketForCompletionByTicketNumberAndTicketNoAndBoothCode,
   findTicketCompletionSubmissionById,
   findMarketJobFinancializationContext,
   lockMarketJobWorkerRoster,
@@ -1661,6 +1690,7 @@ export const vehicleJobAssignmentRepositoryMock = {
 export const gateTicketRepositoryMock = {
   findGateTicketForCompletion,
   findGateTicketForCompletionByTicketNumberAndBoothCode,
+  findGateTicketForCompletionByTicketNumberAndTicketNoAndBoothCode,
   listActiveVendorLineTargetsForTicket,
   listTicketProducts,
   updateTicketProductConfirmations,
@@ -1934,7 +1964,6 @@ export const gateRepositoryMock = {
       marketName: market.marketName,
       dropoff_point: market.dropoff_point ?? null,
       status: marketStatus,
-      worker_qr_token: `WQR-${vehicleJob.id}-${marketJobId}`,
       worker_roster_locked_at: null,
       final_stall_amount: null,
       financialized_at: null,
@@ -2063,9 +2092,6 @@ export const gateRepositoryMock = {
 
 // Mock ของ src/repositories/shared/market-job.repository.ts
 export const marketJobRepositoryMock = {
-  findMarketJobByWorkerQrToken: async (workerQrToken: string) =>
-    state.marketJobs.find((market) => market.worker_qr_token === workerQrToken) ??
-    null,
   findMarketJobByVehicleAndTicketNo: async (
     vehicleJobId: number,
     ticketNo: string,

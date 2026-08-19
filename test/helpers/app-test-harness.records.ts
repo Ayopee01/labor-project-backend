@@ -101,7 +101,6 @@ export type MarketJobRecord = {
   marketName: string;
   dropoff_point: string | null;
   status: string;
-  worker_qr_token: string;
   worker_roster_locked_at: string | null;
   final_stall_amount: string | null;
   financialized_at: string | null;

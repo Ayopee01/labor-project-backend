@@ -345,9 +345,11 @@ export const driverQrSessionBodySchema = z.object({
   qr_token: trimmedString,
 });
 
-// Schema body สำหรับ worker scan QR check-in ของ Business Ticket ใบใดใบหนึ่งในรถ
-export const workerCheckInQrBodySchema = z.object({
-  worker_qr_token: trimmedString,
+// Schema body สำหรับ worker scan barcode check-in ของ Business Ticket ใบใดใบหนึ่งในรถ
+// ticket_no คือเลข Business Ticket ที่อ่านได้จาก barcode บนตั๋วกระดาษจริงที่ Gate ออกให้ ไม่ใช่
+// opaque token ที่ระบบสร้างเอง — worker scan ตั๋วใบไหนในรถของตัวเองก็ได้ ไม่ต้อง scan ครบทุกใบ
+export const workerCheckInBarcodeBodySchema = z.object({
+  ticket_no: trimmedString,
 });
 
 const workerTicketCompleteItemSchema = z.object({
@@ -356,7 +358,10 @@ const workerTicketCompleteItemSchema = z.object({
   confirmed_quantity: z.coerce.number().min(0),
 });
 
+// ticket_no ระบุว่าส่งยอดให้ Business Ticket ใบไหน (บูธเดียวกันอาจซ้ำ boothCode กันได้ข้าม
+// Business Ticket คนละตลาด จึงต้องระบุให้ชัดเจน ไม่พึ่ง boothCode อย่างเดียว)
 export const workerTicketCompleteBodySchema = z.object({
+  ticket_no: trimmedString,
   boothCode: trimmedString,
   items: z.array(workerTicketCompleteItemSchema).min(1),
 });

@@ -956,6 +956,9 @@ test("GET /api/workers/me/status maps pending assignment to assigned", async () 
   assert.equal(response.body.currentJob.ticket_number, job.ticket_number);
   assert.equal(response.body.currentJob.license_plate, job.license_plate);
   assert.equal(response.body.currentJob.license_plate_province, job.license_plate_province);
+  // Already ACCEPTED, so the accept countdown is over; only the scan countdown applies.
+  assert.equal(response.body.currentJob.accept_deadline_at, null);
+  assert.equal(response.body.currentJob.accept_deadline_unix_ms, null);
   assert.equal(response.body.currentJob.scan_deadline_at, "2026-07-24T02:15:00.000Z");
   assert.equal(
     response.body.currentJob.scan_deadline_unix_ms,
@@ -969,7 +972,7 @@ test("GET /api/workers/me/status maps pending assignment to assigned", async () 
     isReady: false,
   });
   assert.equal(response.body.currentJob.markets[0].marketCode, `MARKET-${job.id}`);
-  assert.ok(response.body.currentJob.markets[0].worker_qr_token);
+  assert.ok(response.body.currentJob.markets[0].ticket_no);
   assert.equal(response.body.currentJob.markets[0].booths[0].boothCode, "STALL-10900");
   assert.equal(response.body.currentJob.markets[0].booths[0].products[0].quantity, "10");
   assert.deepEqual(
@@ -1012,6 +1015,31 @@ test("GET /api/workers/me/status maps pending assignment to assigned", async () 
     extendedResponse.body.currentJob.scan_deadline_unix_ms,
     Date.parse("2026-07-24T02:25:00.000Z")
   );
+});
+
+test("GET /api/workers/me/status shows accept_deadline_at while an assignment is still PENDING (not yet accepted)", async () => {
+  const { token, worker } = await loginWorker(112);
+  const job = addDispatchableJob(1130, 1);
+  addTicketForVehicleJob(job.id, 11300);
+  const assignment = addPendingAssignment(11301, job.id, worker.id);
+
+  assert.equal(assignment.status, "PENDING");
+  assignment.accept_deadline_at = "2026-07-24T02:01:00.000Z";
+
+  const response = await server.request("GET", "/api/workers/me/status", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "assigned");
+  // Worker has not accepted yet: only the accept countdown applies, no scan countdown yet.
+  assert.equal(response.body.currentJob.accept_deadline_at, "2026-07-24T02:01:00.000Z");
+  assert.equal(
+    response.body.currentJob.accept_deadline_unix_ms,
+    Date.parse("2026-07-24T02:01:00.000Z")
+  );
+  assert.equal(response.body.currentJob.scan_deadline_at, null);
+  assert.equal(response.body.currentJob.scan_deadline_unix_ms, null);
 });
 
 test("GET /api/workers/me/status maps scanned assignment to working", async () => {
@@ -1265,11 +1293,10 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     "stall_count",
     "stalls",
     "ticket_no",
-    "worker_qr_token",
   ]);
   assert.equal(response.body.markets[0].marketName, "Market A");
   assert.equal(response.body.markets[0].stall_count, 1);
-  assert.ok(response.body.markets[0].worker_qr_token);
+  assert.ok(response.body.markets[0].ticket_no);
   assert.deepEqual(Object.keys(response.body.markets[0].stalls[0]).sort(), [
     "boothCode",
     "boothName",
@@ -1454,7 +1481,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept closes worker shift 
   );
 });
 
-test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr scans correct QR", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-barcode scans correct barcode", async () => {
   const { token, worker } = await loginWorker(61);
   const job = addDispatchableJob(861, 1);
   const ticket = addTicketForVehicleJob(job.id, 1861);
@@ -1463,10 +1490,10 @@ test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr scans correct Q
   assignment.status = "ACCEPTED";
   assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-barcode`, {
     token,
     body: {
-      worker_qr_token: market.worker_qr_token,
+      ticket_no: market.ticket_no,
     },
   });
 
@@ -1531,7 +1558,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr scans correct Q
   assert.ok(scannedTeamPayload.team?.[0]?.scanned_at);
 });
 
-test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr shortens remaining team scan window from settings", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-barcode shortens remaining team scan window from settings", async () => {
   const [{ token, worker }, second, third] = await Promise.all([
     loginWorker(64),
     loginWorker(65),
@@ -1552,10 +1579,10 @@ test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr shortens remain
   }
 
   const startedAt = Date.now();
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-barcode`, {
     token,
     body: {
-      worker_qr_token: market.worker_qr_token,
+      ticket_no: market.ticket_no,
     },
   });
 
@@ -1676,17 +1703,17 @@ test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr shortens remain
   );
 });
 
-test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects unknown TicketNumber", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-barcode rejects unknown TicketNumber", async () => {
   const { token, worker } = await loginWorker(62);
   const job = addDispatchableJob(862, 1);
   const assignment = addPendingAssignment(962, job.id, worker.id);
   assignment.status = "ACCEPTED";
   assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
 
-  const response = await server.request("POST", "/api/workers/me/assignments/unknown-ticket-number/check-in-qr", {
+  const response = await server.request("POST", "/api/workers/me/assignments/unknown-ticket-number/check-in-barcode", {
     token,
     body: {
-      worker_qr_token: "any-token",
+      ticket_no: "any-ticket-no",
     },
   });
 
@@ -1695,7 +1722,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects unknown
   assert.equal(assignment.status, "ACCEPTED");
 });
 
-test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects unknown WorkerQrToken", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-barcode rejects unknown ticket_no", async () => {
   const { token, worker } = await loginWorker(621);
   const job = addDispatchableJob(8621, 1);
   addTicketForVehicleJob(job.id, 18621);
@@ -1703,21 +1730,22 @@ test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects unknown
   assignment.status = "ACCEPTED";
   assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-barcode`, {
     token,
     body: {
-      worker_qr_token: "does-not-exist",
+      ticket_no: "does-not-exist",
     },
   });
 
-  assert.equal(response.status, 400);
-  assert.equal(response.body.code, "INVALID_WORKER_QR");
+  assert.equal(response.status, 404);
+  assert.equal(response.body.code, "MARKET_JOB_NOT_FOUND");
   assert.equal(assignment.status, "ACCEPTED");
 });
 
-// Ticket ที่สแกน ต้องถูก resolve จาก DB จริงแล้วเทียบ TicketNumber ของรถ worker คนนั้น
-// ห้ามเชื่อค่า TicketNumber ที่ QR อ้างมาตรงๆ (scenario 11)
-test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects QR belonging to a different vehicle", async () => {
+// Business Ticket ที่สแกน ต้องถูก resolve จาก DB จริง โดย scope ด้วย vehicle_job_id ของ
+// assignment worker คนนั้นอยู่แล้ว (ไม่ใช่ scope ทั่วทั้งระบบ) ticket_no ของรถคันอื่นจึงหาไม่เจอ
+// ภายใต้รถคันนี้ ได้ผลลัพธ์เดียวกับ ticket_no ที่ไม่มีอยู่จริงเลย (scenario 11)
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-barcode rejects a ticket_no belonging to a different vehicle", async () => {
   const { token, worker } = await loginWorker(622);
   const job = addDispatchableJob(8622, 1);
   const otherJob = addDispatchableJob(8623, 1);
@@ -1727,19 +1755,19 @@ test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects QR belo
   assignment.status = "ACCEPTED";
   assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-barcode`, {
     token,
     body: {
-      worker_qr_token: otherMarket.worker_qr_token,
+      ticket_no: otherMarket.ticket_no,
     },
   });
 
-  assert.equal(response.status, 409);
-  assert.equal(response.body.code, "QR_TICKET_NUMBER_MISMATCH");
+  assert.equal(response.status, 404);
+  assert.equal(response.body.code, "MARKET_JOB_NOT_FOUND");
   assert.equal(assignment.status, "ACCEPTED");
 });
 
-test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects expired QR scan window", async () => {
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-barcode rejects expired scan window", async () => {
   const { token, worker } = await loginWorker(63);
   const replacementWorker = addWorker(64, await password.hashPassword("Worker@123456"));
   const job = addDispatchableJob(863, 1);
@@ -1748,10 +1776,10 @@ test("POST /api/workers/me/assignments/:ticketNumber/check-in-qr rejects expired
   assignment.scan_deadline_at = new Date(Date.now() - 1000).toISOString();
   await workerQueue.enqueueWorker(replacementWorker.id);
 
-  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-qr`, {
+  const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/check-in-barcode`, {
     token,
     body: {
-      worker_qr_token: "any-token",
+      ticket_no: "any-ticket-no",
     },
   });
 
@@ -1835,9 +1863,11 @@ test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete submits qu
   await workerQueue.markWorkerAssigned(worker.id);
   const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
 
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
   const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
+      ticket_no: market.ticket_no,
       boothCode: ticket.boothCode,
       items: products.map((product, index) => ({
         productCode: product.productCode,
@@ -1846,7 +1876,6 @@ test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete submits qu
       })),
     },
   });
-
 
 
   assert.equal(response.status, 200);
@@ -2207,6 +2236,7 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
   await workerQueue.markWorkerAssigned(worker.id);
 
   const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
 
   const submitResponse = await server.request(
     "POST",
@@ -2214,6 +2244,7 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
     {
       token,
       body: {
+        ticket_no: market.ticket_no,
         boothCode: ticket.boothCode,
         items: products.map((product, index) => ({
           productCode: product.productCode,
@@ -2365,10 +2396,12 @@ test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete allows sub
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === nextTicket.id
   );
+  const market = state.marketJobs.find((item) => item.id === nextTicket.market_job_id)!;
 
   const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
+      ticket_no: market.ticket_no,
       boothCode: nextTicket.boothCode,
       items: products.map((product) => ({
         productCode: product.productCode,
@@ -2398,6 +2431,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete accepts Bo
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === ticket.id
   );
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
 
   const response = await server.request(
     "POST",
@@ -2405,6 +2439,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete accepts Bo
     {
       token,
       body: {
+        TicketNo: market.ticket_no,
         BoothCode: ticket.boothCode,
         Items: products.map((product) => ({
           ProductCode: product.productCode,
@@ -2456,10 +2491,12 @@ test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete rejects be
   const assignment = addPendingAssignment(1074, job.id, worker.id);
   assignment.status = "SCANNED";
   const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
 
   const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
+      ticket_no: market.ticket_no,
       boothCode: ticket.boothCode,
       items: products.map((product) => ({
         productCode: product.productCode,
@@ -2484,10 +2521,12 @@ test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete rejects in
   const assignment = addPendingAssignment(1072, job.id, worker.id);
   assignment.status = "SCANNED";
   const [firstProduct] = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
 
   const response = await server.request("POST", `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`, {
     token,
     body: {
+      ticket_no: market.ticket_no,
       boothCode: ticket.boothCode,
       items: [
         {
@@ -2610,11 +2649,11 @@ test("worker assignment audit events are immutable and distinguish accept timeou
   scanAssignment.scan_deadline_at = new Date(Date.now() - 1000).toISOString();
   const scanTimeoutResponse = await server.request(
     "POST",
-    `/api/workers/me/assignments/${scanTimeoutJob.ticket_number}/check-in-qr`,
+    `/api/workers/me/assignments/${scanTimeoutJob.ticket_number}/check-in-barcode`,
     {
       token,
       body: {
-        worker_qr_token: "any-token",
+        ticket_no: "any-ticket-no",
       },
     }
   );
@@ -2680,12 +2719,14 @@ test("worker only returns to the FIFO queue once every Business Ticket is termin
 
   const submitTicketA = async (ticket: ReturnType<typeof addTicketForVehicleJob>) => {
     const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+    const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
     const submitResponse = await server.request(
       "POST",
       `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
       {
         token: workerToken,
         body: {
+          ticket_no: market.ticket_no,
           boothCode: ticket.boothCode,
           items: products.map((product, index) => ({
             productCode: product.productCode,

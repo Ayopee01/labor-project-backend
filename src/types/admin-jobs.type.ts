@@ -535,7 +535,7 @@ export interface AdminScanDeadlineAssignmentResponse {
   scan_deadline_unix_ms: number | null;
 }
 
-// ไม่มี worker_qr_token เดี่ยวให้ส่งอีกต่อไป เพราะ QR check-in เป็นระดับ Business Ticket
+// ไม่มี QR/barcode เดี่ยวให้ส่งเพราะ check-in เป็นระดับ Business Ticket (scan ticket_no ใบไหนก็ได้)
 export interface AdminExtendScanDeadlineResponse {
   message: string;
   ticket_number: string;

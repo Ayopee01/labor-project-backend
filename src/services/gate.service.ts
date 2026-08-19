@@ -578,9 +578,6 @@ function buildPublicGateVehicleJobResponse(
         buildGateTicketResponseStatus(
           input.Dispatch
         ),
-
-      WorkerQrToken:
-        marketJob.worker_qr_token,
     },
 
     Market: {

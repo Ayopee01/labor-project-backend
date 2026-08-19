@@ -350,7 +350,6 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
     "TicketNo",
     "VehicleTypeCode",
     "VehicleTypeName",
-    "WorkerQrToken",
   ]);
   assert.equal(response.body.Result, "CREATED");
   assert.equal(response.body.TicketNumber, "TRUCK-20260723-001");
@@ -396,7 +395,7 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(state.ticketProductFinancials.length, 0);
   assert.equal(state.ticketWorkerPayments.length, 0);
 
-  assert.ok(response.body.Ticket.WorkerQrToken);
+  assert.equal(response.body.Ticket.WorkerQrToken, undefined);
   assert.equal(response.body.Qr.WorkerQrToken, undefined);
   assert.ok(response.body.Qr.DriverQrToken);
   assert.equal(response.body.message, undefined);
@@ -412,7 +411,7 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(state.marketJobs[0].ticket_no, "TKT-20260723-001");
   assert.equal(state.marketJobs[0].ticket_created_at, "2026-07-23T07:30:00.000Z");
   assert.equal(state.marketJobs[0].booth_count, 1);
-  assert.equal(state.marketJobs[0].worker_qr_token, response.body.Ticket.WorkerQrToken);
+  assert.equal(state.marketJobs[0].ticket_no, response.body.Ticket.TicketNo);
 
   assert.equal(state.gateTickets.length, 1);
   assert.equal(state.gateTickets[0].marketCode, "MARKET-001");
