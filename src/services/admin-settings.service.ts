@@ -10,6 +10,7 @@ import * as sessionRepository from "../repositories/shared/session.repository";
 import { upsertSettings } from "../repositories/shared/system-setting.repository";
 import { getAccountPermissions } from "./shared/account-permission.service";
 import { clearRuntimeSettingsCache, getRuntimeSettings } from "./shared/runtime-settings.service";
+import * as mobileAppVersionService from "./shared/mobile-app-version.service";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { AccountDto } from "../types/admin-workers.type";
@@ -233,6 +234,25 @@ export async function updateSystemSettings(
   clearRuntimeSettingsCache();
 
   return getRuntimeSettings();
+}
+
+// Function ดึง Current/Scheduled/History ของ Mobile App Version ใน service flow
+export async function listMobileAppVersions() {
+  return mobileAppVersionService.getAdminMobileAppVersionOverview();
+}
+
+// Function สร้าง Mobile App Version ใหม่ใน service flow
+export async function createMobileAppVersion(body: unknown, auth?: AccessTokenPayload) {
+  return mobileAppVersionService.createMobileAppVersion(body, getActorId(auth));
+}
+
+// Function แก้ไข Mobile App Version ใน service flow
+export async function updateMobileAppVersion(
+  idParam: unknown,
+  body: unknown,
+  auth?: AccessTokenPayload
+) {
+  return mobileAppVersionService.updateMobileAppVersion(idParam, body, getActorId(auth));
 }
 
 // Function ดึงรายการ Gate clients ใน service flow

@@ -115,6 +115,10 @@ interface WorkerMeResponse {
   phone: string | null;
   lang: string;
   shift: ProfileCardShift | null;
+  // true เมื่ออยู่ในช่วงกะงานปัจจุบัน ณ เวลานี้ (เงื่อนไขเดียวกับที่ POST /api/workers/me/online
+  // ใช้ตรวจก่อน throw OUTSIDE_WORK_SHIFT) ให้ App เช็คได้ก่อนว่าปุ่ม Online กดได้ไหม โดยไม่ต้อง
+  // คำนวณเปรียบเทียบเวลากะเองฝั่ง Client
+  shift_active: boolean;
 }
 
 // Type response รวมของเส้น me ที่แยกตาม role

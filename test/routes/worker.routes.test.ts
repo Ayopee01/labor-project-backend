@@ -4,6 +4,7 @@ import { after, before, beforeEach, test } from "node:test";
 import {
   addAdmin,
   addDispatchableJob,
+  addMobileAppVersion,
   addPendingAssignment,
   addTicketForVehicleJob,
   addWorker,
@@ -167,6 +168,114 @@ beforeEach(() => {
 after(async () => {
   await server.close();
   restoreRouteTestLoader();
+});
+
+/* -------------------------------------- Mobile App Version Check Route Tests -------------------------------------- */
+
+test("GET /api/workers/app-version/check returns NO_VERSION_CONFIGURED when nothing is configured", async () => {
+  const response = await server.request("GET", "/api/workers/app-version/check");
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "NO_VERSION_CONFIGURED");
+  assert.equal(response.body.force_update, false);
+  assert.equal(response.body.can_skip, true);
+});
+
+test("GET /api/workers/app-version/check stays on the current version before a scheduled version's ForceUpdateAt", async () => {
+  addMobileAppVersion({ version: "1.3.0", build_number: 10300 });
+  addMobileAppVersion({
+    version: "1.4.0",
+    build_number: 10400,
+    force_update_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/workers/app-version/check?platform=android&version=1.3.0&build_number=10300",
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "UP_TO_DATE");
+  assert.equal(response.body.update_available, false);
+  assert.equal(response.body.force_update, false);
+  assert.equal(response.body.can_skip, true);
+  assert.equal(response.body.latest.build_number, 10300);
+  assert.equal(response.body.latest.version, "1.3.0");
+});
+
+test("GET /api/workers/app-version/check switches to the scheduled version once ForceUpdateAt passes and requires update", async () => {
+  addMobileAppVersion({ version: "1.3.0", build_number: 10300 });
+  addMobileAppVersion({
+    version: "1.4.0",
+    build_number: 10400,
+    android_download_url: "https://play.google.com/store/apps/details?id=worker",
+    ios_download_url: "https://apps.apple.com/app/id123456789",
+    force_update_at: new Date(Date.now() - 60 * 1000).toISOString(),
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/workers/app-version/check?platform=android&version=1.3.0&build_number=10300",
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "UPDATE_REQUIRED");
+  assert.equal(response.body.update_available, true);
+  assert.equal(response.body.force_update, true);
+  assert.equal(response.body.can_skip, false);
+  assert.equal(response.body.latest.version, "1.4.0");
+  assert.equal(response.body.latest.build_number, 10400);
+  assert.equal(
+    response.body.latest.download_url,
+    "https://play.google.com/store/apps/details?id=worker",
+  );
+});
+
+test("GET /api/workers/app-version/check returns UPDATE_AVAILABLE (not required) when ForceUpdateAt is not set", async () => {
+  addMobileAppVersion({
+    version: "1.4.0",
+    build_number: 10400,
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/workers/app-version/check?platform=ios&version=1.3.0&build_number=10300",
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "UPDATE_AVAILABLE");
+  assert.equal(response.body.update_available, true);
+  assert.equal(response.body.force_update, false);
+  assert.equal(response.body.can_skip, true);
+});
+
+test("GET /api/workers/app-version/check returns UP_TO_DATE and never asks to downgrade when client build is newer than server", async () => {
+  addMobileAppVersion({ version: "1.3.0", build_number: 10300 });
+
+  const response = await server.request(
+    "GET",
+    "/api/workers/app-version/check?platform=android&version=1.5.0&build_number=10500",
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "UP_TO_DATE");
+  assert.equal(response.body.update_available, false);
+});
+
+test("GET /api/workers/app-version/check only returns the DownloadUrl for the requested platform", async () => {
+  addMobileAppVersion({
+    version: "1.4.0",
+    build_number: 10400,
+    android_download_url: "https://play.google.com/store/apps/details?id=worker",
+    ios_download_url: "https://apps.apple.com/app/id123456789",
+  });
+
+  const iosResponse = await server.request(
+    "GET",
+    "/api/workers/app-version/check?platform=ios&version=1.3.0&build_number=10300",
+  );
+
+  assert.equal(iosResponse.body.latest.download_url, "https://apps.apple.com/app/id123456789");
 });
 
 /* -------------------------------------- Gate Route Tests -------------------------------------- */

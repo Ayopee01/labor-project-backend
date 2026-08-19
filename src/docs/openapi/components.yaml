@@ -296,6 +296,10 @@
           $ref: "#/components/schemas/AccountLang"
         shift:
           $ref: "#/components/schemas/ProfileCardShift"
+        shift_active:
+          type: boolean
+          description: True when the worker is currently inside their assigned shift — the same condition POST /api/workers/me/online checks before throwing 403 OUTSIDE_WORK_SHIFT. Lets the app enable/disable the Online button without recomputing the shift-time comparison itself.
+          example: true
     WorkerProfile:
       type: object
       properties:
@@ -1269,6 +1273,241 @@
               type: string
               description: Shown only once during create or rotate. Store it in the Gate project.
               example: gate_live_RKs7bI2bUBW8n5UEkLEmguuECP5YrZkpaNcsmprnO5I
+    MobileAppVersionStatus:
+      type: string
+      enum: [current, scheduled, history]
+      description: Derived from BuildNumber + ForceUpdateAt compared against server time — not a persisted column.
+    MobileAppVersion:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 11
+        version:
+          type: string
+          example: "1.4.0"
+        build_number:
+          type: integer
+          example: 10400
+        release_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Metadata only (shown in UI/History) — not a trigger for anything. Distinct from release_notification_at and force_update_at.
+          example: 2026-08-19T10:00:00.000Z
+        android_download_url:
+          type: string
+          nullable: true
+          format: uri
+          example: https://play.google.com/store/apps/details?id=com.example.worker
+        ios_download_url:
+          type: string
+          nullable: true
+          format: uri
+          example: https://apps.apple.com/app/id0000000000
+        force_update_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: When set, this version becomes Effective and starts being required for workers on an older build at this time — the only value version activation ever depends on. Null means the version is never forced (there is no separate ForceUpdate flag).
+          example: 2026-08-25T15:00:00.000Z
+        release_notification_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: When the release FCM notice fires. Null means it is sent immediately (synchronously during POST/PATCH); a future value schedules it via a delayed BullMQ job instead. Sending this notification never activates the version.
+          example: 2026-08-20T02:00:00.000Z
+        release_notification_sent_at:
+          type: string
+          nullable: true
+          format: date-time
+          example: null
+        force_update_notification_sent_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Whether the separate, standard-pattern-only "update now required" FCM has already fired. This notification is scheduled automatically whenever force_update_at is set, and fires exactly at force_update_at — independent of release_notification_at/release_notification_sent_at.
+          example: null
+        release_message:
+          type: string
+          nullable: true
+          example: กรุณาอัปเดตแอปแรงงานตามเวลาที่กำหนด
+        release_notes:
+          type: string
+          nullable: true
+          example: ปรับปรุงระบบรับงานและการแจ้งเตือน
+        created_by:
+          type: integer
+          nullable: true
+          example: 1
+        updated_by:
+          type: integer
+          nullable: true
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminMobileAppVersionSummary:
+      allOf:
+        - $ref: "#/components/schemas/MobileAppVersion"
+        - type: object
+          properties:
+            status:
+              $ref: "#/components/schemas/MobileAppVersionStatus"
+    AdminMobileAppVersionOverviewResponse:
+      type: object
+      properties:
+        current:
+          allOf:
+            - $ref: "#/components/schemas/AdminMobileAppVersionSummary"
+          nullable: true
+        scheduled:
+          allOf:
+            - $ref: "#/components/schemas/AdminMobileAppVersionSummary"
+          nullable: true
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminMobileAppVersionSummary"
+    CreateMobileAppVersionRequest:
+      type: object
+      required:
+        - version
+        - build_number
+      properties:
+        version:
+          type: string
+          example: "1.4.0"
+        build_number:
+          type: integer
+          description: Primary comparison key. Must be unique across all versions.
+          example: 10400
+        release_at:
+          type: string
+          format: date-time
+          description: Optional. Metadata only (UI/History display) — does not trigger anything.
+          example: 2026-08-19T10:00:00.000Z
+        android_download_url:
+          type: string
+          format: uri
+          example: https://play.google.com/store/apps/details?id=com.example.worker
+        ios_download_url:
+          type: string
+          format: uri
+          example: https://apps.apple.com/app/id0000000000
+        release_message:
+          type: string
+          example: กรุณาอัปเดตแอปแรงงานตามเวลาที่กำหนด
+        release_notes:
+          type: string
+          example: ปรับปรุงระบบรับงานและการแจ้งเตือน
+        force_update_at:
+          type: string
+          format: date-time
+          description: Optional. Omit for a version that is never forced. When set (in the future), this version is Scheduled — Worker app checks keep returning the current version until server time reaches this value, at which point it also becomes required. This same value automatically schedules the separate force-update FCM notice for the same moment.
+          example: 2026-08-25T15:00:00.000Z
+        release_notification_at:
+          type: string
+          format: date-time
+          description: Optional. Omit (or send null) to send the release FCM notice synchronously during this request. Set a future time to schedule it via a delayed BullMQ job instead; must not be later than force_update_at. Neither option ever activates the version early.
+          example: 2026-08-20T02:00:00.000Z
+    UpdateMobileAppVersionRequest:
+      type: object
+      description: At least one field is required. version/build_number are only accepted while the version is still Scheduled.
+      properties:
+        version:
+          type: string
+          example: "1.4.1"
+        build_number:
+          type: integer
+          example: 10401
+        release_at:
+          type: string
+          format: date-time
+        android_download_url:
+          type: string
+          format: uri
+        ios_download_url:
+          type: string
+          format: uri
+        release_message:
+          type: string
+        release_notes:
+          type: string
+        force_update_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set a new time to reschedule the force-update notification and change when the version activates; set to null to remove the force entirely. Only takes effect for the notification while force_update_notification_sent_at is still null — once sent, further edits only update the stored value and never trigger another send.
+        release_notification_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Changing this reschedules/resends the release notification, but only while release_notification_sent_at is still null — once sent, further edits here only update the stored value and never trigger another send. Set to null to send immediately (removing any pending delayed job).
+    WorkerAppVersionCheckResultStatus:
+      type: string
+      enum: [UP_TO_DATE, UPDATE_AVAILABLE, UPDATE_REQUIRED, NO_VERSION_CONFIGURED]
+    WorkerAppVersionCheckResponse:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/WorkerAppVersionCheckResultStatus"
+        update_available:
+          type: boolean
+        force_update:
+          type: boolean
+        can_skip:
+          type: boolean
+        latest:
+          type: object
+          nullable: true
+          properties:
+            version:
+              type: string
+              example: "1.4.0"
+            build_number:
+              type: integer
+              example: 10400
+            download_url:
+              type: string
+              nullable: true
+              format: uri
+              description: Only the URL for the requested platform query param. Null if platform was not given or not configured for this version.
+        policy:
+          type: object
+          nullable: true
+          properties:
+            force_update_at:
+              type: string
+              format: date-time
+        release_message:
+          type: object
+          nullable: true
+          description: Admin-authored text only (release_message/release_notes as stored on the effective version). Does not include the standardized FCM notification title/wording — that pattern is composed server-side only when actually sending the push, localized per worker.
+          properties:
+            message:
+              type: string
+              nullable: true
+            release_notes:
+              type: string
+              nullable: true
+      example:
+        status: UPDATE_REQUIRED
+        update_available: true
+        force_update: true
+        can_skip: false
+        latest:
+          version: "1.4.0"
+          build_number: 10400
+          download_url: https://play.google.com/store/apps/details?id=com.example.worker
+        policy:
+          force_update_at: 2026-08-25T15:00:00.000Z
+        release_message:
+          message: กรุณาอัปเดตแอปแรงงาน
+          release_notes: ปรับปรุงระบบ...
     AdminUserPermissionsResponse:
       type: object
       properties:

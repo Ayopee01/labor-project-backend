@@ -41,6 +41,49 @@ router.patch(
 );
 
 router.get(
+  "/mobile-app-versions",
+  permissionMiddleware(["settings:read"]),
+  async (_req, res, next) => {
+    try {
+      const result = await adminSettingsService.listMobileAppVersions();
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post(
+  "/mobile-app-versions",
+  permissionMiddleware(["settings:update"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminSettingsService.createMobileAppVersion(req.body, req.auth);
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.patch(
+  "/mobile-app-versions/:id",
+  permissionMiddleware(["settings:update"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminSettingsService.updateMobileAppVersion(
+        req.params.id,
+        req.body,
+        req.auth
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.get(
   "/roles",
   permissionMiddleware(["roles:read"]),
   async (_req, res, next) => {

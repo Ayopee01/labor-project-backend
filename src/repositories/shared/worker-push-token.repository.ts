@@ -108,6 +108,19 @@ export async function listActiveTokensByWorkerCodes(
   return records.map(mapWorkerPushToken);
 }
 
+// Function ดึง token ที่ active ทั้งหมด ใช้ broadcast แจ้งทุก worker เช่น Mobile App Version update
+export async function listAllActiveTokens(
+  connection?: DbConnection,
+): Promise<WorkerPushTokenDto[]> {
+  const records = await client(connection).workerPushToken.findMany({
+    where: {
+      isActive: true,
+    },
+  });
+
+  return records.map(mapWorkerPushToken);
+}
+
 export async function listActiveTokensBySessionId(
   sessionId: number,
   connection?: DbConnection,

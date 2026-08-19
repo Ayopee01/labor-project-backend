@@ -147,6 +147,7 @@ test("GET /api/auth/me returns current worker account from access token", async 
     "phone",
     "role",
     "shift",
+    "shift_active",
     "shirt_number",
     "shirt_type",
     "work_start_date",
@@ -163,6 +164,49 @@ test("GET /api/auth/me returns current worker account from access token", async 
   assert.equal(response.body.lang, "TH");
   assert.equal(response.body.shift.start_time, "00:00");
   assert.equal(response.body.shift.end_time, "23:59");
+  // Fixture ตั้งกะเป็น 00:00-23:59 (ทั้งวัน) ตอนนี้จึงต้องอยู่ในกะเสมอ
+  assert.equal(response.body.shift_active, true);
+});
+
+test("GET /api/auth/me returns shift_active false when worker is outside the assigned shift", async () => {
+  const passwordHash = await password.hashPassword("Worker@123456");
+  const worker = addWorker(1009, passwordHash);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: worker.username,
+      password: "Worker@123456",
+      device_id: "mobile-1009",
+      device_name: "Worker Mobile",
+    },
+  });
+
+  // เลื่อนกะไปในอนาคต 2 ชั่วโมงเป็นเวลา 1 ชั่วโมง (ตามเวลา Bangkok เหมือนที่ isTimeInWorkSchedule
+  // ใช้เทียบ) เพื่อให้ "ตอนนี้" อยู่นอกกะแน่นอน
+  const schedule = state.schedules.get(worker.id);
+  assert.ok(schedule, "Worker fixture must seed a default work schedule.");
+  const bangkokFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+
+  state.schedules.set(worker.id, {
+    ...schedule,
+    shift_start_time: bangkokFormatter
+      .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
+      .replace(" ", ""),
+    shift_end_time: bangkokFormatter
+      .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
+      .replace(" ", ""),
+  });
+
+  const response = await server.request("GET", "/api/auth/me", {
+    token: login.body.access_token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.shift_active, false);
 });
 
 test("PATCH /api/auth/me/lang updates current account language", async () => {

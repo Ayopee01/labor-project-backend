@@ -45,6 +45,25 @@ export type GateClientRecord = {
   updated_at: string;
 };
 
+export type MobileAppVersionRecord = {
+  id: number;
+  version: string;
+  build_number: number;
+  release_at: string | null;
+  android_download_url: string | null;
+  ios_download_url: string | null;
+  force_update_at: string | null;
+  release_notification_at: string | null;
+  release_notification_sent_at: string | null;
+  force_update_notification_sent_at: string | null;
+  release_message: string | null;
+  release_notes: string | null;
+  created_by: number | null;
+  updated_by: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AssignmentRecord = {
   id: number;
   vehicle_job_id: number;

@@ -10,6 +10,10 @@ import * as vehicleJobLifecycleService from "../services/shared/vehicle-job-life
 import { publishAdminWorkerStatusChanged, publishNotification } from "../services/notifications.service";
 import { publishRealtimeEvent } from "../services/shared/realtime-notification.service";
 import { applyVendorTicketCompletionResult } from "../services/shared/ticket-completion.service";
+import {
+  sendMobileAppForceUpdateNotification,
+  sendMobileAppReleaseNotification,
+} from "../services/shared/mobile-app-version.service";
 import { enqueueWorker, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import type { DbConnection } from "../types/shared/common.type";
@@ -597,7 +601,21 @@ async function handleWorkerBreakReturn(input: {
 
 // Function เริ่ม BullMQ worker กลางสำหรับงาน timeout, accept, scan, warning, vendor และกะงาน
 export function startAssignmentTimeoutProcessing(): void {
-  startAssignmentTimeoutWorker(async ({ assignmentId, workerAccountId, ticketId, submissionId, kind }) => {
+  startAssignmentTimeoutWorker(async ({ assignmentId, workerAccountId, ticketId, submissionId, mobileAppVersionId, kind }) => {
+    if (kind === "mobile_app_release_notification") {
+      if (mobileAppVersionId) {
+        await sendMobileAppReleaseNotification(mobileAppVersionId);
+      }
+      return;
+    }
+
+    if (kind === "mobile_app_force_update_notification") {
+      if (mobileAppVersionId) {
+        await sendMobileAppForceUpdateNotification(mobileAppVersionId);
+      }
+      return;
+    }
+
     if (kind === "vendor_confirm") {
       await handleVendorConfirmationTimeout({ ticketId, submissionId });
       return;

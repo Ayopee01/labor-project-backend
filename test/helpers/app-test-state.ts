@@ -7,6 +7,7 @@ import type {
   GateTicketRecord,
   LineActionTokenRecord,
   MarketJobRecord,
+  MobileAppVersionRecord,
   MasterMarketRecord,
   MasterProductRecord,
   MasterRateRecord,
@@ -66,6 +67,7 @@ export const state = {
   masterProducts: [] as MasterProductRecord[],
   masterRates: [] as MasterRateRecord[],
   gateClients: new Map<string, GateClientRecord>(),
+  mobileAppVersions: [] as MobileAppVersionRecord[],
   shiftAttendances: [] as WorkerShiftAttendanceRecord[],
   authAccountsByUsername: new Map<string, AccountRecord>(),
   authAccountsById: new Map<number, AccountRecord>(),
@@ -95,4 +97,5 @@ export const state = {
   nextGateClientId: 1,
   nextShiftAttendanceId: 1,
   nextAdminActionLogId: 1,
+  nextMobileAppVersionId: 1,
 };

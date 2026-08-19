@@ -22,6 +22,7 @@ import {
   gateClientRepositoryMock,
   gateTicketRepositoryMock,
   gateRepositoryMock,
+  mobileAppVersionRepositoryMock,
   marketJobRepositoryMock,
   masterDataRepositoryMock,
   systemSettingRepositoryMock,
@@ -43,6 +44,7 @@ export {
   addAdmin,
   addDispatchableJob,
   addGateClient,
+  addMobileAppVersion,
   addPendingAssignment,
   addTicketForVehicleJob,
   addWorker,
@@ -257,6 +259,13 @@ function patchModuleLoader(): void {
       request === "../../repositories/shared/gate-client.repository"
     ) {
       return gateClientRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/mobile-app-version.repository" ||
+      request === "../../repositories/shared/mobile-app-version.repository"
+    ) {
+      return mobileAppVersionRepositoryMock;
     }
 
     if (

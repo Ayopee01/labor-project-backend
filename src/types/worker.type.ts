@@ -11,7 +11,14 @@ export type AssignmentTimeoutJobData = {
   workerAccountId?: number;
   ticketId?: number;
   submissionId?: number;
-  kind?: "accept" | "scan" | "scan_warning" | "vendor_confirm";
+  mobileAppVersionId?: number;
+  kind?:
+    | "accept"
+    | "scan"
+    | "scan_warning"
+    | "vendor_confirm"
+    | "mobile_app_release_notification"
+    | "mobile_app_force_update_notification";
 };
 
 // Type payload ของ delayed job สำหรับพักและจบกะ worker

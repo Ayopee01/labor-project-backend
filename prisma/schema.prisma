@@ -47,6 +47,8 @@ model Account {
   createdGateClients         GateClient[]                 @relation("GateClientCreatedBy")
   updatedGateClients         GateClient[]                 @relation("GateClientUpdatedBy")
   adminActionLogs            AdminActionLog[]             @relation("AdminActionLogActor")
+  createdMobileAppVersions   MobileAppVersion[]            @relation("MobileAppVersionCreatedBy")
+  updatedMobileAppVersions   MobileAppVersion[]            @relation("MobileAppVersionUpdatedBy")
 
   @@index([role, source])
   @@index([masterUpdatedAt])
@@ -117,6 +119,47 @@ model GateClient {
 
   @@index([status])
   @@map("gate_clients")
+}
+
+// Model เก็บ Version ของ Worker Mobile Application ทุกเวอร์ชัน (ไม่ลบ record เก่า เพื่อเก็บ
+// History) สถานะ current/scheduled/history ไม่ persist ในตารางนี้ เพราะ derive ได้ปลอดภัยจาก
+// buildNumber + forceUpdateAt เทียบกับเวลา server ตอน query เสมอ (ดู
+// resolveEffectiveMobileAppVersion ใน services/shared/mobile-app-version.service.ts) การ persist
+// สถานะเองจะเสี่ยง inconsistent ถ้าเวลาผ่านไปแล้วไม่มีใครมา sync สถานะให้ตรง
+//
+// สำคัญ: releaseNotificationAt (เวลาส่ง FCM แจ้งเตือนล่วงหน้า) กับ forceUpdateAt (เวลา Version
+// เริ่ม Effective/บังคับ Update) เป็นคนละเรื่องกันโดยเด็ดขาด แต่ทั้งคู่ผูก FCM คนละข้อความกัน:
+// - releaseNotificationAt = null -> ส่งทันทีตอน POST/PATCH, ถ้ามีค่า -> ตั้งเวลาส่งผ่าน BullMQ
+// - forceUpdateAt (ถ้ามีค่า) -> เมื่อถึงเวลานี้ ระบบส่ง FCM มาตรฐานอัตโนมัติอีกครั้งว่าเริ่มบังคับ
+//   อัปเดตแล้ว (ไม่ต้อง Admin ตั้งค่าอะไรเพิ่ม) "พร้อมกับ" activate version — แต่ activate version
+//   เองยัง resolve จาก forceUpdateAt เทียบเวลา server เท่านั้น ไม่ได้พึ่ง BullMQ job นี้ที่ทำหน้าที่
+//   แค่ยิง FCM คู่ขนานไปเฉยๆ ถ้า BullMQ job พลาดด้วยเหตุใดก็ตาม version ก็ยัง activate ตรงเวลาปกติ
+model MobileAppVersion {
+  id                             Int       @id @default(autoincrement())
+  version                        String    @db.VarChar(50)
+  buildNumber                    Int       @unique @map("build_number")
+  releaseAt                      DateTime? @map("release_at") @db.Timestamp(3)
+  androidDownloadUrl             String?   @map("android_download_url") @db.VarChar(512)
+  iosDownloadUrl                 String?   @map("ios_download_url") @db.VarChar(512)
+  // มีค่า = Version นี้มี deadline บังคับ Update (ทั้งเวลา Activate และเวลาส่ง FCM บังคับอัตโนมัติ)
+  // ไม่มีค่า = ไม่บังคับ, Version มีผลทันทีตั้งแต่ CreatedAt แบบ Optional Update
+  forceUpdateAt                  DateTime? @map("force_update_at") @db.Timestamp(3)
+  releaseNotificationAt          DateTime? @map("release_notification_at") @db.Timestamp(3)
+  releaseNotificationSentAt      DateTime? @map("release_notification_sent_at") @db.Timestamp(3)
+  forceUpdateNotificationSentAt  DateTime? @map("force_update_notification_sent_at") @db.Timestamp(3)
+  releaseMessage                 String?   @map("release_message") @db.Text
+  releaseNotes                   String?   @map("release_notes") @db.Text
+  createdBy                      Int?      @map("created_by")
+  updatedBy                      Int?      @map("updated_by")
+  createdAt                      DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt                      DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  creator Account? @relation("MobileAppVersionCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  updater Account? @relation("MobileAppVersionUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([forceUpdateAt])
+  @@index([releaseNotificationAt, releaseNotificationSentAt])
+  @@map("mobile_app_versions")
 }
 
 model SystemSetting {

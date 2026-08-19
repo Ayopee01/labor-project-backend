@@ -52,6 +52,210 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/mobile-app-versions:
+    get:
+      tags:
+        - Admin Settings
+      summary: Get Current, Scheduled, and History Worker Mobile Application versions.
+      description: >
+        Current/Scheduled/History are derived from BuildNumber and ForceUpdateAt compared against
+        server time on every call — not a persisted status. Current is the highest BuildNumber
+        among versions whose activation time (ForceUpdateAt, or CreatedAt when ForceUpdateAt is
+        not set) has already passed. Scheduled is the next version whose activation time has not
+        passed yet. Everything else is History (never deleted).
+      operationId: listAdminMobileAppVersions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current, Scheduled, and History Mobile App Versions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMobileAppVersionOverviewResponse"
+        "403":
+          description: Missing settings:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Admin Settings
+      summary: Create a new Worker Mobile Application version.
+      description: >
+        Creating a version never affects the Worker app immediately by itself. If ForceUpdateAt is
+        set and in the future, the new version is Scheduled and GET /api/workers/app-version/check
+        keeps returning the current version until server time reaches ForceUpdateAt — no separate
+        Publish endpoint exists or is needed. There is no separate ForceUpdate flag: whether a
+        version is forced is derived purely from whether ForceUpdateAt is set at all. If
+        ForceUpdateAt is omitted, the new version takes effect immediately (becomes Current on the
+        very next check) and is never forced.
+
+        Two independent FCM notifications are involved, each with its own timing field and its own
+        "already sent" tracker — neither one ever makes the version Current early:
+        - ReleaseMessage notice: fires at ReleaseNotificationAt. Leaving ReleaseNotificationAt null
+          sends this FCM broadcast synchronously during this request and sets
+          ReleaseNotificationSentAt; setting it to a future time instead schedules a delayed
+          broadcast for that time.
+        - Force-update notice: a standard-pattern-only FCM (no ReleaseMessage text) that fires
+          automatically at ForceUpdateAt itself, i.e. exactly when the version starts being
+          required. It only exists when ForceUpdateAt is set, and is tracked independently via
+          ForceUpdateNotificationSentAt.
+      operationId: createAdminMobileAppVersion
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMobileAppVersionRequest"
+      responses:
+        "201":
+          description: Mobile app version created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMobileAppVersionSummary"
+        "400":
+          description: Invalid payload, or ReleaseNotificationAt is later than ForceUpdateAt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Missing settings:update permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: BuildNumber already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/mobile-app-versions/{id}:
+    patch:
+      tags:
+        - Admin Settings
+      summary: Update a Worker Mobile Application version.
+      description: >
+        Version and BuildNumber can only be changed while the version is still Scheduled (has not
+        become Current or History yet) — changing them afterward would corrupt History, so it is
+        rejected with 409. All other fields (URLs, release text, ForceUpdateAt,
+        ReleaseNotificationAt) can be changed regardless of status. Changing ForceUpdateAt on a
+        Scheduled version simply changes when it activates (or removes the force entirely, by
+        setting it to null) — Worker keeps using the current version until the new time; version
+        activation is derived live from server time and never depends on either notification job.
+
+        Both ForceUpdateAt and ReleaseNotificationAt can be set to null explicitly to clear them.
+        Changing ReleaseNotificationAt while its notification has not been sent yet
+        (ReleaseNotificationSentAt is null) removes any existing delayed job and re-syncs it
+        against the new value — setting a future time (re)creates the delayed job at that time,
+        setting it to null sends the FCM broadcast right away instead. Once
+        ReleaseNotificationSentAt is set, it is final: further edits to ReleaseNotificationAt only
+        update the stored value and never trigger another send.
+
+        Changing ForceUpdateAt re-syncs the separate, independently-tracked force-update
+        notification the same way: while ForceUpdateNotificationSentAt is null, any existing
+        delayed job is removed and a new one is scheduled for the new ForceUpdateAt (or none at all
+        if ForceUpdateAt is cleared to null). Once ForceUpdateNotificationSentAt is set, it is
+        final — no automatic resend for either notification; a future dedicated Resend endpoint
+        would be a separate feature, not built here.
+      operationId: updateAdminMobileAppVersion
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Mobile app version id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMobileAppVersionRequest"
+      responses:
+        "200":
+          description: Mobile app version updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMobileAppVersionSummary"
+        "400":
+          description: Invalid payload, or ReleaseNotificationAt is later than ForceUpdateAt (checked against the merged existing + patched state).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Missing settings:update permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Mobile app version not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: BuildNumber already exists, or Version/BuildNumber was changed after the version is no longer Scheduled (MOBILE_APP_VERSION_LOCKED).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/app-version/check:
+    get:
+      tags:
+        - Admin Settings
+      summary: Check the effective Worker Mobile Application version. Grouped under Admin Settings so version management stays together, even though this specific endpoint is called by the Worker app.
+      description: >
+        Public endpoint — no bearer token, no worker session/login required, since the app must be
+        able to check its version before the worker logs in. BuildNumber is the only value compared
+        (Version string is accepted but never used as the source of truth). The server's clock is
+        always the source of truth: a Scheduled version never becomes effective before its
+        ForceUpdateAt, and once server time passes ForceUpdateAt the new version becomes effective
+        immediately on the next call — the client never decides this using its own clock. A client
+        BuildNumber equal to or higher than the effective BuildNumber is always UP_TO_DATE; this
+        endpoint never asks a client to downgrade.
+
+        This result depends only on ForceUpdateAt, never on whether the release FCM notification was
+        already sent — a worker who already received the release push (or one who never received it,
+        e.g. no registered device) sees the exact same result here.
+      operationId: checkWorkerAppVersion
+      parameters:
+        - in: query
+          name: platform
+          schema:
+            type: string
+            enum: [android, ios]
+          description: Only the DownloadUrl for this platform is returned in Latest.DownloadUrl.
+        - in: query
+          name: version
+          schema:
+            type: string
+            example: "1.3.0"
+          description: Informational only — not used for comparison.
+        - in: query
+          name: build_number
+          schema:
+            type: integer
+            example: 10300
+          description: The worker app's own build number. This is the value actually compared against the effective version's BuildNumber.
+      responses:
+        "200":
+          description: Effective version check result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerAppVersionCheckResponse"
   /api/admin/roles:
     get:
       tags:

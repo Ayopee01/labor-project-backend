@@ -172,6 +172,10 @@
       "value": "",
       "type": "string",
       "description": "Driver guest session token returned by POST /api/driver/qr-sessions."
+    },
+    {
+      "key": "mobileAppVersionId",
+      "value": ""
     }
   ],
   "item": [
@@ -550,7 +554,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/auth/me\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Returns current account from access token. Response includes role, FullName, and EmployeeCode for both admin and worker. Admin keeps AdminCode/PermissionLevel/permissions. Worker keeps WorkerCode/profile fields."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/auth/me\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Returns current account from access token. Response includes role, FullName, and EmployeeCode for both admin and worker. Admin keeps AdminCode/PermissionLevel/permissions. Worker keeps WorkerCode/profile fields. Worker also gets ShiftActive (boolean): true when the worker is currently inside their assigned shift — the same condition POST /api/workers/me/online checks before throwing 403 OutsideWorkShift — so the app can enable/disable the Online button without recomputing the shift-time comparison itself."
           },
           "response": []
         },
@@ -1751,6 +1755,172 @@
               "type": "noauth"
             },
             "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/settings\nAuth: Admin access token with settings:update permission\nBody: Partial JSON is allowed. Updated settings affect new calculations after this request; existing assignment deadlines already saved in DB remain unchanged. WorkerAcceptTimeoutLimit controls how many consecutive accept timeouts are allowed before the worker is moved to open_app and the current shift is closed. WorkerScanWarningBeforeMinutes controls when Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING for ACCEPTED workers who have not checked in. WorkerScanTeamRemainingMinutes controls the shortened scan window for remaining team members after the first worker checks in. VendorConfirmTimeoutHours auto-confirms first submitted totals after vendor timeout, and VendorReconfirmTimeoutHours does the same after a rejected ticket is resubmitted."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/admin/mobile-app-versions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/mobile-app-versions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "mobile-app-versions"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/mobile-app-versions\nAuth: Admin access token with settings:read permission\nBody: None\nNotes: Returns Current, Scheduled, and History Worker Mobile Application versions. Current/Scheduled/History are derived from BuildNumber + ForceUpdateAt compared against server time on every call, not a stored status. History never deletes old versions."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/mobile-app-versions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.Id) pm.collectionVariables.set('mobileAppVersionId', String(body.Id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Version\": \"1.4.0\",\n  \"BuildNumber\": 10400,\n  \"ReleaseAt\": \"2026-08-19T10:00:00.000Z\",\n  \"AndroidDownloadUrl\": \"https://play.google.com/store/apps/details?id=com.example.worker\",\n  \"IosDownloadUrl\": \"https://apps.apple.com/app/id0000000000\",\n  \"ReleaseMessage\": \"กรุณาอัปเดตแอปแรงงานตามเวลาที่กำหนด\",\n  \"ReleaseNotes\": \"ปรับปรุงระบบรับงานและการแจ้งเตือน\",\n  \"ForceUpdateAt\": \"2026-08-22T15:00:00.000Z\",\n  \"ReleaseNotificationAt\": \"2026-08-20T02:00:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/mobile-app-versions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "mobile-app-versions"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/mobile-app-versions\nAuth: Admin access token with settings:update permission\nBody: Version and BuildNumber required (BuildNumber must be unique, it is the sole comparison key for Worker app version checks — never the Version string). There is no separate ForceUpdate flag: whether a version is forced is derived purely from whether ForceUpdateAt is set.\nNotes: Creating a version never affects the Worker app immediately by itself. If ForceUpdateAt is set and in the future, the new version is Scheduled and GET /api/workers/app-version/check keeps returning the current version until server time reaches ForceUpdateAt — there is no separate Publish endpoint. If ForceUpdateAt is omitted, the new version takes effect immediately and is never forced.\n\nTwo independent FCM notifications are involved, each with its own timing field and its own \"already sent\" tracker: the ReleaseMessage notice fires at ReleaseNotificationAt (omit/null = send synchronously in this request and set ReleaseNotificationSentAt; a future time schedules it via BullMQ instead, and must not be later than ForceUpdateAt); the force-update notice is a standard-pattern-only FCM that fires automatically at ForceUpdateAt itself, tracked independently via ForceUpdateNotificationSentAt, and only scheduled when ForceUpdateAt is set. Neither notification ever activates the version early. ReleaseAt is metadata only (UI/History display), not a trigger for anything. Response Id is saved to {{mobileAppVersionId}} for the PATCH request below."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/admin/mobile-app-versions/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ForceUpdateAt\": \"2026-08-27T15:00:00.000Z\",\n  \"ReleaseNotificationAt\": \"2026-08-26T09:00:00.000Z\",\n  \"ReleaseMessage\": \"กรุณาอัปเดตแอปแรงงานภายในเวลาที่กำหนดใหม่\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/mobile-app-versions/{{mobileAppVersionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "mobile-app-versions",
+                "{{mobileAppVersionId}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/mobile-app-versions/{{mobileAppVersionId}}\nAuth: Admin access token with settings:update permission\nBody: At least one field required. Version/BuildNumber can only be changed while the version is still Scheduled (409 MOBILE_APP_VERSION_LOCKED once it becomes Current/History, since changing them afterward would corrupt History). Other fields (URLs, release text, ForceUpdateAt, ReleaseNotificationAt) can always be changed; both ForceUpdateAt and ReleaseNotificationAt accept null to clear them.\nNotes: Changing ForceUpdateAt on a Scheduled version just changes when it activates (or removes the force entirely, if set to null) — Worker keeps using the current version until the new time is reached; version activation is derived live from server time and never depends on either notification job. Changing ForceUpdateAt/ReleaseNotificationAt while their respective ForceUpdateNotificationSentAt/ReleaseNotificationSentAt is still null removes any existing delayed job and re-syncs it (reschedules at the new time, or sends immediately if set to null). Once sent, further edits to these fields only update the stored value — neither notification is ever resent automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Worker App Version Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/app-version/check?platform=android&version=1.3.0&build_number=10300",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "app-version",
+                "check"
+              ],
+              "query": [
+                {
+                  "key": "platform",
+                  "value": "android"
+                },
+                {
+                  "key": "version",
+                  "value": "1.3.0"
+                },
+                {
+                  "key": "build_number",
+                  "value": "10300"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/app-version/check\nAuth: Public — no Bearer token, no Worker session/login required, since the app must be able to check its version before the worker logs in.\nQuery: platform (android|ios) selects which DownloadUrl to return; version is informational only; build_number is the worker app's own build number and the only value actually compared (never the Version string).\nNotes: Grouped in this Admin Settings folder alongside version management, even though the route itself lives under /api/workers. Server time is always the source of truth — a Scheduled version never becomes effective before its ForceUpdateAt, and a client BuildNumber equal to or higher than the effective BuildNumber always returns UP_TO_DATE (never asks to downgrade). Status is one of UP_TO_DATE, UPDATE_AVAILABLE, UPDATE_REQUIRED, NO_VERSION_CONFIGURED."
           },
           "response": []
         },

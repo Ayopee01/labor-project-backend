@@ -5,6 +5,7 @@ import type {
   AccountRecord,
   AssignmentRecord,
   GateClientRecord,
+  MobileAppVersionRecord,
   GateTicketRecord,
   MarketJobRecord,
   VehicleJobRecord,
@@ -264,6 +265,7 @@ export function resetRouteTestState(): void {
   state.masterProducts.length = 0;
   state.masterRates.length = 0;
   state.gateClients.clear();
+  state.mobileAppVersions.length = 0;
   state.shiftAttendances.length = 0;
   state.authAccountsByUsername.clear();
   state.authAccountsById.clear();
@@ -293,6 +295,7 @@ export function resetRouteTestState(): void {
   state.nextLineActionTokenId = 1;
   state.nextGateClientId = 1;
   state.nextShiftAttendanceId = 1;
+  state.nextMobileAppVersionId = 1;
   seedMasterDataForRouteTests();
 }
 
@@ -401,6 +404,37 @@ export function addGateClient(
   state.gateClients.set(gateClient.client_id, gateClient);
 
   return gateClient;
+}
+
+// Function จัดการ add Mobile App Version สำหรับ test
+export function addMobileAppVersion(
+  overrides: Partial<MobileAppVersionRecord> & {
+    version: string;
+    build_number: number;
+  },
+): MobileAppVersionRecord {
+  const now = new Date().toISOString();
+  const record: MobileAppVersionRecord = {
+    id: state.nextMobileAppVersionId++,
+    release_at: null,
+    android_download_url: "https://play.google.com/store/apps/details?id=test",
+    ios_download_url: "https://apps.apple.com/app/id0000000000",
+    force_update_at: null,
+    release_notification_at: null,
+    release_notification_sent_at: null,
+    force_update_notification_sent_at: null,
+    release_message: null,
+    release_notes: null,
+    created_by: null,
+    updated_by: null,
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  };
+
+  state.mobileAppVersions.push(record);
+
+  return record;
 }
 
 // Function จัดการ add dispatchable job สำหรับ test

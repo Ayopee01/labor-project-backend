@@ -91,6 +91,31 @@ export async function listByIds(
   return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
 }
 
+// Function ดึง worker accounts ที่ active ตาม username (worker_code) หลายคนพร้อมกัน ใช้หา lang
+// ของแต่ละคนก่อน broadcast แจ้งเตือนแบบ localized (เช่น Mobile App Version update)
+export async function listActiveWorkersByUsernames(
+  usernames: string[],
+  connection?: DbConnection,
+): Promise<AccountDto[]> {
+  const uniqueUsernames = [...new Set(usernames.filter(Boolean))];
+
+  if (uniqueUsernames.length === 0) {
+    return [];
+  }
+
+  const accounts = await client(connection).account.findMany({
+    where: {
+      username: {
+        in: uniqueUsernames,
+      },
+      role: WORKER_ROLE,
+      status: "active",
+    },
+  });
+
+  return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
+}
+
 // Function อัปเดต password จาก DB
 export async function updatePassword(
   id: number | string,

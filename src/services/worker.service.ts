@@ -41,6 +41,7 @@ import * as vehicleJobRepository from "../repositories/shared/vehicle-job.reposi
 import * as workerShiftAttendanceRepository from "../repositories/shared/worker-shift-attendance.repository";
 import * as vehicleJobLifecycleService from "./shared/vehicle-job-lifecycle.service";
 import * as rateResolutionService from "./shared/rate-resolution.service";
+import { checkMobileAppVersionForClient } from "./shared/mobile-app-version.service";
 import { publishNotification } from "./notifications.service";
 import { resolveTicketResultAudience } from "./shared/realtime-notification.service";
 import { publishRealtimeEvent } from "./shared/realtime-notification.service";
@@ -124,6 +125,12 @@ import { resolveWorkerWorkStatus } from "../utils/worker-status";
 import { packageWeightToDecimal } from "../utils/labor-job-pricing";
 
 /* -------------------------------------- Functions -------------------------------------- */
+
+// Function ตรวจ Mobile App Version ตอนเปิด App ใน service flow — Public ไม่ต้อง Login, แค่ pass
+// through ไปยัง shared service ที่เป็น Single Source of Truth ของ Effective Version
+export async function checkMobileAppVersion(query: unknown) {
+  return checkMobileAppVersionForClient(query);
+}
 
 // Function จัดการ พร้อม break usage ใน service flow
 function withBreakUsage(

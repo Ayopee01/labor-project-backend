@@ -20,7 +20,7 @@ import ApiError from "../utils/api-error";
 import { signAccessToken, signLoginChallengeToken, signRefreshToken, verifyLoginChallengeToken, verifyRefreshToken } from "../utils/jwt";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { hashRefreshToken, refreshTokenHashesMatch } from "../utils/refresh-token-hash";
-import { formatScheduleWithShift } from "../utils/shift";
+import { formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -120,6 +120,11 @@ async function buildMeResponse(
     phone: account.phone,
     lang: account.lang,
     shift: formatProfileCardShift(schedule),
+    // เงื่อนไขเดียวกับที่ workerOnline ใช้ตรวจก่อน throw OUTSIDE_WORK_SHIFT — ต้องมี schedule และ
+    // เวลาปัจจุบันต้องอยู่ในช่วงกะ ห้าม duplicate logic นี้แยกที่อื่น
+    shift_active: Boolean(
+      currentWorkSchedule && isTimeInWorkSchedule(currentWorkSchedule),
+    ),
   };
 }
 

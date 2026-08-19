@@ -61,6 +61,13 @@ export const workerApplicationRepositoryMock = {
           (account): account is NonNullable<typeof account> => account !== null,
         ),
     listAdmins: async () => [],
+    listActiveWorkersByUsernames: async (usernames: string[]) =>
+      Array.from(state.authAccountsById.values()).filter(
+        (account) =>
+          account.role === "worker" &&
+          account.status === "active" &&
+          usernames.includes(account.username),
+      ),
   },
   profileRepository: {
     findByAccountId: async (accountId: number) =>
@@ -2426,6 +2433,17 @@ export const workerPushTokenRepositoryMock = {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })),
+  listAllActiveTokens: async () =>
+    state.workerPushTokens
+      .filter((token) => token.is_active)
+      .map((token, index) => ({
+        id: index + 1,
+        ...token,
+        last_seen_at: new Date().toISOString(),
+        revoked_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })),
   listActiveTokensBySessionId: async (sessionId: number) =>
     state.workerPushTokens
       .filter((token) => token.is_active && token.session_id === sessionId)
@@ -2763,6 +2781,111 @@ export const gateClientRepositoryMock = {
 
     existing.last_used_at = new Date().toISOString();
     existing.updated_at = existing.last_used_at;
+  },
+};
+
+export const mobileAppVersionRepositoryMock = {
+  listMobileAppVersions: async () =>
+    [...state.mobileAppVersions].sort((left, right) => right.build_number - left.build_number),
+  findMobileAppVersionById: async (id: number) =>
+    state.mobileAppVersions.find((version) => version.id === id) ?? null,
+  findMobileAppVersionByBuildNumber: async (buildNumber: number) =>
+    state.mobileAppVersions.find((version) => version.build_number === buildNumber) ?? null,
+  createMobileAppVersion: async (input: {
+    version: string;
+    build_number: number;
+    release_at?: string | null;
+    android_download_url?: string | null;
+    ios_download_url?: string | null;
+    force_update_at?: string | null;
+    release_notification_at?: string | null;
+    release_message?: string | null;
+    release_notes?: string | null;
+    created_by?: number | null;
+    updated_by?: number | null;
+  }) => {
+    const now = new Date().toISOString();
+    const created = {
+      id: state.nextMobileAppVersionId++,
+      version: input.version,
+      build_number: input.build_number,
+      release_at: input.release_at ?? null,
+      android_download_url: input.android_download_url ?? null,
+      ios_download_url: input.ios_download_url ?? null,
+      force_update_at: input.force_update_at ?? null,
+      release_notification_at: input.release_notification_at ?? null,
+      release_notification_sent_at: null,
+      force_update_notification_sent_at: null,
+      release_message: input.release_message ?? null,
+      release_notes: input.release_notes ?? null,
+      created_by: input.created_by ?? null,
+      updated_by: input.updated_by ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.mobileAppVersions.push(created);
+
+    return created;
+  },
+  updateMobileAppVersion: async (
+    id: number,
+    input: {
+      version?: string;
+      build_number?: number;
+      release_at?: string | null;
+      android_download_url?: string | null;
+      ios_download_url?: string | null;
+      force_update_at?: string | null;
+      release_notification_at?: string | null;
+      release_notification_sent_at?: string | null;
+      force_update_notification_sent_at?: string | null;
+      release_message?: string | null;
+      release_notes?: string | null;
+      updated_by?: number | null;
+    },
+  ) => {
+    const existing = state.mobileAppVersions.find((version) => version.id === id);
+
+    if (!existing) {
+      throw new Error("Mobile app version not found.");
+    }
+
+    if (input.version !== undefined) existing.version = input.version;
+    if (input.build_number !== undefined) existing.build_number = input.build_number;
+    if (input.release_at !== undefined) existing.release_at = input.release_at;
+    if (input.android_download_url !== undefined) existing.android_download_url = input.android_download_url;
+    if (input.ios_download_url !== undefined) existing.ios_download_url = input.ios_download_url;
+    if (input.force_update_at !== undefined) existing.force_update_at = input.force_update_at;
+    if (input.release_notification_at !== undefined) existing.release_notification_at = input.release_notification_at;
+    if (input.release_notification_sent_at !== undefined) existing.release_notification_sent_at = input.release_notification_sent_at;
+    if (input.force_update_notification_sent_at !== undefined) existing.force_update_notification_sent_at = input.force_update_notification_sent_at;
+    if (input.release_message !== undefined) existing.release_message = input.release_message;
+    if (input.release_notes !== undefined) existing.release_notes = input.release_notes;
+    existing.updated_by = input.updated_by ?? null;
+    existing.updated_at = new Date().toISOString();
+
+    return existing;
+  },
+  claimReleaseNotificationSent: async (id: number) => {
+    const existing = state.mobileAppVersions.find((version) => version.id === id);
+
+    if (existing && !existing.release_notification_sent_at) {
+      existing.release_notification_sent_at = new Date().toISOString();
+      return true;
+    }
+
+    return false;
+  },
+  claimForceUpdateNotificationSent: async (id: number) => {
+    const existing = state.mobileAppVersions.find((version) => version.id === id);
+
+    if (existing && !existing.force_update_notification_sent_at) {
+      existing.force_update_notification_sent_at = new Date().toISOString();
+      return true;
+    }
+
+    return false;
   },
 };
 

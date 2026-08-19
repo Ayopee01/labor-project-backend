@@ -284,6 +284,66 @@ export async function sendWorkerPushNotificationByAccountIds(input: {
   }
 }
 
+// Function ส่ง FCM push ให้ Worker ที่ active token ทุกคน แบบ localized ตามภาษาที่แต่ละคนตั้งไว้
+// (ใช้ notification-localization mechanism เดิมของ project) — group token ตาม lang ก่อนแล้วยิง
+// multicast ทีละกลุ่ม (ไม่ query/ยิงทีละ account เหมือน sendWorkerPushNotificationByAccountIds
+// เพราะผู้รับเป็นทุกคน ไม่ใช่ account_ids ที่ระบุมา จึงต้อง batch ตาม lang แทนเพื่อเลี่ยง N+1)
+export async function sendWorkerPushNotificationToAllActive(input: {
+  type: string;
+  notification_key?: string | null;
+  notification_params?: Record<string, unknown>;
+  fallbackTitle: string;
+  fallbackMessage: string;
+  // ข้อความเพิ่มเติมที่ Admin กำหนดเอง (เช่น ReleaseMessage ของ Mobile App Version) ต่อท้าย
+  // localized message เสมอ ไม่ผ่าน localization เพราะเป็น free text ที่ Admin พิมพ์เอง
+  appendMessage?: string | null;
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  const tokens = await workerPushTokenRepository.listAllActiveTokens();
+
+  if (tokens.length === 0) {
+    return;
+  }
+
+  const workerCodes = [...new Set(tokens.map((token) => token.worker_code))];
+  const accounts = await accountRepository.listActiveWorkersByUsernames(workerCodes);
+  const langByWorkerCode = new Map(accounts.map((account) => [account.username, account.lang]));
+
+  const tokensByLang = new Map<string, WorkerPushTokenDto[]>();
+
+  for (const token of tokens) {
+    const lang = langByWorkerCode.get(token.worker_code) ?? undefined;
+    const bucketKey = lang ?? "";
+    const bucket = tokensByLang.get(bucketKey) ?? [];
+
+    bucket.push(token);
+    tokensByLang.set(bucketKey, bucket);
+  }
+
+  for (const [lang, langTokens] of tokensByLang) {
+    const localized = buildLocalizedNotification({
+      type: input.type,
+      lang: lang || undefined,
+      key: input.notification_key,
+      params: input.notification_params,
+      fallbackTitle: input.fallbackTitle,
+      fallbackMessage: input.fallbackMessage,
+    });
+
+    await sendWorkerPushNotificationToTokens(langTokens, {
+      worker_codes: [],
+      type: input.type,
+      title: localized.title,
+      message: input.appendMessage
+        ? `${localized.message} ${input.appendMessage}`
+        : localized.message,
+      notification_key: localized.key,
+      lang: localized.lang,
+      payload: input.payload,
+    });
+  }
+}
+
 export async function sendWorkerPushNotificationToSession(input: {
   session_id: number;
   type: string;

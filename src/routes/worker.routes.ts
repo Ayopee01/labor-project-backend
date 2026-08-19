@@ -10,6 +10,19 @@ import * as workerService from "../services/worker.service";
 
 const router = express.Router();
 
+// Public: ต้องเรียกได้ตั้งแต่เปิด App ก่อน Login จึงต้องประกาศก่อน router.use(authMiddleware, ...)
+router.get(
+  "/app-version/check",
+  async (req, res, next) => {
+    try {
+      const result = await workerService.checkMobileAppVersion(req.query);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["worker"]));
 
 router.post(

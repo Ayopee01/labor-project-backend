@@ -546,6 +546,78 @@ export async function removeVendorConfirmationTimeout(
   }
 }
 
+// Function ตั้งเวลา delayed job ส่ง FCM Release Notification ตาม ReleaseNotificationAt ใน
+// Redis/BullMQ queue — reuse assignmentTimeoutQueue เดิม ไม่สร้าง queue ใหม่ ใช้แค่ trigger ส่ง
+// FCM เท่านั้น ห้ามใช้ activate Version (Version activation resolve จาก ForceUpdateAt เทียบเวลา
+// server เสมอ ไม่พึ่ง BullMQ)
+export async function scheduleMobileAppReleaseNotification(
+  mobileAppVersionId: number,
+  delayMs: number
+): Promise<void> {
+  await assignmentTimeoutQueue.add(
+    "mobile-app-release-notification",
+    {
+      mobileAppVersionId,
+      kind: "mobile_app_release_notification",
+    },
+    {
+      delay: delayMs,
+      jobId: `mobile-app-release-notification-${mobileAppVersionId}`,
+      removeOnComplete: true,
+      removeOnFail: 100,
+    }
+  );
+}
+
+// Function ลบ delayed job ส่ง FCM Release Notification ใน Redis/BullMQ queue
+export async function removeMobileAppReleaseNotification(
+  mobileAppVersionId: number
+): Promise<void> {
+  const job = await assignmentTimeoutQueue.getJob(
+    `mobile-app-release-notification-${mobileAppVersionId}`
+  );
+
+  if (job) {
+    await job.remove();
+  }
+}
+
+// Function ตั้งเวลา delayed job ส่ง FCM บังคับอัปเดตอัตโนมัติตาม ForceUpdateAt ใน Redis/BullMQ
+// queue — ยิงคู่ขนานกับการ activate version (ซึ่งยัง resolve จากเวลา server เทียบ ForceUpdateAt
+// เท่านั้น ไม่พึ่ง job นี้เลย) ถ้า job นี้พลาดด้วยเหตุใดก็ตาม version ก็ยัง activate ตรงเวลาปกติ
+// job นี้ทำหน้าที่แค่ยิง FCM แจ้งเตือนเพิ่มเท่านั้น
+export async function scheduleMobileAppForceUpdateNotification(
+  mobileAppVersionId: number,
+  delayMs: number
+): Promise<void> {
+  await assignmentTimeoutQueue.add(
+    "mobile-app-force-update-notification",
+    {
+      mobileAppVersionId,
+      kind: "mobile_app_force_update_notification",
+    },
+    {
+      delay: delayMs,
+      jobId: `mobile-app-force-update-notification-${mobileAppVersionId}`,
+      removeOnComplete: true,
+      removeOnFail: 100,
+    }
+  );
+}
+
+// Function ลบ delayed job ส่ง FCM บังคับอัปเดตอัตโนมัติ ใน Redis/BullMQ queue
+export async function removeMobileAppForceUpdateNotification(
+  mobileAppVersionId: number
+): Promise<void> {
+  const job = await assignmentTimeoutQueue.getJob(
+    `mobile-app-force-update-notification-${mobileAppVersionId}`
+  );
+
+  if (job) {
+    await job.remove();
+  }
+}
+
 // Function ตั้ง delayed job สำหรับพา worker กลับจาก break
 export async function scheduleWorkerBreakReturn(
   accountId: number,

@@ -50,6 +50,31 @@ const optionalDateString = z.preprocess(
   dateString.optional()
 );
 
+// Format วันเวลาแบบ ISO 8601 พร้อม timezone แบบ optional สำหรับ ForceUpdateAt/NotificationAt
+const optionalDateTimeString = z.preprocess(
+  emptyStringToUndefined,
+  dateTimeString.optional()
+);
+
+// Format วันเวลาแบบ ISO 8601 nullable สำหรับ PATCH ที่ต้องเคลียร์ ForceUpdateAt/ReleaseNotificationAt
+// กลับเป็น null ได้จริง — undefined = ไม่แตะ field นี้เลย, null หรือ empty string = เคลียร์
+const nullableDateTimeString = z.preprocess(
+  (value) => (value === "" ? null : value),
+  dateTimeString.nullable().optional()
+);
+
+// Format URL แบบ https:// เท่านั้น สำหรับ Store link ของ Mobile App Version
+const httpsUrlString = trimmedString
+  .pipe(z.url({ error: "Must be a valid URL." }))
+  .refine((value) => value.startsWith("https://"), {
+    error: "Must use an https:// URL.",
+  });
+
+const optionalHttpsUrlString = z.preprocess(
+  emptyStringToUndefined,
+  httpsUrlString.optional()
+);
+
 function countInclusiveCalendarDays(dateFrom: string, dateTo: string): number {
   const startAt = Date.parse(`${dateFrom}T00:00:00.000Z`);
   const endAt = Date.parse(`${dateTo}T00:00:00.000Z`);
@@ -676,6 +701,75 @@ export const updateSystemSettingsBodySchema = z
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one setting is required.",
   });
+
+// Format BuildNumber ของ Mobile App Version — เป็นตัวหลักสำหรับเทียบ Version ห้ามเป็นค่าลบ/ศูนย์
+const buildNumberSchema = z.coerce.number().int().positive();
+
+// Function ตรวจว่า ReleaseNotificationAt (ถ้าตั้งเวลาไว้) ต้องไม่ช้ากว่า ForceUpdateAt เพราะ
+// จุดประสงค์ของการแจ้งเตือนล่วงหน้าคือแจ้ง Worker ก่อนเริ่มบังคับ Update เสมอ — ถ้า
+// ReleaseNotificationAt เป็น null หมายถึงส่งทันที จึงไม่มีทางช้ากว่า ForceUpdateAt (ในอนาคต) อยู่
+// แล้ว ไม่ต้องเช็ค
+function refineReleaseNotificationTiming(
+  value: {
+    release_notification_at?: string;
+    force_update_at?: string;
+  },
+  context: import("zod").core.$RefinementCtx
+): void {
+  if (
+    value.release_notification_at &&
+    value.force_update_at &&
+    new Date(value.release_notification_at).getTime() > new Date(value.force_update_at).getTime()
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["release_notification_at"],
+      message: "release_notification_at must not be later than force_update_at.",
+    });
+  }
+}
+
+export const createMobileAppVersionBodySchema = z
+  .object({
+    version: trimmedString,
+    build_number: buildNumberSchema,
+    release_at: optionalDateTimeString,
+    android_download_url: optionalHttpsUrlString,
+    ios_download_url: optionalHttpsUrlString,
+    release_message: optionalTrimmedString,
+    release_notes: optionalTrimmedString,
+    // มีค่า = บังคับ Update ตั้งแต่เวลานี้ (ทั้ง Activate Version และส่ง FCM บังคับอัตโนมัติ)
+    // ไม่มีค่า = Version มีผลทันทีแบบ Optional ไม่บังคับ
+    force_update_at: optionalDateTimeString,
+    // null/ไม่ส่งมา = ส่ง FCM แจ้งเตือนล่วงหน้าทันที, มีค่า = ตั้งเวลาส่งผ่าน BullMQ
+    release_notification_at: optionalDateTimeString,
+  })
+  .superRefine(refineReleaseNotificationTiming);
+
+export const updateMobileAppVersionBodySchema = z
+  .object({
+    version: optionalTrimmedString,
+    build_number: buildNumberSchema.optional(),
+    release_at: optionalDateTimeString,
+    android_download_url: optionalHttpsUrlString,
+    ios_download_url: optionalHttpsUrlString,
+    release_message: optionalTrimmedString,
+    release_notes: optionalTrimmedString,
+    force_update_at: nullableDateTimeString,
+    release_notification_at: nullableDateTimeString,
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required.",
+  });
+// Note: the release_notification_at <= force_update_at cross-check for PATCH is done in the
+// service against the merged (existing + patch) state, since a patch may only touch one of the
+// two fields while relying on a value already stored from an earlier request.
+
+export const mobileAppVersionCheckQuerySchema = z.object({
+  platform: z.enum(["android", "ios"]).optional(),
+  version: optionalTrimmedString,
+  build_number: z.coerce.number().int().min(0).optional(),
+});
 
 export const updateAccountPermissionsBodySchema = z.object({
   permission_level: z.enum(ADMIN_PERMISSION_LEVELS),

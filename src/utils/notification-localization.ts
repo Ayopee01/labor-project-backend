@@ -28,6 +28,8 @@ const WORKER_NOTIFICATION_KEYS: Record<string, string> = {
   MARKET_JOB_CANCELLED: "job.market_cancelled",
   VEHICLE_JOB_CANCELLED: "job.vehicle_cancelled",
   SESSION_REVOKED: "auth.session_revoked",
+  APP_VERSION_UPDATE: "app.version_update",
+  APP_VERSION_FORCE_UPDATE: "app.version_force_update",
 };
 
 function text(value: unknown, fallback = "-"): string {
@@ -148,6 +150,16 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
       title: "บัญชีถูกเข้าสู่ระบบจากอุปกรณ์อื่น",
       message: `Session นี้ถูกออกจากระบบ เนื่องจากมีการยืนยันเข้าสู่ระบบจาก ${text(params.new_device_name, "อุปกรณ์อื่น")}`,
     }),
+    "app.version_update": (params) => ({
+      title: "มีแอปพลิเคชันเวอร์ชันใหม่",
+      message: params.force_update_date
+        ? `เวอร์ชัน ${text(params.version)} พร้อมให้อัปเดต และจะเริ่มบังคับอัปเดตวันที่ ${text(params.force_update_date)} เวลา ${text(params.force_update_time)} น.`
+        : `เวอร์ชัน ${text(params.version)} พร้อมให้อัปเดตแล้ว`,
+    }),
+    "app.version_force_update": (params) => ({
+      title: "ถึงเวลาบังคับอัปเดตแล้ว",
+      message: `ขณะนี้แอปพลิเคชันมีเวอร์ชันใหม่ ${text(params.version)} กรุณาอัปเดตแอปเพื่อใช้งานต่อ`,
+    }),
     "worker.notification": () => ({
       title: "แจ้งเตือนงาน",
       message: "มีแจ้งเตือนงานใหม่",
@@ -205,6 +217,16 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
     "auth.session_revoked": (params) => ({
       title: "အကောင့်ကို အခြားစက်မှ ဝင်ရောက်ထားပါသည်",
       message: `${text(params.new_device_name, "အခြားစက်")} မှ ဝင်ရောက်မှုကို အတည်ပြုထားသောကြောင့် ဤ session မှ ထွက်ထားပါသည်။`,
+    }),
+    "app.version_update": (params) => ({
+      title: "အက်ပလီကေးရှင်း ဗားရှင်းအသစ် ရရှိနိုင်ပါပြီ",
+      message: params.force_update_date
+        ? `ဗားရှင်း ${text(params.version)} ကို update လုပ်နိုင်ပါပြီ။ ${text(params.force_update_date)} ရက် ${text(params.force_update_time)} မှစပြီး မဖြစ်မနေ update လုပ်ရပါမည်။`
+        : `ဗားရှင်း ${text(params.version)} ကို update လုပ်နိုင်ပါပြီ။`,
+    }),
+    "app.version_force_update": (params) => ({
+      title: "မဖြစ်မနေ update လုပ်ရမည့်အချိန် ရောက်ရှိပါပြီ",
+      message: `ယခု အက်ပလီကေးရှင်း ဗားရှင်းအသစ် ${text(params.version)} ရှိပါပြီ။ ဆက်လက်အသုံးပြုရန် update လုပ်ပါ။`,
     }),
     "worker.notification": () => ({
       title: "အလုပ်အသိပေးချက်",
@@ -264,6 +286,16 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
       title: "គណនីបានចូលពីឧបករណ៍ផ្សេង",
       message: `Session នេះត្រូវបានចេញ ព្រោះបានបញ្ជាក់ការចូលពី ${text(params.new_device_name, "ឧបករណ៍ផ្សេង")}`,
     }),
+    "app.version_update": (params) => ({
+      title: "កម្មវិធីមានកំណែថ្មី",
+      message: params.force_update_date
+        ? `កំណែ ${text(params.version)} អាចធ្វើបច្ចុប្បន្នភាពបានហើយ ហើយនឹងចាប់ផ្តើមតម្រូវឱ្យធ្វើបច្ចុប្បន្នភាពនៅថ្ងៃទី ${text(params.force_update_date)} ម៉ោង ${text(params.force_update_time)} ។`
+        : `កំណែ ${text(params.version)} អាចធ្វើបច្ចុប្បន្នភាពបានហើយ។`,
+    }),
+    "app.version_force_update": (params) => ({
+      title: "ដល់ពេលត្រូវធ្វើបច្ចុប្បន្នភាពជាចាំបាច់ហើយ",
+      message: `ឥឡូវនេះកម្មវិធីមានកំណែថ្មី ${text(params.version)} សូមធ្វើបច្ចុប្បន្នភាពដើម្បីបន្តប្រើប្រាស់`,
+    }),
     "worker.notification": () => ({
       title: "ការជូនដំណឹងការងារ",
       message: "មានការជូនដំណឹងការងារថ្មី",
@@ -321,6 +353,16 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
     "auth.session_revoked": (params) => ({
       title: "Signed in on another device",
       message: `This session was signed out because login was confirmed on ${text(params.new_device_name, "another device")}.`,
+    }),
+    "app.version_update": (params) => ({
+      title: "New app version available",
+      message: params.force_update_date
+        ? `Version ${text(params.version)} is ready to update, and will be required starting ${text(params.force_update_date)} at ${text(params.force_update_time)}.`
+        : `Version ${text(params.version)} is ready to update.`,
+    }),
+    "app.version_force_update": (params) => ({
+      title: "Update is now required",
+      message: `A new app version ${text(params.version)} is now available. Please update to continue.`,
     }),
     "worker.notification": () => ({
       title: "Worker notification",
