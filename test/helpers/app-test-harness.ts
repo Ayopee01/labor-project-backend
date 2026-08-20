@@ -44,6 +44,7 @@ export {
   addAdmin,
   addDispatchableJob,
   addGateClient,
+  addMarketJobForVehicle,
   addMobileAppVersion,
   addPendingAssignment,
   addTicketForVehicleJob,

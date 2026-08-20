@@ -33,6 +33,14 @@ export async function findMarketJobFinancializationContext(
               financial: true,
             },
           },
+          // Snapshot ของ worker ที่ยัง WORKING ณ ตอนแผงนี้ confirm — ใช้เป็นตัวหารเงินของแผงนี้
+          // โดยเฉพาะ แทนที่จะใช้ roster สุดท้ายของทั้ง Business Ticket (ดู
+          // finalizeMarketJobFinancials)
+          workerSnapshots: {
+            orderBy: {
+              id: "asc",
+            },
+          },
         },
       },
       ticketWorkers: {

@@ -49,12 +49,23 @@ async function loginWorker(accountId: number): Promise<{ token: string; worker: 
 }
 
 // Function เธชเธฃเนเธฒเธ gate vehicle job body เธชเธณเธซเธฃเธฑเธ test
+// Function สร้างเลข 14 หลักแบบ deterministic จาก seed string สำหรับ TicketNumber/TicketNo ใน test
+// (validation ปัจจุบันบังคับตัวเลขล้วน 14 หลักเท่านั้น) seed เดิมจะได้เลขเดิมเสมอ
+function toFourteenDigitId(seed: string): string {
+  let hash = 0;
+
+  for (let index = 0; index < seed.length; index++) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+
+  return String(hash).padStart(14, "0");
+}
+
 function buildGateVehicleJobBody(suffix: string) {
   return {
-    TicketNumber: `TRUCK-20260723-${suffix}`,
-    TicketNo: `TKT-20260723-${suffix}`,
+    TicketNumber: toFourteenDigitId(`TRUCK-20260723-${suffix}`),
+    TicketNo: toFourteenDigitId(`TKT-20260723-${suffix}`),
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
-    TicketCount: 1,
     BoothCount: 1,
     MarketCode: `MARKET-${suffix}`,
     LicensePlate: `ABC-${suffix}`,
@@ -326,6 +337,8 @@ test("POST /api/gate/tickets rejects invalid Gate client credentials", async () 
 });
 
 test("POST /api/gate/tickets creates a new Gate ticket", async () => {
+  const expectedTicketNumber = toFourteenDigitId("TRUCK-20260723-001");
+  const expectedTicketNo = toFourteenDigitId("TKT-20260723-001");
   const response = await server.request("POST", "/api/gate/tickets", {
     body: buildGateVehicleJobBody("001"),
     headers: await gateAuthHeaders(),
@@ -352,8 +365,8 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
     "VehicleTypeName",
   ]);
   assert.equal(response.body.Result, "CREATED");
-  assert.equal(response.body.TicketNumber, "TRUCK-20260723-001");
-  assert.equal(response.body.Ticket.TicketNo, "TKT-20260723-001");
+  assert.equal(response.body.TicketNumber, expectedTicketNumber);
+  assert.equal(response.body.Ticket.TicketNo, expectedTicketNo);
   assert.equal(response.body.Ticket.TicketCreatedAt, "2026-07-23T07:30:00.000Z");
   assert.equal(response.body.Ticket.BoothCount, 1);
   assert.equal(response.body.Ticket.LicensePlate, "ABC-001");
@@ -404,11 +417,11 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   assert.equal(response.body.markets, undefined);
 
   assert.equal(state.vehicleJobs.length, 1);
-  assert.equal(state.vehicleJobs[0].ticket_number, "TRUCK-20260723-001");
+  assert.equal(state.vehicleJobs[0].ticket_number, expectedTicketNumber);
   assert.equal(state.vehicleJobs[0].vehicle_type, "Pickup truck");
 
   assert.equal(state.marketJobs.length, 1);
-  assert.equal(state.marketJobs[0].ticket_no, "TKT-20260723-001");
+  assert.equal(state.marketJobs[0].ticket_no, expectedTicketNo);
   assert.equal(state.marketJobs[0].ticket_created_at, "2026-07-23T07:30:00.000Z");
   assert.equal(state.marketJobs[0].booth_count, 1);
   assert.equal(state.marketJobs[0].ticket_no, response.body.Ticket.TicketNo);
@@ -458,7 +471,7 @@ test("POST /api/gate/tickets creates a new Gate ticket", async () => {
   const gateFlexContents = JSON.stringify(gateFlexMessage?.contents);
 
   assert.equal(gateFlexMessage?.type, "flex");
-  assert.match(gateFlexContents, /TKT-20260723-001/);
+  assert.match(gateFlexContents, new RegExp(expectedTicketNo));
   assert.match(gateFlexContents, /ABC-001/);
   assert.match(gateFlexContents, /Rambutan/);
 });
@@ -626,19 +639,19 @@ test("POST /api/gate/tickets dispatches exactly the required FIFO workers", asyn
 
   assert.equal(
     response.body.WorkerCount,
-    7
+    3
   );
 
   assert.equal(
     state.vehicleJobs[0]
       .workers_required,
-    7
+    3
   );
 
   // เธ•เนเธญเธเธชเธฃเนเธฒเธ Assignment เน€เธ—เนเธฒเธเธณเธเธงเธเธ—เธตเน Gate เธ•เนเธญเธเธเธฒเธฃ
   assert.equal(
     state.assignments.length,
-    7
+    3
   );
 
   // เธ•เนเธญเธเน€เธเนเธ Worker 7 เธเธเนเธฃเธเธ•เธฒเธก FIFO
@@ -648,7 +661,7 @@ test("POST /api/gate/tickets dispatches exactly the required FIFO workers", asyn
         assignment.worker_account_id
     ),
     workers
-      .slice(0, 7)
+      .slice(0, 3)
       .map((worker) => worker.id)
   );
 
@@ -656,7 +669,7 @@ test("POST /api/gate/tickets dispatches exactly the required FIFO workers", asyn
   const remainingWorker =
     await workerQueue
       .getWorkerQueueStatus(
-        workers[7].id
+        workers[3].id
       );
 
   assert.equal(
@@ -667,7 +680,7 @@ test("POST /api/gate/tickets dispatches exactly the required FIFO workers", asyn
   // 7 เธเธเนเธฃเธเธ•เนเธญเธเธ–เธนเธ mark assigned
   for (
     const worker
-    of workers.slice(0, 7)
+    of workers.slice(0, 3)
   ) {
     const queueEntry =
       await workerQueue
@@ -707,7 +720,7 @@ test("POST /api/gate/tickets replays the same Gate request", async () => {
     "WorkerCount",
   ]);
   assert.equal(replayed.body.Result, "REPLAYED");
-  assert.equal(replayed.body.Ticket.TicketNo, "TKT-20260723-002");
+  assert.equal(replayed.body.Ticket.TicketNo, toFourteenDigitId("TKT-20260723-002"));
   assert.equal(replayed.body.Ticket.Status, "unload_now");
   assert.equal(replayed.body.Market.MarketCode, "MARKET-002");
   assert.equal(replayed.body.Booths[0].BoothCode, "STALL-002");
@@ -721,7 +734,10 @@ test("POST /api/gate/tickets replays the same Gate request", async () => {
   assert.equal(state.vehicleJobs.length, 1);
 });
 
-test("POST /api/gate/tickets rejects reused Gate ref with a different payload", async () => {
+test("POST /api/gate/tickets rejects re-adding a BoothCode that already exists in the Ticket, even when other fields differ", async () => {
+  // TicketNo + ตลาดเดิมซ้ำกันตอนนี้หมายถึง Append เข้า Ticket เดิม (ดู test "appends a new booth...")
+  // แต่ถ้า BoothCode ที่ส่งมาชนกับแผงที่มีอยู่แล้วในตลาดเดิมนั้น ต้อง Reject เสมอ ไม่ว่า field อื่นจะ
+  // ต่างกันแค่ไหนก็ตาม (ไม่รองรับการ merge สินค้าเข้าแผงเดิม)
   const body = buildGateVehicleJobBody("003");
   const headers = await gateAuthHeaders();
 
@@ -739,8 +755,7 @@ test("POST /api/gate/tickets rejects reused Gate ref with a different payload", 
   });
 
   assert.equal(mismatch.status, 409);
-  assert.equal(mismatch.body.code, "GATE_TRANSACTION_REF_PAYLOAD_MISMATCH");
-  assert.equal(mismatch.body.duplicate_field, "gate_transaction_ref");
+  assert.equal(mismatch.body.code, "GATE_BOOTH_ALREADY_EXISTS_IN_TICKET");
 });
 
 test("POST /api/gate/tickets creates multiple booths and products in one request", async () => {
@@ -783,7 +798,7 @@ test("POST /api/gate/tickets creates multiple booths and products in one request
 
   assert.equal(response.status, 201);
   assert.equal(response.body.Result, "CREATED");
-  assert.equal(response.body.Ticket.TicketNo, "TKT-20260723-004");
+  assert.equal(response.body.Ticket.TicketNo, toFourteenDigitId("TKT-20260723-004"));
   assert.equal(response.body.Ticket.BoothCount, 2);
   assert.equal(response.body.Booths.length, 2);
 
@@ -800,7 +815,8 @@ test("POST /api/gate/tickets creates multiple booths and products in one request
   assert.equal(response.body.Booths[0].StallPayment, undefined);
   assert.equal(response.body.Booths[1].StallPayment, undefined);
 
-  assert.equal(response.body.WorkerCount, 7);
+  // MAX(3, 2, 2) = 3 (ต่อ Ticket ใช้ MAX ของทุก Product ในทุกแผง ไม่ใช่ SUM แล้ว)
+  assert.equal(response.body.WorkerCount, 3);
   assert.equal(response.body.WorkerPayment, undefined);
   assert.equal(response.body.OrderRemainder, undefined);
 
@@ -812,7 +828,7 @@ test("POST /api/gate/tickets creates multiple booths and products in one request
   }
 
   assert.equal(state.vehicleJobs.length, 1);
-  assert.equal(state.vehicleJobs[0].workers_required, 7);
+  assert.equal(state.vehicleJobs[0].workers_required, 3);
   assert.equal(state.marketJobs.length, 1);
   assert.equal(state.marketJobs[0].booth_count, 2);
 
@@ -923,14 +939,13 @@ test("POST /api/gate/tickets rejects duplicate ProductCode + PackageCode in the 
 
 test("POST /api/gate/tickets creates multiple Business Tickets under the same TicketNumber without creating a new VehicleJob, aggregating WorkerCount by SUM", async () => {
   const headers = await gateAuthHeaders();
-  const ticketNumber = "TRUCK-MULTI-001";
+  const ticketNumber = toFourteenDigitId("TRUCK-MULTI-001");
 
   const first = await server.request("POST", "/api/gate/tickets", {
     body: {
       TicketNumber: ticketNumber,
-      TicketNo: "TKT-MULTI-001",
+      TicketNo: toFourteenDigitId("TKT-MULTI-001"),
       TicketCreatedAt: "2026-07-23T14:30:00+07:00",
-      TicketCount: 2,
       BoothCount: 1,
       MarketCode: "MARKET-010",
       LicensePlate: "MULTI-001",
@@ -955,9 +970,8 @@ test("POST /api/gate/tickets creates multiple Business Tickets under the same Ti
   const second = await server.request("POST", "/api/gate/tickets", {
     body: {
       TicketNumber: ticketNumber,
-      TicketNo: "TKT-MULTI-002",
+      TicketNo: toFourteenDigitId("TKT-MULTI-002"),
       TicketCreatedAt: "2026-07-23T14:35:00+07:00",
-      TicketCount: 2,
       BoothCount: 1,
       MarketCode: "MARKET-011",
       LicensePlate: "MULTI-001",
@@ -1004,14 +1018,13 @@ test("POST /api/gate/tickets creates multiple Business Tickets under the same Ti
   assert.notEqual(vehicleJob.workers_required, Math.max(...marketJobsOfVehicle.map((m) => m.workers_required)));
 });
 
-test("POST /api/gate/tickets replay/mismatch idempotency is keyed by TicketNumber+TicketNo, never rejects a new TicketNo under the same TicketNumber", async () => {
+test("POST /api/gate/tickets replay/mismatch idempotency is keyed by TicketNumber+TicketNo, never rejects a new TicketNo under the same TicketNumber, but still rejects the same TicketNo reused for a different market", async () => {
   const headers = await gateAuthHeaders();
-  const ticketNumber = "TRUCK-MULTI-002";
+  const ticketNumber = toFourteenDigitId("TRUCK-MULTI-002");
   const buildBody = (ticketNo: string, marketSuffix: string) => ({
     TicketNumber: ticketNumber,
-    TicketNo: ticketNo,
+    TicketNo: toFourteenDigitId(ticketNo),
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
-    TicketCount: 2,
     BoothCount: 1,
     MarketCode: `MARKET-${marketSuffix}`,
     LicensePlate: "MULTI-002",
@@ -1034,7 +1047,7 @@ test("POST /api/gate/tickets replay/mismatch idempotency is keyed by TicketNumbe
 
   assert.equal(created.status, 201);
 
-  // Payload เดิมทุกอย่าง (TicketNumber+TicketNo เดิม) -> REPLAYED
+  // Payload เดิมทุกอย่าง (TicketNumber+TicketNo+ตลาดเดิม) -> REPLAYED
   const replayed = await server.request("POST", "/api/gate/tickets", {
     body: buildBody("TKT-A", "012"),
     headers,
@@ -1052,54 +1065,212 @@ test("POST /api/gate/tickets replay/mismatch idempotency is keyed by TicketNumbe
   assert.equal(differentTicketNo.status, 201);
   assert.equal(differentTicketNo.body.Result, "CREATED");
 
-  // ref เดิม (TicketNumber+TicketNo เดิม) แต่ payload ต่างกัน -> 409
-  const sameRefDifferentPayload = await server.request("POST", "/api/gate/tickets", {
-    body: { ...buildBody("TKT-A", "012"), LicensePlate: "DIFFERENT-PLATE" },
+  // TicketNumber+TicketNo เดิม ("TKT-A") แต่เป็นคนละตลาด ("099" ไม่ใช่ "012") -> ยังต้อง Reject เหมือนเดิม
+  // (ตลาดเดียวกันเท่านั้นที่อนุญาตให้ส่ง TicketNo ซ้ำได้เพื่อ Append ดู test "appends a new booth..."
+  // ถ้าคนละตลาดต้องให้ Admin ยกเลิก Ticket เดิมก่อนถึงจะส่ง TicketNo นี้ซ้ำได้ ดู test
+  // "cancel then recreate...")
+  const sameTicketNoDifferentMarket = await server.request("POST", "/api/gate/tickets", {
+    body: buildBody("TKT-A", "099"),
     headers,
   });
 
-  assert.equal(sameRefDifferentPayload.status, 409);
-  assert.equal(sameRefDifferentPayload.body.code, "GATE_TRANSACTION_REF_PAYLOAD_MISMATCH");
+  assert.equal(sameTicketNoDifferentMarket.status, 409);
+  assert.equal(sameTicketNoDifferentMarket.body.code, "GATE_TICKET_ALREADY_EXISTS");
 });
 
-test("POST /api/gate/tickets auto-closes TicketNumber once TicketCount is reached", async () => {
+test("POST /api/gate/tickets appends a new booth into the same Ticket when TicketNo and market both repeat, but rejects a repeated BoothCode", async () => {
   const headers = await gateAuthHeaders();
-  const ticketNumber = "TRUCK-COUNT-001";
-  const buildBody = (ticketNo: string, marketSuffix: string, ticketCount?: number) => ({
+  const ticketNumber = toFourteenDigitId("TRUCK-APPEND-001");
+  const ticketNo = toFourteenDigitId("TKT-APPEND-001");
+  const buildBody = (
+    boothCode: string,
+    productCode: string,
+    packageCode: string,
+    quantity: number,
+  ) => ({
     TicketNumber: ticketNumber,
     TicketNo: ticketNo,
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
-    TicketCount: ticketCount,
     BoothCount: 1,
-    MarketCode: `MARKET-${marketSuffix}`,
-    LicensePlate: "COUNT-001",
+    // MARKET-004 มี Booth ที่ seed ไว้ 2 ตัวคือ STALL-004 กับ STALL-004-B — ใช้ตลาดนี้เพื่อให้มี
+    // BoothCode ที่สองที่ resolve กับ master data ได้จริงสำหรับทดสอบ Append
+    MarketCode: "MARKET-004",
+    LicensePlate: "APPEND-001",
     LicensePlateProvince: "Bangkok",
     VehicleTypeCode: "PICKUP",
     VehicleTypeName: "Pickup truck",
     Booths: [
       {
-        BoothCode: `STALL-${marketSuffix}`,
-        Products: [{ ProductCode: "02020300", PackageCode: "29", Quantity: 180 }],
+        BoothCode: boothCode,
+        Products: [{ ProductCode: productCode, PackageCode: packageCode, Quantity: quantity }],
       },
     ],
     Dispatch: true,
   });
 
-  await server.request("POST", "/api/gate/tickets", {
-    body: buildBody("TKT-1", "005", 2),
+  // Cherry qty 100 ใช้คน 2 -> booth แรกของ Ticket ใช้คน 2
+  const first = await server.request("POST", "/api/gate/tickets", {
+    body: buildBody("STALL-004", "02030103", "19", 100),
     headers,
   });
 
-  let vehicleJob = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
-  assert.equal(vehicleJob.tickets_closed_at ?? null, null);
+  assert.equal(first.status, 201);
 
-  await server.request("POST", "/api/gate/tickets", {
-    body: buildBody("TKT-2", "006", 2),
+  const vehicleJobBeforeAppend = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
+  const marketJobBeforeAppend = state.marketJobs.find((market) => market.vehicle_job_id === vehicleJobBeforeAppend.id)!;
+  // Snapshot เป็นค่า primitive ไว้ก่อน เพราะ marketJobBeforeAppend เป็น object reference เดียวกับที่
+  // จะถูก mutate ตอน append (state.marketJobs ไม่ได้ clone) อ่านทีหลังจะได้ค่า "after" ไปแล้ว
+  const workersRequiredBeforeAppend = marketJobBeforeAppend.workers_required;
+
+  // TicketNo + ตลาดเดิม แต่ BoothCode ใหม่ (ไม่ชนของเดิม) -> Append เข้า Ticket เดิม ไม่สร้างใบใหม่
+  // Rambutan qty 180 ใช้คน 3 (มากกว่า booth แรก) -> workers_required ของ Ticket ต้องขยับขึ้นเป็น MAX ใหม่
+  const appended = await server.request("POST", "/api/gate/tickets", {
+    body: buildBody("STALL-004-B", "02020300", "29", 180),
     headers,
   });
 
-  vehicleJob = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
+  assert.equal(appended.status, 201);
+  assert.equal(
+    state.marketJobs.filter((market) => market.vehicle_job_id === vehicleJobBeforeAppend.id).length,
+    1,
+    "ต้องยังเป็น MarketJob ใบเดิม ไม่สร้างใหม่"
+  );
+
+  const marketJobAfterAppend = state.marketJobs.find((market) => market.id === marketJobBeforeAppend.id)!;
+
+  // MAX(2, 3) = 3 -- Append เอา MAX ระหว่างของเดิมกับของคำขอนี้ (แผงเดิมไม่ถูกแตะ ค่าเดิมยังถูกต้องอยู่)
+  assert.equal(workersRequiredBeforeAppend, 2);
+  assert.equal(marketJobAfterAppend.workers_required, 3);
+  assert.equal(marketJobAfterAppend.booth_count, 2);
+  assert.equal(
+    state.gateTickets.filter((ticket) => ticket.market_job_id === marketJobBeforeAppend.id).length,
+    2
+  );
+
+  // ส่ง BoothCode ที่มีอยู่แล้วใน Ticket นี้ซ้ำ -> Reject (เปลี่ยน LicensePlate ให้ payload ไม่ตรงกับ
+  // request แรกเป๊ะๆ ไม่งั้นจะถูกจับเป็น REPLAYED ก่อนถึง booth-collision guard)
+  const duplicateBooth = await server.request("POST", "/api/gate/tickets", {
+    body: { ...buildBody("STALL-004", "02030103", "19", 100), LicensePlate: "APPEND-001-RETRY" },
+    headers,
+  });
+
+  assert.equal(duplicateBooth.status, 409);
+  assert.equal(duplicateBooth.body.code, "GATE_BOOTH_ALREADY_EXISTS_IN_TICKET");
+});
+
+test("POST /api/gate/tickets sets ticketsClosedAt immediately on the very first Ticket created, without any TicketCount", async () => {
+  const headers = await gateAuthHeaders();
+  const ticketNumber = toFourteenDigitId("TRUCK-CLOSE-001");
+
+  const response = await server.request("POST", "/api/gate/tickets", {
+    body: {
+      TicketNumber: ticketNumber,
+      TicketNo: toFourteenDigitId("TKT-CLOSE-001"),
+      TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+      BoothCount: 1,
+      MarketCode: "MARKET-005",
+      LicensePlate: "CLOSE-001",
+      LicensePlateProvince: "Bangkok",
+      VehicleTypeCode: "PICKUP",
+      VehicleTypeName: "Pickup truck",
+      Booths: [
+        {
+          BoothCode: "STALL-005",
+          Products: [{ ProductCode: "02020300", PackageCode: "29", Quantity: 180 }],
+        },
+      ],
+      Dispatch: true,
+    },
+    headers,
+  });
+
+  assert.equal(response.status, 201);
+
+  const vehicleJob = state.vehicleJobs.find((job) => job.ticket_number === ticketNumber)!;
+
   assert.ok(vehicleJob.tickets_closed_at);
+  assert.equal(vehicleJob.expected_ticket_count, 1);
+});
+
+test("POST /api/gate/tickets allows the same TicketNo to be reused after an Admin cancels the Ticket, keeping the cancelled Ticket as history", async () => {
+  const headers = await gateAuthHeaders();
+  const { token: adminToken } = await loginJobAdmin(9701);
+  const ticketNumber = toFourteenDigitId("TRUCK-CANCEL-REUSE-001");
+  const ticketNo = toFourteenDigitId("TKT-CANCEL-REUSE-001");
+  const buildBody = (marketCode: string, boothCode: string, productCode: string, packageCode: string, quantity: number) => ({
+    TicketNumber: ticketNumber,
+    TicketNo: ticketNo,
+    TicketCreatedAt: "2026-07-23T14:30:00+07:00",
+    BoothCount: 1,
+    MarketCode: marketCode,
+    LicensePlate: "CANCEL-REUSE-001",
+    LicensePlateProvince: "Bangkok",
+    VehicleTypeCode: "PICKUP",
+    VehicleTypeName: "Pickup truck",
+    Booths: [
+      {
+        BoothCode: boothCode,
+        Products: [{ ProductCode: productCode, PackageCode: packageCode, Quantity: quantity }],
+      },
+    ],
+    Dispatch: true,
+  });
+
+  const first = await server.request("POST", "/api/gate/tickets", {
+    body: buildBody("MARKET-007", "STALL-007", "02020300", "29", 180),
+    headers,
+  });
+
+  assert.equal(first.status, 201);
+
+  // ส่ง TicketNo เดิมซ้ำขณะที่ Ticket แรกยัง active แต่คนละตลาด (MARKET-008 ไม่ใช่ MARKET-007) -> Reject
+  // เสมอ (TicketNo ซ้ำได้เฉพาะตลาดเดียวกันเท่านั้น ถึงจะเป็น Append ได้)
+  const rejectedWhileActive = await server.request("POST", "/api/gate/tickets", {
+    body: { ...buildBody("MARKET-008", "STALL-008", "02030103", "19", 100), LicensePlate: "CANCEL-REUSE-001-RETRY" },
+    headers,
+  });
+
+  assert.equal(rejectedWhileActive.status, 409);
+  assert.equal(rejectedWhileActive.body.code, "GATE_TICKET_ALREADY_EXISTS");
+
+  const originalMarketJob = state.marketJobs.find((market) => market.ticket_no === ticketNo)!;
+  const originalMarketJobId = originalMarketJob.id;
+
+  const cancelResponse = await server.request("POST", "/api/admin/jobs/cancel", {
+    token: adminToken,
+    body: {
+      target_type: "market",
+      target_ref: "MARKET-007",
+    },
+  });
+
+  assert.equal(cancelResponse.status, 200);
+  assert.equal(
+    state.marketJobs.find((market) => market.id === originalMarketJobId)!.status,
+    "CANCELLED"
+  );
+
+  // TicketNo เดิมว่างแล้วหลังถูกยกเลิก -> Gate สร้าง Business Ticket ใหม่ด้วย TicketNo เดิม (แม้กับ
+  // ตลาดเดิม MARKET-007 ที่เพิ่งถูกยกเลิกไป) ได้ทันที
+  const recreated = await server.request("POST", "/api/gate/tickets", {
+    body: { ...buildBody("MARKET-007", "STALL-007", "02030103", "19", 100), LicensePlate: "CANCEL-REUSE-001-NEW" },
+    headers,
+  });
+
+  assert.equal(recreated.status, 201);
+  assert.equal(recreated.body.Result, "CREATED");
+  assert.equal(recreated.body.Ticket.TicketNo, ticketNo);
+
+  // แถวเดิมที่ถูกยกเลิกยังอยู่เป็นประวัติ ไม่ถูกลบหรือใช้ซ้ำในที่เดิม + มีแถวใหม่แยกต่างหากที่ active
+  const marketJobsWithSameTicketNo = state.marketJobs.filter(
+    (market) => market.ticket_no === ticketNo
+  );
+
+  assert.equal(marketJobsWithSameTicketNo.length, 2);
+  assert.ok(marketJobsWithSameTicketNo.some((market) => market.id === originalMarketJobId && market.status === "CANCELLED"));
+  assert.ok(
+    marketJobsWithSameTicketNo.some((market) => market.id !== originalMarketJobId && market.status !== "CANCELLED")
+  );
 });
 
 /* -------------------------------------- Admin Worker Status Route Tests -------------------------------------- */

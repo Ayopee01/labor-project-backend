@@ -1171,6 +1171,31 @@ export const workerApplicationRepositoryMock = {
     // การปิด Roster เป็น COMPLETED เกิดเฉพาะตอน Lock ที่ finalizeMarketJobFinancials
     // เพราะ Business Ticket หนึ่งอาจมีหลาย Booth และ Booth นี้เป็นเพียงใบเดียวที่จบ
 
+    // Snapshot รายชื่อ TicketWorker ที่ยัง WORKING ณ ตอนแผงนี้ confirm สำเร็จ — ใช้เป็นตัวหารเงิน
+    // ของแผงนี้โดยเฉพาะตอน finalize (ดู findMarketJobFinancializationContext)
+    const workingWorkers = state.ticketWorkers.filter(
+      (worker) =>
+        worker.market_job_id === ticket.market_job_id &&
+        worker.status === "WORKING",
+    );
+
+    for (const worker of workingWorkers) {
+      const alreadySnapshotted = state.gateTicketWorkerSnapshots.some(
+        (snapshot) =>
+          snapshot.gate_ticket_id === ticketId &&
+          snapshot.ticket_worker_id === worker.id,
+      );
+
+      if (!alreadySnapshotted) {
+        state.gateTicketWorkerSnapshots.push({
+          id: state.nextGateTicketWorkerSnapshotId++,
+          gate_ticket_id: ticketId,
+          ticket_worker_id: worker.id,
+          created_at: completedAt,
+        });
+      }
+    }
+
     return {
       ticket,
       submission,
@@ -1219,6 +1244,15 @@ export const workerApplicationRepositoryMock = {
       .map((ticket) => ({
         id: ticket.id,
         status: ticket.status,
+        workerSnapshots: state.gateTicketWorkerSnapshots
+          .filter((snapshot) => snapshot.gate_ticket_id === ticket.id)
+          .sort((left, right) => left.id - right.id)
+          .map((snapshot) => ({
+            id: snapshot.id,
+            gateTicketId: snapshot.gate_ticket_id,
+            ticketWorkerId: snapshot.ticket_worker_id,
+            createdAt: new Date(snapshot.created_at),
+          })),
         products: state.ticketProducts
           .filter((product) => product.ticket_id === ticket.id)
           .sort((left, right) => left.id - right.id)
@@ -1791,8 +1825,14 @@ export const gateRepositoryMock = {
   ) =>
     state.marketJobs.find(
       (market) =>
-        market.vehicle_job_id === vehicleJobId && market.ticket_no === ticketNo,
+        market.vehicle_job_id === vehicleJobId &&
+        market.ticket_no === ticketNo &&
+        market.status !== "CANCELLED",
     ) ?? null,
+  findGateTicketBoothCodesByMarketJobId: async (marketJobId: number) =>
+    state.gateTickets
+      .filter((ticket) => ticket.market_job_id === marketJobId)
+      .map((ticket) => ticket.boothCode),
   listGateMarketOptions: async (marketCode?: string) => {
     const seen = new Set<string>();
 
@@ -1885,7 +1925,7 @@ export const gateRepositoryMock = {
       license_plate_province: string;
       vehicle_type?: string | null;
       dispatch_now?: boolean;
-      expected_ticket_count?: number;
+      existingMarketJobId?: number;
       markets: Array<{
         ticketNo: string;
         ticket_created_at: Date;
@@ -1945,7 +1985,7 @@ export const gateRepositoryMock = {
         dispatch_now: dispatchNow,
         status: dispatchNow ? "WORKING" : "WAIT",
         driver_qr_token: `driver-qr-${vehicleJobId}`,
-        expected_ticket_count: input.expected_ticket_count ?? null,
+        expected_ticket_count: null,
         tickets_closed_at: null,
         created_at: now,
         updated_at: now,
@@ -1957,9 +1997,6 @@ export const gateRepositoryMock = {
       vehicleJob.license_plate_province = input.license_plate_province;
       vehicleJob.vehicle_type = input.vehicle_type ?? null;
       vehicleJob.dispatch_now = vehicleJob.dispatch_now || dispatchNow;
-      if (input.expected_ticket_count !== undefined) {
-        vehicleJob.expected_ticket_count = input.expected_ticket_count;
-      }
       if (dispatchNow && vehicleJob.status === "WAIT") {
         vehicleJob.status = "WORKING";
       }
@@ -1968,33 +2005,54 @@ export const gateRepositoryMock = {
 
     const marketStatus =
       vehicleJob.status === "WORKING" || dispatchNow ? "WORKING" : "WAIT";
-    const marketJobId =
-      Math.max(0, state.nextMarketJobId - 1, ...state.marketJobs.map((m) => m.id)) +
-      1;
 
-    state.nextMarketJobId = marketJobId + 1;
+    let marketJob: (typeof state.marketJobs)[number];
+    let marketJobId: number;
 
-    const marketJob = {
-      id: marketJobId,
-      vehicle_job_id: vehicleJob.id,
-      ticket_no: market.ticketNo,
-      ticket_created_at: market.ticket_created_at.toISOString(),
-      booth_count: market.booth_count,
-      gate_transaction_ref: market.gate_transaction_ref,
-      workers_required: requestedWorkersRequired,
-      marketCode: market.marketCode,
-      marketName: market.marketName,
-      dropoff_point: market.dropoff_point ?? null,
-      status: marketStatus,
-      worker_roster_locked_at: null,
-      final_stall_amount: null,
-      financialized_at: null,
-      completed_at: null,
-      created_at: now,
-      updated_at: now,
-    };
+    if (input.existingMarketJobId !== undefined) {
+      // Gate ส่งแผงชุดใหม่มาเพิ่มเข้า Ticket เดิม (TicketNo + ตลาดเดิม) — บวก boothCount เพิ่ม และ
+      // workers_required ใช้ MAX ระหว่างของเดิมกับของคำขอนี้ (แผงเดิมไม่ถูกแตะ ค่าเดิมยังถูกต้องอยู่)
+      const existing = state.marketJobs.find(
+        (item) => item.id === input.existingMarketJobId,
+      )!;
 
-    state.marketJobs.push(marketJob);
+      existing.booth_count += market.booth_count;
+      existing.workers_required = Math.max(
+        existing.workers_required,
+        requestedWorkersRequired,
+      );
+      existing.gate_transaction_ref = market.gate_transaction_ref;
+      existing.updated_at = now;
+      marketJob = existing;
+      marketJobId = existing.id;
+    } else {
+      marketJobId =
+        Math.max(0, state.nextMarketJobId - 1, ...state.marketJobs.map((m) => m.id)) +
+        1;
+      state.nextMarketJobId = marketJobId + 1;
+
+      marketJob = {
+        id: marketJobId,
+        vehicle_job_id: vehicleJob.id,
+        ticket_no: market.ticketNo,
+        ticket_created_at: market.ticket_created_at.toISOString(),
+        booth_count: market.booth_count,
+        gate_transaction_ref: market.gate_transaction_ref,
+        workers_required: requestedWorkersRequired,
+        marketCode: market.marketCode,
+        marketName: market.marketName,
+        dropoff_point: market.dropoff_point ?? null,
+        status: marketStatus,
+        worker_roster_locked_at: null,
+        final_stall_amount: null,
+        financialized_at: null,
+        completed_at: null,
+        created_at: now,
+        updated_at: now,
+      };
+
+      state.marketJobs.push(marketJob);
+    }
 
     let ticketId =
       Math.max(0, ...state.gateTickets.map((ticket) => ticket.id)) + 1;
@@ -2002,7 +2060,7 @@ export const gateRepositoryMock = {
       Math.max(0, ...state.ticketProducts.map((product) => product.id)) + 1;
 
     for (const boothInput of market.booths) {
-      const ticket = {
+      const ticket: (typeof state.gateTickets)[number] = {
         id: ticketId++,
         vehicle_job_id: vehicleJob.id,
         market_job_id: marketJobId,
@@ -2066,25 +2124,20 @@ export const gateRepositoryMock = {
       });
     }
 
-    // Worker requirement ของ TicketNumber = ผลรวม (SUM) ของทุก Business Ticket ห้ามใช้ MAX
+    // Worker requirement ของ TicketNumber = ผลรวม (SUM) ของทุก Business Ticket ที่ยัง active
+    // (ไม่นับแถวที่ถูก Admin ยกเลิกไปแล้ว) ห้ามใช้ MAX
     vehicleJob.workers_required = state.marketJobs
-      .filter((item) => item.vehicle_job_id === vehicleJob.id)
+      .filter(
+        (item) => item.vehicle_job_id === vehicleJob.id && item.status !== "CANCELLED",
+      )
       .reduce((total, item) => total + item.workers_required, 0);
 
-    // ปิดรับ Ticket เพิ่มอัตโนมัติถ้า Gate บอกจำนวน Ticket ทั้งหมดไว้ล่วงหน้าและมาครบแล้ว
-    if (
-      !vehicleJob.tickets_closed_at &&
-      vehicleJob.expected_ticket_count !== null &&
-      vehicleJob.expected_ticket_count !== undefined
-    ) {
-      const ticketCount = state.marketJobs.filter(
-        (item) => item.vehicle_job_id === vehicleJob.id,
-      ).length;
-
-      if (ticketCount >= vehicleJob.expected_ticket_count) {
-        vehicleJob.tickets_closed_at = now;
-      }
-    }
+    // Gate ไม่ส่งจำนวน Ticket มาบอกล่วงหน้าอีกต่อไป — ปิดรับทันทีตั้งแต่ Ticket แรกที่สร้างสำเร็จ
+    // (ตั้งครั้งเดียว) expected_ticket_count เป็นแค่ค่านับ Ticket ที่ active จริง ณ ตอนนี้ไว้แสดงผล
+    vehicleJob.tickets_closed_at = vehicleJob.tickets_closed_at ?? now;
+    vehicleJob.expected_ticket_count = state.marketJobs.filter(
+      (item) => item.vehicle_job_id === vehicleJob.id && item.status !== "CANCELLED",
+    ).length;
 
     state.gateRequestLogs.push({
       gate_transaction_ref: market.gate_transaction_ref,
@@ -2159,7 +2212,9 @@ export const marketJobRepositoryMock = {
   ) =>
     state.marketJobs.find(
       (market) =>
-        market.vehicle_job_id === vehicleJobId && market.ticket_no === ticketNo,
+        market.vehicle_job_id === vehicleJobId &&
+        market.ticket_no === ticketNo &&
+        market.status !== "CANCELLED",
     ) ?? null,
   findMarketJobById: async (id: number) =>
     state.marketJobs.find((market) => market.id === id) ?? null,

@@ -151,21 +151,24 @@ VehicleJob (TicketNumber)                 = "รถหนึ่งคัน" ท
 
 เกิดขึ้นเมื่อ **ทุกบูธของ Business Ticket ใบเดียวกัน** ปิดจบแล้ว (`COMPLETED` หรือ `CANCELLED` ทั้งหมด):
 
-1. ล็อก roster ของ `MarketJob` นั้น (`workerRosterLockedAt`) — หลังจากนี้ห้ามเพิ่ม/ลบสมาชิกของใบนี้อีก
-2. คำนวณเงินต่อสินค้าแต่ละรายการ (`src/utils/labor-job-pricing.ts` — สูตรเดียว ใช้ทุกที่ ห้ามมีสูตรคำนวณซ้ำที่อื่น) แบ่งเป็น:
+1. **Snapshot ตัวหารต่อบูธ** เกิดขึ้นก่อนหน้านี้แล้ว ตั้งแต่ตอนแต่ละบูธ `COMPLETED` จริง (vendor confirm หรือ auto-confirm timeout) — ที่ `confirmTicketCompletion` จะบันทึก `GateTicketWorkerSnapshot` ของ `TicketWorker` ทุกคนที่ยัง `WORKING` ณ ตอนนั้น ผูกกับบูธนั้นโดยเฉพาะ (คนละชุดกันได้ในแต่ละบูธของ Ticket เดียวกัน)
+2. ล็อก roster ของ `MarketJob` นั้น (`workerRosterLockedAt`) — หลังจากนี้ห้ามเพิ่ม/ลบสมาชิกของใบนี้อีก (เป็น guard เชิง operational เท่านั้น ไม่ใช่ตัวหารเงิน)
+3. คำนวณเงินต่อสินค้าแต่ละรายการ (`src/utils/labor-job-pricing.ts` — สูตรเดียว ใช้ทุกที่ ห้ามมีสูตรคำนวณซ้ำที่อื่น) แบ่งเป็น:
    - ค่าแผง (stall fee) ตาม weight range ของสินค้า
-   - ค่าแรง (labor fee) หารเท่า ๆ กันตามจำนวนคนงานที่ active บน Business Ticket นั้น ปัดเศษแล้วเก็บเศษที่เหลือเป็น `fund_amount`
-3. บันทึกผลเป็น `TicketProductFinancial` (fix ค่าแล้ว อ่านซ้ำได้ไม่คำนวณใหม่) และ `TicketWorkerPayment` ต่อคนงานแต่ละคน
-4. เขียน `TicketWorker.finalEarningAmount` เป็นยอดรวมที่คนงานคนนั้นได้จาก Business Ticket ใบนี้ — ค่านี้คือ **แหล่งความจริงเดียว (source of truth)** ของรายได้ ห้าม endpoint ไหนคำนวณใหม่ ต้องอ่านค่านี้ตรง ๆ เท่านั้น
+   - ค่าแรง (labor fee) หารเท่า ๆ กันตามจำนวนคนงานใน **Snapshot ของบูธนั้นโดยเฉพาะ** (ไม่ใช่ roster สุดท้ายของทั้ง Ticket) ปัดเศษแล้วเก็บเศษที่เหลือเป็น `fund_amount` — คนงานที่ถูกยกเลิกออกจากทีมหลังบูธนั้น confirm ไปแล้วยังนับอยู่ในตัวหารของบูธนั้น ส่วนคนที่เข้าทีมหลังบูธนั้น confirm ไปแล้วจะไม่ถูกนับ
+4. บันทึกผลเป็น `TicketProductFinancial` (fix ค่าแล้ว อ่านซ้ำได้ไม่คำนวณใหม่) และ `TicketWorkerPayment` ต่อคนงานแต่ละคนที่อยู่ใน Snapshot ของบูธนั้น
+5. เขียน `TicketWorker.finalEarningAmount` เป็นยอดรวมที่คนงานคนนั้นได้จากทุกบูธที่เขาอยู่ใน Snapshot ภายใต้ Business Ticket ใบนี้ (ไม่จำเป็นต้องทุกบูธของ Ticket) — ค่านี้คือ **แหล่งความจริงเดียว (source of truth)** ของรายได้ ห้าม endpoint ไหนคำนวณใหม่ ต้องอ่านค่านี้ตรง ๆ เท่านั้น
 
 ### 4.6 ปิดงานทั้งคันและคืนคนงานเข้าคิว
 
 รถคันหนึ่งจะถูกมองว่า "จบงานทั้งคัน" ต่อเมื่อครบ 2 เงื่อนไข:
 
 1. ทุก Business Ticket ของรถคันนั้น terminal หมดแล้ว (`COMPLETED`/`CANCELLED`)
-2. Gate ได้ "ปิดรับ Ticket เพิ่ม" แล้ว (`ticketsClosedAt` ถูกตั้งค่าอัตโนมัติเมื่อจำนวน Business Ticket ที่สร้างจริงถึง `TicketCount` ที่ Gate ระบุมาใน `POST /api/gate/tickets` — Gate รู้ค่านี้เสมอตั้งแต่ตอนสร้างออเดอร์ เพราะเท่ากับจำนวนตลาดที่ต่างกันในออเดอร์นั้น จึงเป็น required field ไม่มี endpoint close แยกต่างหากอีกต่อไป)
+2. Gate ได้ "ปิดรับ Ticket เพิ่ม" แล้ว (`ticketsClosedAt` ถูกตั้งค่าอัตโนมัติทันทีที่ Business Ticket แรกของรถคันนั้นถูกสร้างสำเร็จ — Gate ไม่ต้องส่งจำนวน Ticket มาบอกล่วงหน้าอีกต่อไป เพราะแต่ละ `POST /api/gate/tickets` คือ Ticket ที่สมบูรณ์ในตัวเองเสมอ ไม่มีสัญญาณ "รอ Ticket อื่นตามมาอีก" จาก Gate เลย)
 
 เมื่อครบทั้งสองเงื่อนไข: `VehicleJob.status = COMPLETED`, ทุก assignment เปลี่ยนเป็น `COMPLETED`, และคนงานถูกคืนเข้าคิว Redis (`returnCompletedWorkersToQueue`)
+
+`TicketNo` อิงตามตลาดเดียวเสมอ — ถ้า Gate ส่ง `TicketNo` + `MarketCode` เดิมซ้ำขณะที่ Ticket เดิมยัง active จะถูก**เพิ่มแผงเข้า Ticket เดิม** (append) ไม่สร้างใบใหม่ (`workersRequired` ของ Ticket นั้นถูก recompute เป็น MAX ระหว่างค่าเดิมกับ MAX ของคำขอนี้) ส่ง BoothCode ที่มีอยู่แล้วซ้ำจะถูก reject ด้วย `GATE_BOOTH_ALREADY_EXISTS_IN_TICKET` และถ้า Ticket นั้น worker roster ถูก lock ไปแล้ว (financialize ไปแล้ว) จะถูก reject ด้วย `GATE_TICKET_ROSTER_LOCKED` แต่ถ้าส่ง `TicketNo` เดิมพร้อม `MarketCode` ที่**ต่างไป** ขณะ Ticket เดิมยัง active จะถูก reject เสมอด้วย `GATE_TICKET_ALREADY_EXISTS` (TicketNo ห้ามซ้ำข้ามตลาด) ถ้า Ticket ที่สร้างไปผิดทั้งใบ (เช่นผิดตลาด) ต้องให้ Admin ยกเลิกก่อน (`POST /api/admin/jobs/cancel`) แถวเดิมที่ถูกยกเลิกจะถูกเก็บไว้เป็นประวัติ (ไม่ลบ ไม่ถูกใช้ซ้ำในที่เดิม) และ Gate จะส่ง `TicketNo` เดิมซ้ำเพื่อสร้าง Business Ticket ใหม่ภายใต้ `TicketNumber` เดิมได้ทันที ไม่ว่าจะตลาดเดิมหรือตลาดใหม่ก็ตาม (unique constraint ที่ DB บังคับเฉพาะ Ticket ที่ยัง active เท่านั้น)
 
 นอกจากนี้ **Admin ปล่อยคนงานกลับคิวก่อนเวลาได้** ผ่าน `POST /api/admin/vehicle-jobs/:ticketNumber/release-workers` โดยไม่ต้องรอให้รถทั้งคันปิดงาน — ใช้ได้ทันทีที่ทุกบูธ**ส่งยอดครบแล้ว** (`DELIVERED`/`COMPLETED`/`CANCELLED`) **ไม่ต้องรอ Vendor ยืนยันก่อน** เพราะงานทางกายภาพของคนงานจบตั้งแต่ส่งยอด ปล่อยแล้วสถานะบูธ/งานยังไม่เปลี่ยนเป็น complete จนกว่า Vendor จะยืนยันหรือ timeout จริง (ดูหัวข้อ 6)
 
@@ -331,7 +334,7 @@ npm run test:all           # ทั้งหมดต่อกัน
 | Admin Audit | `/api/admin/audit` | สถิติผลงานคนงาน |
 | Admin Settings | `/api/admin/settings`, `/api/admin/gate-clients` | ตั้งค่าระบบ, จัดการ Gate client |
 | Admin Realtime | `/api/admin/events` | SSE stream |
-| Gate | `/api/gate` | สร้างตั๋ว (ปิดรับตั๋วเพิ่มอัตโนมัติผ่าน `TicketCount` ในคำขอเดียวกัน), ตัวเลือก market/booth/product |
+| Gate | `/api/gate` | สร้าง/เพิ่มแผงเข้าตั๋ว (ปิดรับตั๋วเพิ่มอัตโนมัติทันทีที่ตั๋วแรกถูกสร้าง), ตัวเลือก market/booth/product |
 | Driver | `/api/driver` | สแกน QR คนขับ, ดูงานปัจจุบัน |
 | Worker Application | `/api/workers/me` | online/offline/break, รับงาน, สแกน barcode เช็คอิน, ส่งยอด, ประวัติ, รายได้ |
 | LINE | `/api/line/webhook` | vendor confirm/reject/rating |

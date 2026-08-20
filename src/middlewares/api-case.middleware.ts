@@ -121,7 +121,6 @@ const requestKeyMap: Record<string, string> = {
   TargetType: "target_type",
   TicketNumber: "ticket_number",
   TicketNo: "ticket_no",
-  TicketCount: "ticket_count",
   TodayJobCount: "today_job_count",
   TokenType: "token_type",
   TimeoutReason: "timeout_reason",

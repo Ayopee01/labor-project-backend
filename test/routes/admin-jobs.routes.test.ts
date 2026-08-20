@@ -5,6 +5,7 @@ import {
   addAdmin,
   addDispatchableJob,
   addGateClient,
+  addMarketJobForVehicle,
   addPendingAssignment,
   addTicketForVehicleJob,
   addWorker,
@@ -49,12 +50,23 @@ async function loginWorker(accountId: number): Promise<{ token: string; worker: 
 }
 
 // Function เธชเธฃเนเธฒเธ gate vehicle job body เธชเธณเธซเธฃเธฑเธ test
+// Function สร้างเลข 14 หลักแบบ deterministic จาก seed string สำหรับ TicketNumber/TicketNo ใน test
+// (validation ปัจจุบันบังคับตัวเลขล้วน 14 หลักเท่านั้น) seed เดิมจะได้เลขเดิมเสมอ
+function toFourteenDigitId(seed: string): string {
+  let hash = 0;
+
+  for (let index = 0; index < seed.length; index++) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+
+  return String(hash).padStart(14, "0");
+}
+
 function buildGateVehicleJobBody(suffix: string) {
   return {
-    TicketNumber: `TRUCK-20260723-${suffix}`,
-    TicketNo: `TKT-20260723-${suffix}`,
+    TicketNumber: toFourteenDigitId(`TRUCK-20260723-${suffix}`),
+    TicketNo: toFourteenDigitId(`TKT-20260723-${suffix}`),
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
-    TicketCount: 1,
     BoothCount: 1,
     MarketCode: `MARKET-${suffix}`,
     LicensePlate: `ABC-${suffix}`,
@@ -1176,7 +1188,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   );
 });
 
-test("worker globally cancelled before Business Ticket roster locks forfeits earnings from an already-completed booth of that ticket", async () => {
+test("worker globally cancelled before Business Ticket roster locks still keeps earnings from an already-completed booth of that ticket", async () => {
   const { token: workerToken, worker } = await loginWorker(9801);
   const { token: replacementToken, worker: replacementWorker } = await loginWorker(9802);
   const { token: adminToken } = await loginJobAdmin(9800);
@@ -1368,24 +1380,27 @@ test("worker globally cancelled before Business Ticket roster locks forfeits ear
   assert.ok(secondTicket.final_stall_amount);
   assert.ok(secondTicket.financialized_at);
 
-  // Worker เดิมถูก Cancel ก่อน Lock -> ไม่ได้รับเงินจาก Ticket นี้เลย แม้จะเป็นคนส่งของ Booth 1
+  // Worker เดิมถูก Cancel ก่อน Lock ของทั้ง Ticket แต่ตอน Booth 1 confirm เขายัง WORKING อยู่จริง ->
+  // Snapshot ของ Booth 1 ผูกกับเขาไปแล้ว จึงยังได้เงินจาก Booth 1 (2 products) แม้สถานะ roster
+  // สุดท้ายจะเป็น CANCELLED ก็ตาม — นี่คือพฤติกรรมใหม่ที่แก้ให้แฟร์ขึ้น (ไม่ forfeit ย้อนหลัง)
   assert.equal(sharedTicketWorker.status, "CANCELLED");
-  assert.equal(sharedTicketWorker.final_earning_amount ?? null, null);
+  assert.ok(sharedTicketWorker.final_earning_amount);
   assert.equal(
-    state.ticketWorkerPayments.some(
+    state.ticketWorkerPayments.filter(
       (payment) => payment.ticket_worker_id === sharedTicketWorker.id
-    ),
-    false
+    ).length,
+    2 // Booth 1 เท่านั้น (2 products)
   );
 
-  // Worker ทดแทนเป็นคนเดียวใน Roster ตอน Lock -> ได้เงินเต็มจากสินค้าของ "ทั้งสอง" Booth
+  // Worker ทดแทนเข้าร่วม roster หลัง Booth 1 confirm ไปแล้ว จึงไม่อยู่ใน Snapshot ของ Booth 1 ->
+  // ได้เงินเฉพาะ Booth 2 ที่ตัวเองทำจริงเท่านั้น ไม่ใช่ทั้งสอง Booth เหมือน behavior เดิม
   assert.equal(replacementTicketWorker.status, "COMPLETED");
   assert.ok(replacementTicketWorker.final_earning_amount);
   assert.equal(
     state.ticketWorkerPayments.filter(
       (payment) => payment.ticket_worker_id === replacementTicketWorker.id
     ).length,
-    4 // 2 booths x 2 products
+    2 // Booth 2 เท่านั้น (2 products)
   );
 
   /* -------------------------------------- Admin Financial API -------------------------------------- */
@@ -1405,23 +1420,332 @@ test("worker globally cancelled before Business Ticket roster locks forfeits ear
   const financialFirstBooth = financialResponse.body.booths.find(
     (booth: { ticket_id: number }) => booth.ticket_id === firstTicket.id
   );
+  const financialSecondBooth = financialResponse.body.booths.find(
+    (booth: { ticket_id: number }) => booth.ticket_id === secondTicket.id
+  );
 
   assert.ok(financialFirstBooth);
+  assert.ok(financialSecondBooth);
 
-  const cancelledWorkerRow = financialFirstBooth.workers.find(
+  const cancelledWorkerInFirstBooth = financialFirstBooth.workers.find(
     (item: { worker_code: string }) => item.worker_code === worker.username
   );
-  const replacementWorkerRow = financialFirstBooth.workers.find(
+  const replacementWorkerInFirstBooth = financialFirstBooth.workers.find(
+    (item: { worker_code: string }) => item.worker_code === replacementWorker.username
+  );
+  const cancelledWorkerInSecondBooth = financialSecondBooth.workers.find(
+    (item: { worker_code: string }) => item.worker_code === worker.username
+  );
+  const replacementWorkerInSecondBooth = financialSecondBooth.workers.find(
     (item: { worker_code: string }) => item.worker_code === replacementWorker.username
   );
 
-  // Worker ที่ถูก Cancel ยังต้องมองเห็นได้ใน Roster เพื่อการตรวจสอบ แต่ total_amount ของ Booth ต้องเป็น 0
-  assert.ok(cancelledWorkerRow);
-  assert.equal(cancelledWorkerRow.membership_status, "CANCELLED");
-  assert.equal(cancelledWorkerRow.total_amount, "0.00");
+  // Booth 1 (Snapshot = worker เดิมเท่านั้น ตอนนั้น replacement ยังไม่เข้า roster) -> worker เดิมได้
+  // เงินจริง แม้ status สุดท้ายจะเป็น CANCELLED, replacement ไม่มีส่วนใน Booth นี้เลย (แสดงเป็น 0
+  // เพื่อให้ตรวจสอบได้ว่าเขาไม่ได้ทำ Booth นี้)
+  assert.ok(cancelledWorkerInFirstBooth);
+  assert.equal(cancelledWorkerInFirstBooth.membership_status, "CANCELLED");
+  assert.notEqual(cancelledWorkerInFirstBooth.total_amount, "0.00");
 
-  assert.ok(replacementWorkerRow);
-  assert.equal(replacementWorkerRow.membership_status, "COMPLETED");
+  assert.ok(replacementWorkerInFirstBooth);
+  assert.equal(replacementWorkerInFirstBooth.total_amount, "0.00");
+
+  // Booth 2 (Snapshot = worker ทดแทนเท่านั้น ตอนนั้น worker เดิมถูก Cancel ไปแล้ว) -> กลับกัน
+  assert.ok(cancelledWorkerInSecondBooth);
+  assert.equal(cancelledWorkerInSecondBooth.total_amount, "0.00");
+
+  assert.ok(replacementWorkerInSecondBooth);
+  assert.equal(replacementWorkerInSecondBooth.membership_status, "COMPLETED");
+  assert.notEqual(replacementWorkerInSecondBooth.total_amount, "0.00");
+});
+
+// Test เดียวกับตัวอย่างที่คุยกัน: TicketNumber มี 3 ตลาด (3 Business Ticket) ทีมงาน 11 คนถูก dispatch
+// มาทั้งคัน Ticket 1 และ Ticket 2 ทำครบทั้ง 2 แผงด้วยทีม 11 คนเต็ม แต่ Ticket 3 แผง 2 เหลือแค่ 8 คน
+// (Admin ถอน 3 คนออกจาก Roster ของ Ticket 3 นี้โดยเฉพาะ หลังแผง 1 ของ Ticket 3 confirm ไปแล้ว) ->
+// พิสูจน์ว่าแผง 1 ของ Ticket 3 ยังหารด้วย 11 (Snapshot ตอนแผงนั้น confirm) ส่วนแผง 2 หารด้วย 8 จริง
+// และ Admin เห็นรายชื่อ Worker แยกตามแผงได้ว่าใครหายไปจากแผงไหน
+test("financializes each booth of a multi-market TicketNumber against its own worker snapshot, not the vehicle-wide final roster", async () => {
+  const { token: submitterToken, worker: submitter } = await loginWorker(8391);
+  const { token: adminToken } = await loginJobAdmin(8390);
+
+  const job = addDispatchableJob(1390, 11);
+
+  // ทีมงาน 11 คนถูก Scan เข้าเช็คอินรถคันนี้ทั้งหมด (submitter คนเดียวพอสำหรับยิง API ส่งยอดแทนทีม)
+  const teamWorkers = [submitter];
+
+  for (let index = 2; index <= 11; index++) {
+    teamWorkers.push(addWorker(8390 + index));
+  }
+
+  teamWorkers.forEach((teamWorker, index) => {
+    const assignment = addPendingAssignment(19390 + index, job.id, teamWorker.id);
+
+    assignment.status = "SCANNED";
+    assignment.scanned_at = new Date().toISOString();
+  });
+
+  // TicketNumber นี้มี 3 ตลาด (3 Business Ticket) แต่ละใบมี 2 แผง
+  const market1 = addMarketJobForVehicle(job.id, {
+    id: 3390,
+    ticket_no: "TICKET-1390-3390",
+    marketCode: "MARKET-1390-A",
+    workers_required: 5,
+  });
+  const market2 = addMarketJobForVehicle(job.id, {
+    id: 3391,
+    ticket_no: "TICKET-1390-3391",
+    marketCode: "MARKET-1390-B",
+    workers_required: 4,
+  });
+  const market3 = addMarketJobForVehicle(job.id, {
+    id: 3392,
+    ticket_no: "TICKET-1390-3392",
+    marketCode: "MARKET-1390-C",
+    workers_required: 2,
+  });
+
+  const t1a = addTicketForVehicleJob(job.id, 43390, market1.id);
+  const t1b = addTicketForVehicleJob(job.id, 43391, market1.id);
+  const t2a = addTicketForVehicleJob(job.id, 43392, market2.id);
+  const t2b = addTicketForVehicleJob(job.id, 43393, market2.id);
+  const t3a = addTicketForVehicleJob(job.id, 43394, market3.id);
+  const t3b = addTicketForVehicleJob(job.id, 43395, market3.id);
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+
+  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  const processor = state.workerProcessors.get(queueName);
+
+  assert.ok(processor, "Assignment timeout processor must be registered.");
+
+  // Function ช่วยส่งยอด + ให้ vendor confirm หนึ่งแผง (submitter คนเดียวยิงแทนทีมทั้งหมด)
+  const submitAndConfirmBooth = async (
+    ticket: ReturnType<typeof addTicketForVehicleJob>,
+    marketJob: ReturnType<typeof addMarketJobForVehicle>
+  ) => {
+    const products = state.ticketProducts.filter(
+      (product) => product.ticket_id === ticket.id
+    );
+
+    const submitResponse = await server.request(
+      "POST",
+      `/api/workers/me/assignments/${job.ticket_number}/tickets/complete`,
+      {
+        token: submitterToken,
+        body: {
+          ticket_no: marketJob.ticket_no,
+          boothCode: ticket.boothCode,
+          // Quantity ใหญ่กว่าปกติ (ทีมงาน 11 คนใน test นี้) เพื่อให้ค่าแรงต่อคนหลังหารแล้วไม่ปัดลงเป็น 0
+          // บาทจนแยกไม่ออกว่า "อยู่ใน Snapshot แต่ได้ 0 พอดี" กับ "ไม่อยู่ใน Snapshot เลย"
+          items: products.map((product, index) => ({
+            productCode: product.productCode,
+            packageCode: product.packageCode,
+            confirmed_quantity: index === 0 ? 110 : 44,
+          })),
+        },
+      }
+    );
+
+    assert.equal(submitResponse.status, 200);
+
+    const submission = state.completionSubmissions.at(-1)!;
+
+    await processor({
+      data: {
+        ticketId: ticket.id,
+        submissionId: submission.id,
+        kind: "vendor_confirm",
+      },
+    });
+  };
+
+  /* -------------------------------------- Ticket 1: ทั้ง 2 แผงทำครบด้วยทีม 11 คน -------------------------------------- */
+
+  await submitAndConfirmBooth(t1a, market1);
+  await submitAndConfirmBooth(t1b, market1);
+
+  assert.ok(market1.financialized_at);
+  assert.ok(market1.worker_roster_locked_at);
+
+  /* -------------------------------------- Ticket 2: ทั้ง 2 แผงทำครบด้วยทีม 11 คน -------------------------------------- */
+
+  await submitAndConfirmBooth(t2a, market2);
+  await submitAndConfirmBooth(t2b, market2);
+
+  assert.ok(market2.financialized_at);
+  assert.ok(market2.worker_roster_locked_at);
+
+  /* -------------------------------------- Ticket 3 แผง 1: ยังเป็นทีม 11 คนเต็ม -------------------------------------- */
+
+  await submitAndConfirmBooth(t3a, market3);
+
+  // Ticket 3 ยัง Finalize ไม่ได้ เพราะแผง 2 ยังไม่ Terminal
+  assert.equal(market3.financialized_at ?? null, null);
+
+  /* -------------------------------------- Admin ถอน worker 3 คนออกจาก Ticket 3 นี้เท่านั้น -------------------------------------- */
+
+  // เว้น submitter (index 0) ไว้ ไม่ถอนออก เพราะยังต้องใช้ยิง API ส่งยอดแผง 2 ต่อ
+  const droppedWorkers = teamWorkers.slice(1, 4);
+
+  for (const droppedWorker of droppedWorkers) {
+    const cancelResponse = await server.request(
+      "POST",
+      `/api/admin/vehicle-jobs/${job.ticket_number}/tickets/${market3.ticket_no}/workers/${droppedWorker.username}/cancel`,
+      {
+        token: adminToken,
+        body: {
+          reason: "reassigned to another Business Ticket of the same truck",
+        },
+      }
+    );
+
+    assert.equal(cancelResponse.status, 200);
+  }
+
+  // ทั้ง 11 คนยัง Scan เช็คอินอยู่บนรถเหมือนเดิม (ไม่ได้ถูกถอน Assignment ระดับรถ) แค่ถูกถอนออกจาก
+  // Roster ของ Ticket 3 นี้เท่านั้น ทีมงานยังส่งยอดแผงถัดไปของ Ticket 3 ได้ตามปกติ ไม่ติด
+  // WORKERS_NOT_CHECKED_IN
+
+  /* -------------------------------------- Ticket 3 แผง 2: เหลือ 8 คน -------------------------------------- */
+
+  await submitAndConfirmBooth(t3b, market3);
+
+  assert.ok(market3.financialized_at);
+  assert.ok(market3.worker_roster_locked_at);
+
+  /* -------------------------------------- ตรวจ worker_count ที่บันทึกไว้ต่อแผง -------------------------------------- */
+
+  const boothOneFinancials = state.ticketProducts
+    .filter((product) => product.ticket_id === t3a.id)
+    .map(
+      (product) =>
+        state.ticketProductFinancials.find(
+          (financial) => financial.ticket_product_id === product.id
+        )!
+    );
+  const boothTwoFinancials = state.ticketProducts
+    .filter((product) => product.ticket_id === t3b.id)
+    .map(
+      (product) =>
+        state.ticketProductFinancials.find(
+          (financial) => financial.ticket_product_id === product.id
+        )!
+    );
+
+  assert.equal(boothOneFinancials.length, 2);
+  assert.equal(boothTwoFinancials.length, 2);
+
+  for (const financial of boothOneFinancials) {
+    assert.ok(financial);
+    assert.equal(financial.worker_count, 11);
+  }
+
+  for (const financial of boothTwoFinancials) {
+    assert.ok(financial);
+    assert.equal(financial.worker_count, 8);
+  }
+
+  /* -------------------------------------- ตรวจว่า worker ที่ถูกถอนยังได้เงินจากแผง 1 แต่ไม่ได้จากแผง 2 -------------------------------------- */
+
+  const boothOneFinancialIds = boothOneFinancials.map((financial) => financial.id);
+  const boothTwoFinancialIds = boothTwoFinancials.map((financial) => financial.id);
+
+  for (const droppedWorker of droppedWorkers) {
+    const ticketWorker = state.ticketWorkers.find(
+      (item) =>
+        item.market_job_id === market3.id &&
+        item.worker_account_id === droppedWorker.id
+    )!;
+
+    assert.ok(ticketWorker);
+    assert.equal(ticketWorker.status, "CANCELLED");
+    // ยังได้เงินจากแผง 1 ที่ทำไปจริงตอนยัง WORKING อยู่ ไม่ถูกริบย้อนหลัง
+    assert.ok(ticketWorker.final_earning_amount);
+
+    const paymentsForBoothOne = state.ticketWorkerPayments.filter(
+      (payment) =>
+        payment.ticket_worker_id === ticketWorker.id &&
+        boothOneFinancialIds.includes(payment.ticket_product_financial_id)
+    );
+    const paymentsForBoothTwo = state.ticketWorkerPayments.filter(
+      (payment) =>
+        payment.ticket_worker_id === ticketWorker.id &&
+        boothTwoFinancialIds.includes(payment.ticket_product_financial_id)
+    );
+
+    assert.equal(paymentsForBoothOne.length, 2); // 2 products ของแผง 1
+    assert.equal(paymentsForBoothTwo.length, 0); // ไม่มีส่วนในแผง 2 เลย เพราะไม่ได้อยู่ใน Snapshot
+  }
+
+  // 8 คนที่เหลือต้องได้เงินจากทั้งสองแผง (แผงละ 2 products = รวม 4 payment ต่อคน)
+  const remainingWorkers = teamWorkers.filter(
+    (teamWorker) => !droppedWorkers.includes(teamWorker)
+  );
+
+  for (const remainingWorker of remainingWorkers) {
+    const ticketWorker = state.ticketWorkers.find(
+      (item) =>
+        item.market_job_id === market3.id &&
+        item.worker_account_id === remainingWorker.id
+    )!;
+
+    assert.ok(ticketWorker);
+    assert.equal(ticketWorker.status, "COMPLETED");
+
+    const totalPayments = state.ticketWorkerPayments.filter(
+      (payment) => payment.ticket_worker_id === ticketWorker.id
+    );
+
+    assert.equal(totalPayments.length, 4);
+  }
+
+  /* -------------------------------------- Admin Financial API: ต้องแยกรายแผงได้ว่าใครหายไปจากแผงไหน -------------------------------------- */
+
+  const financialResponse = await server.request(
+    "GET",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/financials`,
+    {
+      token: adminToken,
+    }
+  );
+
+  assert.equal(financialResponse.status, 200);
+
+  const financialBoothOne = financialResponse.body.booths.find(
+    (booth: { ticket_id: number }) => booth.ticket_id === t3a.id
+  );
+  const financialBoothTwo = financialResponse.body.booths.find(
+    (booth: { ticket_id: number }) => booth.ticket_id === t3b.id
+  );
+
+  assert.ok(financialBoothOne);
+  assert.ok(financialBoothTwo);
+
+  for (const droppedWorker of droppedWorkers) {
+    const rowInBoothOne = financialBoothOne.workers.find(
+      (item: { worker_code: string }) => item.worker_code === droppedWorker.username
+    );
+    const rowInBoothTwo = financialBoothTwo.workers.find(
+      (item: { worker_code: string }) => item.worker_code === droppedWorker.username
+    );
+
+    // แผง 1: เขายังทำงานอยู่ตอนนั้น -> ได้เงินจริง
+    assert.ok(rowInBoothOne);
+    assert.notEqual(rowInBoothOne.total_amount, "0.00");
+
+    // แผง 2: ถูกถอนไปก่อนแล้ว -> เห็นชื่อได้เพื่อตรวจสอบ แต่ total_amount ต้องเป็น 0 ชัดเจนว่า "หายไป"
+    assert.ok(rowInBoothTwo);
+    assert.equal(rowInBoothTwo.total_amount, "0.00");
+  }
+
+  for (const remainingWorker of remainingWorkers) {
+    const rowInBoothTwo = financialBoothTwo.workers.find(
+      (item: { worker_code: string }) => item.worker_code === remainingWorker.username
+    );
+
+    assert.ok(rowInBoothTwo);
+    assert.notEqual(rowInBoothTwo.total_amount, "0.00");
+  }
 });
 
 test("ticket financialization keeps Gate rate snapshot after MasterRate changes", async () => {

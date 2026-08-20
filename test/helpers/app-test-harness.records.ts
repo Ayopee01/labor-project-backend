@@ -227,6 +227,15 @@ export type TicketWorkerPaymentRecord = {
   final_amount: string;
 };
 
+// Snapshot ของ TicketWorker ที่ยัง WORKING ณ ตอนแผง (gate ticket) นี้ confirm — ใช้เป็นตัวหารเงิน
+// ของแผงนั้นโดยเฉพาะตอน finalize แทน roster สุดท้ายของทั้ง Business Ticket
+export type GateTicketWorkerSnapshotRecord = {
+  id: number;
+  gate_ticket_id: number;
+  ticket_worker_id: number;
+  created_at: string;
+};
+
 export type TicketCompletionSubmissionRecord = {
   id: number;
   ticket_id: number;

@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "0f55f6b6-4a4f-4f5f-8b75-9f5d37a07f38",
-    "name": "Labor Project Backend - Local",
-    "description": "Local Postman collection for Labor Project Backend.\nEvery request shows its contract explicitly in that request: method, URL, required headers, query params, and body.\nProtected requests use Header: Authorization: Bearer {{accessToken}}.\nRun Auth > POST /api/auth/login first to get AccessToken and RefreshToken.",
+    "name": "Labor Project Backend",
+    "description": "Postman collection for Labor Project Backend. baseUrl defaults to the Render dev server (https://labor-project-backend-dev.onrender.com) — change the baseUrl variable if you want to test against a local server instead.\nEvery request shows its contract explicitly in that request: method, URL, required headers, query params, and body.\nProtected requests use Header: Authorization: Bearer {{accessToken}}.\nRun Auth > POST /api/auth/login first to get AccessToken and RefreshToken.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -27,15 +27,15 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:8080",
+      "value": "https://labor-project-backend-dev.onrender.com",
       "type": "string",
-      "description": "Local backend base URL for testing."
+      "description": "Backend base URL for testing."
     },
     {
       "key": "wsBaseUrl",
-      "value": "ws://localhost:8080",
+      "value": "wss://labor-project-backend-dev.onrender.com",
       "type": "string",
-      "description": "Local backend WebSocket base URL for Worker Mobile realtime connection."
+      "description": "Backend WebSocket base URL for Worker Mobile realtime connection."
     },
     {
       "key": "accessToken",
@@ -105,13 +105,13 @@
     },
     {
       "key": "ticketNumber",
-      "value": "TRUCK-20260723-001",
+      "value": "20260723000001",
       "type": "string",
       "description": "TicketNumber (vehicle-level identity) returned as the top-level TicketNumber field by POST /api/gate/tickets. Used by all /api/admin/vehicle-jobs/{ticketNumber}/... routes. Do not confuse with ticketNo, which is the Business Ticket identity (Ticket.TicketNo)."
     },
     {
       "key": "ticketNo",
-      "value": "TKT-20260804-000001",
+      "value": "20260804000002",
       "type": "string",
       "description": "ticketNo returned by POST /api/gate/tickets. With the Gate payload this equals TicketNo."
     },
@@ -402,50 +402,6 @@
           "response": []
         },
         {
-          "name": "POST /api/auth/push-token",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text",
-                "description": "Required for protected routes. Format: Bearer <AccessToken>."
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/push-token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "push-token"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/push-token\nAuth: Worker access token\nBody: FcmToken required, Platform optional. DeviceId is optional and defaults to the current session DeviceId.\nResponse: StatusCode, Code, Message, WorkerCode, DeviceId, Platform. FcmToken is not returned.\nNotes: Use after login when FcmToken was not available during Auth login, or whenever Firebase SDK returns a refreshed token. This endpoint does not request a token from Firebase; Mobile must obtain the FCM token from Firebase SDK first. Backend stores token by WorkerCode + DeviceId + Platform and uses it for worker push notifications."
-          },
-          "response": []
-        },
-        {
           "name": "POST /api/auth/refresh",
           "event": [
             {
@@ -525,6 +481,50 @@
               "type": "noauth"
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/auth/logout\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Backend reads session_id from access token and revokes that session."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/push-token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text",
+                "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/push-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "push-token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/push-token\nAuth: Worker access token\nBody: FcmToken required, Platform optional. DeviceId is optional and defaults to the current session DeviceId.\nResponse: StatusCode, Code, Message, WorkerCode, DeviceId, Platform. FcmToken is not returned.\nNotes: Use after login when FcmToken was not available during Auth login, or whenever Firebase SDK returns a refreshed token. This endpoint does not request a token from Firebase; Mobile must obtain the FCM token from Firebase SDK first. Backend stores token by WorkerCode + DeviceId + Platform and uses it for worker push notifications."
           },
           "response": []
         },
@@ -609,89 +609,6 @@
       "name": "Admin Workers",
       "item": [
         {
-          "name": "POST /api/admin/users",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text",
-                "description": "Required for protected routes. Format: Bearer <AccessToken>."
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "Image",
-                  "type": "file",
-                  "src": [],
-                  "description": "Optional worker profile image. Allowed: jpg, png, webp. Max 5 MB."
-                },
-                {
-                  "key": "FullName",
-                  "value": "Worker One",
-                  "type": "text"
-                },
-                {
-                  "key": "Phone",
-                  "value": "0812345678",
-                  "type": "text"
-                },
-                {
-                  "key": "Nationality",
-                  "value": "Myanmar",
-                  "type": "text"
-                },
-                {
-                  "key": "ShirtType",
-                  "value": "Navy",
-                  "type": "text"
-                },
-                {
-                  "key": "ShirtNumber",
-                  "value": "12",
-                  "type": "text"
-                },
-                {
-                  "key": "WorkStartDate",
-                  "value": "2026-07-03",
-                  "type": "text",
-                  "description": "Optional. First working date. If omitted, backend uses the current Bangkok date."
-                },
-                {
-                  "key": "ShiftNo",
-                  "value": "1",
-                  "type": "text",
-                  "description": "Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00."
-                },
-                {
-                  "key": "Status",
-                  "value": "active",
-                  "type": "text"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/users",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "users"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data from create-worker UI. Optional file field: image. Text fields: FullName, Phone, Nationality, ShirtType, ShirtNumber, ShiftNo, optional WorkStartDate, Status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. ShiftNo 1 uses preset 08:00-18:00 and ShiftNo 2 uses preset 18:00-08:00. WorkStartDate is optional; if omitted, backend uses the current Bangkok date. Uploaded image is stored under /uploads/workers and saved as accounts.ImageUrl. JSON body with ImageUrl/img is still supported when no file upload is needed."
-          },
-          "response": []
-        },
-        {
           "name": "GET /api/admin/users",
           "request": {
             "method": "GET",
@@ -768,6 +685,89 @@
               "type": "noauth"
             },
             "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{workerCode}} must be WorkerCode, for example MN000012. Response is trimmed for worker edit UI: ImageUrl, WorkerCode, FullName, Status, and Details. Details includes Phone, Position, Nationality, ShirtNumber, ShirtType, WorkStartDate, ShiftNo, ShiftStartTime, ShiftEndTime, and ShiftName."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text",
+                "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "ImageUrl",
+                  "value": "",
+                  "type": "text",
+                  "description": "Optional worker profile image URL. Leave blank or omit for null — the backend never requires this field."
+                },
+                {
+                  "key": "FullName",
+                  "value": "Worker One",
+                  "type": "text"
+                },
+                {
+                  "key": "Phone",
+                  "value": "0812345678",
+                  "type": "text"
+                },
+                {
+                  "key": "Nationality",
+                  "value": "Myanmar",
+                  "type": "text"
+                },
+                {
+                  "key": "ShirtType",
+                  "value": "Navy",
+                  "type": "text"
+                },
+                {
+                  "key": "ShirtNumber",
+                  "value": "12",
+                  "type": "text"
+                },
+                {
+                  "key": "WorkStartDate",
+                  "value": "2026-07-03",
+                  "type": "text",
+                  "description": "Optional. First working date. If omitted, backend uses the current Bangkok date."
+                },
+                {
+                  "key": "ShiftNo",
+                  "value": "1",
+                  "type": "text",
+                  "description": "Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00."
+                },
+                {
+                  "key": "Status",
+                  "value": "active",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data. ImageUrl (text, optional) — leave blank or omit entirely for null; the frontend passes a URL string here (e.g. a pre-uploaded CDN link), not a file. Text fields: FullName, Phone, Nationality, ShirtType, ShirtNumber, ShiftNo, optional WorkStartDate, Status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. ShiftNo 1 uses preset 08:00-18:00 and ShiftNo 2 uses preset 18:00-08:00. WorkStartDate is optional; if omitted, backend uses the current Bangkok date. ImageUrl is saved as-is to accounts.image_url — no upload/processing happens server-side for this field. A real binary file upload is still accepted too, via a separate multipart file field named Image (not shown in this example) which the backend saves under /uploads/workers and uses instead of ImageUrl if both are sent."
           },
           "response": []
         },
@@ -1954,234 +1954,6 @@
           "response": []
         },
         {
-          "name": "GET /api/admin/gate-clients",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/gate-clients",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "gate-clients"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/gate-clients\nAuth: Admin access token with gate_clients:read permission\nBody: None\nNotes: Lists Gate clients for system-to-system authentication. Response never includes ClientSecret or SecretHash."
-          },
-          "response": []
-        },
-        {
-          "name": "POST /api/admin/gate-clients",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (body.ClientId) pm.collectionVariables.set('gateClientId', String(body.ClientId));",
-                  "if (body.ClientSecret) pm.collectionVariables.set('gateClientSecret', String(body.ClientSecret));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ClientId\": \"gate-main\",\n  \"Name\": \"Main Gate\",\n  \"Status\": \"active\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/gate-clients",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "gate-clients"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/gate-clients\nAuth: Admin access token with gate_clients:create permission\nBody: name required, optional ClientId and status active|inactive\nNotes: Creates a Gate client credential. ClientSecret is shown only once in this response and is saved to {{gateClientSecret}} for Postman testing. Backend stores only SecretHash in DB."
-          },
-          "response": []
-        },
-        {
-          "name": "PATCH /api/admin/gate-clients/:clientId",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"Name\": \"Main Gate\",\n  \"Status\": \"active\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/gate-clients/{{gateClientId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "gate-clients",
-                "{{gateClientId}}"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/gate-clients/{{gateClientId}}\nAuth: Admin access token with gate_clients:update permission\nBody: name and/or status active|inactive\nNotes: Activate/disable a Gate client without exposing or changing its secret."
-          },
-          "response": []
-        },
-        {
-          "name": "POST /api/admin/gate-clients/:clientId/secret/rotate",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (body.ClientSecret) pm.collectionVariables.set('gateClientSecret', String(body.ClientSecret));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/gate-clients/{{gateClientId}}/secret/rotate",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "gate-clients",
-                "{{gateClientId}}",
-                "secret",
-                "rotate"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/gate-clients/{{gateClientId}}/secret/rotate\nAuth: Admin access token with gate_clients:rotate_secret permission\nBody: None\nNotes: Generates a new ClientSecret for the same ClientId and replaces the stored SecretHash. The old secret stops working immediately. The new secret is shown only once and saved to {{gateClientSecret}}."
-          },
-          "response": []
-        },
-        {
-          "name": "POST /api/admin/admins",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (body.Account?.Id) pm.collectionVariables.set('adminUserId', String(body.Account.Id));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"Username\": \"manager01\",\n  \"Password\": \"Manager@123456\",\n  \"FullName\": \"Branch Manager\",\n  \"Position\": \"Manager\",\n  \"Email\": \"manager@simmummuang.local\",\n  \"Phone\": \"081-000-0002\",\n  \"PermissionLevel\": \"manager\",\n  \"Permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"gate_clients:read\",\n    \"gate_clients:create\",\n    \"gate_clients:update\",\n    \"gate_clients:rotate_secret\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:extend_deadline\"\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/admins",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "admins"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/admins\nAuth: Admin access token with admins:create permission\nBody: username, password, FullName, optional position/email/phone/status, PermissionLevel owner|manager|supervisor, and permissions array\nNotes: Creates role=admin only and saves email/phone to accounts.email/accounts.phone when provided. Seed owner admin can create manager/supervisor. Manager can create supervisor only. No API can create owner because the actor must have a higher PermissionLevel than the new account. Saves created account id to {{adminUserId}}."
-          },
-          "response": []
-        },
-        {
           "name": "GET /api/admin/users/:id/permissions",
           "request": {
             "method": "GET",
@@ -2254,6 +2026,273 @@
               "type": "noauth"
             },
             "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{adminUserId}}/permissions\nAuth: Admin access token with permissions:update permission\nBody: PermissionLevel, optional status active|inactive, and permissions array\nNotes: Updates admin PermissionLevel, status, and permissions, then revokes active sessions of that admin account. Permission is stored per account from DB. The actor must have a higher PermissionLevel rank than both the target admin and the new PermissionLevel. The target admin must login again to receive the latest permissions/status in the token."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/admin/gate-clients",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/gate-clients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "gate-clients"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/gate-clients\nAuth: Admin access token with gate_clients:read permission\nBody: None\nNotes: Lists Gate clients for system-to-system authentication. Response never includes ClientSecret or SecretHash."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/admin/gate-clients/:clientId",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Name\": \"Main Gate\",\n  \"Status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/gate-clients/{{gateClientId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "gate-clients",
+                "{{gateClientId}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/gate-clients/{{gateClientId}}\nAuth: Admin access token with gate_clients:update permission\nBody: name and/or status active|inactive\nNotes: Activate/disable a Gate client without exposing or changing its secret."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/admins",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.Account?.Id) pm.collectionVariables.set('adminUserId', String(body.Account.Id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Username\": \"manager01\",\n  \"Password\": \"Manager@123456\",\n  \"FullName\": \"Branch Manager\",\n  \"Position\": \"Manager\",\n  \"Email\": \"manager@simmummuang.local\",\n  \"Phone\": \"081-000-0002\",\n  \"PermissionLevel\": \"manager\",\n  \"Permissions\": [\n    \"settings:read\",\n    \"roles:read\",\n    \"gate_clients:read\",\n    \"gate_clients:create\",\n    \"gate_clients:update\",\n    \"gate_clients:rotate_secret\",\n    \"permissions:read\",\n    \"workers:read\",\n    \"workers:create\",\n    \"workers:update\",\n    \"workers:reset_password\",\n    \"workers:force_status\",\n    \"jobs:read\",\n    \"jobs:assign\",\n    \"jobs:cancel\",\n    \"jobs:extend_deadline\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "admins"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/admins\nAuth: Admin access token with admins:create permission\nBody: username, password, FullName, optional position/email/phone/status, PermissionLevel owner|manager|supervisor, and permissions array\nNotes: Creates role=admin only and saves email/phone to accounts.email/accounts.phone when provided. Seed owner admin can create manager/supervisor. Manager can create supervisor only. No API can create owner because the actor must have a higher PermissionLevel than the new account. Saves created account id to {{adminUserId}}."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/gate-clients",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.ClientId) pm.collectionVariables.set('gateClientId', String(body.ClientId));",
+                  "if (body.ClientSecret) pm.collectionVariables.set('gateClientSecret', String(body.ClientSecret));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ClientId\": \"gate-main\",\n  \"Name\": \"Main Gate\",\n  \"Status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/gate-clients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "gate-clients"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/gate-clients\nAuth: Admin access token with gate_clients:create permission\nBody: name required, optional ClientId and status active|inactive\nNotes: Creates a Gate client credential. ClientSecret is shown only once in this response and is saved to {{gateClientSecret}} for Postman testing. Backend stores only SecretHash in DB."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/admin/gate-clients/:clientId/secret/rotate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.ClientSecret) pm.collectionVariables.set('gateClientSecret', String(body.ClientSecret));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/gate-clients/{{gateClientId}}/secret/rotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "gate-clients",
+                "{{gateClientId}}",
+                "secret",
+                "rotate"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/gate-clients/{{gateClientId}}/secret/rotate\nAuth: Admin access token with gate_clients:rotate_secret permission\nBody: None\nNotes: Generates a new ClientSecret for the same ClientId and replaces the stored SecretHash. The old secret stops working immediately. The new secret is shown only once and saved to {{gateClientSecret}}."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin Realtime",
+      "item": [
+        {
+          "name": "GET /api/admin/events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "events"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/events\nAuth: Admin access token\nPermission: jobs:read\nHeaders: Authorization: Bearer {{accessToken}}, Accept: text/event-stream\nBody: None\nNotes: Admin-only SSE stream. It stays open and receives realtime dashboard events. Snapshot/latest state should still be loaded from Admin REST APIs."
           },
           "response": []
         }
@@ -2401,7 +2440,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"TicketNumber\": \"TRUCK-20260804-001\",\n  \"TicketNo\": \"TKT-20260804-000001\",\n  \"TicketCreatedAt\": \"2026-08-04T14:30:00+07:00\",\n  \"TicketCount\": 1,\n  \"BoothCount\": 2,\n  \"MarketCode\": \"1123\",\n  \"LicensePlate\": \"ABC-1234\",\n  \"LicensePlateProvince\": \"Bangkok\",\n  \"VehicleTypeCode\": \"PICKUP\",\n  \"VehicleTypeName\": \"Pickup truck\",\n  \"Booths\": [\n    {\n      \"BoothCode\": \"OM3/40\",\n      \"Products\": [\n        {\n          \"ProductCode\": \"02020300\",\n          \"PackageCode\": \"29\",\n          \"Quantity\": 180\n        }\n      ]\n    },\n    {\n      \"BoothCode\": \"OM1/1\",\n      \"Products\": [\n        {\n          \"ProductCode\": \"02030103\",\n          \"PackageCode\": \"19\",\n          \"Quantity\": 100\n        },\n        {\n          \"ProductCode\": \"02011701\",\n          \"PackageCode\": \"19\",\n          \"Quantity\": 80\n        }\n      ]\n    }\n  ],\n  \"Dispatch\": true\n}",
+              "raw": "{\n  \"TicketNumber\": \"20260804000001\",\n  \"TicketNo\": \"20260804000002\",\n  \"TicketCreatedAt\": \"2026-08-04T14:30:00+07:00\",\n  \"BoothCount\": 2,\n  \"MarketCode\": \"1123\",\n  \"LicensePlate\": \"ABC-1234\",\n  \"LicensePlateProvince\": \"Bangkok\",\n  \"VehicleTypeCode\": \"PICKUP\",\n  \"VehicleTypeName\": \"Pickup truck\",\n  \"Booths\": [\n    {\n      \"BoothCode\": \"OM3/40\",\n      \"Products\": [\n        {\n          \"ProductCode\": \"02020300\",\n          \"PackageCode\": \"29\",\n          \"Quantity\": 180\n        }\n      ]\n    },\n    {\n      \"BoothCode\": \"OM1/1\",\n      \"Products\": [\n        {\n          \"ProductCode\": \"02030103\",\n          \"PackageCode\": \"19\",\n          \"Quantity\": 100\n        },\n        {\n          \"ProductCode\": \"02011701\",\n          \"PackageCode\": \"19\",\n          \"Quantity\": 80\n        }\n      ]\n    }\n  ],\n  \"Dispatch\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2434,7 +2473,7 @@
                 }
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create credentials with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: One request per Business Ticket (TicketNo), always against exactly one MarketCode. A vehicle (TicketNumber) may generate multiple Business Tickets over time as it unloads at different markets — send the same TicketNumber again with a new TicketNo; no duplicate vehicle job is created. Required root fields: TicketNumber, TicketNo, TicketCreatedAt, TicketCount, BoothCount, MarketCode, LicensePlate, LicensePlateProvince, VehicleTypeCode, VehicleTypeName, Booths, Dispatch. TicketCount is the total number of Business Tickets Gate will send for this TicketNumber (the number of distinct markets in the order) — Gate always knows this upfront; send the same value on every request for the same TicketNumber. Each Booth requires BoothCode and Products. Each Product requires ProductCode, PackageCode, Quantity. BoothCount must equal Booths.length. BoothCode cannot be duplicated in the same request. ProductCode + PackageCode cannot be duplicated inside the same booth.\nFinancial boundary: Gate Quantity is operational/dispatch quantity only. The backend may snapshot the applicable Master rate internally at Gate Create, but Gate Create does not calculate or expose StallPayment, WorkerPayment, OrderRemainder, Fund, or final financial amounts. Financialization happens only after worker-confirmed quantities are vendor-confirmed or auto-confirmed.\nResponse: Result, TicketNumber, Ticket, Market, Booths with operational product data, WorkerCount for dispatch, and Qr (DriverQrToken only, shared across the whole vehicle). Workers check in by scanning the barcode already printed on the physical Gate paper ticket (Ticket.TicketNo) — no separate QR field is generated. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload.\nIdempotency: Gate transaction ref is derived from TicketNumber + TicketNo (not MarketCode, since one Business Ticket is already always one market). Same payload returns REPLAYED. Same idempotency key with a different payload returns 409.\nVehicle closing: once the number of Business Tickets created for a TicketNumber reaches TicketCount, and every booth across all of them is terminal, the vehicle job completes and its workers return to queue automatically. There is no separate close endpoint.\nNotes: Saves gateResult, ticketNumber, ticketNo, marketCode, first BoothCode, first ProductCode, first PackageCode, workerCount, and driverQrToken into collection variables."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create credentials with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: One request per Business Ticket (TicketNo), always against exactly one MarketCode. TicketNumber and TicketNo must both be exactly 14 digits, numbers only. A vehicle (TicketNumber) may generate multiple Business Tickets over time as it unloads at different markets — send the same TicketNumber again with a new TicketNo; no duplicate vehicle job is created. TicketNo is scoped to one market: sending the same TicketNo again under the same TicketNumber and the same MarketCode (while that Ticket is still active) appends the new Booths/Products into the existing Business Ticket instead of creating a new one. Appending a BoothCode that already exists in that Ticket is rejected with GATE_BOOTH_ALREADY_EXISTS_IN_TICKET, and appending after that Ticket's worker roster is already locked is rejected with GATE_TICKET_ROSTER_LOCKED. Sending the same TicketNo again for a *different* MarketCode is always rejected with GATE_TICKET_ALREADY_EXISTS. If a Ticket was created with wrong data (wrong market, needs a full redo), an Admin must cancel it first (POST /api/admin/jobs/cancel); once cancelled, that exact TicketNo becomes free again and Gate can resend it under the same TicketNumber (any MarketCode) to create a brand-new Business Ticket — the cancelled Ticket is kept untouched as history. WorkerCount for a Ticket is the MAX (not sum) across every product in every booth of that Ticket, recomputed as the MAX between the Ticket's current value and this request's own MAX. Required root fields: TicketNumber, TicketNo, TicketCreatedAt, BoothCount, MarketCode, LicensePlate, LicensePlateProvince, VehicleTypeCode, VehicleTypeName, Booths, Dispatch. Gate does not send a ticket count — the number of active Business Tickets under a TicketNumber is simply however many active markets have a Ticket. Each Booth requires BoothCode and Products. Each Product requires ProductCode, PackageCode, Quantity. BoothCount must equal Booths.length. BoothCode cannot be duplicated in the same request. ProductCode + PackageCode cannot be duplicated inside the same booth.\nFinancial boundary: Gate Quantity is operational/dispatch quantity only. The backend may snapshot the applicable Master rate internally at Gate Create, but Gate Create does not calculate or expose StallPayment, WorkerPayment, OrderRemainder, Fund, or final financial amounts. Financialization happens only after worker-confirmed quantities are vendor-confirmed or auto-confirmed.\nResponse: Result, TicketNumber, Ticket, Market, Booths with operational product data, WorkerCount for dispatch, and Qr (DriverQrToken only, shared across the whole vehicle). Workers check in by scanning the barcode already printed on the physical Gate paper ticket (Ticket.TicketNo) — no separate QR field is generated. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload.\nIdempotency: Gate transaction ref is derived from the full request payload (not just TicketNumber+TicketNo), because the same TicketNumber+TicketNo+MarketCode can legitimately be sent again with different content to append. Same payload returns REPLAYED. Same TicketNumber+TicketNo+MarketCode with different content is appended rather than rejected.\nVehicle closing: since Gate never signals \"more Tickets coming,\" intake for a vehicle closes automatically as soon as its first Business Ticket is created. Once every known Business Ticket's booths are terminal, the vehicle job completes and its workers return to queue automatically. There is no separate close endpoint.\nNotes: Saves gateResult, ticketNumber, ticketNo, marketCode, first BoothCode, first ProductCode, first PackageCode, workerCount, and driverQrToken into collection variables."
           },
           "response": []
         }
@@ -2562,6 +2601,105 @@
       "description": "WebSocket setup: Postman HTTP request items cannot open ws:// as a native WebSocket tab. Create it manually with New > WebSocket, then use {{wsBaseUrl}}/ws/workers?token={{accessToken}} and click Connect. Do this after POST /api/auth/login - Worker and before POST /api/workers/me/online. WORKER_CONNECTED payload returns WorkerCode, not internal account_id. The socket only confirms the worker realtime connection is alive; the worker becomes online/ready after POST /api/workers/me/online.",
       "item": [
         {
+          "name": "GET /api/workers/me/status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "status"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nSafe to call any time, including right after the app is closed and reopened, since CurrentJob is always re-derived live from persisted assignment state (not from a one-time push payload).\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, waiting_team, working, break. When Status is break, response includes BreakUntil, BreakUntilUnixMs, and RemainingBreakTime. Status is assigned both while the assignment is still PENDING (worker has not pressed accept yet) and once it is ACCEPTED (waiting to scan) — the two sub-cases are told apart by which deadline pair is non-null: while PENDING, CurrentJob.AcceptDeadlineAt/AcceptDeadlineUnixMs are set and ScanDeadlineAt/ScanDeadlineUnixMs are null; once ACCEPTED, ScanDeadlineAt/ScanDeadlineUnixMs are set and AcceptDeadlineAt/AcceptDeadlineUnixMs are null. When Status is waiting_team or working (worker has already scanned), all four deadline fields are null. When Status is assigned, waiting_team, or working, response includes CurrentJob with TicketNumber, LicensePlate, LicensePlateProvince, VehicleType, TeamScan, Markets[] (each with TicketNo — scan its barcode via check-in-barcode, Booths[].Products[] using Gate Quantity), and Team[].ShirtNumber/FullName/ScanStatus/ScannedAt."
+          },
+          "response": [],
+          "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, waiting_team, working, break. When Status is break, response includes BreakUntil, BreakUntilUnixMs, and RemainingBreakTime. When Status is assigned, response includes CurrentJob.ScanDeadlineAt and CurrentJob.ScanDeadlineUnixMs. When Status is waiting_team or working, CurrentJob.ScanDeadlineAt and CurrentJob.ScanDeadlineUnixMs are null. When Status is assigned, waiting_team, or working, response includes CurrentJob with TicketNo, LicensePlate, LicensePlateProvince, VehicleType, TeamScan, Markets[].Booths[].Products[] using Gate Quantity, and Team[].ShirtNumber/FullName/ScanStatus/ScannedAt."
+        },
+        {
+          "name": "GET /api/workers/me/assignments/history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "assignments",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2026-07-07",
+                  "description": "Assignment created date in YYYY-MM-DD format."
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL single date: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nURL date range: {{baseUrl}}/api/workers/me/assignments/history?date_from=2026-08-01&date_to=2026-08-14\nAuth: Worker access token\nQuery: send either date, or date_from + date_to together. All fields use YYYY-MM-DD. date cannot be combined with date_from/date_to. Range is inclusive and limited to 31 calendar days. Body: None\nResponse: Date, Summary.JobCount, Summary.AcceptTimeoutJobCount, Summary.CompletedJobCount, and Data[]. Each assignment includes TicketNo, LicensePlate, Status, Markets[].Booths[].CompletedAt, Markets[].Booths[].Products[].ConfirmedQuantity, and Rating as a single integer 1-5 or null. CompletedAt is the per-booth GateTicket completion timestamp and is null when that booth/case is not complete. No earnings, TotalEarnings, booth amount, product FinalAmount, or worker payment breakdown are returned. Dates are interpreted in Asia/Bangkok time and filter by assignment CreatedAt using [startAt, dayAfterEndAt)."
+          },
+          "response": [],
+          "description": "Method: GET\nURL single date: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nURL date range: {{baseUrl}}/api/workers/me/assignments/history?date_from=2026-08-01&date_to=2026-08-14\nAuth: Worker access token\nQuery: send either date, or date_from + date_to together. All fields use YYYY-MM-DD. date cannot be combined with date_from/date_to. Range is inclusive and limited to 31 calendar days. Body: None\nResponse: Date, Summary.JobCount, Summary.AcceptTimeoutJobCount, Summary.CompletedJobCount, and Data[]. Each assignment includes TicketNo, LicensePlate, Status, Markets[].Booths[].CompletedAt, Markets[].Booths[].Products[].ConfirmedQuantity, and Rating as a single integer 1-5 or null. CompletedAt is the per-booth GateTicket completion timestamp and is null when that booth/case is not complete. No earnings, TotalEarnings, booth amount, product FinalAmount, or worker payment breakdown are returned. Dates are interpreted in Asia/Bangkok time and filter by assignment CreatedAt using [startAt, dayAfterEndAt)."
+        },
+        {
+          "name": "GET /api/workers/me/earnings/summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/earnings/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "earnings",
+                "summary"
+              ]
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/earnings/summary\nAuth: Worker access token\nQuery: None\nBody: None\nResponse: Period.FromDate/ToDate/DayCount, TotalEarnings, Daily[15], and Details. Backend returns latest 15 completed Bangkok calendar days and excludes the current day. Details.Earnings is read from persisted TicketWorker.FinalEarningAmount."
+          },
+          "response": [],
+          "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/earnings/summary\nAuth: Worker access token\nQuery: None\nBody: None\nResponse: Period.FromDate/ToDate/DayCount, TotalEarnings, Daily[15], and Details. Backend returns latest 15 completed Bangkok calendar days and excludes the current day. Details.Earnings is read from persisted TicketWorker.FinalEarningAmount."
+        },
+        {
           "name": "POST /api/workers/me/online",
           "request": {
             "method": "POST",
@@ -2652,76 +2790,6 @@
           "response": []
         },
         {
-          "name": "GET /api/workers/me/status",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/workers/me/status",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "workers",
-                "me",
-                "status"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nSafe to call any time, including right after the app is closed and reopened, since CurrentJob is always re-derived live from persisted assignment state (not from a one-time push payload).\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, waiting_team, working, break. When Status is break, response includes BreakUntil, BreakUntilUnixMs, and RemainingBreakTime. Status is assigned both while the assignment is still PENDING (worker has not pressed accept yet) and once it is ACCEPTED (waiting to scan) — the two sub-cases are told apart by which deadline pair is non-null: while PENDING, CurrentJob.AcceptDeadlineAt/AcceptDeadlineUnixMs are set and ScanDeadlineAt/ScanDeadlineUnixMs are null; once ACCEPTED, ScanDeadlineAt/ScanDeadlineUnixMs are set and AcceptDeadlineAt/AcceptDeadlineUnixMs are null. When Status is waiting_team or working (worker has already scanned), all four deadline fields are null. When Status is assigned, waiting_team, or working, response includes CurrentJob with TicketNumber, LicensePlate, LicensePlateProvince, VehicleType, TeamScan, Markets[] (each with TicketNo — scan its barcode via check-in-barcode, Booths[].Products[] using Gate Quantity), and Team[].ShirtNumber/FullName/ScanStatus/ScannedAt."
-          },
-          "response": [],
-          "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/status\nAuth: Worker access token\nBody: None\nResponse: FullName, WorkerCode, ImageUrl, Status, TodayJobCount, BreakCountUsed, CompletedJobCount, Nationality, WorkStartDate, Phone, and Shift name/start/end. Status is one of open_app, ready, assigned, waiting_team, working, break. When Status is break, response includes BreakUntil, BreakUntilUnixMs, and RemainingBreakTime. When Status is assigned, response includes CurrentJob.ScanDeadlineAt and CurrentJob.ScanDeadlineUnixMs. When Status is waiting_team or working, CurrentJob.ScanDeadlineAt and CurrentJob.ScanDeadlineUnixMs are null. When Status is assigned, waiting_team, or working, response includes CurrentJob with TicketNo, LicensePlate, LicensePlateProvince, VehicleType, TeamScan, Markets[].Booths[].Products[] using Gate Quantity, and Team[].ShirtNumber/FullName/ScanStatus/ScannedAt."
-        },
-        {
-          "name": "GET /api/workers/me/assignments/history",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "workers",
-                "me",
-                "assignments",
-                "history"
-              ],
-              "query": [
-                {
-                  "key": "date",
-                  "value": "2026-07-07",
-                  "description": "Assignment created date in YYYY-MM-DD format."
-                }
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: GET\nURL single date: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nURL date range: {{baseUrl}}/api/workers/me/assignments/history?date_from=2026-08-01&date_to=2026-08-14\nAuth: Worker access token\nQuery: send either date, or date_from + date_to together. All fields use YYYY-MM-DD. date cannot be combined with date_from/date_to. Range is inclusive and limited to 31 calendar days. Body: None\nResponse: Date, Summary.JobCount, Summary.AcceptTimeoutJobCount, Summary.CompletedJobCount, and Data[]. Each assignment includes TicketNo, LicensePlate, Status, Markets[].Booths[].CompletedAt, Markets[].Booths[].Products[].ConfirmedQuantity, and Rating as a single integer 1-5 or null. CompletedAt is the per-booth GateTicket completion timestamp and is null when that booth/case is not complete. No earnings, TotalEarnings, booth amount, product FinalAmount, or worker payment breakdown are returned. Dates are interpreted in Asia/Bangkok time and filter by assignment CreatedAt using [startAt, dayAfterEndAt)."
-          },
-          "response": [],
-          "description": "Method: GET\nURL single date: {{baseUrl}}/api/workers/me/assignments/history?date=2026-07-07\nURL date range: {{baseUrl}}/api/workers/me/assignments/history?date_from=2026-08-01&date_to=2026-08-14\nAuth: Worker access token\nQuery: send either date, or date_from + date_to together. All fields use YYYY-MM-DD. date cannot be combined with date_from/date_to. Range is inclusive and limited to 31 calendar days. Body: None\nResponse: Date, Summary.JobCount, Summary.AcceptTimeoutJobCount, Summary.CompletedJobCount, and Data[]. Each assignment includes TicketNo, LicensePlate, Status, Markets[].Booths[].CompletedAt, Markets[].Booths[].Products[].ConfirmedQuantity, and Rating as a single integer 1-5 or null. CompletedAt is the per-booth GateTicket completion timestamp and is null when that booth/case is not complete. No earnings, TotalEarnings, booth amount, product FinalAmount, or worker payment breakdown are returned. Dates are interpreted in Asia/Bangkok time and filter by assignment CreatedAt using [startAt, dayAfterEndAt)."
-        },
-        {
           "name": "POST /api/workers/me/assignments/:ticketNumber/accept",
           "event": [
             {
@@ -2804,7 +2872,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/check-in-barcode\nAuth: Worker access token\nPath: {{ticketNumber}} is the vehicle-level TicketNumber of the worker's current assignment (same value used by accept).\nBody: TicketNo (required) — one Business Ticket's ticket_no, the value printed as a barcode on the physical Gate paper ticket. Also readable from Markets[].TicketNo in the accept response or CurrentJob.Markets[].TicketNo from GET /api/workers/me/status. It is a real business identifier (not a generated secret), resolved safely by scoping the lookup to this worker's own vehicle. Scanning any one Business Ticket under the vehicle checks in the whole team.\nResponse: Status, WorkerStatus, WorkerCode, TicketNumber, TeamScan. Normally { \"Status\": \"SCANNED\", \"WorkerStatus\": \"waiting_team\", \"WorkerCode\": \"MN000142\", \"TicketNumber\": \"TRUCK-20260804-001\", \"TeamScan\": { \"WorkersRequired\": 3, \"CheckedInCount\": 1, \"RemainingCount\": 2, \"IsReady\": false } }.\nNotes: Checks worker into the job only while ScanDeadlineAt is still valid. Default scan window comes from WorkerScanDeadlineMinutes after accept. After this worker scans, WorkerStatus is waiting_team until every active/eligible assignment in the team has scanned, then working. Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING when an ACCEPTED worker has not checked in and remaining scan time is below WorkerScanWarningBeforeMinutes. In a multi-worker team, once the first worker checks in, remaining ACCEPTED workers receive ASSIGNMENT_SCAN_DEADLINE_SHORTENED and their ScanDeadlineAt/ScanDeadlineUnixMs is shortened by WorkerScanTeamRemainingMinutes from that first check-in. If scan time expires by API call or background timeout, the assignment becomes TIMEOUT and worker status returns to open_app. Admin can extend ScanDeadlineAt/ScanDeadlineUnixMs and the worker can retry with the same TicketNo if the assignment is still ACCEPTED. If active/eligible team scan is ready, vehicle job moves to WORKING.",
+            "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/check-in-barcode\nAuth: Worker access token\nPath: {{ticketNumber}} is the vehicle-level TicketNumber of the worker's current assignment (same value used by accept).\nBody: TicketNo (required) — one Business Ticket's ticket_no, the value printed as a barcode on the physical Gate paper ticket. Also readable from Markets[].TicketNo in the accept response or CurrentJob.Markets[].TicketNo from GET /api/workers/me/status. It is a real business identifier (not a generated secret), resolved safely by scoping the lookup to this worker's own vehicle. Scanning any one Business Ticket under the vehicle checks in the whole team.\nResponse: Status, WorkerStatus, WorkerCode, TicketNumber, TeamScan. Normally { \"Status\": \"SCANNED\", \"WorkerStatus\": \"waiting_team\", \"WorkerCode\": \"MN000142\", \"TicketNumber\": \"20260804000001\", \"TeamScan\": { \"WorkersRequired\": 3, \"CheckedInCount\": 1, \"RemainingCount\": 2, \"IsReady\": false } }.\nNotes: Checks worker into the job only while ScanDeadlineAt is still valid. Default scan window comes from WorkerScanDeadlineMinutes after accept. After this worker scans, WorkerStatus is waiting_team until every active/eligible assignment in the team has scanned, then working. Admin SSE receives ASSIGNMENT_SCAN_DEADLINE_WARNING when an ACCEPTED worker has not checked in and remaining scan time is below WorkerScanWarningBeforeMinutes. In a multi-worker team, once the first worker checks in, remaining ACCEPTED workers receive ASSIGNMENT_SCAN_DEADLINE_SHORTENED and their ScanDeadlineAt/ScanDeadlineUnixMs is shortened by WorkerScanTeamRemainingMinutes from that first check-in. If scan time expires by API call or background timeout, the assignment becomes TIMEOUT and worker status returns to open_app. Admin can extend ScanDeadlineAt/ScanDeadlineUnixMs and the worker can retry with the same TicketNo if the assignment is still ACCEPTED. If active/eligible team scan is ready, vehicle job moves to WORKING.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"TicketNo\": \"{{ticketNo}}\"\n}",
@@ -2903,74 +2971,6 @@
               "type": "noauth"
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/workers/me/assignments/{{ticketNumber}}/tickets/complete\nAuth: Worker access token\nBody: TicketNo, BoothCode and Items required. TicketNo names which Business Ticket this submission belongs to — required because two Business Tickets under the same vehicle, against different markets, can legitimately share the same BoothCode; TicketNo plus BoothCode together resolve the exact booth unambiguously. Send BoothCode in body so codes containing / such as OM3/40 do not need URL encoding. Send every ProductCode + PackageCode in the ticket with ConfirmedQuantity counted by the worker.\nPackage switch: to change a product's package (not just quantity), first call GET /api/workers/me/products/{ProductCode}/packages to find a valid new PackageCode, then send that item with PackageCode set to the new value and OriginalPackageCode set to the PackageCode Gate originally declared for that product line. Backend re-derives the rate snapshot (weight/rate can differ by package) before accepting — an invalid/inactive PackageCode is rejected with 409 PRODUCT_PACKAGE_NOT_FOUND. Items not switching a package only need PackageCode as before.\nFinancial boundary: This request only records confirmed actual quantities and starts vendor confirmation. It must not create final financial records before vendor confirm or timeout auto-confirm.\nNotes: {{ticketNumber}} is the vehicle-level TicketNumber of the worker's current assignment. TicketNo and BoothCode come from the accepted/check-in job payload (Markets[].TicketNo / Markets[].Stalls[].BoothCode). Backend resolves each product by ProductCode + PackageCode. The LINE message to the vendor shows both the originally declared package and the new one when a product's package was switched. The response does not expose LINE postback tokens. Vendor confirm completes financialization; vendor reject returns the ticket to REJECT for resubmission."
-          },
-          "response": []
-        },
-        {
-          "name": "GET /api/workers/me/earnings/summary",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/workers/me/earnings/summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "workers",
-                "me",
-                "earnings",
-                "summary"
-              ]
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/earnings/summary\nAuth: Worker access token\nQuery: None\nBody: None\nResponse: Period.FromDate/ToDate/DayCount, TotalEarnings, Daily[15], and Details. Backend returns latest 15 completed Bangkok calendar days and excludes the current day. Details.Earnings is read from persisted TicketWorker.FinalEarningAmount."
-          },
-          "response": [],
-          "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/earnings/summary\nAuth: Worker access token\nQuery: None\nBody: None\nResponse: Period.FromDate/ToDate/DayCount, TotalEarnings, Daily[15], and Details. Backend returns latest 15 completed Bangkok calendar days and excludes the current day. Details.Earnings is read from persisted TicketWorker.FinalEarningAmount."
-        }
-      ]
-    },
-    {
-      "name": "Admin Realtime",
-      "item": [
-        {
-          "name": "GET /api/admin/events",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Accept",
-                "value": "text/event-stream",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/events",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "admin",
-                "events"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/events\nAuth: Admin access token\nPermission: jobs:read\nHeaders: Authorization: Bearer {{accessToken}}, Accept: text/event-stream\nBody: None\nNotes: Admin-only SSE stream. It stays open and receives realtime dashboard events. Snapshot/latest state should still be loaded from Admin REST APIs."
           },
           "response": []
         }

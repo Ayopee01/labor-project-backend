@@ -385,21 +385,10 @@ async function prepareLaborJob(
     );
   }
 
-  /*
-   * IMPORTANT:
-   *
-   * ตรงนี้คง logic Worker Required
-   * ของ Project ปัจจุบันไว้ก่อน
-   *
-   * Part 3 ไม่เปลี่ยนกติกาการ Dispatch
-   * เราเปลี่ยนเฉพาะ Financial Flow
-   */
-  const workerCount =
-    workerCounts.reduce(
-      (total, count) =>
-        total + count,
-      0
-    );
+  // Worker requirement ของ Ticket หนึ่งใบ = MAX ของทุก Product ในทุกแผงภายใน Ticket นั้น (ไม่ใช่ SUM
+  // แล้ว) เพราะแรงงานเรียกตามจำนวนสินค้าที่ใช้คนมากที่สุดในใบเดียวกัน ไม่ใช่บวกสะสมข้ามแผง — ระดับ
+  // TicketNumber (ข้าม Ticket หลายใบ) ยังคง SUM เหมือนเดิม ดู gate.repository.ts createVehicleJobFromGate
+  const workerCount = Math.max(...workerCounts);
 
   return {
     market: {
@@ -655,24 +644,17 @@ function arePayloadsEqual(
 
 // Function สร้าง transaction ref ของ Gate
 //
-// Idempotency key มาจาก TicketNumber + TicketNo เท่านั้น (ไม่ใช่ MarketCode อีกต่อไป)
-// เพราะ Ticket หนึ่งอยู่ได้ตลาดเดียวอยู่แล้ว แต่ TicketNumber เดียวมีหลาย Ticket ได้
+// Idempotency key มาจาก payload ทั้งก้อน (ไม่ใช่แค่ TicketNumber + TicketNo) เพื่อแยกแยะการส่ง
+// TicketNumber+TicketNo เดิมซ้ำจริง (replay) ออกจากคำขอที่เนื้อหาต่างกันแต่บังเอิญใช้ TicketNo ซ้ำ
+// หลังถูก Admin ยกเลิกไปแล้ว — กรณีหลังต้องถูกปฏิเสธด้วย GATE_TICKET_ALREADY_EXISTS ไม่ใช่ replay
 function buildGateTransactionRef(
   input: GateVehicleJobBody
 ): string {
-  const idempotencyParts = {
-    ticketNumber:
-      input.TicketNumber,
-
-    ticketNo:
-      input.TicketNo,
-  };
-
   const hash =
     createHash("sha256")
       .update(
         JSON.stringify(
-          normalizeJson(idempotencyParts)
+          normalizeJson(input)
         )
       )
       .digest("hex")
@@ -685,7 +667,8 @@ function buildGateTransactionRef(
 function buildGateCreateInput(
   input: GateVehicleJobBody,
   gateTransactionRef: string,
-  preparation: LaborJobPreparation
+  preparation: LaborJobPreparation,
+  existingMarketJobId?: number
 ): GateVehicleJobCreateInput {
   return {
     ticketNumber:
@@ -703,8 +686,7 @@ function buildGateCreateInput(
     dispatch_now:
       input.Dispatch,
 
-    expected_ticket_count:
-      input.TicketCount,
+    existingMarketJobId,
 
     markets: [
       {
@@ -1129,13 +1111,19 @@ export async function createVehicleJobFromGate(
     );
   }
 
-  // TicketNumber เดิมที่มีอยู่แล้วไม่ได้แปลว่าต้องปฏิเสธ เพราะ TicketNumber เดียวมีหลาย
-  // Business Ticket ได้ ต้องปฏิเสธเฉพาะเมื่อ TicketNo นี้มีอยู่แล้วจริงภายใต้ TicketNumber
-  // เดียวกัน (ด้วย gate_transaction_ref อื่น เพราะ replay เดิมถูกจัดการไปแล้วด้านบน)
+  // TicketNumber เดิมที่มีอยู่แล้วไม่ได้แปลว่าต้องปฏิเสธ เพราะ TicketNumber เดียวมีหลาย Business
+  // Ticket ได้ ถ้า TicketNo นี้มี Ticket ที่ยัง active อยู่จริงภายใต้ TicketNumber เดียวกัน (ด้วย
+  // gate_transaction_ref อื่น เพราะ replay เดิมถูกจัดการไปแล้วด้านบน) มี 2 กรณี:
+  // - MarketCode ตรงกับ Ticket เดิม -> append แผงชุดนี้เข้า Ticket เดิม (ดู existingMarketJobId ด้านล่าง)
+  // - MarketCode ต่างจาก Ticket เดิม -> ปฏิเสธเสมอ (TicketNo ต้องไม่ซ้ำข้ามตลาด) ถ้า Ticket เดิมผิด
+  //   ต้องให้ Admin ยกเลิกก่อน (status = CANCELLED) เมื่อยกเลิกแล้ว ticketNo เดิมจะว่างอีกครั้งให้ Gate
+  //   สร้างใหม่ได้ทันที (findMarketJobByVehicleAndTicketNo กรอง CANCELLED ออกให้แล้ว)
   const existingVehicleJob =
     await gateRepository.findVehicleJobByRef(
       input.TicketNumber
     );
+
+  let existingMarketJobId: number | undefined;
 
   if (existingVehicleJob) {
     const existingMarketJob =
@@ -1145,18 +1133,63 @@ export async function createVehicleJobFromGate(
       );
 
     if (existingMarketJob) {
-      throw new ApiError(
-        409,
-        "GATE_TICKET_ALREADY_EXISTS",
-        "TicketNo already exists under this TicketNumber.",
-        {
-          ticketNumber:
-            input.TicketNumber,
+      if (existingMarketJob.marketCode !== input.MarketCode) {
+        throw new ApiError(
+          409,
+          "GATE_TICKET_ALREADY_EXISTS",
+          "TicketNo already exists under this TicketNumber for a different market. Ask an Admin to cancel it first if this Ticket needs to be recreated.",
+          {
+            ticketNumber:
+              input.TicketNumber,
 
-          ticketNo:
-            input.TicketNo,
-        }
+            ticketNo:
+              input.TicketNo,
+          }
+        );
+      }
+
+      if (existingMarketJob.worker_roster_locked_at) {
+        throw new ApiError(
+          409,
+          "GATE_TICKET_ROSTER_LOCKED",
+          "This Ticket's worker roster is already locked and can no longer accept new booths.",
+          {
+            ticketNumber:
+              input.TicketNumber,
+
+            ticketNo:
+              input.TicketNo,
+          }
+        );
+      }
+
+      const existingBoothCodes =
+        await gateRepository.findGateTicketBoothCodesByMarketJobId(
+          existingMarketJob.id
+        );
+      const duplicateBoothCode = input.Booths.find((booth) =>
+        existingBoothCodes.includes(booth.BoothCode)
       );
+
+      if (duplicateBoothCode) {
+        throw new ApiError(
+          409,
+          "GATE_BOOTH_ALREADY_EXISTS_IN_TICKET",
+          `BoothCode ${duplicateBoothCode.BoothCode} already exists in this Ticket.`,
+          {
+            ticketNumber:
+              input.TicketNumber,
+
+            ticketNo:
+              input.TicketNo,
+
+            boothCode:
+              duplicateBoothCode.BoothCode,
+          }
+        );
+      }
+
+      existingMarketJobId = existingMarketJob.id;
     }
   }
 
@@ -1178,7 +1211,8 @@ export async function createVehicleJobFromGate(
           buildGateCreateInput(
             input,
             gateTransactionRef,
-            preparation
+            preparation,
+            existingMarketJobId
           );
 
         // เติม LINE ID ของแต่ละแผง

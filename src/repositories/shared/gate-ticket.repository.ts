@@ -1,4 +1,4 @@
-import { TICKET_STATUS } from "../../constants/job-status";
+import { TICKET_STATUS, TICKET_WORKER_STATUS } from "../../constants/job-status";
 import {
   mapGateTicket,
   mapTicketCompletionSubmission,
@@ -344,6 +344,31 @@ export async function confirmTicketCompletion(
       },
     }),
   ]);
+
+  if (ticket) {
+    // Snapshot รายชื่อ TicketWorker ที่ยัง WORKING ณ ตอนแผงนี้ confirm สำเร็จ — ใช้เป็นตัวหารเงิน
+    // ของแผงนี้โดยเฉพาะตอน finalize แทนที่จะใช้ roster สุดท้ายของทั้ง Business Ticket ตอนจบ ทำให้
+    // worker ที่ถูกยกเลิกออกจากทีมหลังแผงนี้ confirm ไปแล้วไม่ทำให้ตัวหารของแผงนี้ลดลงย้อนหลัง
+    const workingWorkers = await db.ticketWorker.findMany({
+      where: {
+        marketJobId: ticket.marketJobId,
+        status: TICKET_WORKER_STATUS.WORKING,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (workingWorkers.length > 0) {
+      await db.gateTicketWorkerSnapshot.createMany({
+        data: workingWorkers.map((worker) => ({
+          gateTicketId: ticketId,
+          ticketWorkerId: worker.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+  }
 
   return {
     ticket: requireDto(mapGateTicket(ticket), "ticket confirm"),

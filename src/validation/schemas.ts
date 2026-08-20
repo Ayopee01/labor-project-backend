@@ -280,6 +280,12 @@ export const resetPasswordBodySchema = z.object({
 
 /* -------------------------------------- Job Flow Schemas -------------------------------------- */
 
+// Format TicketNumber/TicketNo ของ Gate — ตัวเลขล้วน 14 หลักเสมอ ห้ามมีตัวอักษรหรืออักษรพิเศษ
+const gateTicketIdSchema = trimmedString.regex(
+  /^\d{14}$/,
+  "Must be exactly 14 digits, numbers only."
+);
+
 // Schema สินค้าแต่ละรายการที่ Gate ส่งมา
 const gateVehicleJobProductSchema = z.object({
   ProductCode: trimmedString,
@@ -316,14 +322,9 @@ const gateVehicleJobBoothSchema = z
 export const gateVehicleJobBodySchema = z
   .object({
     // TicketNumber = ระดับรถ (VehicleJob), TicketNo = Business Ticket ใต้รถคันนั้น (MarketJob)
-    TicketNumber: trimmedString,
-    TicketNo: trimmedString,
+    TicketNumber: gateTicketIdSchema,
+    TicketNo: gateTicketIdSchema,
     TicketCreatedAt: dateTimeString,
-
-    // จำนวน Business Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ (= จำนวนตลาดที่ต่างกัน
-    // ในออเดอร์นั้น) Gate รู้ค่านี้เสมอตั้งแต่ตอนสร้างออเดอร์ ใช้ปิดรับ Ticket เพิ่มอัตโนมัติทันทีที่
-    // จำนวน Business Ticket ที่สร้างจริงถึงค่านี้ ไม่มี endpoint close แยกต่างหากอีกต่อไป
-    TicketCount: z.coerce.number().int().positive(),
 
     BoothCount: z.coerce.number().int().positive(),
 

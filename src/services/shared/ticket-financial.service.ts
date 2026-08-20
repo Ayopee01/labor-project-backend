@@ -65,12 +65,15 @@ function hasCompleteRateSnapshot(product: {
 // หลักการ:
 // - รอทุก Booth ของ Business Ticket นี้ Terminal ก่อน (COMPLETED หรือ CANCELLED)
 //   และต้องมีอย่างน้อยหนึ่ง Booth COMPLETED
-// - Lock Worker Roster ก่อนคำนวณเสมอ (WORKING -> COMPLETED) นี่คือ Final Eligible Worker
+// - Lock Worker Roster ก่อนคำนวณเสมอ (WORKING -> COMPLETED) — ใช้เพื่อปิดไม่ให้ sync/cancel/add
+//   roster เข้ามาอีก (operational) ไม่ใช่ตัวหารเงินโดยตรงอีกต่อไป
 // - ใช้ confirmedQuantity เท่านั้น
 // - ใช้ Rate Snapshot เท่านั้น
 // - คิดแยก Product ของทุก Booth ที่ COMPLETED ภายใต้ Ticket นี้
 // - ProductCharge ปัดขึ้นแยกแต่ละ Product
-// - Worker หารแยกแต่ละ Product ด้วย Final Eligible Worker Count เดียวกันทั้ง Ticket
+// - Worker หารแยกแต่ละ Product ด้วย Snapshot worker ของ "แผงนั้นๆ" (จำนวนคนที่ยัง WORKING ตอนแผงนี้
+//   confirm เอง) ไม่ใช่ roster สุดท้ายของทั้ง Ticket — คนที่ถูกยกเลิกออกจากทีมหลังแผงนี้ confirm ไปแล้ว
+//   ไม่ทำให้ตัวหารของแผงนี้ลดลงย้อนหลัง แต่ละแผงจึงหารกันคนละจำนวนได้ (ดู GateTicketWorkerSnapshot)
 // - Fund คำนวณแยกแต่ละ Product
 // - ห้าม Query Master Rate ใหม่
 export async function finalizeMarketJobFinancials(
@@ -122,13 +125,18 @@ export async function finalizeMarketJobFinancials(
       (total, ticket) => total + ticket.products.length,
       0,
     );
+    // จำนวน worker ที่ได้เงินจริง (มี finalEarningAmount ไม่ null) ไม่ใช่แค่คนที่ status ปัจจุบันเป็น
+    // COMPLETED เพราะคนที่ถูกยกเลิกออกจากทีมหลังบางแผง confirm ไปแล้วก็ยังได้เงินจากแผงนั้นอยู่
+    const paidWorkerCount = context.ticketWorkers.filter(
+      (worker) => worker.finalEarningAmount !== null,
+    ).length;
 
     return {
       marketJobId: context.id,
 
       productCount: financializedProductCount,
 
-      workerCount: completedWorkers.length,
+      workerCount: paidWorkerCount,
 
       finalStallAmount: context.finalStallAmount,
 
@@ -200,8 +208,9 @@ export async function finalizeMarketJobFinancials(
 
   const finalizedAt = new Date();
 
-  // Lock Roster ก่อนคำนวณเสมอ: จุดนี้คือจุดตัดสิน Final Eligible Worker
-  // หลัง Lock ห้าม Sync/Cancel/Add Worker เข้า Roster นี้อีก
+  // Lock Roster ก่อนคำนวณเสมอ: จุดนี้คือจุดตัดสินว่าห้าม Sync/Cancel/Add Worker เข้า Roster นี้อีก
+  // (operational guard — ตัวหารเงินจริงต่อแผงมาจาก Snapshot ที่บันทึกไว้ตั้งแต่ตอนแผงนั้น confirm
+  // ด้านล่าง ไม่ใช่ค่า Lock ตรงนี้)
   await ticketFinancialRepository.lockMarketJobWorkerRoster(
     context.id,
     connection,
@@ -216,12 +225,43 @@ export async function finalizeMarketJobFinancials(
 
   const finalEarningByTicketWorkerId = new Map<number, Prisma.Decimal>();
   const boothStallAmountByTicketId = new Map<number, Prisma.Decimal>();
+  const distinctPaidWorkerIds = new Set<number>();
+  const ticketWorkerById = new Map(
+    context.ticketWorkers.map((worker) => [worker.id, worker]),
+  );
 
   for (const worker of workingWorkers) {
     finalEarningByTicketWorkerId.set(worker.id, new Prisma.Decimal(0));
   }
 
   for (const ticket of completedTickets) {
+    // Worker ที่หารเงินของแผงนี้ = Snapshot ที่บันทึกไว้ตอนแผงนี้ confirm (ยัง WORKING ณ ตอนนั้น
+    // จริงๆ) — ถ้าไม่มี Snapshot เลย (ข้อมูลเก่าก่อนมีฟีเจอร์นี้) fallback ไปใช้ roster สุดท้ายของ
+    // ทั้ง Ticket แทน เพื่อไม่ให้ Ticket ที่ค้างอยู่ตอน deploy พังไป
+    const snapshotWorkerIds = ticket.workerSnapshots.map(
+      (snapshot) => snapshot.ticketWorkerId,
+    );
+    const boothWorkerIds =
+      snapshotWorkerIds.length > 0
+        ? snapshotWorkerIds
+        : workingWorkers.map((worker) => worker.id);
+    const boothWorkers = boothWorkerIds
+      .map((id) => ticketWorkerById.get(id))
+      .filter((worker): worker is NonNullable<typeof worker> => worker !== undefined);
+    const boothWorkerCount = boothWorkers.length;
+
+    if (boothWorkerCount <= 0) {
+      throw new ApiError(
+        409,
+        "TICKET_WORKERS_NOT_FOUND",
+        `Booth ${ticket.id} does not have a worker snapshot for financialization.`,
+      );
+    }
+
+    for (const worker of boothWorkers) {
+      distinctPaidWorkerIds.add(worker.id);
+    }
+
     for (const product of ticket.products) {
       if (product.confirmedQuantity === null) {
         throw new ApiError(
@@ -267,14 +307,14 @@ export async function finalizeMarketJobFinancials(
       });
 
       // คำนวณเงิน Worker
-      // ด้วย Final Eligible Worker Count ของ Business Ticket ทั้งใบ
+      // ด้วย Snapshot Worker Count ของแผงนี้โดยเฉพาะ (ไม่ใช่ของทั้ง Ticket)
       const workerPayment = calculateProductWorkerPayment({
         laborFeeRaw: stallCharge.laborFeeRaw,
 
-        actualWorkerCount,
+        actualWorkerCount: boothWorkerCount,
       });
 
-      const workerPayments = workingWorkers.map((worker) => {
+      const workerPayments = boothWorkers.map((worker) => {
         const finalAmount = workerPayment.finalAmountPerWorker;
         const currentTotal =
           finalEarningByTicketWorkerId.get(worker.id) ?? new Prisma.Decimal(0);
@@ -309,7 +349,7 @@ export async function finalizeMarketJobFinancials(
 
           productCharge: stallCharge.productCharge,
 
-          workerCount: actualWorkerCount,
+          workerCount: boothWorkerCount,
 
           workerPayoutTotal: workerPayment.workerPayoutTotal,
 
@@ -361,7 +401,9 @@ export async function finalizeMarketJobFinancials(
 
     productCount: products.length,
 
-    workerCount: actualWorkerCount,
+    // จำนวน worker ที่ได้รับเงินจริง (union ของ snapshot ทุกแผงใน Ticket นี้) ไม่ใช่แค่ roster
+    // สุดท้ายทั้ง Ticket เพราะแต่ละแผงอาจมีคนละชุดคนที่ยัง active ตอนแผงนั้น confirm
+    workerCount: distinctPaidWorkerIds.size,
 
     finalStallAmount,
 

@@ -21,7 +21,7 @@ const TEST_MEMBERS = [
   },
   {
     firstName: "Pemtat",
-    lastName: "Ruksachat", 
+    lastName: "Ruksachat",
     lineUserId: "U6747dc8a4155f273d2555908b0f168e0",
     idCard: "0000000000002",
     telephone: "0000000002",
@@ -32,8 +32,14 @@ const TEST_MEMBERS = [
 export async function seedTestLine(prisma: PrismaClient): Promise<void> {
   const syncedAt = new Date();
 
-  for (let index = 0; index < masterMarketSeedData.length; index += 100) {
-    const batch = masterMarketSeedData.slice(index, index + 100);
+  const BATCH_SIZE = 10;
+
+  for (
+    let index = 0;
+    index < masterMarketSeedData.length;
+    index += BATCH_SIZE
+  ) {
+    const batch = masterMarketSeedData.slice(index, index + BATCH_SIZE);
 
     await prisma.$transaction([
       ...batch.map((booth) =>
@@ -119,6 +125,6 @@ export async function seedTestLine(prisma: PrismaClient): Promise<void> {
 
   console.info(
     `[seed] test-line completed: ${masterMarketSeedData.length} master booths mapped to LINE user, ` +
-      `${TEST_MEMBERS.length} member LINE users mapped to every booth's owner`,
+    `${TEST_MEMBERS.length} member LINE users mapped to every booth's owner`,
   );
 }

@@ -2974,13 +2974,13 @@ test("worker assignment audit events are immutable and distinguish accept timeou
   );
 });
 
-test("worker only returns to the FIFO queue once every Business Ticket is terminal AND Gate's TicketCount has been reached", async () => {
-  // Gate ไม่มี endpoint close แยกต่างหากอีกแล้ว — ticketsClosedAt ถูกตั้งค่าได้ทางเดียวคือตอนสร้าง
-  // Business Ticket ใบที่ทำให้จำนวน Ticket ที่มีอยู่ถึง TicketCount ที่ Gate แจ้งไว้ (ดู
-  // gate.routes.test.ts สำหรับ test ของกลไกนับ TicketCount นี้โดยตรง) จำลองเคสนี้ด้วยรถที่มี
-  // 2 Business Ticket คนละตลาด แล้วตั้ง tickets_closed_at เอง ณ จุดที่ Gate ควรจะตั้งให้จริง
-  // (ตอนสร้าง Ticket ใบที่ 2 ซึ่งทำให้ครบ TicketCount) เพื่อพิสูจน์ว่า Worker ยังไม่ถูกคืนคิว
-  // จนกว่าทั้งสองเงื่อนไขจะครบพร้อมกัน
+test("worker only returns to the FIFO queue once every Business Ticket is terminal AND ticketsClosedAt has been set", async () => {
+  // Gate ไม่มี endpoint close แยกต่างหากและไม่ส่ง TicketCount อีกต่อไป — ในการทำงานจริง
+  // ticketsClosedAt ถูกตั้งค่าทันทีตั้งแต่ Ticket แรกถูกสร้าง (ดู gate.routes.test.ts) แต่ gate
+  // ที่ปิดงานทั้งคัน (vehicle-job-lifecycle.service.ts) ยังคงเช็คทั้งสองเงื่อนไขแยกกันเป็น defensive
+  // guard อยู่ดี — test นี้จำลองด้วยการตั้ง tickets_closed_at เอง (แทนที่จะปล่อยให้ default ของ
+  // addDispatchableJob ตั้งไว้แล้ว) เพื่อพิสูจน์ตรงๆ ว่า Worker จะไม่ถูกคืนคิวถ้าเงื่อนไขนี้ยังไม่ครบ
+  // แม้ทุก Ticket ที่มีอยู่จะ terminal หมดแล้วก็ตาม
   const { token: workerToken, worker } = await loginWorker(9950);
   const job = addDispatchableJob(9950, 1);
   // Gate ยังไม่ได้ยืนยันว่าไม่มี Business Ticket เพิ่ม (ต่างจาก default ของ addDispatchableJob)
@@ -3035,20 +3035,21 @@ test("worker only returns to the FIFO queue once every Business Ticket is termin
 
   await submitTicketA(ticketA);
 
-  // Business Ticket ใบแรกของ TicketNumber นี้ Terminal แล้ว แต่ Gate ยังไม่ครบ TicketCount
-  // (Ticket ใบที่สองยังไม่ถูกสร้าง) -> ห้ามถือว่ารถจบ ห้ามคืนคิว Worker
+  // Business Ticket ใบแรกของ TicketNumber นี้ Terminal แล้ว แต่ tickets_closed_at ยังไม่ถูกตั้ง
+  // -> ห้ามถือว่ารถจบ ห้ามคืนคิว Worker
   assert.equal(ticketA.status, "COMPLETED");
   assert.equal(job.status, "WORKING");
   assert.equal(assignment.status, "WORKING");
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "assigned");
 
-  // Gate สร้าง Business Ticket ใบที่สอง (ตลาดอื่น) ซึ่งทำให้ครบ TicketCount = 2 พอดี
+  // Gate สร้าง Business Ticket ใบที่สอง (ตลาดอื่น) — ในการทำงานจริงขั้นตอนนี้จะตั้ง tickets_closed_at
+  // ให้เองทันที (เพราะเป็นการสร้าง Ticket ครั้งแรกของรถคันนี้แล้ว) จำลองด้วยการตั้งตรงๆ ที่นี่
   const ticketB = addTicketForVehicleJob(job.id, 19960, 21960);
   job.tickets_closed_at = new Date().toISOString();
 
   await submitTicketA(ticketB);
 
-  // ทุก Business Ticket Terminal ครบ และ Gate ครบ TicketCount แล้ว -> ปิดงานทั้งคัน คืนคิว Worker
+  // ทุก Business Ticket Terminal ครบ และ tickets_closed_at ถูกตั้งแล้ว -> ปิดงานทั้งคัน คืนคิว Worker
   assert.equal(ticketB.status, "COMPLETED");
   assert.equal(job.status, "COMPLETED");
   assert.equal(assignment.status, "COMPLETED");

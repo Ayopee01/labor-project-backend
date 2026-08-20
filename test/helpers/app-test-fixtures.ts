@@ -257,6 +257,7 @@ export function resetRouteTestState(): void {
   state.ticketWorkers.length = 0;
   state.ticketProductFinancials.length = 0;
   state.ticketWorkerPayments.length = 0;
+  state.gateTicketWorkerSnapshots.length = 0;
   state.completionSubmissions.length = 0;
   state.ticketRatings.length = 0;
   state.lineActionTokens.length = 0;
@@ -290,6 +291,7 @@ export function resetRouteTestState(): void {
   state.nextTicketWorkerId = 1;
   state.nextTicketProductFinancialId = 1;
   state.nextTicketWorkerPaymentId = 1;
+  state.nextGateTicketWorkerSnapshotId = 1;
   state.nextSubmissionId = 1;
   state.nextRatingId = 1;
   state.nextLineActionTokenId = 1;

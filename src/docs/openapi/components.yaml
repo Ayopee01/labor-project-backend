@@ -1667,7 +1667,6 @@
         - TicketNumber
         - TicketNo
         - TicketCreatedAt
-        - TicketCount
         - BoothCount
         - MarketCode
         - LicensePlate
@@ -1679,39 +1678,34 @@
       properties:
         TicketNumber:
           type: string
-          example: TRUCK-20260804-001
+          pattern: "^\\d{14}$"
+          example: "20260804000001"
           description: >
-            Vehicle-level job reference. May be sent multiple times, each with a new TicketNo,
-            as the same vehicle generates more Business Tickets over time (one Gate request per
-            Business Ticket, all against exactly one market). An existing VehicleJob is reused;
-            no duplicate vehicle job is created.
+            Vehicle-level job reference. Must be exactly 14 digits, numbers only — no letters or
+            special characters. May be sent multiple times, each with a new TicketNo, as the same
+            vehicle generates more Business Tickets over time (one Gate request per Business
+            Ticket, all against exactly one market). An existing VehicleJob is reused; no
+            duplicate vehicle job is created.
 
         TicketNo:
           type: string
-          example: TKT-20260804-000001
+          pattern: "^\\d{14}$"
+          example: "20260804000002"
           description: >
-            Business Ticket reference for this one request, unique within TicketNumber. One
-            request = one Business Ticket = one market (all Booths in this request must belong
-            to MarketCode) = BoothCount booths.
+            Business Ticket reference, scoped to one market. Must be exactly 14 digits, numbers
+            only — no letters or special characters. One request = one market (all Booths in this
+            request must belong to MarketCode) = BoothCount booths for this request. Sending the
+            same TicketNo again under the same TicketNumber and the same MarketCode appends the
+            new Booths/Products into that existing Business Ticket instead of creating a new one;
+            the same TicketNo for a *different* MarketCode is always rejected with
+            GATE_TICKET_ALREADY_EXISTS. If an Admin cancels a Ticket, its TicketNo becomes free
+            again and can be reused here (for any MarketCode) to create a brand-new Business
+            Ticket.
 
         TicketCreatedAt:
           type: string
           format: date-time
           example: "2026-08-04T14:30:00+07:00"
-
-        TicketCount:
-          type: integer
-          minimum: 1
-          example: 1
-          description: >
-            Total number of Business Tickets Gate will send for this TicketNumber, equal to the
-            number of distinct markets in the order (Gate always knows this upfront when the
-            order is created, even before splitting it into per-market requests). Send the same
-            value on every request for the same TicketNumber. Once the number of Business
-            Tickets actually created for this TicketNumber reaches TicketCount, the backend
-            automatically stops accepting new ones for it and, once every booth across all of
-            them is also terminal, completes the vehicle job and returns its workers to queue.
-            There is no separate "close" endpoint.
 
         BoothCount:
           type: integer
@@ -2342,8 +2336,8 @@
 
         WorkerCount:
           type: integer
-          example: 7
-          description: Total Master worker requirement used for dispatch across products.
+          example: 5
+          description: This Business Ticket's worker requirement used for dispatch — the MAX WorkerCount across every product in every booth of this Ticket, not a sum.
 
         Qr:
           type: object
@@ -2799,7 +2793,12 @@
         worker_count:
           type: integer
           example: 1
-          description: Actual completed TicketWorker count used as the worker divisor.
+          description: >
+            Worker divisor for this product's booth specifically — the count of TicketWorker rows
+            snapshotted as still WORKING at the moment this one booth was confirmed (vendor
+            confirm or auto-confirm timeout), not the Business Ticket's final roster count. Two
+            booths under the same Ticket can have different values here if the team changed
+            between when each booth confirmed.
         worker_payout_total:
           type: string
           example: "3.00"

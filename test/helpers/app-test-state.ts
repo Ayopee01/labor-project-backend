@@ -5,6 +5,7 @@ import type {
   GateClientRecord,
   GateRequestLogRecord,
   GateTicketRecord,
+  GateTicketWorkerSnapshotRecord,
   LineActionTokenRecord,
   MarketJobRecord,
   MobileAppVersionRecord,
@@ -57,6 +58,7 @@ export const state = {
   ticketWorkers: [] as TicketWorkerRecord[],
   ticketProductFinancials: [] as TicketProductFinancialRecord[],
   ticketWorkerPayments: [] as TicketWorkerPaymentRecord[],
+  gateTicketWorkerSnapshots: [] as GateTicketWorkerSnapshotRecord[],
   completionSubmissions: [] as TicketCompletionSubmissionRecord[],
 
   adminActionLogs: [] as AdminActionLogRecord[],
@@ -91,6 +93,7 @@ export const state = {
   nextTicketWorkerId: 1,
   nextTicketProductFinancialId: 1,
   nextTicketWorkerPaymentId: 1,
+  nextGateTicketWorkerSnapshotId: 1,
   nextSubmissionId: 1,
   nextRatingId: 1,
   nextLineActionTokenId: 1,

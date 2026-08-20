@@ -104,8 +104,9 @@ interface GateMarketCreateInput {
 
   gate_transaction_ref: string;
 
-  // จำนวน Worker ที่ Master กำหนดสำหรับ Business Ticket นี้เท่านั้น
-  // ใช้สำหรับ Dispatch เท่านั้น (รวมเข้ากับ Ticket อื่นเป็น VehicleJob.workers_required ที่ repository)
+  // จำนวน Worker ที่ Master กำหนดสำหรับ Business Ticket นี้เท่านั้น (MAX ของทุก Product ในทุกแผงของ
+  // Ticket นี้ คำนวณจาก service) ใช้สำหรับ Dispatch เท่านั้น (รวมเข้ากับ Ticket อื่นเป็น
+  // VehicleJob.workers_required ที่ repository)
   //
   // ห้ามใช้เป็นจำนวน Worker สำหรับหารเงินจริง
   // เพราะ Financial จะใช้ Worker จริงที่อยู่ใน Roster ของ Business Ticket ตอน Lock
@@ -119,7 +120,9 @@ interface GateMarketCreateInput {
   booths: GateBoothCreateInput[];
 }
 
-// Type ข้อมูลสำหรับสร้าง/เพิ่ม Business Ticket ใต้ VehicleJob (TicketNumber) จาก Gate
+// Type ข้อมูลสำหรับสร้าง Business Ticket ใหม่ใต้ VehicleJob (TicketNumber) จาก Gate — ปกติสร้างใหม่
+// เสมอ แต่ถ้า TicketNo + MarketCode ตรงกับ Business Ticket ที่ยัง active อยู่แล้ว (Admin ยังไม่ยกเลิก)
+// ให้เพิ่มแผงเข้า Ticket เดิมแทน (ดู existingMarketJobId) — service เป็นคนตรวจและใส่ค่านี้มาให้
 export interface GateVehicleJobCreateInput {
   ticketNumber: string;
 
@@ -129,12 +132,12 @@ export interface GateVehicleJobCreateInput {
 
   dispatch_now?: boolean;
 
-  // จำนวน Business Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ (= จำนวนตลาดที่ต่างกัน
-  // ในออเดอร์นั้น) Gate รู้ค่านี้เสมอตั้งแต่ตอนสร้างออเดอร์
-  expected_ticket_count: number;
-
   // เสมอมีสมาชิกเดียวใน array นี้ต่อหนึ่ง Gate request (หนึ่ง request = หนึ่ง Business Ticket)
   markets: GateMarketCreateInput[];
+
+  // ใส่ค่านี้เมื่อ TicketNo + MarketCode ของ request นี้ตรงกับ Business Ticket ที่ยัง active อยู่แล้ว
+  // ภายใต้ TicketNumber เดียวกัน — บอก repository ให้เพิ่มแผงเข้า MarketJob เดิม (id นี้) แทนการสร้างใหม่
+  existingMarketJobId?: number;
 }
 
 /* -------------------------------------- Gate Request -------------------------------------- */
@@ -159,13 +162,13 @@ export interface GateVehicleJobBoothBody {
 export interface GateVehicleJobBody {
   // TicketNumber = ระดับรถ, อาจถูกส่งมาหลายครั้งพร้อม TicketNo ใหม่ทุกครั้งที่มี Business Ticket ใหม่
   TicketNumber: string;
-  // TicketNo = Business Ticket ใต้ TicketNumber นั้น (unique เฉพาะภายใน TicketNumber เดียวกัน)
+  // TicketNo = Business Ticket ใต้ TicketNumber นั้น อิงตามตลาด — ถ้าส่ง TicketNo เดิม + MarketCode
+  // เดิมซ้ำ (ขณะที่ Ticket เดิมยัง active) จะถูกเพิ่มแผงเข้า Ticket เดิมแทนการสร้างใหม่ (append) แต่ถ้า
+  // TicketNo เดิมถูกส่งมาพร้อม MarketCode ที่ต่างไป จะถูกปฏิเสธเสมอ (TicketNo ต้องไม่ซ้ำข้ามตลาด) ถ้า
+  // Ticket เดิมถูก Admin ยกเลิกไปแล้ว ค่า TicketNo นี้ใช้สร้างใหม่ซ้ำได้ (ไม่ใช่ append เข้าแถวที่ถูก
+  // ยกเลิก)
   TicketNo: string;
   TicketCreatedAt: string;
-
-  // จำนวน Business Ticket ทั้งหมดที่ Gate จะส่งมาสำหรับ TicketNumber นี้ (= จำนวนตลาดที่ต่างกัน
-  // ในออเดอร์นั้น) Gate รู้ค่านี้เสมอตั้งแต่ตอนสร้างออเดอร์
-  TicketCount: number;
 
   BoothCount: number;
 

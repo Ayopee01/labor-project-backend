@@ -52,20 +52,49 @@
         ClientSecret.
 
         Gate sends one PascalCase request per Business Ticket (TicketNo), always
-        against exactly one MarketCode. A vehicle (TicketNumber) may generate
-        multiple Business Tickets over time as it unloads at different markets —
-        send the same TicketNumber again with a new TicketNo; no duplicate
-        vehicle job is created. One request can contain multiple booths using
-        Booths[] (all in that one MarketCode), and each booth can contain
-        multiple products using Products[].
+        against exactly one MarketCode. TicketNumber and TicketNo must both be
+        exactly 14 digits, numbers only — no letters or special characters.
 
-        TicketCount is the total number of Business Tickets Gate will send for
-        this TicketNumber (the number of distinct markets in the order) — Gate
-        always knows this upfront. Send the same value on every request for the
-        same TicketNumber. Once the number of Business Tickets actually created
-        reaches TicketCount, and every booth across all of them is terminal, the
-        vehicle job completes and its workers return to queue automatically.
-        There is no separate "close" endpoint.
+        A vehicle (TicketNumber) may generate multiple Business Tickets over
+        time as it unloads at different markets — send the same TicketNumber
+        again with a new TicketNo; no duplicate vehicle job is created.
+
+        TicketNo is scoped to one market. Sending the same TicketNo again
+        under the same TicketNumber and the same MarketCode (while that
+        Ticket is still active) appends the new Booths[]/Products[] into the
+        existing Business Ticket instead of creating a new one — this is how
+        Gate reports additional booths discovered later for a market it
+        already opened a Ticket for. Appending a BoothCode that already
+        exists in that Ticket is rejected with
+        GATE_BOOTH_ALREADY_EXISTS_IN_TICKET (no partial-booth merge — send a
+        new, non-duplicate BoothCode). Appending into a Ticket whose worker
+        roster is already locked (financial finalize already ran) is rejected
+        with GATE_TICKET_ROSTER_LOCKED. Sending the same TicketNo again for a
+        *different* MarketCode is always rejected with
+        GATE_TICKET_ALREADY_EXISTS — TicketNo must never be reused across
+        markets while the original Ticket is still active. If a Ticket was
+        created with wrong data (wrong market, wrong booth, needs a full
+        redo), an Admin must cancel it first (POST /api/admin/jobs/cancel
+        with type MARKET_JOB); once cancelled, that exact TicketNo becomes
+        free again and Gate can resend it under the same TicketNumber (with
+        any MarketCode) to create a brand-new Business Ticket — the cancelled
+        Ticket is kept untouched as history, it is never reused or
+        overwritten in place.
+
+        One request can contain multiple booths using Booths[] (all in that
+        one MarketCode), and each booth can contain multiple products using
+        Products[].
+
+        Gate does not send a ticket count. The number of Business Tickets
+        under a TicketNumber is simply however many active (non-cancelled)
+        Business Tickets exist for it — one per distinct market that still
+        has an active Ticket (repeating TicketNo+MarketCode to append more
+        booths does not increase this count). There is no "more Tickets
+        coming" signal from Gate: intake for a vehicle is considered closed
+        as soon as its first Ticket is created. Once every known Business
+        Ticket's booths are terminal, the vehicle job completes and its
+        workers return to queue automatically. There is no separate "close"
+        endpoint.
 
         Gate must send LicensePlateProvince together with LicensePlate.
 
@@ -93,18 +122,28 @@
         ticket is confirmed.
 
         WorkerCount in each Product is the Master worker requirement for that
-        product. Root WorkerCount is the total worker requirement used for
-        dispatch by the current business rule.
+        product. Root WorkerCount is this Business Ticket's worker requirement
+        used for dispatch: the MAX WorkerCount across every product in every
+        booth of this Ticket (not a sum), always recomputed as the MAX between
+        the Ticket's current value and this request's own MAX (untouched
+        booths keep their already-correct contribution) — the vehicle-level
+        total dispatch uses is still the sum of every Business Ticket's own
+        MAX under that TicketNumber.
 
         Backend returns only operational data:
         Result, TicketNumber, Ticket, Market, Booths, WorkerCount and Qr.
 
-        The idempotency key is derived from TicketNumber + TicketNo (not
-        MarketCode, since one Business Ticket is already always one market,
-        but one TicketNumber can have several Business Tickets).
+        The idempotency key is derived from the full request payload (not just
+        TicketNumber + TicketNo), because the same TicketNumber + TicketNo +
+        MarketCode can legitimately be sent again with different
+        Booths/Products content to append into the same Ticket, and because a
+        genuinely new Ticket created after an Admin cancels the previous one
+        under the same TicketNo must never be confused with a replay of the
+        original (now-cancelled) request.
 
-        Sending the same payload again returns REPLAYED. Sending the same
-        idempotency key with a different payload returns a conflict.
+        Sending the exact same payload again returns REPLAYED. Sending the
+        same TicketNumber+TicketNo+MarketCode with different content is
+        appended (see above) rather than rejected as a conflict.
 
         Ticket.Status is derived from Dispatch:
         true = unload_now,
@@ -149,7 +188,13 @@
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Duplicate Gate request, invalid master mapping, duplicate booth/product-package, or missing required Gate master data.
+          description: >
+            Duplicate Gate request, invalid master mapping, duplicate booth/product-package,
+            missing required Gate master data, TicketNo reused for a different market while the
+            existing Ticket is still active (GATE_TICKET_ALREADY_EXISTS), TicketNo+market reused
+            with a BoothCode that already exists in that Ticket
+            (GATE_BOOTH_ALREADY_EXISTS_IN_TICKET), or TicketNo+market reused after that Ticket's
+            worker roster is already locked (GATE_TICKET_ROSTER_LOCKED).
           content:
             application/json:
               schema:

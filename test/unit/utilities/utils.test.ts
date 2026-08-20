@@ -157,10 +157,9 @@ test("login body schema allows device fields to be omitted", () => {
 
 test("gate vehicle job schema accepts multi booth PascalCase Gate body", () => {
   const gateBody = schemas.gateVehicleJobBodySchema.parse({
-    TicketNumber: "TRUCK-DISPATCH-NOW",
-    TicketNo: "TKT-DISPATCH-NOW",
+    TicketNumber: "20260723000001",
+    TicketNo: "20260723000002",
     TicketCreatedAt: "2026-07-23T14:30:00+07:00",
-    TicketCount: 1,
     BoothCount: 2,
     MarketCode: "MARKET-A",
     LicensePlate: "ABC-1234",

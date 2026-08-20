@@ -213,11 +213,14 @@ model VehicleJob {
   dispatchNow          Boolean   @default(false) @map("dispatch_now")
   status               String    @default("WAIT") @db.VarChar(30)
   driverQrToken        String    @unique @map("driver_qr_token") @db.VarChar(255)
-  // Gate-provided total Ticket count for this vehicle, if known upfront.
+  // Derived count of active (non-cancelled) Tickets under this vehicle at the moment of the
+  // latest Gate create — Gate never declares this upfront anymore, it is just a snapshot for
+  // display. Not used as a gate/threshold for anything.
   expectedTicketCount  Int?      @map("expected_ticket_count")
-  // Set once Gate signals no more Tickets are coming for this vehicle (via TicketCount
-  // reached or the explicit close endpoint). Required, alongside every Ticket/booth being
-  // terminal, before the vehicle can be marked COMPLETED and its workers returned to queue.
+  // Set immediately the first time any Ticket is created for this vehicle (Gate has no separate
+  // "done sending" signal anymore — every Gate create is a complete, standalone Ticket). Required,
+  // alongside every Ticket/booth being terminal, before the vehicle can be marked COMPLETED and
+  // its workers returned to queue — in practice this now just means "at least one Ticket exists."
   ticketsClosedAt      DateTime? @map("tickets_closed_at") @db.Timestamp(3)
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
@@ -264,7 +267,12 @@ model MarketJob {
   ticketWorkers   TicketWorker[]
   gateRequestLogs GateRequestLog[]
 
-  @@unique([vehicleJobId, ticketNo])
+  // ticketNo ไม่ unique แบบเต็มรูปแบบอีกต่อไป — Admin ยกเลิก Ticket ที่ผิดได้ (status = CANCELLED)
+  // แล้ว Gate ส่ง ticketNo เดิมซ้ำเพื่อสร้างใหม่ได้ทันที แถวเดิมที่ถูกยกเลิกยังเก็บไว้เป็นประวัติ
+  // ความ unique จริงบังคับด้วย partial unique index ที่ migration.sql (เฉพาะแถวที่ status <>
+  // 'CANCELLED') Prisma schema syntax ไม่รองรับ partial unique index ตรงๆ จึงมีแค่ index ธรรมดา
+  // ไว้ช่วย query ตรงนี้
+  @@index([vehicleJobId, ticketNo])
   @@index([vehicleJobId, status])
   @@index([vehicleJobId, marketCode])
   @@map("market_jobs")
@@ -292,6 +300,7 @@ model GateTicket {
   rating                TicketRating?
   lineActionTokens      LineActionToken[]
   adminActionLogs       AdminActionLog[]
+  workerSnapshots       GateTicketWorkerSnapshot[]
 
   @@unique([marketJobId, boothCode])
   @@index([marketJobId, status])
@@ -431,11 +440,33 @@ model TicketWorker {
   marketJob          MarketJob             @relation(fields: [marketJobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   worker             Account               @relation(fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payments           TicketWorkerPayment[]
+  boothSnapshots     GateTicketWorkerSnapshot[]
 
   @@unique([marketJobId, workerAccountId])
   @@index([workerAccountId, status])
   @@index([marketJobId, status])
   @@map("ticket_workers")
+}
+
+// Snapshot of which TicketWorker rows were still WORKING at the moment one specific booth
+// (GateTicket) was confirmed (vendor confirm or auto-confirm timeout) — captured once, in
+// confirmTicketCompletion. This is the authoritative worker list + divisor used for THIS booth's
+// products at financialize time, instead of the Ticket-wide roster taken once at the very end of
+// the whole Business Ticket. This keeps payout fair per booth: a worker cancelled from the team
+// after this booth already confirmed does not shrink this booth's divisor, and a worker who was
+// active when this booth confirmed still gets counted here even if cancelled from the Ticket later.
+model GateTicketWorkerSnapshot {
+  id             Int      @id @default(autoincrement())
+  gateTicketId   Int      @map("gate_ticket_id")
+  ticketWorkerId Int      @map("ticket_worker_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+
+  gateTicket   GateTicket   @relation(fields: [gateTicketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ticketWorker TicketWorker @relation(fields: [ticketWorkerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([gateTicketId, ticketWorkerId])
+  @@index([ticketWorkerId])
+  @@map("gate_ticket_worker_snapshots")
 }
 
 model TicketCompletionSubmission {
