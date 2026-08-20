@@ -1,6 +1,5 @@
 import type { RuntimeSettings } from "../config/runtime.config";
 import type { AccountStatus } from "./shared/account.type";
-import type { SystemSettingDto } from "./shared/system-setting.type";
 import type {
   GateClientCreateInput,
   GateClientDto,

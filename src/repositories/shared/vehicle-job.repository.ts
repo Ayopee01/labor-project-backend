@@ -3,10 +3,7 @@ import { Prisma } from "@prisma/client";
 
 // Import Dependencies
 import {
-  ACTIVE_ASSIGNMENT_STATUSES,
-  TERMINAL_JOB_STATUSES,
   TERMINAL_TICKET_STATUSES,
-  TICKET_STATUS,
   VEHICLE_JOB_STATUS,
 } from "../../constants/job-status";
 import { countScannedAssignments } from "./vehicle-job-assignment.repository";
@@ -21,7 +18,6 @@ import { client, requireDto } from "./repository-utils";
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type {
-  CompletedVehicleJobResult,
   CurrentTicketProgressDto,
   VehicleJobDetailResponse,
   VehicleJobDto,

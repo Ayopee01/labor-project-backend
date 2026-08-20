@@ -100,8 +100,6 @@ export function validateRuntimeEnv(): EnvValidationResult {
   if (isProduction()) {
     if (!hasValue("CORS_ORIGIN")) {
       errors.push("CORS_ORIGIN is required in production.");
-      // } else if (process.env.CORS_ORIGIN!.trim() === "*") {
-      //   errors.push("CORS_ORIGIN must not be '*' in production.");
     } else if (
       process.env.CORS_ORIGIN!.trim() === "*" &&
       process.env.ALLOW_CORS_WILDCARD !== "true"

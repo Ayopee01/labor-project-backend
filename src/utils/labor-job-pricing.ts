@@ -89,17 +89,6 @@ function assertPositiveInteger(value: number, code: string, message: string): vo
   }
 }
 
-// Function validates that a Decimal value is finite and greater than zero.
-function assertPositiveDecimal(
-  value: Prisma.Decimal,
-  code: string,
-  message: string
-): void {
-  if (!value.isFinite() || value.lte(0)) {
-    throw new ApiError(400, code, message);
-  }
-}
-
 // Function validates that a Decimal value is finite and not negative.
 function assertNonNegativeDecimal(
   value: Prisma.Decimal,

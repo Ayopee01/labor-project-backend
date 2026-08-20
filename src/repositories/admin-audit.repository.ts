@@ -10,17 +10,6 @@ import type {
   AdminAuditWorkerPerformanceRecord,
 } from "../types/admin-audit.type";
 
-export interface WorkerPerformanceAssignmentRow {
-  assignment_id: number;
-  worker_account_id: number;
-  worker_code: string;
-  full_name: string;
-  status: string;
-  accepted_at: Date | null;
-  scanned_at: Date | null;
-  event_types: string[];
-}
-
 export interface WorkerPerformanceResult {
   total: number;
   data: AdminAuditWorkerPerformanceRecord[];

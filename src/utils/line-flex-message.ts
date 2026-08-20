@@ -58,27 +58,6 @@ function formatQuantity(
       .replace(/\.?0+$/, "");
 }
 
-// Function format จำนวนเงินเป็น 2 ตำแหน่ง
-function formatMoney(
-  value: string | number | null | undefined
-): string {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
-    return "-";
-  }
-
-  const numberValue = Number(value);
-
-  if (!Number.isFinite(numberValue)) {
-    return String(value);
-  }
-
-  return numberValue.toFixed(2);
-}
-
 // Function format วันที่ตาม timezone กรุงเทพฯ
 function formatBangkokDisplayDate(
   value: string | null | undefined

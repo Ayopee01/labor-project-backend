@@ -4087,57 +4087,6 @@
           description: Vehicle-level job reference (TicketNumber), not the Business Ticket used to check in.
         team_scan:
           $ref: "#/components/schemas/WorkerTeamScan"
-    WorkerAssignmentEarningProduct:
-      type: object
-      properties:
-        productCode:
-          type: string
-          example: "02020300"
-        packageCode:
-          type: string
-          example: "29"
-        productName:
-          type: string
-          example: Rambutan
-        packageName:
-          type: string
-          example: Crate 20
-        confirmed_quantity:
-          type: string
-          example: "10.00"
-        final_amount:
-          type: string
-          example: "9.00"
-          description: Persisted TicketWorkerPayment.finalAmount for this product.
-
-    WorkerAssignmentEarningBooth:
-      type: object
-      properties:
-        ticket_id:
-          type: integer
-          example: 1001
-        boothCode:
-          type: string
-          example: OM3/40
-        boothName:
-          type: string
-          nullable: true
-          example: Vendor A
-        membership_status:
-          type: string
-          enum:
-            - WORKING
-            - CANCELLED
-            - COMPLETED
-          example: COMPLETED
-        amount:
-          type: string
-          example: "12.00"
-        products:
-          type: array
-          items:
-            $ref: "#/components/schemas/WorkerAssignmentEarningProduct"
-
     WorkerAssignmentHistoryProduct:
       type: object
       properties:

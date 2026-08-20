@@ -57,7 +57,6 @@ import type {
   AdminVehicleJobActionResponse,
   AdminVehicleJobHistoryItemResponse,
   AdminVehicleJobHistoryRecord,
-  AdminVehicleJobListItemResponse,
   AdminVehicleJobOperationListResponse,
   AdminVehicleWaitResponse,
 } from "../types/admin-jobs.type";
@@ -118,21 +117,6 @@ function parseReference(value: unknown, code: string, message: string): string {
   }
 
   return reference;
-}
-
-// Function จัดรูปแบบ public vehicle job list item ใน service flow
-function formatPublicVehicleJobListItem(
-  vehicleJob: VehicleJobDto,
-): AdminVehicleJobListItemResponse {
-  return {
-    ticket_number: vehicleJob.ticket_number,
-    license_plate: vehicleJob.license_plate,
-    license_plate_province: vehicleJob.license_plate_province,
-    vehicle_type: vehicleJob.vehicle_type,
-    workers_required: vehicleJob.workers_required,
-    dispatch_now: vehicleJob.dispatch_now,
-    status: vehicleJob.status,
-  };
 }
 
 // Function ระบุ Timeline type จาก WorkerAssignmentEvent ใน service flow

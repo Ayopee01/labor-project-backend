@@ -308,32 +308,6 @@ export interface VehicleJobAssignmentDto {
   updated_at: string;
 }
 
-// Typeรายได้ Worker ต่อ Product ในประวัติงาน
-export interface WorkerAssignmentEarningProductDto {
-  productCode: string;
-  packageCode: string;
-  productName: string;
-  packageName: string;
-  confirmed_quantity: string;
-  final_amount: string;
-}
-
-// Typeรายได้ Worker ต่อ Booth ในประวัติงาน
-export interface WorkerAssignmentEarningBoothDto {
-  ticket_id: number;
-  boothCode: string;
-  boothName: string | null;
-  membership_status: string;
-  amount: string;
-  products: WorkerAssignmentEarningProductDto[];
-}
-
-// Typeสรุปรายได้ Worker ต่อ VehicleJob
-export interface WorkerAssignmentEarningsDto {
-  total_amount: string;
-  booths: WorkerAssignmentEarningBoothDto[];
-}
-
 // Type DTO ประวัติ assignment พร้อมข้อมูลงานรถและรายได้จริง
 export interface WorkerAssignmentHistoryItemDto {
   assignment: VehicleJobAssignmentDto;

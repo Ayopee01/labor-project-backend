@@ -1,5 +1,4 @@
 import type { Prisma } from "@prisma/client";
-import type { VehicleJobDetailResponse } from "./worker.type";
 import type { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 
 // Type record สำหรับบอร์ด operation ของ VehicleJob
@@ -249,11 +248,6 @@ export interface VehicleJobOperationFilters {
   limit?: number;
 }
 
-export interface VehicleJobListResult {
-  data: VehicleJobDetailResponse[];
-  total?: number;
-}
-
 export interface VehicleJobHistoryListResult {
   data: AdminVehicleJobHistoryRecord[];
   total?: number;
@@ -322,9 +316,6 @@ export interface AdminHistoryRejectionResponse {
   reject_reason: string | null;
   corrected_by_worker_code: string | null;
 }
-
-// Type สินค้าใน Work History แบบละเอียด (มี Rate Snapshot + Financial ต่อ Worker) เหมือน /financials
-export type AdminHistoryProductResponse = AdminFinancialProductResponse;
 
 // Type Booth ใน Work History แบบละเอียด ต่อยอดจาก AdminFinancialBoothResponse ด้วยข้อมูล
 // การส่งยอด/Reject ที่หน้าจอ Financial เดิมไม่ต้องใช้
