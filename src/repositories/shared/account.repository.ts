@@ -15,8 +15,6 @@ const ADMIN_ROLE = "admin";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
-// Function แปลง id เป็น account id แบบ number สำหรับ query DB
 // Function ตรวจว่า account DTO จาก DB
 function isAccountDto(account: AccountDto | null): account is AccountDto {
   return account !== null;

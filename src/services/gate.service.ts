@@ -16,7 +16,7 @@ import * as rateResolutionService from "./shared/rate-resolution.service";
 import type { GateOptionsResponse, GateProductOption, GateVehicleJobBody, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVehicleJobResponseStatus, GateVehicleJobResult } from "../types/gate.type";
 import type { DbConnection } from "../types/shared/common.type";
 import type { LineMessage } from "../types/line.type";
-import type { MarketJobDto, VehicleJobDto } from "../types/worker.type";
+import type { MarketJobDto, VehicleJobDto, VendorLineTargetDto } from "../types/worker.type";
 
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
@@ -527,15 +527,15 @@ function buildGateTicketCreatedMessages(
 }
 
 // Function แจ้ง Vendor แยกตามแผง
+// รับ vendorLineTargetsByBoothCode ที่ query ไว้แล้วตอนสร้าง Ticket (buildGateCreateInputWithVendorLineIds)
+// มาใช้ต่อเลย ไม่ query findActiveVendorLineTargetsByStall ซ้ำอีกรอบสำหรับ booth เดียวกัน
 async function notifyVendorGateTicketCreated(
-  response: GateVehicleJobResponse
+  response: GateVehicleJobResponse,
+  vendorLineTargetsByBoothCode: Map<string, VendorLineTargetDto[]>
 ): Promise<void> {
   for (const booth of response.Booths) {
     const vendorLineTargets =
-      await gateRepository.findActiveVendorLineTargetsByStall(
-        response.Market.MarketCode,
-        booth.BoothCode
-      );
+      vendorLineTargetsByBoothCode.get(booth.BoothCode) ?? [];
 
     if (vendorLineTargets.length === 0) {
       continue;
@@ -809,10 +809,17 @@ function buildGateCreateInput(
 }
 
 // Function เติม Vendor LINE ID ให้แต่ละแผง
+// คืน vendorLineTargetsByBoothCode มาด้วย เพื่อให้ notifyVendorGateTicketCreated นำไปใช้ต่อได้เลย
+// โดยไม่ต้อง query findActiveVendorLineTargetsByStall ซ้ำอีกรอบสำหรับ booth เดิม (แต่ละ booth ในคำขอ
+// เดียวกันมี boothCode ไม่ซ้ำกันอยู่แล้ว จึงใช้เป็น key ได้ปลอดภัย)
 async function buildGateCreateInputWithVendorLineIds(
   input: GateVehicleJobCreateInput,
   connection?: DbConnection
-): Promise<GateVehicleJobCreateInput> {
+): Promise<{
+  input: GateVehicleJobCreateInput;
+  vendorLineTargetsByBoothCode: Map<string, VendorLineTargetDto[]>;
+}> {
+  const vendorLineTargetsByBoothCode = new Map<string, VendorLineTargetDto[]>();
   const markets =
     await Promise.all(
       input.markets.map(
@@ -847,6 +854,11 @@ async function buildGateCreateInputWithVendorLineIds(
                     );
                   }
 
+                  vendorLineTargetsByBoothCode.set(
+                    booth.boothCode,
+                    vendorLineTargets
+                  );
+
                   return {
                     ...booth,
 
@@ -862,8 +874,11 @@ async function buildGateCreateInputWithVendorLineIds(
     );
 
   return {
-    ...input,
-    markets,
+    input: {
+      ...input,
+      markets,
+    },
+    vendorLineTargetsByBoothCode,
   };
 }
 
@@ -1093,7 +1108,7 @@ export async function createVehicleJobFromGate(
       );
     }
 
-    console.info(
+    logger.info(
       "Gate request replayed",
       {
         gate_transaction_ref:
@@ -1216,7 +1231,10 @@ export async function createVehicleJobFromGate(
           );
 
         // เติม LINE ID ของแต่ละแผง
-        const gateInputWithVendorLineIds =
+        const {
+          input: gateInputWithVendorLineIds,
+          vendorLineTargetsByBoothCode,
+        } =
           await buildGateCreateInputWithVendorLineIds(
             gateInput,
             transaction
@@ -1255,9 +1273,40 @@ export async function createVehicleJobFromGate(
               : null,
 
           response,
+          vendorLineTargetsByBoothCode,
         };
       }
-    );
+    ).catch((error) => {
+      // เช็คเพิ่มว่าเป็น boothCode ชนกันจาก race condition หรือไม่ (ยิง Gate ซ้ำพร้อมกันด้วย
+      // BoothCode เดียวกัน แข่งกัน insert หลังผ่าน pre-check ด้านบนไปแล้วทั้งคู่) ถ้าใช่ ให้แปลงเป็น
+      // ApiError เดียวกับที่ pre-check ด้านบนโยนไว้ แทนที่จะปล่อยเป็น raw Prisma error — จุดกันชนสุดท้าย
+      // เสริมจาก pre-check ด้านบนที่ทำนอก transaction (แข่งกันได้ในช่วงเวลาสั้นๆ ระหว่างเช็คกับเขียนจริง)
+      const target =
+        error instanceof Prisma.PrismaClientKnownRequestError
+          ? error.meta?.target
+          : undefined;
+      const targetText = (
+        Array.isArray(target) ? target.join(",") : String(target ?? "")
+      ).toLowerCase();
+      const isDuplicateBoothCode =
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002" &&
+        targetText.includes("booth");
+
+      if (isDuplicateBoothCode) {
+        throw new ApiError(
+          409,
+          "GATE_BOOTH_ALREADY_EXISTS_IN_TICKET",
+          "One or more BoothCodes already exist in this Ticket.",
+          {
+            ticketNumber: input.TicketNumber,
+            ticketNo: input.TicketNo,
+          }
+        );
+      }
+
+      throw error;
+    });
 
   const response =
     createResult.response;
@@ -1324,14 +1373,10 @@ export async function createVehicleJobFromGate(
   });
 
   // แจ้ง Vendor ของแต่ละแผง
-  // await notifyVendorGateTicketCreated(
-  //   response
-  // );
-
-  // แจ้ง Vendor ของแต่ละแผง
   try {
     await notifyVendorGateTicketCreated(
-      response
+      response,
+      createResult.vendorLineTargetsByBoothCode
     );
   } catch (error) {
     logger.error("Gate ticket was created but vendor notification failed.", {

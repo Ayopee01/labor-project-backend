@@ -182,13 +182,16 @@ router.post(
 );
 
 // Route Admin ส่ง/แก้ยอดสินค้าของ Booth หนึ่งใบแทน Worker
+// ต้องระบุ ticketNo (Business Ticket) มาด้วยเสมอ เพราะ stallCode ไม่ unique ข้าม Business Ticket
+// คนละตลาดของรถคันเดียวกัน (unique แค่ภายใน MarketJob เดียว) — เหมือน tickets/:ticketNo/workers/... ด้านบน
 router.post(
-  "/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count",
+  "/vehicle-jobs/:ticketNumber/tickets/:ticketNo/stalls/:stallCode/override-count",
   permissionMiddleware(["jobs:override_count"]),
   async (req, res, next) => {
     try {
       const result = await adminJobsService.overrideTicketProductCounts(
         req.params.ticketNumber,
+        req.params.ticketNo,
         req.params.stallCode,
         req.body,
         req.auth

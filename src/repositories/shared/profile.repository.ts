@@ -9,8 +9,6 @@ import type { ProfileDto } from "../../types/admin-workers.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เลือก Prisma client หรือ transaction client ที่ส่งเข้ามา
-// Function แปลง id เป็น account id แบบ number สำหรับ query DB
 // Function ค้นหา ตาม account ID จาก DB
 export async function findByAccountId(
   accountId: number | string,

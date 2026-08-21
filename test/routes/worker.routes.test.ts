@@ -1,6 +1,7 @@
 ﻿import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 
+import { buildWorkScheduleShiftInstanceKey } from "../../src/utils/shift";
 import {
   addAdmin,
   addDispatchableJob,
@@ -1117,6 +1118,7 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
     "nationality",
     "phone",
     "shift",
+    "shift_active",
     "status",
     "today_job_count",
     "work_start_date",
@@ -1135,8 +1137,87 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
   assert.equal(typeof response.body.shift.name, "string");
   assert.equal(response.body.shift.start_time, "00:00");
   assert.equal(response.body.shift.end_time, "23:59");
+  // Fixture ตั้งกะเป็น 00:00-23:59 (ทั้งวัน) ตอนนี้จึงต้องอยู่ในกะเสมอ
+  assert.equal(response.body.shift_active, true);
   assert.equal("break_until" in response.body, false);
   assert.equal("remaining_break_time" in response.body, false);
+});
+
+test("GET /api/workers/me/status returns shift_active false when worker is outside the assigned shift", async () => {
+  const { token, worker } = await loginWorker(1091);
+
+  // เลื่อนกะไปในอนาคต 2 ชั่วโมงเป็นเวลา 1 ชั่วโมง (ตามเวลา Bangkok เหมือนที่ isTimeInWorkSchedule
+  // ใช้เทียบ) เพื่อให้ "ตอนนี้" อยู่นอกกะแน่นอน
+  const schedule = state.schedules.get(worker.id);
+  assert.ok(schedule, "Worker fixture must seed a default work schedule.");
+  const bangkokFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+
+  state.schedules.set(worker.id, {
+    ...schedule,
+    shift_start_time: bangkokFormatter
+      .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
+      .replace(" ", ""),
+    shift_end_time: bangkokFormatter
+      .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
+      .replace(" ", ""),
+  });
+
+  const response = await server.request("GET", "/api/workers/me/status", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.shift_active, false);
+});
+
+test("GET /api/workers/me/status returns shift_active false when the worker already closed this shift's attendance, even while still inside the shift time window", async () => {
+  const { token, worker } = await loginWorker(1092);
+
+  // Fixture ตั้งกะเป็น 00:00-23:59 (ทั้งวัน) ตอนนี้จึงยังอยู่ในกะแน่นอน แต่จำลองว่า worker ปิดกะไปแล้ว
+  // (เช่น กด "เลิกงาน" เอง หรือ shift-end job ปิดให้) — shift_active ต้องเป็น false ทันที ไม่ต้องรอให้
+  // พ้นเวลากะก่อน
+  const schedule = state.schedules.get(worker.id) as {
+    shift_no: number;
+    shift_start_time: string;
+    shift_end_time: string;
+  };
+  assert.ok(schedule, "Worker fixture must seed a default work schedule.");
+  const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(
+    schedule as unknown as Parameters<typeof buildWorkScheduleShiftInstanceKey>[0],
+  );
+
+  state.shiftAttendances.push({
+    id: state.nextShiftAttendanceId++,
+    accountId: worker.id,
+    workerCode: worker.username,
+    shiftInstanceKey,
+    shiftNo: schedule.shift_no,
+    shiftStartTime: schedule.shift_start_time,
+    shiftEndTime: schedule.shift_end_time,
+    firstOnlineAt: new Date().toISOString(),
+    lastOnlineAt: new Date().toISOString(),
+    offlineAt: new Date().toISOString(),
+    closedAt: new Date().toISOString(),
+    closeReason: "shift_ended",
+    acceptTimeoutStreak: 0,
+    lastAcceptTimeoutAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const response = await server.request("GET", "/api/workers/me/status", {
+    token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.shift.start_time, "00:00");
+  assert.equal(response.body.shift.end_time, "23:59");
+  assert.equal(response.body.shift_active, false);
 });
 
 test("GET /api/workers/me/status returns open_app when worker is not ready yet", async () => {

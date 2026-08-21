@@ -3,34 +3,16 @@ import { Prisma, type MasterMarket } from "@prisma/client";
 
 // Import Dependencies
 import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
+import * as gateTicketRepository from "./shared/gate-ticket.repository";
 import { mapMarketJob, mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
 
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
-import type { GateRequestReplayRecord, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVendorLineTargetDto, GateBoothOption } from "../types/gate.type";
-import type { MarketJobDto, VehicleJobDto } from "../types/worker.type";
+import type { GateRequestReplayRecord, GateVehicleJobCreateInput, GateVehicleJobResponse, GateBoothOption } from "../types/gate.type";
+import type { MarketJobDto, VehicleJobDto, VendorLineTargetDto } from "../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
-
-// Function ค้นหา gate request response ตาม ref จาก DB
-export async function findGateRequestResponseByRef(
-  gateTransactionRef: string,
-  connection?: DbConnection
-): Promise<GateVehicleJobResponse | null> {
-  const db = client(connection);
-  const requestLog = await db.gateRequestLog.findUnique({
-    where: {
-      gateTransactionRef,
-    },
-  });
-
-  if (!requestLog?.responseSnapshot) {
-    return null;
-  }
-
-  return requestLog.responseSnapshot as unknown as GateVehicleJobResponse;
-}
 
 // Function ค้นหา gate request replay ตาม ref จาก DB
 export async function findGateRequestReplayByRef(
@@ -90,63 +72,18 @@ export async function findGateTicketBoothCodesByMarketJobId(
 }
 
 // Function ค้นหา active vendor LINE targets ตาม stall จาก DB
+// ใช้ logic เดียวกับ listActiveVendorLineTargetsForTicket (gate-ticket.repository.ts) ผ่าน helper
+// กลาง findActiveVendorLineTargetsByMarketAndBooth เพราะ Gate ยังไม่มี ticketId ตอนสร้าง Ticket ใหม่
 export async function findActiveVendorLineTargetsByStall(
   marketCode: string,
   boothCode: string,
   connection?: DbConnection
-): Promise<GateVendorLineTargetDto[]> {
-  const db = client(connection);
-  const ownerStall = await db.masterOwnerStall.findUnique({
-    where: {
-      marketCode_boothCode: {
-        marketCode,
-        boothCode,
-      },
-    },
-  });
-
-  if (
-    !ownerStall ||
-    ownerStall.status !== "active" ||
-    ownerStall.ownerStatus !== "Normal" ||
-    !ownerStall.lineUserId
-  ) {
-    return [];
-  }
-
-  const members = await db.masterMemberStall.findMany({
-    where: {
-      marketCode: ownerStall.marketCode,
-      ownerIdCard: ownerStall.cardId,
-      ownerLineUserId: ownerStall.lineUserId,
-      status: "active",
-      memberStallStatusOnStall: "1",
-    },
-    orderBy: {
-      id: "asc",
-    },
-  });
-  const seen = new Set<string>();
-  const targets: GateVendorLineTargetDto[] = [];
-  const addTarget = (lineUserId: string, targetType: GateVendorLineTargetDto["target_type"]) => {
-    if (seen.has(lineUserId)) {
-      return;
-    }
-
-    seen.add(lineUserId);
-    targets.push({
-      line_user_id: lineUserId,
-      target_type: targetType,
-    });
-  };
-
-  addTarget(ownerStall.lineUserId, "owner");
-
-  for (const member of members) {
-    addTarget(member.memberStallLineUserId, "member");
-  }
-
-  return targets;
+): Promise<VendorLineTargetDto[]> {
+  return gateTicketRepository.findActiveVendorLineTargetsByMarketAndBooth(
+    marketCode,
+    boothCode,
+    connection
+  );
 }
 
 // TEST HELPER: ใช้โดย GET /api/gate/options

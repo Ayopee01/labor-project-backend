@@ -296,18 +296,6 @@
           $ref: "#/components/schemas/AccountLang"
         shift:
           $ref: "#/components/schemas/ProfileCardShift"
-        shift_active:
-          type: boolean
-          description: >
-            True only when BOTH conditions hold: (1) the worker is currently inside their
-            assigned shift time window — the same condition POST /api/workers/me/online checks
-            before throwing 403 OUTSIDE_WORK_SHIFT — and (2) the worker still has eligibility for
-            this shift instance per their WorkerShiftAttendance record (has not already ended/
-            closed this shift). Being inside the shift time alone is not enough — a worker who
-            already ended their shift shows false immediately, without waiting for the shift time
-            window itself to end. Lets the app enable/disable the Online button without
-            recomputing either check itself.
-          example: true
     WorkerProfile:
       type: object
       properties:
@@ -4584,6 +4572,18 @@
           example: 081-234-5678
         shift:
           $ref: "#/components/schemas/ProfileCardShift"
+        shift_active:
+          type: boolean
+          description: >
+            True only when BOTH conditions hold: (1) the worker is currently inside their
+            assigned shift time window — the same condition POST /api/workers/me/online checks
+            before throwing 403 OUTSIDE_WORK_SHIFT — and (2) the worker still has eligibility for
+            this shift instance per their WorkerShiftAttendance record (has not already ended/
+            closed this shift). Being inside the shift time alone is not enough — a worker who
+            already ended their shift shows false immediately, without waiting for the shift time
+            window itself to end. Lets the app enable/disable the Online button without
+            recomputing either check itself.
+          example: true
         current_job:
           allOf:
             - $ref: "#/components/schemas/WorkerCurrentJob"

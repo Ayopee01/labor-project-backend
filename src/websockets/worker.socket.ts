@@ -223,9 +223,8 @@ export function sendWorkerSocketEvent(
   const sockets = workerSockets.get(accountId);
   const shouldPush = options.push ?? PUSH_WORKER_SOCKET_EVENTS.has(type);
   const hasSockets = Boolean(sockets && sockets.size > 0);
-  const fallbackTitle = options.pushTitle ?? options.fallbackTitle ?? buildWorkerPushTitle(type);
-  const fallbackMessage =
-    options.pushMessage ?? options.fallbackMessage ?? buildWorkerPushMessage(type, payload);
+  const fallbackTitle = options.fallbackTitle ?? buildWorkerPushTitle(type);
+  const fallbackMessage = options.fallbackMessage ?? buildWorkerPushMessage(type, payload);
 
   void accountRepository.findById(accountId).then((account) => {
     const localized = buildWorkerNotification({

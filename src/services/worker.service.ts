@@ -1033,6 +1033,22 @@ export async function getWorkerStatus(
     account.id,
     currentSchedule,
   );
+  // shift_active ต้องผ่านทั้ง 2 เงื่อนไข ไม่ใช่แค่ข้อใดข้อหนึ่ง:
+  // 1) เวลาปัจจุบันต้องอยู่ในช่วงกะจริงตาม DB (เงื่อนไขเดียวกับที่ workerOnline ใช้ตรวจก่อน throw
+  //    OUTSIDE_WORK_SHIFT ห้าม duplicate logic นี้แยกที่อื่น)
+  // 2) ต้องยังมีสิทธิ์เข้าคิวของกะนี้ตาม WorkerShiftAttendance ด้วย (ยังไม่ถูกปิดกะไป — closedAt ต้อง
+  //    เป็น null) เพราะแค่ "อยู่ในกะ" อย่างเดียวไม่พอ ถ้าออกกะไปแล้วก่อนหน้านี้ต้องเป็น false ทันที
+  //    ไม่ต้องรอให้พ้นเวลากะก่อน
+  const isWithinShiftTime = Boolean(
+    currentSchedule && isTimeInWorkSchedule(currentSchedule),
+  );
+  const attendance = currentSchedule
+    ? await workerShiftAttendanceRepository.findByWorkerAndShift({
+        account_id: account.id,
+        shift_instance_key: buildWorkScheduleShiftInstanceKey(currentSchedule),
+      })
+    : null;
+  const hasShiftAttendanceEligibility = attendance?.closedAt == null;
   const response: WorkerStatusResponse = {
     full_name: account.full_name,
     worker_code: account.username,
@@ -1049,6 +1065,7 @@ export async function getWorkerStatus(
           end_time: schedule.shift_end_time,
         }
       : null,
+    shift_active: isWithinShiftTime && hasShiftAttendanceEligibility,
   };
   const remainingBreakTime =
     status === WORKER_WORK_STATUS.BREAK

@@ -482,7 +482,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminCancelAssignmentResponse"
-  /api/admin/vehicle-jobs/{ticketNumber}/stalls/{stallCode}/override-count:
+  /api/admin/vehicle-jobs/{ticketNumber}/tickets/{ticketNo}/stalls/{stallCode}/override-count:
     post:
       tags:
         - Admin Jobs
@@ -492,7 +492,9 @@
         worker-facing submit-count flow), not by internal id. Rejected once the booth is already
         closed (COMPLETED/CANCELLED) or already financialized, since money would otherwise be
         silently invalidated after being locked. Every call is recorded in AdminActionLog with
-        the given reason, and appears in Work History's Timeline as an ADMIN_ACTION event.
+        the given reason, and appears in Work History's Timeline as an ADMIN_ACTION event. Scoped
+        by ticketNo (Business Ticket) in addition to ticketNumber, since stallCode is only unique
+        within one Business Ticket, not across every Business Ticket of the same vehicle.
       operationId: overrideAdminTicketProductCounts
       security:
         - bearerAuth: []
@@ -503,6 +505,12 @@
           schema:
             type: string
             example: TRUCK-20260723-001
+        - in: path
+          name: ticketNo
+          required: true
+          schema:
+            type: string
+            example: TKT-20260723-000125
         - in: path
           name: stallCode
           required: true

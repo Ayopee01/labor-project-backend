@@ -922,26 +922,6 @@ export const workerApplicationRepositoryMock = {
       },
     ];
   },
-  findGateTicketForCompletionByTicketNumberAndBoothCode: async (
-    ticketNumber: string,
-    boothCode: string,
-  ) => {
-    const vehicleJob = state.vehicleJobs.find(
-      (job) => job.ticket_number === ticketNumber,
-    );
-
-    if (!vehicleJob) {
-      return null;
-    }
-
-    return (
-      state.gateTickets.find(
-        (ticket) =>
-          ticket.vehicle_job_id === vehicleJob.id &&
-          ticket.boothCode === boothCode,
-      ) ?? null
-    );
-  },
   findGateTicketForCompletionByTicketNumberAndTicketNoAndBoothCode: async (
     ticketNumber: string,
     ticketNo: string,
@@ -1665,7 +1645,6 @@ const {
   findCurrentAssignmentByWorker,
   findCurrentOpenTicketByVehicleJob,
   findGateTicketForCompletion,
-  findGateTicketForCompletionByTicketNumberAndBoothCode,
   findGateTicketForCompletionByTicketNumberAndTicketNoAndBoothCode,
   findTicketCompletionSubmissionById,
   findMarketJobFinancializationContext,
@@ -1766,7 +1745,6 @@ export const vehicleJobAssignmentRepositoryMock = {
 
 export const gateTicketRepositoryMock = {
   findGateTicketForCompletion,
-  findGateTicketForCompletionByTicketNumberAndBoothCode,
   findGateTicketForCompletionByTicketNumberAndTicketNoAndBoothCode,
   listActiveVendorLineTargetsForTicket,
   listTicketProducts,
@@ -1795,13 +1773,6 @@ export const ticketFinancialRepositoryMock = {
 };
 
 export const gateRepositoryMock = {
-  findGateRequestResponseByRef: async (gateTransactionRef: string) => {
-    const requestLog = state.gateRequestLogs.find(
-      (item) => item.gate_transaction_ref === gateTransactionRef,
-    );
-
-    return requestLog?.response_snapshot ?? null;
-  },
   findGateRequestReplayByRef: async (gateTransactionRef: string) => {
     const requestLog = state.gateRequestLogs.find(
       (item) => item.gate_transaction_ref === gateTransactionRef,

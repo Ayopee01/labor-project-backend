@@ -9,6 +9,10 @@ const MORNING_SHIFT = "Morning shift";
 
 const NIGHT_SHIFT = "Evening shift";
 
+// เวลาเริ่มกะตั้งแต่ 18:00 ขึ้นไปถือเป็นกะดึก ใช้ค่าเดียวกันทั้ง calculateShiftName และ
+// resolveShiftNoFromStartTime กันไม่ให้ boundary เพี้ยนไปคนละค่ากัน
+const NIGHT_SHIFT_START_MINUTES = 18 * 60;
+
 const SHIFT_PRESETS = {
   1: {
     shift_no: 1,
@@ -200,7 +204,7 @@ export function calculateShiftName(
 
   }
 
-  if (startMinutes >= 18 * 60) {
+  if (startMinutes >= NIGHT_SHIFT_START_MINUTES) {
     return NIGHT_SHIFT;
   }
 
@@ -219,7 +223,7 @@ export function resolveShiftNoFromStartTime(shiftStartTime: string): 1 | 2 {
     );
   }
 
-  return startMinutes >= 18 * 60 ? 2 : 1;
+  return startMinutes >= NIGHT_SHIFT_START_MINUTES ? 2 : 1;
 }
 
 // Function ค้นหาหรือตัดสิน shift preset สำหรับ helper กลาง

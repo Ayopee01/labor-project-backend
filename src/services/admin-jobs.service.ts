@@ -1173,6 +1173,9 @@ async function cancelVehicleJobAndRequeue(
     worker_account_ids: requeuedWorkerIds,
   });
   await dispatchReadyWorkers();
+  const requeuedWorkerCodes =
+    await profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds);
+
   publishNotification({
     type: "VEHICLE_JOB_CANCELLED_AND_REQUEUED",
     title: "Vehicle job cancelled and workers requeued",
@@ -1180,8 +1183,7 @@ async function cancelVehicleJobAndRequeue(
     payload: {
       ticketNumber: vehicleJob.ticket_number,
       status: vehicleJob.status,
-      requeued_worker_codes:
-        await profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
+      requeued_worker_codes: requeuedWorkerCodes,
     },
     audience: {
       roles: ["admin"],
@@ -1192,8 +1194,7 @@ async function cancelVehicleJobAndRequeue(
     message: "Vehicle job cancelled and workers requeued successfully.",
     ticket_number: vehicleJob.ticket_number,
     status: vehicleJob.status,
-    requeued_worker_codes:
-      await profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
+    requeued_worker_codes: requeuedWorkerCodes,
   };
 }
 
@@ -1344,6 +1345,11 @@ export async function assignVehicleJobWorkers(
       buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos),
     );
   }
+  const assignmentResponses = await buildAdminAssignmentResponses(
+    vehicleJob.ticket_number,
+    assignments,
+  );
+
   publishNotification({
     type: "ASSIGNMENT_CREATED_BY_ADMIN",
     title: "Workers assigned by admin",
@@ -1351,10 +1357,7 @@ export async function assignVehicleJobWorkers(
     payload: {
       ticketNumber: vehicleJob.ticket_number,
       worker_codes: workerCodes,
-      assignments: await buildAdminAssignmentResponses(
-        vehicleJob.ticket_number,
-        assignments,
-      ),
+      assignments: assignmentResponses,
     },
     audience: {
       roles: ["admin"],
@@ -1364,10 +1367,7 @@ export async function assignVehicleJobWorkers(
   return {
     message: "Workers assigned successfully.",
     ticket_number: vehicleJob.ticket_number,
-    assignments: await buildAdminAssignmentResponses(
-      vehicleJob.ticket_number,
-      assignments,
-    ),
+    assignments: assignmentResponses,
   };
 }
 
@@ -1747,11 +1747,17 @@ function requireActorId(auth?: AccessTokenPayload): number {
 // เพราะเป็น convention ของ Project นี้อยู่แล้ว (ดู updateTicketProductConfirmations)
 export async function overrideTicketProductCounts(
   ticketNumberParam: unknown,
+  ticketNoParam: unknown,
   boothCodeParam: unknown,
   body: unknown,
   auth?: AccessTokenPayload,
 ): Promise<AdminOverrideCountResponse> {
   const vehicleJob = await requireVehicleJobByRef(ticketNumberParam);
+  const ticketNo = parseReference(
+    ticketNoParam,
+    "INVALID_TICKET_NO",
+    "TicketNo is invalid.",
+  );
   const boothCode = parseReference(
     boothCodeParam,
     "INVALID_BOOTH_CODE",
@@ -1762,8 +1768,9 @@ export async function overrideTicketProductCounts(
 
   const result = await withTransaction(async (transaction) => {
     const ticket =
-      await gateTicketRepository.findGateTicketForCompletionByTicketNumberAndBoothCode(
+      await gateTicketRepository.findGateTicketForCompletionByTicketNumberAndTicketNoAndBoothCode(
         vehicleJob.ticket_number,
+        ticketNo,
         boothCode,
         transaction,
       );

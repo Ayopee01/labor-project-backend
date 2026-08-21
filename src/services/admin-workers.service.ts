@@ -975,14 +975,6 @@ export async function forceAdminWorkerStatus(
   }
 
   if (input.status === WORKER_WORK_STATUS.BREAK) {
-    if (!currentSchedule) {
-      throw new ApiError(
-        403,
-        "WORK_SCHEDULE_NOT_FOUND",
-        "Worker does not have a current work schedule."
-      );
-    }
-
     if (queueEntry?.status !== WORKER_WORK_STATUS.BREAK) {
       const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
       const currentBreakCount = await getWorkerBreakCount(

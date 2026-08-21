@@ -8,7 +8,7 @@ import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worke
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function แปลง state ภายในของคิว/assignment เป็น 5 สถานะ worker สำหรับ UI
+// Function แปลง state ภายในของคิว/assignment เป็น 6 สถานะ worker สำหรับ UI
 export function resolveWorkerWorkStatus(
   queue: WorkerQueueEntryDto | null,
   assignment: VehicleJobAssignmentDto | null,

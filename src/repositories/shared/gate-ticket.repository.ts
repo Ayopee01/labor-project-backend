@@ -31,27 +31,6 @@ export async function findGateTicketForCompletion(
   return mapGateTicket(ticket);
 }
 
-export async function findGateTicketForCompletionByTicketNumberAndBoothCode(
-  ticketNumber: string,
-  boothCode: string,
-  connection?: DbConnection
-): Promise<GateTicketDto | null> {
-  const db = client(connection);
-  const ticket = await db.gateTicket.findFirst({
-    where: {
-      boothCode,
-      vehicleJob: {
-        ticketNumber,
-      },
-    },
-    orderBy: {
-      id: "asc",
-    },
-  });
-
-  return mapGateTicket(ticket);
-}
-
 // Function ค้นหา Booth สำหรับส่งยอด โดย scope ด้วย Business Ticket (ticketNo) ด้วย ไม่ใช่แค่
 // TicketNumber + boothCode เฉยๆ เพราะ boothCode ไม่ unique ข้าม Business Ticket คนละตลาดของรถ
 // คันเดียวกัน (unique แค่ภายใน MarketJob เดียว) — worker ต้องระบุ ticket_no มาด้วยเสมอ
@@ -98,11 +77,27 @@ export async function listActiveVendorLineTargetsForTicket(
     return [];
   }
 
+  return findActiveVendorLineTargetsByMarketAndBooth(
+    ticket.marketJob.marketCode,
+    ticket.boothCode,
+    connection
+  );
+}
+
+// Function ค้นหา LINE target (owner + member) ของแผงหนึ่งใบ ใช้ร่วมกันทั้งจาก ticketId
+// (listActiveVendorLineTargetsForTicket ด้านบน) และจาก marketCode+boothCode ตรงๆ (gate.repository.ts
+// ตอน Gate ยังไม่มี ticketId เพราะกำลังจะสร้าง Ticket ใหม่)
+export async function findActiveVendorLineTargetsByMarketAndBooth(
+  marketCode: string,
+  boothCode: string,
+  connection?: DbConnection
+): Promise<VendorLineTargetDto[]> {
+  const db = client(connection);
   const ownerStall = await db.masterOwnerStall.findUnique({
     where: {
       marketCode_boothCode: {
-        marketCode: ticket.marketJob.marketCode,
-        boothCode: ticket.boothCode,
+        marketCode,
+        boothCode,
       },
     },
   });

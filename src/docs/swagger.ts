@@ -59,7 +59,7 @@ function sortSwaggerOperations(
     "post /api/admin/vehicle-jobs/{ticketNumber}/scan-deadline/extend": 34,
     "post /api/admin/vehicle-jobs/{ticketNumber}/workers/{workerCode}/assignment/cancel": 35,
     "post /api/admin/vehicle-jobs/{ticketNumber}/tickets/{ticketNo}/workers/{workerCode}/cancel": 35.5,
-    "post /api/admin/vehicle-jobs/{ticketNumber}/stalls/{stallCode}/override-count": 35.6,
+    "post /api/admin/vehicle-jobs/{ticketNumber}/tickets/{ticketNo}/stalls/{stallCode}/override-count": 35.6,
     "post /api/admin/vehicle-jobs/{ticketNumber}/wait": 35.7,
     "post /api/admin/vehicle-jobs/{ticketNumber}/release-workers": 35.8,
     "get /api/admin/audit/workers/performance": 36,

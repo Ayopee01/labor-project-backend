@@ -20,7 +20,6 @@ import type {
   UserListFilters,
   WorkScheduleCreateInput,
   WorkScheduleDto,
-  WorkScheduleUpdateInput,
 } from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
@@ -224,18 +223,6 @@ function buildScheduleCreateData(
 ): Prisma.AccountUncheckedUpdateInput {
   return {
     shiftNo: schedule.shift_no ?? 1,
-    workStartDate: schedule.work_date,
-    shiftStartTime: schedule.shift_start_time,
-    shiftEndTime: schedule.shift_end_time,
-  };
-}
-
-// Function สร้าง schedule update data จาก DB
-function buildScheduleUpdateData(
-  schedule: WorkScheduleUpdateInput,
-): Prisma.AccountUncheckedUpdateInput {
-  return {
-    ...(schedule.shift_no !== undefined && { shiftNo: schedule.shift_no }),
     workStartDate: schedule.work_date,
     shiftStartTime: schedule.shift_start_time,
     shiftEndTime: schedule.shift_end_time,
@@ -482,67 +469,6 @@ async function createWorkSchedule(
   return requireMapped(mapSchedule(updatedAccount), "Schedule", "create");
 }
 
-// Function อัปเดต current work schedule ตาม account ID จาก DB
-async function updateCurrentWorkScheduleByAccountId(
-  accountId: number | string,
-  schedule: WorkScheduleUpdateInput,
-  connection?: DbConnection,
-): Promise<WorkScheduleDto | null> {
-  const db = client(connection);
-  const currentSchedule = await db.account.findFirst({
-    where: {
-      id: toId(accountId),
-      role: WORKER_ROLE,
-      shiftNo: {
-        not: null,
-      },
-      shiftStartTime: {
-        not: null,
-      },
-      shiftEndTime: {
-        not: null,
-      },
-    },
-  });
-
-  if (!currentSchedule) {
-    return null;
-  }
-
-  const updatedAccount = await db.account.update({
-    where: {
-      id: currentSchedule.id,
-    },
-    data: buildScheduleUpdateData(schedule),
-  });
-
-  return requireMapped(mapSchedule(updatedAccount), "Schedule", "update");
-}
-
-// Function ลบ other work schedules ตาม account ID จาก DB
-async function deleteOtherWorkSchedulesByAccountId(
-  accountId: number | string,
-  keepScheduleId: number | string,
-  connection?: DbConnection,
-): Promise<void> {
-  const db = client(connection);
-
-  if (toId(accountId) === Number(keepScheduleId)) {
-    return;
-  }
-
-  await db.account.updateMany({
-    where: {
-      id: toId(accountId),
-    },
-    data: {
-      shiftNo: null,
-      shiftStartTime: null,
-      shiftEndTime: null,
-    },
-  });
-}
-
 // Function ลบ current work schedules ตาม account ID จาก DB
 async function deleteCurrentWorkSchedulesByAccountId(
   accountId: number | string,
@@ -585,8 +511,6 @@ const adminWorkersProfileRepository = {
 const adminWorkersWorkScheduleRepository = {
   ...workScheduleRepository,
   create: createWorkSchedule,
-  updateCurrentByAccountId: updateCurrentWorkScheduleByAccountId,
-  deleteOtherByAccountId: deleteOtherWorkSchedulesByAccountId,
   deleteCurrentByAccountId: deleteCurrentWorkSchedulesByAccountId,
 };
 

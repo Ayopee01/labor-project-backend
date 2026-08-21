@@ -173,14 +173,6 @@ export interface WorkScheduleCreateInput {
   updated_by?: number | null;
 }
 
-export interface WorkScheduleUpdateInput {
-  shift_no?: number;
-  work_date: string;
-  shift_start_time: string;
-  shift_end_time: string;
-  updated_by?: number | null;
-}
-
 interface PaginationFilters {
   offset: number;
   limit: number;

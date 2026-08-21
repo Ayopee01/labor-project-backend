@@ -108,7 +108,7 @@ export async function createAssignment(
     data: {
       vehicleJobId,
       workerAccountId,
-      status: "PENDING",
+      status: ASSIGNMENT_STATUS.PENDING,
       acceptDeadlineAt,
     },
   });

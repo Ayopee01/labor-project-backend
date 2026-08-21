@@ -1398,7 +1398,7 @@
           "response": []
         },
         {
-          "name": "POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count",
+          "name": "POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/stalls/:stallCode/override-count",
           "request": {
             "method": "POST",
             "header": [
@@ -1423,7 +1423,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/stalls/{{boothCode}}/override-count",
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/tickets/{{ticketNo}}/stalls/{{boothCode}}/override-count",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1432,6 +1432,8 @@
                 "admin",
                 "vehicle-jobs",
                 "{{ticketNumber}}",
+                "tickets",
+                "{{ticketNo}}",
                 "stalls",
                 "{{boothCode}}",
                 "override-count"
@@ -1440,7 +1442,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/stalls/{{boothCode}}/override-count\nAuth: Admin access token with jobs:override_count permission\nBody: ReasonCode (required), ReasonText (optional), Counts[] of {ProductCode, PackageCode, ActualQuantity}\nNotes: Admin submits or corrects a booth's product quantities on behalf of a worker. Looks up products by ProductCode+PackageCode, the same business key the worker submit-count flow uses. Returns 409 if the booth is already closed or already financialized. Every call is recorded in AdminActionLog and appears in GET /api/admin/vehicle-jobs/history Timeline as an ADMIN_ACTION event.\nResponse: Message, TicketNumber, BoothCode, Status, ReasonCode, ReasonText, Products[] of {ProductCode, PackageCode, PreviousQuantity, ConfirmedQuantity}."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/vehicle-jobs/{{ticketNumber}}/tickets/{{ticketNo}}/stalls/{{boothCode}}/override-count\nAuth: Admin access token with jobs:override_count permission\nBody: ReasonCode (required), ReasonText (optional), Counts[] of {ProductCode, PackageCode, ActualQuantity}\nNotes: Admin submits or corrects a booth's product quantities on behalf of a worker. Scoped by TicketNo (Business Ticket) in addition to TicketNumber, since BoothCode is only unique within one Business Ticket, not across every Business Ticket of the same vehicle. Looks up products by ProductCode+PackageCode, the same business key the worker submit-count flow uses. Returns 409 if the booth is already closed or already financialized. Every call is recorded in AdminActionLog and appears in GET /api/admin/vehicle-jobs/history Timeline as an ADMIN_ACTION event.\nResponse: Message, TicketNumber, BoothCode, Status, ReasonCode, ReasonText, Products[] of {ProductCode, PackageCode, PreviousQuantity, ConfirmedQuantity}."
           },
           "response": []
         },

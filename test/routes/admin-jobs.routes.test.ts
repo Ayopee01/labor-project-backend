@@ -2983,17 +2983,18 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:work
 
 /* -------------------------------------- Admin Override Count Route Tests -------------------------------------- */
 
-test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count overrides product quantities and records the admin action", async () => {
+test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/stalls/:stallCode/override-count overrides product quantities and records the admin action", async () => {
   const { token } = await loginJobAdmin(9800);
   const job = addDispatchableJob(980, 1);
   const ticket = addTicketForVehicleJob(job.id, 19800);
+  const marketJob = state.marketJobs.find((item) => item.id === ticket.market_job_id);
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === ticket.id,
   );
 
   const response = await server.request(
     "POST",
-    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/tickets/${marketJob?.ticket_no}/stalls/${ticket.boothCode}/override-count`,
     {
       token,
       body: {
@@ -3035,14 +3036,15 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-coun
   assert.equal(log.reason_text, "กรอกข้อมูลผิดพลาด");
 });
 
-test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count returns 404 for an unknown booth", async () => {
+test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/stalls/:stallCode/override-count returns 404 for an unknown booth", async () => {
   const { token } = await loginJobAdmin(9810);
   const job = addDispatchableJob(981, 1);
-  addTicketForVehicleJob(job.id, 19810);
+  const ticket = addTicketForVehicleJob(job.id, 19810);
+  const marketJob = state.marketJobs.find((item) => item.id === ticket.market_job_id);
 
   const response = await server.request(
     "POST",
-    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/UNKNOWN-STALL/override-count`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/tickets/${marketJob?.ticket_no}/stalls/UNKNOWN-STALL/override-count`,
     {
       token,
       body: {
@@ -3056,14 +3058,15 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-coun
   assert.equal(response.body.code, "TICKET_NOT_FOUND");
 });
 
-test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count returns 404 for an unknown product", async () => {
+test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/stalls/:stallCode/override-count returns 404 for an unknown product", async () => {
   const { token } = await loginJobAdmin(9820);
   const job = addDispatchableJob(982, 1);
   const ticket = addTicketForVehicleJob(job.id, 19820);
+  const marketJob = state.marketJobs.find((item) => item.id === ticket.market_job_id);
 
   const response = await server.request(
     "POST",
-    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/tickets/${marketJob?.ticket_no}/stalls/${ticket.boothCode}/override-count`,
     {
       token,
       body: {
@@ -3079,10 +3082,11 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-coun
   assert.equal(response.body.code, "PRODUCT_NOT_FOUND");
 });
 
-test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count rejects a booth that already completed", async () => {
+test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/stalls/:stallCode/override-count rejects a booth that already completed", async () => {
   const { token } = await loginJobAdmin(9830);
   const job = addDispatchableJob(983, 1);
   const ticket = addTicketForVehicleJob(job.id, 19830);
+  const marketJob = state.marketJobs.find((item) => item.id === ticket.market_job_id);
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === ticket.id,
   );
@@ -3091,7 +3095,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-coun
 
   const response = await server.request(
     "POST",
-    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/tickets/${marketJob?.ticket_no}/stalls/${ticket.boothCode}/override-count`,
     {
       token,
       body: {
@@ -3111,10 +3115,11 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-coun
   assert.equal(response.body.code, "INVALID_TICKET_STATUS");
 });
 
-test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-count rejects a booth that is already financialized", async () => {
+test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/stalls/:stallCode/override-count rejects a booth that is already financialized", async () => {
   const { token } = await loginJobAdmin(9840);
   const job = addDispatchableJob(984, 1);
   const ticket = addTicketForVehicleJob(job.id, 19840);
+  const marketJob = state.marketJobs.find((item) => item.id === ticket.market_job_id);
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === ticket.id,
   );
@@ -3124,7 +3129,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/stalls/:stallCode/override-coun
 
   const response = await server.request(
     "POST",
-    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/tickets/${marketJob?.ticket_no}/stalls/${ticket.boothCode}/override-count`,
     {
       token,
       body: {
@@ -3495,13 +3500,14 @@ test("GET /api/admin/vehicle-jobs/history reflects Admin actions (override count
   const { token: adminToken } = await loginJobAdmin(9960);
   const job = addDispatchableJob(996, 1);
   const ticket = addTicketForVehicleJob(job.id, 19960);
+  const marketJob = state.marketJobs.find((item) => item.id === ticket.market_job_id);
   const products = state.ticketProducts.filter(
     (product) => product.ticket_id === ticket.id,
   );
 
   const overrideResponse = await server.request(
     "POST",
-    `/api/admin/vehicle-jobs/${job.ticket_number}/stalls/${ticket.boothCode}/override-count`,
+    `/api/admin/vehicle-jobs/${job.ticket_number}/tickets/${marketJob?.ticket_no}/stalls/${ticket.boothCode}/override-count`,
     {
       token: adminToken,
       body: {

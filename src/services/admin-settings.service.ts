@@ -212,9 +212,6 @@ async function assertCanReadAdminPermissions(
   }
 }
 
-// Function จัดการ merge runtime settings ใน service flow
-// Function จัดการ clear runtime settings cache ใน service flow
-// Function ดึง runtime settings ใน service flow
 // Function ดึงรายการ system settings ใน service flow
 export async function listSystemSettings(): Promise<RuntimeSettingsResponse> {
   return getRuntimeSettings();
@@ -411,7 +408,6 @@ export async function createAdminAccount(
   });
 }
 
-// Function ดึง account permissions ใน service flow
 // Function ดึง admin user permissions ใน service flow
 export async function getAdminUserPermissions(
   accountIdParam: unknown,

@@ -1,7 +1,6 @@
 import { accountRepository, sessionRepository } from "../repositories/auth.repository";
 import * as profileRepository from "../repositories/shared/profile.repository";
 import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
-import * as workerShiftAttendanceRepository from "../repositories/shared/worker-shift-attendance.repository";
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
 import { getAccountPermissions } from "./shared/account-permission.service";
 import {
@@ -21,7 +20,7 @@ import ApiError from "../utils/api-error";
 import { signAccessToken, signLoginChallengeToken, signRefreshToken, verifyLoginChallengeToken, verifyRefreshToken } from "../utils/jwt";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { hashRefreshToken, refreshTokenHashesMatch } from "../utils/refresh-token-hash";
-import { buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, isTimeInWorkSchedule } from "../utils/shift";
+import { formatScheduleWithShift } from "../utils/shift";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -109,22 +108,6 @@ async function buildMeResponse(
     workScheduleRepository.findCurrentByAccountId(account.id),
   ]);
   const schedule = formatScheduleWithShift(currentWorkSchedule);
-  // shift_active ต้องผ่านทั้ง 2 เงื่อนไข ไม่ใช่แค่ข้อใดข้อหนึ่ง:
-  // 1) เวลาปัจจุบันต้องอยู่ในช่วงกะจริงตาม DB (เงื่อนไขเดียวกับที่ workerOnline ใช้ตรวจก่อน throw
-  //    OUTSIDE_WORK_SHIFT ห้าม duplicate logic นี้แยกที่อื่น)
-  // 2) ต้องยังมีสิทธิ์เข้าคิวของกะนี้ตาม WorkerShiftAttendance ด้วย (ยังไม่ถูกปิดกะไป — closedAt ต้อง
-  //    เป็น null) เพราะแค่ "อยู่ในกะ" อย่างเดียวไม่พอ ถ้าออกกะไปแล้วก่อนหน้านี้ต้องเป็น false ทันที
-  //    ไม่ต้องรอให้พ้นเวลากะก่อน
-  const isWithinShiftTime = Boolean(
-    currentWorkSchedule && isTimeInWorkSchedule(currentWorkSchedule),
-  );
-  const attendance = currentWorkSchedule
-    ? await workerShiftAttendanceRepository.findByWorkerAndShift({
-        account_id: account.id,
-        shift_instance_key: buildWorkScheduleShiftInstanceKey(currentWorkSchedule),
-      })
-    : null;
-  const hasShiftAttendanceEligibility = attendance?.closedAt == null;
 
   return {
     role: "worker",
@@ -137,7 +120,6 @@ async function buildMeResponse(
     phone: account.phone,
     lang: account.lang,
     shift: formatProfileCardShift(schedule),
-    shift_active: isWithinShiftTime && hasShiftAttendanceEligibility,
   };
 }
 

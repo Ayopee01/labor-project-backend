@@ -63,8 +63,6 @@ export type WorkerSocketPayload = Record<string, unknown>;
 // Type option สำหรับกำหนดว่าจะส่ง FCM push คู่กับ WebSocket หรือไม่
 export type WorkerSocketEventOptions = {
   push?: boolean;
-  pushTitle?: string;
-  pushMessage?: string;
   notificationKey?: string | null;
   notificationParams?: Record<string, unknown>;
   fallbackTitle?: string;
@@ -277,6 +275,10 @@ export interface WorkerStatusResponse {
   work_start_date: string | null;
   phone: string | null;
   shift: WorkerStatusShift | null;
+  // true เมื่ออยู่ในช่วงกะงานปัจจุบัน ณ เวลานี้ ผ่านทั้ง 2 เงื่อนไข (เวลาปัจจุบันอยู่ในช่วงกะจริงตาม DB
+  // และยังมีสิทธิ์เข้าคิวของกะนี้ตาม WorkerShiftAttendance — closedAt ต้องเป็น null) ให้ App เช็คได้
+  // ก่อนว่าปุ่ม Online กดได้ไหม โดยไม่ต้องคำนวณเปรียบเทียบเวลากะเองฝั่ง Client
+  shift_active: boolean;
   current_job?: WorkerCurrentJobResponse | null;
   break_until?: string;
   break_until_unix_ms?: number | null;

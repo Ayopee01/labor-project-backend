@@ -17,5 +17,5 @@ export const WORKER_WORK_STATUS = {
   BREAK: "break",
 } as const;
 
-// Type ค่า 5 สถานะการทำงานของ worker ที่ใช้ทั้ง project
+// Type ค่า 6 สถานะการทำงานของ worker ที่ใช้ทั้ง project
 export type WorkerWorkStatus = (typeof WORKER_WORK_STATUSES)[number];

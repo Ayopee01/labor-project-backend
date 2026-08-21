@@ -294,14 +294,4 @@ export interface GateRequestReplayRecord {
   GateVehicleJobResponse | null;
 }
 
-/* -------------------------------------- Vendor LINE -------------------------------------- */
-
-// Type LINE ปลายทางของ Vendor
-export interface GateVendorLineTargetDto {
-  line_user_id: string;
-
-  target_type:
-  | "owner"
-  | "member";
-}
 
