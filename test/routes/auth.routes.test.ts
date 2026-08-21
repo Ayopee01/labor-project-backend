@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 
+import { buildWorkScheduleShiftInstanceKey } from "../../src/utils/shift";
 import {
   addAdmin,
   addWorker,
@@ -206,6 +207,60 @@ test("GET /api/auth/me returns shift_active false when worker is outside the ass
   });
 
   assert.equal(response.status, 200);
+  assert.equal(response.body.shift_active, false);
+});
+
+test("GET /api/auth/me returns shift_active false when the worker already closed this shift's attendance, even while still inside the shift time window", async () => {
+  const passwordHash = await password.hashPassword("Worker@123456");
+  const worker = addWorker(1010, passwordHash);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: worker.username,
+      password: "Worker@123456",
+      device_id: "mobile-1010",
+      device_name: "Worker Mobile",
+    },
+  });
+
+  // Fixture ตั้งกะเป็น 00:00-23:59 (ทั้งวัน) ตอนนี้จึงยังอยู่ในกะแน่นอน แต่จำลองว่า worker ปิดกะไปแล้ว
+  // (เช่น กด "เลิกงาน" เอง หรือ shift-end job ปิดให้) — shift_active ต้องเป็น false ทันที ไม่ต้องรอให้
+  // พ้นเวลากะก่อน
+  const schedule = state.schedules.get(worker.id) as {
+    shift_no: number;
+    shift_start_time: string;
+    shift_end_time: string;
+  };
+  assert.ok(schedule, "Worker fixture must seed a default work schedule.");
+  const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(
+    schedule as unknown as Parameters<typeof buildWorkScheduleShiftInstanceKey>[0],
+  );
+
+  state.shiftAttendances.push({
+    id: state.nextShiftAttendanceId++,
+    accountId: worker.id,
+    workerCode: worker.username,
+    shiftInstanceKey,
+    shiftNo: schedule.shift_no,
+    shiftStartTime: schedule.shift_start_time,
+    shiftEndTime: schedule.shift_end_time,
+    firstOnlineAt: new Date().toISOString(),
+    lastOnlineAt: new Date().toISOString(),
+    offlineAt: new Date().toISOString(),
+    closedAt: new Date().toISOString(),
+    closeReason: "shift_ended",
+    acceptTimeoutStreak: 0,
+    lastAcceptTimeoutAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const response = await server.request("GET", "/api/auth/me", {
+    token: login.body.access_token,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.shift.start_time, "00:00");
+  assert.equal(response.body.shift.end_time, "23:59");
   assert.equal(response.body.shift_active, false);
 });
 

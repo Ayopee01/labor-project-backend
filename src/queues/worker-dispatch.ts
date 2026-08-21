@@ -14,11 +14,12 @@ import {
   sendMobileAppForceUpdateNotification,
   sendMobileAppReleaseNotification,
 } from "../services/shared/mobile-app-version.service";
-import { enqueueWorker, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
+import { enqueueWorker, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerShiftEnd, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import type { DbConnection } from "../types/shared/common.type";
 import type { AssignmentAcceptTimeoutResult, CompletedWorkerQueueResult, VehicleJobAssignmentDto } from "../types/worker.type";
-import { buildWorkScheduleShiftInstanceKey, isTimeInWorkSchedule } from "../utils/shift";
+import type { WorkScheduleDto } from "../types/admin-workers.type";
+import { buildWorkScheduleShiftInstanceKey, getWorkScheduleShiftEndDelayMs, isTimeInWorkSchedule } from "../utils/shift";
 import { buildWorkerTicketPayload } from "../utils/ticket-payload";
 import { buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload, buildWorkerQueueSocketPayload } from "../utils/worker-payload";
@@ -67,6 +68,24 @@ export async function dispatchReadyWorkers(
 
       for (const worker of readyWorkers) {
         const workerCode = workerCodeMap.get(worker.account_id) ?? null;
+
+        // ตาข่ายรองรับ: worker ที่หลุดเข้าคิวมาทั้งที่อยู่นอกเวลากะ (เช่น ถูก Admin Force เข้าคิวไว้ตอน
+        // ยังอยู่ในกะ แล้วเวลากะผ่านไปโดยไม่มี job มาดีดออกทัน) ต้องไม่ได้รับมอบหมายงาน — เช็คเวลาสดอีก
+        // ครั้งตรงจุดที่กำลังจะแจกงานจริง แล้วดีดออกแทนถ้าอยู่นอกกะ ไม่นับว่าเติมตำแหน่งนี้ได้
+        const workerSchedule = await workScheduleRepository.findCurrentByAccountId(
+          worker.account_id,
+          connection
+        );
+
+        if (!workerSchedule || !isTimeInWorkSchedule(workerSchedule)) {
+          if (workerSchedule) {
+            await ejectWorkerForShiftEnd(worker.account_id, workerSchedule);
+          } else {
+            await markWorkerOpenApp(worker.account_id);
+          }
+
+          continue;
+        }
 
         const assignment = await assignmentRepository.createAssignment(
           vehicleJob.id,
@@ -513,14 +532,40 @@ async function handleWorkerShiftEnd(input: {
     return;
   }
 
+  // Schedule อ่านสดจาก DB เสมอ (ไม่ใช่ snapshot ตอนตั้ง job) ถ้า Admin ต่อเวลากะไปแล้วก่อน job นี้จะ
+  // ทำงาน เวลาปัจจุบันจะยังอยู่ในกะจริงตาม schedule ล่าสุด — ห้ามดีดออกตอนนี้ ให้ตั้ง job ใหม่แทนสำหรับ
+  // เวลาสิ้นสุดกะที่ถูกต้อง (ใช้ shiftInstanceKey เดิมต่อเนื่อง ไม่ recompute ใหม่ เพราะยังเป็นกะเดียวกัน
+  // แค่ต่อเวลา ไม่ใช่กะใหม่)
+  if (isTimeInWorkSchedule(schedule)) {
+    await scheduleWorkerShiftEnd(
+      input.accountId,
+      input.scheduleId,
+      getWorkScheduleShiftEndDelayMs(schedule),
+      input.shiftInstanceKey
+    );
+
+    return;
+  }
+
+  await ejectWorkerForShiftEnd(input.accountId, schedule, input.shiftInstanceKey);
+}
+
+// Function ปิด attendance ของกะที่จบแล้วจริง แล้วย้าย worker ที่ว่างกลับ open_app — ใช้ร่วมกันทั้งตอน
+// job "worker-shift-end" ทำงานตามเวลาจริง และตอน dispatchReadyWorkers เจอ worker ที่หลุดคิวออกมานอก
+// กะ (เช่น ถูก Force เข้าคิวไว้ก่อนหน้า) จะได้ปิด attendance + แจ้งเตือนเหมือนกันทุกทาง ไม่ซ้ำ logic
+async function ejectWorkerForShiftEnd(
+  accountId: number,
+  schedule: WorkScheduleDto,
+  shiftInstanceKeyInput?: string
+): Promise<void> {
   const shiftInstanceKey =
-    input.shiftInstanceKey ?? buildWorkScheduleShiftInstanceKey(schedule);
-  const workerCode = await profileRepository.findWorkerCodeByAccountId(input.accountId);
+    shiftInstanceKeyInput ?? buildWorkScheduleShiftInstanceKey(schedule);
+  const workerCode = await profileRepository.findWorkerCodeByAccountId(accountId);
 
   await workerShiftAttendanceRepository.closeWorkerShift(
     {
-      account_id: input.accountId,
-      worker_code: workerCode ?? String(input.accountId),
+      account_id: accountId,
+      worker_code: workerCode ?? String(accountId),
       schedule,
       shift_instance_key: shiftInstanceKey,
       reason: "shift_ended",
@@ -528,24 +573,24 @@ async function handleWorkerShiftEnd(input: {
   );
 
   const currentAssignment = await assignmentRepository.findCurrentAssignmentByWorker(
-    input.accountId
+    accountId
   );
 
   if (currentAssignment) {
     return;
   }
 
-  const queue = await markWorkerOpenApp(input.accountId);
+  const queue = await markWorkerOpenApp(accountId);
 
-  if (isWorkerSocketConnected(input.accountId)) {
-    sendWorkerSocketEvent(input.accountId, "WORKER_STATUS_CHANGED", {
+  if (isWorkerSocketConnected(accountId)) {
+    sendWorkerSocketEvent(accountId, "WORKER_STATUS_CHANGED", {
       queue: buildWorkerQueueSocketPayload(queue, workerCode),
       reason: "shift_ended",
     });
   }
   publishAdminWorkerStatusChanged({
     title: "Worker shift closed",
-    message: `Worker ${workerCode ?? input.accountId} moved to open_app because the shift ended.`,
+    message: `Worker ${workerCode ?? accountId} moved to open_app because the shift ended.`,
     workerCode,
     queue,
     reason: "shift_ended",

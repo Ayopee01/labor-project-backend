@@ -49,7 +49,10 @@
               schema:
                 $ref: "#/components/schemas/AdminForceWorkerStatusResponse"
         "403":
-          description: Worker is inactive, missing a schedule for forced break, or actor lacks workers:force_status permission.
+          description: >
+            Worker is inactive, missing a schedule for forced break, outside their work shift
+            (WORKER_OUTSIDE_WORK_SHIFT — Admin must correct the worker's shift time first, for
+            any target status), or actor lacks workers:force_status permission.
           content:
             application/json:
               schema:
@@ -408,6 +411,15 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminAssignWorkersResponse"
+        "403":
+          description: >
+            A listed worker is outside their work shift (WORKER_OUTSIDE_WORK_SHIFT) — this is
+            checked even if the worker's queue status shows ready, because ready alone does not
+            guarantee the worker is currently inside their shift window.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/admin/vehicle-jobs/{ticketNo}/scan-deadline/extend:
     post:
       tags:

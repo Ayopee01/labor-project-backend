@@ -15,7 +15,7 @@ import { parseWithSchema } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
-import { buildWorkScheduleShiftInstanceKey, findActiveWorkSchedule, formatScheduleWithShift, isTimeInWorkSchedule, resolveShiftNoFromStartTime, resolveShiftPreset } from "../utils/shift";
+import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, findActiveWorkSchedule, formatScheduleWithShift, isTimeInWorkSchedule, resolveShiftNoFromStartTime, resolveShiftPreset } from "../utils/shift";
 import { buildDeadline, formatBangkokDate } from "../utils/time";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 import { buildWorkerCode } from "../utils/worker-code";
@@ -936,6 +936,19 @@ export async function forceAdminWorkerStatus(
     assignmentRepository.findCurrentAssignmentByWorker(account.id),
     workScheduleRepository.findCurrentByAccountId(account.id),
   ]);
+
+  // Admin ห้าม Force สถานะใดๆ (ready/open_app/break) ให้ worker ที่อยู่นอกเวลากะเด็ดขาด — ต้องแก้เวลา
+  // กะใน DB ให้ครอบคลุมเวลาปัจจุบันก่อน ถึงจะ Force ได้ กันไม่ให้เกิดคนอยู่ในคิว/ทำงานได้นอกเวลากะโดยไม่มี
+  // shift-end job มาดีดออก (findCurrentByAccountId อาจ fallback ไปเป็นกะถัดไปได้ จึงต้องเช็ค
+  // isTimeInWorkSchedule ซ้ำเสมอ ไม่ใช่แค่เช็คว่ามี schedule)
+  if (!currentSchedule || !isTimeInWorkSchedule(currentSchedule)) {
+    throw new ApiError(
+      403,
+      "WORKER_OUTSIDE_WORK_SHIFT",
+      "Cannot force worker status while the worker is outside their work shift. Fix the worker's shift time first.",
+      currentSchedule ? buildShiftWaitInfo(currentSchedule) : undefined
+    );
+  }
 
   if (
     currentAssignment &&

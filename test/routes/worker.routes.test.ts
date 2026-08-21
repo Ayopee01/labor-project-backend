@@ -993,6 +993,113 @@ test("POST /api/workers/me/online ends break early and removes pending break ret
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");
 });
 
+test("worker-shift-end job reschedules itself instead of ejecting when the schedule (read fresh from DB) is still active — e.g. Admin extended the shift before the old job fired", async () => {
+  const { token, worker } = await loginWorker(106);
+  const breakQueueName = process.env.BULLMQ_WORKER_BREAK_RETURN_QUEUE as string;
+  const shiftEndJobId = `worker-shift-end-${worker.id}-${worker.id}`;
+
+  state.connectedWorkers.add(worker.id);
+
+  const onlineResponse = await server.request("POST", "/api/workers/me/online", {
+    token,
+  });
+
+  assert.equal(onlineResponse.status, 200);
+
+  const scheduledJob = state.queueJobs.get(breakQueueName)?.get(shiftEndJobId);
+
+  assert.ok(scheduledJob, "workerOnline must schedule a worker-shift-end job.");
+  assert.equal(scheduledJob.removed, false);
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+  const processor = state.workerProcessors.get(breakQueueName);
+
+  assert.ok(processor, "worker-shift-end processor must be registered.");
+
+  // จำลอง job เดิมมาทำงาน (เช่น ตั้งไว้ตอนกะเดิมสั้นกว่านี้ แล้ว Admin ต่อเวลาไปแล้วก่อนถึงเวลานี้) —
+  // Fixture กะเป็น 00:00-23:59 (ทั้งวัน) เวลาปัจจุบันจึงยังอยู่ในกะแน่นอนเมื่ออ่านสดจาก DB ตอนนี้
+  await processor({
+    data: {
+      accountId: worker.id,
+      scheduleId: worker.id,
+      shiftInstanceKey: (scheduledJob.data as { shiftInstanceKey?: string }).shiftInstanceKey,
+      kind: "shift_end",
+    },
+  });
+
+  // ต้องไม่ถูกดีดออก ยังเป็น ready อยู่เหมือนเดิม
+  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");
+
+  // Attendance ของกะนี้ต้องยังไม่ถูกปิด
+  const attendance = state.shiftAttendances.find(
+    (item) => item.accountId === worker.id
+  );
+
+  assert.ok(attendance);
+  assert.equal(attendance.closedAt, null);
+
+  // ต้องมี job ใหม่ถูกตั้งแทนที่ตัวเดิม (jobId เดิมเพราะ scheduleId == accountId เสมอ ไม่เคยเปลี่ยน)
+  const rescheduledJob = state.queueJobs.get(breakQueueName)?.get(shiftEndJobId);
+
+  assert.ok(rescheduledJob, "A fresh worker-shift-end job must be scheduled instead of ejecting.");
+  assert.equal(rescheduledJob.removed, false);
+});
+
+test("worker-shift-end job ejects to open_app and closes attendance when the shift has genuinely ended", async () => {
+  const { token, worker } = await loginWorker(107);
+  const breakQueueName = process.env.BULLMQ_WORKER_BREAK_RETURN_QUEUE as string;
+  const shiftEndJobId = `worker-shift-end-${worker.id}-${worker.id}`;
+
+  state.connectedWorkers.add(worker.id);
+
+  const onlineResponse = await server.request("POST", "/api/workers/me/online", {
+    token,
+  });
+
+  assert.equal(onlineResponse.status, 200);
+
+  const scheduledJob = state.queueJobs.get(breakQueueName)?.get(shiftEndJobId);
+  const shiftInstanceKey = (scheduledJob?.data as { shiftInstanceKey?: string } | undefined)
+    ?.shiftInstanceKey;
+
+  // จำลองว่ากะจบไปแล้วจริง (เลื่อนเวลากะไปในอดีตแล้ว ตอนนี้จึงอยู่นอกกะแน่นอนตอน job ทำงาน)
+  const schedule = state.schedules.get(worker.id) as {
+    shift_start_time: string;
+    shift_end_time: string;
+  };
+
+  state.schedules.set(worker.id, {
+    ...schedule,
+    shift_start_time: "00:00",
+    shift_end_time: "00:01",
+  });
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+  const processor = state.workerProcessors.get(breakQueueName);
+
+  assert.ok(processor, "worker-shift-end processor must be registered.");
+
+  await processor({
+    data: {
+      accountId: worker.id,
+      scheduleId: worker.id,
+      shiftInstanceKey,
+      kind: "shift_end",
+    },
+  });
+
+  // ถูกดีดออกกลับ open_app จริง
+  assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "open_app");
+
+  const attendance = state.shiftAttendances.find(
+    (item) => item.accountId === worker.id
+  );
+
+  assert.ok(attendance);
+  assert.ok(attendance.closedAt);
+  assert.equal(attendance.closeReason, "shift_ended");
+});
+
 test("GET /api/workers/me/status returns worker profile and shift", async () => {
   const { token, worker } = await loginWorker(102);
   await workerQueue.enqueueWorker(worker.id);

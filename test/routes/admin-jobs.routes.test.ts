@@ -266,6 +266,83 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force allows connected wor
   assert.equal(queueEntry?.status, "ready");
 });
 
+test("POST /api/admin/jobs/workers/:workerCode/status/force rejects any status when the worker is outside their work shift", async () => {
+  const { token } = await loginJobAdmin(9631);
+  const worker = addWorker(9632);
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.recordWorkerHeartbeat(worker.id);
+
+  // เลื่อนกะไปในอนาคต 2-3 ชั่วโมง (ตามเวลา Bangkok) เพื่อให้ "ตอนนี้" อยู่นอกกะแน่นอน — forceAdminWorkerStatus
+  // อ่าน schedule ผ่าน admin-workers.repository ซึ่ง mock แยก state ไว้คนละ map (state.authSchedules)
+  // จาก state.schedules ที่ endpoint ฝั่ง worker ใช้ ต้องอัปเดตทั้งคู่ให้ตรงกัน
+  const schedule = state.schedules.get(worker.id);
+  assert.ok(schedule, "Worker fixture must seed a default work schedule.");
+  const bangkokFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const outsideShiftSchedule = {
+    ...(schedule as object),
+    shift_start_time: bangkokFormatter
+      .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
+      .replace(" ", ""),
+    shift_end_time: bangkokFormatter
+      .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
+      .replace(" ", ""),
+  };
+
+  state.schedules.set(worker.id, outsideShiftSchedule);
+  state.authSchedules.set(worker.id, outsideShiftSchedule);
+
+  const readyResponse = await server.request(
+    "POST",
+    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    {
+      token,
+      body: {
+        status: "ready",
+      },
+    }
+  );
+
+  assert.equal(readyResponse.status, 403);
+  assert.equal(readyResponse.body.code, "WORKER_OUTSIDE_WORK_SHIFT");
+
+  const breakResponse = await server.request(
+    "POST",
+    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    {
+      token,
+      body: {
+        status: "break",
+      },
+    }
+  );
+
+  assert.equal(breakResponse.status, 403);
+  assert.equal(breakResponse.body.code, "WORKER_OUTSIDE_WORK_SHIFT");
+
+  const openAppResponse = await server.request(
+    "POST",
+    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    {
+      token,
+      body: {
+        status: "open_app",
+      },
+    }
+  );
+
+  assert.equal(openAppResponse.status, 403);
+  assert.equal(openAppResponse.body.code, "WORKER_OUTSIDE_WORK_SHIFT");
+
+  const queueEntry = await workerQueue.getWorkerQueueStatus(worker.id);
+
+  assert.equal(queueEntry, null);
+});
+
 test("GET /api/admin/jobs/workers/status shows queued worker when socket is disconnected", async () => {
   const { token } = await loginJobAdmin(9621);
   const worker = addWorker(9622);
@@ -1186,6 +1263,56 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
     replacementWorkerSummary.total_amount,
     "5.00"
   );
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a worker who is outside their work shift, even while READY in queue", async () => {
+  const { token: adminToken } = await loginJobAdmin(9641);
+  const job = addDispatchableJob(964, 1);
+  const worker = addWorker(9642);
+
+  await workerQueue.enqueueWorker(worker.id);
+
+  // เลื่อนกะไปในอนาคต 2-3 ชั่วโมง (ตามเวลา Bangkok) เพื่อให้ "ตอนนี้" อยู่นอกกะแน่นอน แม้สถานะคิวจะ
+  // เป็น ready อยู่ก็ตาม
+  const schedule = state.schedules.get(worker.id);
+  assert.ok(schedule, "Worker fixture must seed a default work schedule.");
+  const bangkokFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+
+  state.schedules.set(worker.id, {
+    ...(schedule as object),
+    shift_start_time: bangkokFormatter
+      .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
+      .replace(" ", ""),
+    shift_end_time: bangkokFormatter
+      .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
+      .replace(" ", ""),
+  });
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/assign-workers`,
+    {
+      token: adminToken,
+      body: {
+        worker_codes: [worker.username],
+      },
+    }
+  );
+
+  assert.equal(response.status, 403);
+  assert.equal(response.body.code, "WORKER_OUTSIDE_WORK_SHIFT");
+
+  const assignment = state.assignments.find(
+    (item) =>
+      item.vehicle_job_id === job.id && item.worker_account_id === worker.id
+  );
+
+  assert.equal(assignment, undefined);
 });
 
 test("worker globally cancelled before Business Ticket roster locks still keeps earnings from an already-completed booth of that ticket", async () => {

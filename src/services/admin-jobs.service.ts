@@ -24,6 +24,7 @@ import * as marketJobRepository from "../repositories/shared/market-job.reposito
 import * as profileRepository from "../repositories/shared/profile.repository";
 import * as ticketWorkerRepository from "../repositories/shared/ticket-worker.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
+import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
 import { publishNotification } from "./notifications.service";
 import { publishRealtimeEvent } from "./shared/realtime-notification.service";
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
@@ -32,6 +33,7 @@ import {
   buildVehicleOperationSummary,
   formatVehicleOperationItem,
 } from "../utils/admin-job-operations.formatter";
+import { isTimeInWorkSchedule } from "../utils/shift";
 // Import Types
 import type {
   AdminVehicleJobFinancialResponse,
@@ -1284,6 +1286,21 @@ export async function assignVehicleJobWorkers(
             409,
             "WORKER_NOT_READY",
             `Worker ${workerCode} must be ready in queue before admin can assign a job.`,
+          );
+        }
+
+        // ห้ามมอบหมายงานให้ worker ที่อยู่นอกเวลากะเด็ดขาด แม้สถานะคิวจะเป็น READY อยู่ก็ตาม (เผื่อ
+        // หลุดมาจากช่องทางอื่น) เช็คเวลาสดจาก DB อีกชั้นก่อน assign จริงเสมอ
+        const workerSchedule = await workScheduleRepository.findCurrentByAccountId(
+          worker.id,
+          transaction,
+        );
+
+        if (!workerSchedule || !isTimeInWorkSchedule(workerSchedule)) {
+          throw new ApiError(
+            403,
+            "WORKER_OUTSIDE_WORK_SHIFT",
+            `Worker ${workerCode} is outside their work shift and cannot be assigned a job.`,
           );
         }
 

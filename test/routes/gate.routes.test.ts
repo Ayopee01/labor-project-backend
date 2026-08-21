@@ -562,6 +562,57 @@ test("POST /api/gate/tickets dispatches a ready connected worker to the new Gate
   );
 });
 
+test("POST /api/gate/tickets dispatch skips a READY worker who is outside their work shift and ejects them, moving on to the next FIFO worker", async () => {
+  // จำลอง worker ที่หลุดเข้าคิวมาทั้งที่นอกกะ (เช่น ถูก Force ไว้ตอนยังอยู่ในกะ แล้วเวลากะผ่านไปโดยไม่มี
+  // job มาดีดออกทัน) ด้วยการ enqueue ตรงๆ ผ่าน workerQueue (ข้าม guard ปกติของ endpoint ทุกตัว) เพื่อ
+  // พิสูจน์ว่า dispatchReadyWorkers เองมีตาข่ายรองรับดักไว้อีกชั้น ไม่มอบงานให้คนนอกกะเด็ดขาด
+  const outsideShiftWorker = addWorker(9691);
+  const readyWorker = addWorker(9692);
+
+  state.connectedWorkers.add(outsideShiftWorker.id);
+  state.connectedWorkers.add(readyWorker.id);
+
+  const bangkokFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const outsideShiftSchedule = state.schedules.get(outsideShiftWorker.id);
+
+  assert.ok(outsideShiftSchedule, "Worker fixture must seed a default work schedule.");
+  state.schedules.set(outsideShiftWorker.id, {
+    ...(outsideShiftSchedule as object),
+    shift_start_time: bangkokFormatter
+      .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
+      .replace(" ", ""),
+    shift_end_time: bangkokFormatter
+      .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
+      .replace(" ", ""),
+  });
+
+  // FIFO: worker นอกกะเข้าคิวก่อน worker ที่พร้อมจริง
+  await workerQueue.enqueueWorker(outsideShiftWorker.id);
+  await workerQueue.enqueueWorker(readyWorker.id);
+
+  const response = await server.request("POST", "/api/gate/tickets", {
+    body: buildGateVehicleJobBody("006"),
+    headers: await gateAuthHeaders(),
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(state.assignments.length, 1);
+  assert.equal(state.assignments[0].worker_account_id, readyWorker.id);
+
+  const outsideShiftQueueEntry = await workerQueue.getWorkerQueueStatus(
+    outsideShiftWorker.id
+  );
+  const readyQueueEntry = await workerQueue.getWorkerQueueStatus(readyWorker.id);
+
+  assert.equal(outsideShiftQueueEntry?.status, "open_app");
+  assert.equal(readyQueueEntry?.status, "assigned");
+});
+
 test("POST /api/gate/tickets dispatches exactly the required FIFO workers", async () => {
   const workers = Array.from(
     { length: 8 },
