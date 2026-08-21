@@ -528,6 +528,7 @@ export interface TicketCompletionResponse {
   message: string;
   ticket_number: string | null;
   ticket_no: string | null;
+  ticketNos: string[];
   ticket_completed_at: string | null;
   marketCode: string | null;
   marketName: string | null;
@@ -588,6 +589,7 @@ export type WorkerSocketEventType =
   | "ASSIGNMENT_ACCEPTED"
   | "ASSIGNMENT_CHECKED_IN"
   | "ASSIGNMENT_TEAM_UPDATED"
+  | "TEAM_READY"
   | "ASSIGNMENT_SCAN_DEADLINE_EXTENDED"
   | "ASSIGNMENT_SCAN_DEADLINE_SHORTENED"
   | "TICKET_COMPLETION_SUBMITTED"

@@ -36,6 +36,10 @@ export function buildWorkerTicketPayload(
   return {
     ticket_number: detail?.vehicle_job.ticket_number ?? null,
     ticket_no: market?.ticket_no ?? null,
+    // Array เดียวกับที่ push event อื่นๆ ใช้ (ticketNos) เพื่อให้ client parse shape เดียวกันได้ทุก
+    // event แม้ event นี้จะรู้ ticket_no เดียวชัดเจนอยู่แล้วก็ตาม (เก็บ ticket_no เดี่ยวไว้เหมือนเดิมด้วย
+    // เผื่อ client เดิมยังอ่านอยู่)
+    ticketNos: market?.ticket_no ? [market.ticket_no] : [],
     ticket_completed_at:
       detail?.vehicle_job.status === "COMPLETED"
         ? detail.vehicle_job.updated_at

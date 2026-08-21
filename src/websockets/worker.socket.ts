@@ -46,6 +46,7 @@ const PUSH_WORKER_SOCKET_EVENTS = new Set<WorkerSocketEventType>([
   "WORKER_ASSIGNED",
   "ASSIGNMENT_TIMEOUT",
   "ASSIGNMENT_CANCELLED",
+  "TEAM_READY",
   "ASSIGNMENT_SCAN_DEADLINE_EXTENDED",
   "ASSIGNMENT_SCAN_DEADLINE_SHORTENED",
   "TICKET_COMPLETION_SUBMITTED",
@@ -303,6 +304,8 @@ function buildWorkerPushTitle(type: WorkerSocketEventType): string {
     case "MARKET_JOB_CANCELLED":
     case "VEHICLE_JOB_CANCELLED":
       return "Assignment cancelled";
+    case "TEAM_READY":
+      return "Team ready";
     case "ASSIGNMENT_SCAN_DEADLINE_EXTENDED":
       return "Scan deadline extended";
     case "ASSIGNMENT_SCAN_DEADLINE_SHORTENED":
@@ -339,6 +342,8 @@ function buildWorkerPushMessage(
       return ticketNumber
         ? `Assignment ${ticketNumber} was cancelled.`
         : "Your assignment was cancelled.";
+    case "TEAM_READY":
+      return "Your whole team has checked in. You can start working now.";
     case "ASSIGNMENT_SCAN_DEADLINE_EXTENDED":
       return "Your QR scan deadline was extended.";
     case "ASSIGNMENT_SCAN_DEADLINE_SHORTENED":

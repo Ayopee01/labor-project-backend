@@ -1061,6 +1061,11 @@ async function cancelVehicleJob(
   parseWithSchema(adminCancelBodySchema, body ?? {});
   const activeAssignments =
     await adminJobsRepository.listActiveAssignmentsByVehicleJob(vehicleJobId);
+  // ต้องดึงก่อน cancelVehicleJob เท่านั้น เพราะ cancel ทำให้ MarketJob ทุกใบของรถคันนี้กลายเป็น
+  // CANCELLED ไปด้วย — listActiveTicketNosByVehicleJobId หลังจากนั้นจะได้ array ว่างเปล่าเสมอ
+  const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+    vehicleJobId,
+  );
 
   const vehicleJob = await withTransaction(async (transaction) => {
     return adminJobsRepository.cancelVehicleJob(vehicleJobId, transaction);
@@ -1078,16 +1083,10 @@ async function cancelVehicleJob(
       markWorkerOpenApp(assignment.worker_account_id),
     ),
   );
-  activeAssignments.forEach((assignment) => {
-    sendWorkerSocketEvent(
-      assignment.worker_account_id,
-      "ASSIGNMENT_CANCELLED",
-      {
-        ticketNumber: vehicleJob.ticket_number,
-        reason: "vehicle_job_cancelled",
-      },
-    );
-  });
+  // หมายเหตุ: ไม่ยิง ASSIGNMENT_CANCELLED แยกต่อคนตรงนี้อีกต่อไป — เพราะ publishRealtimeEvent ด้านล่าง
+  // (VEHICLE_JOB_CANCELLED) ก็ push ให้คนกลุ่มเดียวกันนี้อยู่แล้ว (worker_account_ids ครอบคลุมเหมือนกัน
+  // เป๊ะ) เดิมยิงทั้งคู่ทำให้ worker ได้ push ซ้ำ 2 ครั้งติดกันสำหรับเหตุการณ์เดียว ("assignment ถูกยกเลิก"
+  // ตามด้วย "vehicle job ถูกยกเลิก") ทั้งที่ในเคสยกเลิกทั้งคันนี้สองอย่างคือเรื่องเดียวกัน
   publishRealtimeEvent({
     type: "VEHICLE_JOB_CANCELLED",
     title: "Vehicle job cancelled",
@@ -1098,6 +1097,7 @@ async function cancelVehicleJob(
     },
     worker_payload: {
       ticketNumber: vehicleJob.ticket_number,
+      ticketNos,
       status: vehicleJob.status,
       reason: "vehicle_job_cancelled",
     },
@@ -1123,6 +1123,11 @@ async function cancelVehicleJobAndRequeue(
   parseWithSchema(adminCancelBodySchema, body ?? {});
   const activeAssignments =
     await adminJobsRepository.listActiveAssignmentsByVehicleJob(vehicleJobId);
+  // ต้องดึงก่อน cancelVehicleJob เท่านั้น เพราะ cancel ทำให้ MarketJob ทุกใบของรถคันนี้กลายเป็น
+  // CANCELLED ไปด้วย — listActiveTicketNosByVehicleJobId หลังจากนั้นจะได้ array ว่างเปล่าเสมอ
+  const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+    vehicleJobId,
+  );
 
   const vehicleJob = await withTransaction(async (transaction) => {
     return adminJobsRepository.cancelVehicleJob(vehicleJobId, transaction);
@@ -1160,6 +1165,7 @@ async function cancelVehicleJobAndRequeue(
     },
     worker_payload: {
       ticketNumber: vehicleJob.ticket_number,
+      ticketNos,
       status: vehicleJob.status,
       requeued: true,
       reason: "vehicle_job_cancelled_requeue",
@@ -1321,6 +1327,10 @@ export async function assignVehicleJobWorkers(
     },
   );
 
+  const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+    vehicleJob.id,
+  );
+
   for (const assignment of assignments) {
     await markWorkerAssigned(assignment.worker_account_id);
     await scheduleAssignmentTimeout(
@@ -1331,7 +1341,7 @@ export async function assignVehicleJobWorkers(
     sendWorkerSocketEvent(
       assignment.worker_account_id,
       "WORKER_ASSIGNED",
-      buildWorkerAssignedPayload(assignment, vehicleJob),
+      buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos),
     );
   }
   publishNotification({
@@ -1426,8 +1436,13 @@ export async function cancelAssignment(
   await removeScanTimeout(assignment.id);
   await removeScanWarning(assignment.id);
   await markWorkerOpenApp(assignment.worker_account_id);
+  const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+    assignment.vehicle_job_id,
+  );
+
   sendWorkerSocketEvent(assignment.worker_account_id, "ASSIGNMENT_CANCELLED", {
     ticketNumber: vehicleJob?.ticket_number ?? null,
+    ticketNos,
     reason: "admin_cancel_assignment",
   });
   publishNotification({
@@ -1503,6 +1518,10 @@ export async function extendVehicleJobScanDeadline(
   );
   const assignmentResponses =
     await buildScanDeadlineAssignmentResponses(updatedAssignments);
+  const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+    vehicleJobId,
+  );
+
   publishRealtimeEvent({
     type: "ASSIGNMENT_SCAN_DEADLINE_EXTENDED",
     title: "Scan deadline extended",
@@ -1515,6 +1534,7 @@ export async function extendVehicleJobScanDeadline(
     },
     worker_payload: {
       ticketNumber: vehicleJob.ticket_number,
+      ticketNos,
       minutes: input.minutes,
       assignments: assignmentResponses,
     },
@@ -1557,6 +1577,7 @@ async function cancelMarketJob(
     },
     worker_payload: {
       ticketNumber: vehicleJob?.ticket_number ?? null,
+      ticketNos: [marketJob.ticket_no],
       marketCode: marketJob.marketCode,
       status: marketJob.status,
     },
@@ -1602,6 +1623,7 @@ async function cancelStallJob(
     },
     worker_payload: {
       ticketNumber: vehicleJob?.ticket_number ?? null,
+      ticketNos: marketJob ? [marketJob.ticket_no] : [],
       marketCode: marketJob?.marketCode ?? null,
       boothCode: ticket.boothCode,
       status: ticket.status,

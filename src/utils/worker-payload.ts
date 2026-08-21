@@ -6,14 +6,18 @@ import { toUnixMs } from "./time";
 
 // Function สร้าง worker assigned payload สำหรับ helper กลาง
 //
-// ไม่มี ticket_no เดี่ยวให้ส่งเพราะ check-in เป็นระดับ Business Ticket (หลายใบ) ไม่ใช่ระดับ
-// TicketNumber — client ต้อง re-fetch current job detail เองเพื่อดูว่ามี Business Ticket ไหนบ้าง
+// ticketNumber ยังคงส่งไว้เหมือนเดิม (client ต้องใช้ค่านี้ยิง API ต่อ เช่น accept/scan) ticketNos คือ
+// รายการ Business Ticket ที่ยัง active ทั้งหมดของ TicketNumber นี้ ณ ตอนมอบหมายงาน (ผู้เรียกดึงมาจาก
+// listActiveTicketNosByVehicleJobId แล้วส่งเข้ามา ไฟล์นี้ไม่แตะ DB ตรงๆ) ให้ client แสดงผลได้โดยไม่ต้อง
+// re-fetch job detail เพิ่ม — เป็น array เสมอแม้มีใบเดียว เพื่อให้ shape เดียวกันทุก push event
 export function buildWorkerAssignedPayload(
   assignment: VehicleJobAssignmentDto,
-  vehicleJob: VehicleJobDto
+  vehicleJob: VehicleJobDto,
+  ticketNos: string[]
 ) {
   return {
     ticketNumber: vehicleJob.ticket_number,
+    ticketNos,
     assignment: {
       created_at: assignment.created_at,
       accept_deadline_at: assignment.accept_deadline_at,

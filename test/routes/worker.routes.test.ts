@@ -1418,6 +1418,7 @@ test("dispatch assigns ready workers in FIFO order", async () => {
   );
   const payload = assignedEvent?.payload as {
     ticketNumber: string;
+    ticketNos: string[];
     assignment: {
       created_at: string;
       accept_deadline_at: string | null;
@@ -1427,9 +1428,12 @@ test("dispatch assigns ready workers in FIFO order", async () => {
 
   assert.deepEqual(Object.keys(payload).sort(), [
     "assignment",
+    "ticketNos",
     "ticketNumber",
   ]);
   assert.equal(payload.ticketNumber, job.ticket_number);
+  // Vehicle job นี้ยังไม่มี Business Ticket ใดๆ เลย (fixture ไม่ได้สร้าง MarketJob ไว้)
+  assert.deepEqual(payload.ticketNos, []);
   assert.deepEqual(Object.keys(payload.assignment).sort(), [
     "accept_deadline_at",
     "accept_deadline_unix_ms",
@@ -1774,6 +1778,76 @@ test("POST /api/workers/me/assignments/:ticketNumber/check-in-barcode scans corr
   assert.ok(scannedTeamPayload.team?.[0]?.scanned_at);
 });
 
+test("POST /api/workers/me/assignments/:ticketNumber/check-in-barcode sends TEAM_READY to the whole team the moment the last member scans in", async () => {
+  const [{ token: firstToken, worker: first }, { token: secondToken, worker: second }] =
+    await Promise.all([loginWorker(67), loginWorker(68)]);
+  const job = addDispatchableJob(867, 2);
+  const ticket = addTicketForVehicleJob(job.id, 1867);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
+  const firstAssignment = addPendingAssignment(967, job.id, first.id);
+  const secondAssignment = addPendingAssignment(968, job.id, second.id);
+
+  for (const assignment of [firstAssignment, secondAssignment]) {
+    assignment.status = "ACCEPTED";
+    assignment.scan_deadline_at = new Date(Date.now() + 15 * 60_000).toISOString();
+  }
+
+  const firstScanResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticket_number}/check-in-barcode`,
+    {
+      token: firstToken,
+      body: {
+        ticket_no: market.ticket_no,
+      },
+    }
+  );
+
+  assert.equal(firstScanResponse.status, 200);
+  assert.equal(firstScanResponse.body.workerStatus, "waiting_team");
+
+  // ยังไม่ครบทีม -> ห้ามมี TEAM_READY ถูก publish เลย
+  assert.equal(
+    state.realtimeEvents.some(
+      (item) => (item as { type?: string }).type === "TEAM_READY"
+    ),
+    false
+  );
+
+  const secondScanResponse = await server.request(
+    "POST",
+    `/api/workers/me/assignments/${job.ticket_number}/check-in-barcode`,
+    {
+      token: secondToken,
+      body: {
+        ticket_no: market.ticket_no,
+      },
+    }
+  );
+
+  assert.equal(secondScanResponse.status, 200);
+  assert.equal(secondScanResponse.body.workerStatus, "working");
+
+  // คนสุดท้าย scan ครบพอดี -> ต้อง publish TEAM_READY ให้ทั้งทีม (ทั้ง 2 คน) หนึ่งครั้ง
+  const teamReadyEvents = state.realtimeEvents.filter(
+    (item) => (item as { type?: string }).type === "TEAM_READY"
+  );
+
+  assert.equal(teamReadyEvents.length, 1);
+
+  const teamReadyEvent = teamReadyEvents[0] as {
+    worker_account_ids?: number[];
+    worker_payload?: { ticketNumber?: string; ticketNos?: string[] };
+  };
+
+  assert.deepEqual(
+    (teamReadyEvent.worker_account_ids ?? []).sort(),
+    [first.id, second.id].sort()
+  );
+  assert.equal(teamReadyEvent.worker_payload?.ticketNumber, job.ticket_number);
+  assert.deepEqual(teamReadyEvent.worker_payload?.ticketNos, [market.ticket_no]);
+});
+
 test("POST /api/workers/me/assignments/:ticketNumber/check-in-barcode shortens remaining team scan window from settings", async () => {
   const [{ token, worker }, second, third] = await Promise.all([
     loginWorker(64),
@@ -2110,6 +2184,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/tickets/complete submits qu
     "status",
     "submission_status",
     "ticketCompletedAt",
+    "ticketNos",
     "ticket_no",
     "ticket_number",
   ]);

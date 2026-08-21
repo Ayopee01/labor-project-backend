@@ -20,6 +20,7 @@ const WORKER_NOTIFICATION_KEYS: Record<string, string> = {
   WORKER_ASSIGNED: "worker.assigned",
   ASSIGNMENT_TIMEOUT: "assignment.timeout",
   ASSIGNMENT_CANCELLED: "assignment.cancelled",
+  TEAM_READY: "assignment.team_ready",
   ASSIGNMENT_SCAN_DEADLINE_EXTENDED: "assignment.scan_deadline_extended",
   ASSIGNMENT_SCAN_DEADLINE_SHORTENED: "assignment.scan_deadline_shortened",
   TICKET_COMPLETION_SUBMITTED: "ticket.completion_submitted",
@@ -98,25 +99,29 @@ export function resolveWorkerNotificationKey(
 
 const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
   TH: {
-    "worker.assigned": (params) => ({
+    "worker.assigned": () => ({
       title: "มีงานใหม่",
-      message: `คุณได้รับงานใหม่ Ticket ${text(params.ticketNumber)} กรุณากดรับงาน`,
+      message: "คุณได้รับงานใหม่ กรุณากดรับงาน",
     }),
-    "assignment.timeout": (params) => ({
+    "assignment.timeout": () => ({
       title: "หมดเวลางาน",
-      message: `หมดเวลารับงานหรือสแกน QR สำหรับ Ticket ${text(params.ticketNumber)}`,
+      message: "หมดเวลารับงานหรือสแกน QR",
     }),
-    "assignment.cancelled": (params) => ({
+    "assignment.cancelled": () => ({
       title: "งานถูกยกเลิก",
-      message: `งาน Ticket ${text(params.ticketNumber)} ถูกยกเลิก`,
+      message: "งานถูกยกเลิก",
     }),
-    "assignment.scan_deadline_extended": (params) => ({
+    "assignment.team_ready": () => ({
+      title: "ทีมพร้อมทำงาน",
+      message: "ทีมงานเช็คอินครบแล้ว เริ่มทำงานได้เลย",
+    }),
+    "assignment.scan_deadline_extended": () => ({
       title: "ต่อเวลาสแกน QR",
-      message: `ต่อเวลาสแกน QR สำหรับ Ticket ${text(params.ticketNumber)} แล้ว`,
+      message: "ต่อเวลาสแกน QR แล้ว",
     }),
     "assignment.scan_deadline_shortened": (params) => ({
       title: "เวลา Scan QR ถูกปรับ",
-      message: `กรุณาสแกน QR ภายใน ${numberText(params.remaining_minutes)} นาที สำหรับ Ticket ${text(params.ticketNumber)}`,
+      message: `กรุณาสแกน QR ภายใน ${numberText(params.remaining_minutes)} นาที`,
     }),
     "ticket.completion_submitted": (params) => ({
       title: "ส่งยอดงานแล้ว",
@@ -142,9 +147,9 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
       title: "งานตลาดถูกยกเลิก",
       message: `งานตลาด ${text(params.marketCode)} ถูกยกเลิก`,
     }),
-    "job.vehicle_cancelled": (params) => ({
+    "job.vehicle_cancelled": () => ({
       title: "งานรถถูกยกเลิก",
-      message: `งาน Ticket ${text(params.ticketNumber)} ถูกยกเลิก`,
+      message: "งานรถถูกยกเลิก",
     }),
     "auth.session_revoked": (params) => ({
       title: "บัญชีถูกเข้าสู่ระบบจากอุปกรณ์อื่น",
@@ -166,25 +171,29 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
     }),
   },
   MN: {
-    "worker.assigned": (params) => ({
+    "worker.assigned": () => ({
       title: "အလုပ်အသစ် ရရှိပါသည်",
-      message: `Ticket ${text(params.ticketNumber)} အတွက် အလုပ်အသစ် ရရှိပါသည်။ လက်ခံပါ။`,
+      message: "အလုပ်အသစ် ရရှိပါသည်။ လက်ခံပါ။",
     }),
-    "assignment.timeout": (params) => ({
+    "assignment.timeout": () => ({
       title: "အချိန်ကျော်လွန်သွားပါသည်",
-      message: `Ticket ${text(params.ticketNumber)} အတွက် အလုပ်လက်ခံရန် သို့မဟုတ် QR စကန်ရန် အချိန်ကျော်လွန်သွားပါသည်။`,
+      message: "အလုပ်လက်ခံရန် သို့မဟုတ် QR စကန်ရန် အချိန်ကျော်လွန်သွားပါသည်။",
     }),
-    "assignment.cancelled": (params) => ({
+    "assignment.cancelled": () => ({
       title: "အလုပ်ကို ပယ်ဖျက်ပြီးပါပြီ",
-      message: `Ticket ${text(params.ticketNumber)} ကို ပယ်ဖျက်ပြီးပါပြီ။`,
+      message: "အလုပ်ကို ပယ်ဖျက်ပြီးပါပြီ။",
     }),
-    "assignment.scan_deadline_extended": (params) => ({
+    "assignment.team_ready": () => ({
+      title: "အသင်း အသင့်ဖြစ်ပါပြီ",
+      message: "အဖွဲ့ဝင်အားလုံး check-in ပြုလုပ်ပြီးပါပြီ။ အလုပ်စတင်နိုင်ပါပြီ။",
+    }),
+    "assignment.scan_deadline_extended": () => ({
       title: "QR စကန်ချိန် တိုးပြီးပါပြီ",
-      message: `Ticket ${text(params.ticketNumber)} အတွက် QR စကန်ချိန် တိုးပြီးပါပြီ။`,
+      message: "QR စကန်ချိန် တိုးပြီးပါပြီ။",
     }),
     "assignment.scan_deadline_shortened": (params) => ({
       title: "QR စကန်ချိန် ပြောင်းလဲပါသည်",
-      message: `Ticket ${text(params.ticketNumber)} အတွက် ${numberText(params.remaining_minutes)} မိနစ်အတွင်း QR စကန်ပါ။`,
+      message: `${numberText(params.remaining_minutes)} မိနစ်အတွင်း QR စကန်ပါ။`,
     }),
     "ticket.completion_submitted": (params) => ({
       title: "အလုပ်ပမာဏ ပို့ပြီးပါပြီ",
@@ -210,9 +219,9 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
       title: "ဈေးအလုပ် ပယ်ဖျက်ပြီးပါပြီ",
       message: `ဈေး ${text(params.marketCode)} ၏ အလုပ်ကို ပယ်ဖျက်ပြီးပါပြီ။`,
     }),
-    "job.vehicle_cancelled": (params) => ({
+    "job.vehicle_cancelled": () => ({
       title: "ယာဉ်အလုပ် ပယ်ဖျက်ပြီးပါပြီ",
-      message: `Ticket ${text(params.ticketNumber)} ကို ပယ်ဖျက်ပြီးပါပြီ။`,
+      message: "ယာဉ်အလုပ်ကို ပယ်ဖျက်ပြီးပါပြီ။",
     }),
     "auth.session_revoked": (params) => ({
       title: "အကောင့်ကို အခြားစက်မှ ဝင်ရောက်ထားပါသည်",
@@ -234,25 +243,29 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
     }),
   },
   CN: {
-    "worker.assigned": (params) => ({
+    "worker.assigned": () => ({
       title: "មានការងារថ្មី",
-      message: `អ្នកទទួលបានការងារថ្មី Ticket ${text(params.ticketNumber)} សូមចុចទទួលការងារ`,
+      message: "អ្នកទទួលបានការងារថ្មី សូមចុចទទួលការងារ",
     }),
-    "assignment.timeout": (params) => ({
+    "assignment.timeout": () => ({
       title: "ផុតពេលការងារ",
-      message: `ផុតពេលទទួលការងារ ឬ scan QR សម្រាប់ Ticket ${text(params.ticketNumber)}`,
+      message: "ផុតពេលទទួលការងារ ឬ scan QR",
     }),
-    "assignment.cancelled": (params) => ({
+    "assignment.cancelled": () => ({
       title: "ការងារត្រូវបានលុបចោល",
-      message: `ការងារ Ticket ${text(params.ticketNumber)} ត្រូវបានលុបចោល`,
+      message: "ការងារត្រូវបានលុបចោល",
     }),
-    "assignment.scan_deadline_extended": (params) => ({
+    "assignment.team_ready": () => ({
+      title: "ក្រុមរួចរាល់ហើយ",
+      message: "សមាជិកក្រុមទាំងអស់បាន check-in រួចរាល់ហើយ។ អាចចាប់ផ្តើមធ្វើការបានហើយ។",
+    }),
+    "assignment.scan_deadline_extended": () => ({
       title: "បានបន្ថែមពេល scan QR",
-      message: `បានបន្ថែមពេល scan QR សម្រាប់ Ticket ${text(params.ticketNumber)}`,
+      message: "បានបន្ថែមពេល scan QR ហើយ",
     }),
     "assignment.scan_deadline_shortened": (params) => ({
       title: "ពេល Scan QR ត្រូវបានកែប្រែ",
-      message: `សូម scan QR ក្នុងរយៈពេល ${numberText(params.remaining_minutes)} នាទី សម្រាប់ Ticket ${text(params.ticketNumber)}`,
+      message: `សូម scan QR ក្នុងរយៈពេល ${numberText(params.remaining_minutes)} នាទី`,
     }),
     "ticket.completion_submitted": (params) => ({
       title: "បានផ្ញើចំនួនការងារ",
@@ -278,9 +291,9 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
       title: "ការងារផ្សារត្រូវបានលុបចោល",
       message: `ការងារផ្សារ ${text(params.marketCode)} ត្រូវបានលុបចោល`,
     }),
-    "job.vehicle_cancelled": (params) => ({
+    "job.vehicle_cancelled": () => ({
       title: "ការងាររថយន្តត្រូវបានលុបចោល",
-      message: `ការងារ Ticket ${text(params.ticketNumber)} ត្រូវបានលុបចោល`,
+      message: "ការងាររថយន្តត្រូវបានលុបចោល",
     }),
     "auth.session_revoked": (params) => ({
       title: "គណនីបានចូលពីឧបករណ៍ផ្សេង",
@@ -302,25 +315,29 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
     }),
   },
   EN: {
-    "worker.assigned": (params) => ({
+    "worker.assigned": () => ({
       title: "New assignment",
-      message: `You have a new assignment for ticket ${text(params.ticketNumber)}. Please accept it.`,
+      message: "You have a new assignment. Please accept it.",
     }),
-    "assignment.timeout": (params) => ({
+    "assignment.timeout": () => ({
       title: "Assignment timed out",
-      message: `The acceptance or QR scan deadline expired for ticket ${text(params.ticketNumber)}.`,
+      message: "The acceptance or QR scan deadline expired.",
     }),
-    "assignment.cancelled": (params) => ({
+    "assignment.cancelled": () => ({
       title: "Assignment cancelled",
-      message: `Assignment ${text(params.ticketNumber)} was cancelled.`,
+      message: "Your assignment was cancelled.",
     }),
-    "assignment.scan_deadline_extended": (params) => ({
+    "assignment.team_ready": () => ({
+      title: "Team ready",
+      message: "Your whole team has checked in. You can start working now.",
+    }),
+    "assignment.scan_deadline_extended": () => ({
       title: "Scan deadline extended",
-      message: `The QR scan deadline was extended for ticket ${text(params.ticketNumber)}.`,
+      message: "The QR scan deadline was extended.",
     }),
     "assignment.scan_deadline_shortened": (params) => ({
       title: "Scan deadline updated",
-      message: `Please scan QR within ${numberText(params.remaining_minutes)} minutes for ticket ${text(params.ticketNumber)}.`,
+      message: `Please scan QR within ${numberText(params.remaining_minutes)} minutes.`,
     }),
     "ticket.completion_submitted": (params) => ({
       title: "Ticket submitted",
@@ -346,9 +363,9 @@ const TEMPLATES: Record<NotificationLang, Record<string, TemplateRenderer>> = {
       title: "Market job cancelled",
       message: `Market job ${text(params.marketCode)} was cancelled.`,
     }),
-    "job.vehicle_cancelled": (params) => ({
+    "job.vehicle_cancelled": () => ({
       title: "Vehicle job cancelled",
-      message: `Ticket ${text(params.ticketNumber)} was cancelled.`,
+      message: "Your vehicle job was cancelled.",
     }),
     "auth.session_revoked": (params) => ({
       title: "Signed in on another device",

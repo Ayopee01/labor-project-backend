@@ -1253,9 +1253,13 @@ export async function acceptWorkerAssignment(
         connection: transaction,
       }),
     );
+    const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+      assignment.vehicle_job_id,
+    );
 
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
       ticketNumber: vehicleJob?.ticket_number ?? null,
+      ticketNos,
       reason: timeoutResult.reason,
       timeout_count: timeoutResult.timeout_count,
       timeout_limit: timeoutResult.timeout_limit,
@@ -1517,9 +1521,13 @@ export async function scanWorkerAssignment(
     const queue = await markWorkerOpenApp(account.id);
     await dispatchReadyWorkers();
     const workerCode = account.username;
+    const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+      result.timedOutAssignment.vehicle_job_id,
+    );
 
     sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
       ticketNumber: result.vehicleJob?.ticket_number ?? null,
+      ticketNos,
       reason: "scan_timeout",
       status: WORKER_WORK_STATUS.OPEN_APP,
     });
@@ -1563,6 +1571,9 @@ export async function scanWorkerAssignment(
 
   if (shortenedAssignments.length > 0) {
     const [firstShortenedAssignment] = shortenedAssignments;
+    const shortenedTicketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+      vehicleJob.id,
+    );
 
     publishRealtimeEvent({
       type: "ASSIGNMENT_SCAN_DEADLINE_SHORTENED",
@@ -1577,6 +1588,7 @@ export async function scanWorkerAssignment(
       },
       worker_payload: {
         ticketNumber: vehicleJob.ticket_number,
+        ticketNos: shortenedTicketNos,
         remaining_minutes: teamScanRemainingMinutes,
         scan_deadline_at: firstShortenedAssignment.scan_deadline_at,
         scan_deadline_unix_ms: toUnixMs(firstShortenedAssignment.scan_deadline_at),
@@ -1592,6 +1604,33 @@ export async function scanWorkerAssignment(
   );
 
   sendAssignmentTeamUpdatedSocketEvents(vehicleJob.ticket_number, team, teamScan);
+
+  // แจ้งเตือนทั้งทีมตอนคนสุดท้าย scan ครบพอดี (waiting_team -> working) — แยกจาก
+  // ASSIGNMENT_TEAM_UPDATED เดิม (push: false, ไว้ sync ระหว่างที่ยังรอทีมอยู่) เพราะจุดนี้คือจังหวะ
+  // สำคัญที่ worker ที่ปิดแอพ/ไม่ได้ต่อ socket อยู่ก็ต้องรู้ว่าเริ่มงานได้แล้ว
+  if (teamScan.is_ready) {
+    const teamWorkerAccountIds = team
+      .map((member) => member.worker_account_id)
+      .filter((value): value is number => typeof value === "number");
+    const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+      vehicleJob.id,
+    );
+
+    publishRealtimeEvent({
+      type: "TEAM_READY",
+      title: "Team ready",
+      message: `The whole team has checked in for vehicle job ${vehicleJob.ticket_number}. Work can start now.`,
+      payload: {
+        ticketNumber: vehicleJob.ticket_number,
+        ticketNos,
+      },
+      worker_payload: {
+        ticketNumber: vehicleJob.ticket_number,
+        ticketNos,
+      },
+      worker_account_ids: teamWorkerAccountIds,
+    });
+  }
 
   publishNotification({
     type: "ASSIGNMENT_CHECKED_IN",

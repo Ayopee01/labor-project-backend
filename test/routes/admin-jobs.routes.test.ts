@@ -1315,6 +1315,143 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a worker
   assert.equal(assignment, undefined);
 });
 
+test("POST /api/admin/vehicle-jobs/:ticketNumber/workers/:workerCode/assignment/cancel sends every active Business Ticket's TicketNo (ticketNos) when the TicketNumber has more than one", async () => {
+  const { token: workerToken, worker } = await loginWorker(9651);
+  const { token: adminToken } = await loginJobAdmin(9650);
+
+  const job = addDispatchableJob(965, 1);
+  const market1 = addMarketJobForVehicle(job.id, {
+    id: 3650,
+    ticket_no: "TICKET-965-3650",
+    marketCode: "MARKET-965-A",
+  });
+  const market2 = addMarketJobForVehicle(job.id, {
+    id: 3651,
+    ticket_no: "TICKET-965-3651",
+    marketCode: "MARKET-965-B",
+  });
+
+  addTicketForVehicleJob(job.id, 43650, market1.id);
+  addTicketForVehicleJob(job.id, 43651, market2.id);
+
+  const assignment = addPendingAssignment(19650, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker.id);
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/workers/${worker.username}/assignment/cancel`,
+    {
+      token: adminToken,
+      body: {
+        reason: "test",
+      },
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(assignment.status, "CANCELLED");
+
+  const cancelledEvent = state.socketEvents.find(
+    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_CANCELLED"
+  );
+  const cancelledPayload = cancelledEvent?.payload as {
+    ticketNumber?: string;
+    ticketNos?: string[];
+  };
+
+  assert.ok(cancelledEvent);
+  assert.equal(cancelledPayload.ticketNumber, job.ticket_number);
+  assert.deepEqual(
+    [...(cancelledPayload.ticketNos ?? [])].sort(),
+    [market1.ticket_no, market2.ticket_no].sort()
+  );
+
+  const cancelledRealtimeEvent = state.realtimeEvents.find(
+    (item) => (item as { type?: string }).type === "ASSIGNMENT_CANCELLED"
+  ) as { worker_payload?: { ticketNos?: string[] } } | undefined;
+
+  assert.equal(cancelledRealtimeEvent, undefined);
+});
+
+test("POST /api/admin/jobs/cancel (target_type market) includes the cancelled Business Ticket's own TicketNo in the worker push payload", async () => {
+  const { token: workerToken, worker } = await loginWorker(9661);
+  const { token: adminToken } = await loginJobAdmin(9660);
+
+  const job = addDispatchableJob(966, 1);
+  const market = addMarketJobForVehicle(job.id, {
+    id: 3660,
+    ticket_no: "TICKET-966-3660",
+    marketCode: "MARKET-966-A",
+  });
+
+  addTicketForVehicleJob(job.id, 43660, market.id);
+
+  const assignment = addPendingAssignment(19660, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker.id);
+
+  const response = await server.request("POST", "/api/admin/jobs/cancel", {
+    token: adminToken,
+    body: {
+      target_type: "market",
+      target_ref: "MARKET-966-A",
+    },
+  });
+
+  assert.equal(response.status, 200);
+
+  const cancelledRealtimeEvent = state.realtimeEvents.find(
+    (item) => (item as { type?: string }).type === "MARKET_JOB_CANCELLED"
+  ) as { worker_payload?: { ticketNos?: string[] } } | undefined;
+
+  assert.ok(cancelledRealtimeEvent);
+  assert.deepEqual(cancelledRealtimeEvent?.worker_payload?.ticketNos, [
+    market.ticket_no,
+  ]);
+});
+
+test("POST /api/admin/jobs/cancel (target_type vehicle, worker_action open_app) notifies each affected worker only once, not twice", async () => {
+  const { worker } = await loginWorker(9671);
+  const { token: adminToken } = await loginJobAdmin(9670);
+
+  const job = addDispatchableJob(967, 1);
+  const assignment = addPendingAssignment(19670, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker.id);
+
+  const response = await server.request("POST", "/api/admin/jobs/cancel", {
+    token: adminToken,
+    body: {
+      target_type: "vehicle",
+      target_ref: job.ticket_number,
+      worker_action: "open_app",
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(assignment.status, "CANCELLED");
+
+  // ต้องไม่มี ASSIGNMENT_CANCELLED ยิงแยกต่อคนอีกต่อไป (จุดที่เคยทำให้ push ซ้ำ)
+  assert.equal(
+    state.socketEvents.some(
+      (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_CANCELLED"
+    ),
+    false
+  );
+
+  // ต้องมี VEHICLE_JOB_CANCELLED แค่ครั้งเดียว ครอบคลุม worker คนนี้อยู่แล้ว
+  const cancelledRealtimeEvents = state.realtimeEvents.filter(
+    (item) => (item as { type?: string }).type === "VEHICLE_JOB_CANCELLED"
+  ) as Array<{ worker_account_ids?: number[] }>;
+
+  assert.equal(cancelledRealtimeEvents.length, 1);
+  assert.deepEqual(cancelledRealtimeEvents[0].worker_account_ids, [worker.id]);
+});
+
 test("worker globally cancelled before Business Ticket roster locks still keeps earnings from an already-completed booth of that ticket", async () => {
   const { token: workerToken, worker } = await loginWorker(9801);
   const { token: replacementToken, worker: replacementWorker } = await loginWorker(9802);

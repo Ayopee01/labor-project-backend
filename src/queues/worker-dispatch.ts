@@ -1,5 +1,6 @@
 import { withTransaction } from "../db/prisma";
 import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
+import * as marketJobRepository from "../repositories/shared/market-job.repository";
 import * as profileRepository from "../repositories/shared/profile.repository";
 import * as assignmentRepository from "../repositories/shared/vehicle-job-assignment.repository";
 import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
@@ -99,10 +100,15 @@ export async function dispatchReadyWorkers(
           worker.account_id,
           acceptDeadlineMs
         );
+        const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+          vehicleJob.id,
+          connection
+        );
+
         sendWorkerSocketEvent(
           worker.account_id,
           "WORKER_ASSIGNED",
-          buildWorkerAssignedPayload(assignment, vehicleJob)
+          buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos)
         );
         publishNotification({
           type: "WORKER_ASSIGNED",
@@ -253,9 +259,14 @@ async function handleAssignmentScanTimeout(input: {
   await removeScanWarning(input.assignment.id);
   const queue = await markWorkerOpenApp(input.workerAccountId);
   await dispatchReadyWorkers(input.connection);
+  const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+    input.assignment.vehicle_job_id,
+    input.connection,
+  );
 
   sendWorkerSocketEvent(input.workerAccountId, "ASSIGNMENT_TIMEOUT", {
     ticketNumber: vehicleJob?.ticket_number ?? null,
+    ticketNos,
     reason: "scan_timeout",
     status: WORKER_WORK_STATUS.OPEN_APP,
   });
@@ -712,9 +723,14 @@ export function startAssignmentTimeoutProcessing(): void {
         workerAccountId,
         connection: transaction,
       });
+      const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+        assignment.vehicle_job_id,
+        transaction,
+      );
 
       sendWorkerSocketEvent(workerAccountId, "ASSIGNMENT_TIMEOUT", {
         ticketNumber: vehicleJob?.ticket_number ?? null,
+        ticketNos,
         reason: timeoutResult.reason,
         timeout_count: timeoutResult.timeout_count,
         timeout_limit: timeoutResult.timeout_limit,

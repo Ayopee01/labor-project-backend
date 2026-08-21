@@ -2218,6 +2218,14 @@ export const marketJobRepositoryMock = {
     ) ?? null,
   findMarketJobById: async (id: number) =>
     state.marketJobs.find((market) => market.id === id) ?? null,
+  listActiveTicketNosByVehicleJobId: async (vehicleJobId: number) =>
+    state.marketJobs
+      .filter(
+        (market) =>
+          market.vehicle_job_id === vehicleJobId && market.status !== "CANCELLED",
+      )
+      .sort((left, right) => left.id - right.id)
+      .map((market) => market.ticket_no),
 };
 
 // Mock ของ src/repositories/shared/admin-action-log.repository.ts

@@ -51,3 +51,30 @@ export async function findMarketJobById(
 
   return mapMarketJob(marketJob);
 }
+
+// Function ดึงรายการ TicketNo ของ Business Ticket ที่ยัง active (ไม่ถูกยกเลิก) ทั้งหมดของ
+// VehicleJob (TicketNumber) หนึ่งคัน ณ ตอนนี้ — ใช้แนบไปกับ push notification ระดับรถ (เช่น
+// WORKER_ASSIGNED, ASSIGNMENT_CANCELLED) ที่ไม่ได้ผูกกับ Business Ticket ใบใดใบหนึ่งโดยตรง เพื่อบอก
+// worker ว่า TicketNumber นี้มี Business Ticket (TicketNo) กี่ใบ ใบไหนบ้าง ณ ขณะนั้น
+export async function listActiveTicketNosByVehicleJobId(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<string[]> {
+  const db = client(connection);
+  const marketJobs = await db.marketJob.findMany({
+    where: {
+      vehicleJobId,
+      status: {
+        not: VEHICLE_JOB_STATUS.CANCELLED,
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+    select: {
+      ticketNo: true,
+    },
+  });
+
+  return marketJobs.map((marketJob) => marketJob.ticketNo);
+}
