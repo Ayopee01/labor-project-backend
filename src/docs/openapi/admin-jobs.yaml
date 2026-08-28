@@ -1,0 +1,721 @@
+﻿paths:
+  /api/admin/jobs/workers/status:
+    get:
+      tags:
+        - Admin Jobs
+      summary: ดูสถานะ Worker สำหรับ Admin board
+      description: >
+        คืนสถานะ Worker ในกะปัจจุบันพร้อมตำแหน่งคิวและสถานะ WebSocket เพื่อจัดเรียงหน้าควบคุมงานของ Admin
+      operationId: listAdminJobWorkerStatuses
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current-shift worker status list for admin job operations. Workers with an active queue/assignment remain visible even when their WebSocket is disconnected; use SocketConnected to show connection state. Data is sorted by status column and status_entered_at, with ready workers ordered by Redis queue_position.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminWorkerStatusListResponse"
+        "403":
+          description: Authenticated account lacks jobs:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/jobs/workers/{workerCode}/status/force:
+    post:
+      tags:
+        - Admin Jobs
+      summary: บังคับเปลี่ยนสถานะ Worker
+      description: >
+        Admin ใช้แก้สถานะ Worker เมื่อหน้างานผิดปกติ ระบบตรวจเงื่อนไขงานที่ค้างและบันทึกเหตุผลลง audit log
+      operationId: forceAdminJobWorkerStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: workerCode
+          required: true
+          schema:
+            type: string
+          description: WorkerCode, for example MN000115.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminForceWorkerStatusRequest"
+      responses:
+        "200":
+          description: Worker status forced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminForceWorkerStatusResponse"
+        "400":
+          description: reason_code is missing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: >
+            Worker is inactive, missing a schedule for forced break, outside their work shift
+            (WORKER_OUTSIDE_WORK_SHIFT — Admin must correct the worker's shift time first, for
+            any target status), or actor lacks workers:force_status permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Worker is not online, has an active assignment, or break limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/operations:
+    get:
+      tags:
+        - Admin Jobs
+      summary: ดูรายการงานรถสำหรับหน้าปฏิบัติการ
+      description: >
+        คืน vehicle jobs ที่ยังใช้ติดตามหน้างาน พร้อม worker, market, booth, product และ summary สำหรับ Admin operation board
+      operationId: listAdminVehicleJobOperations
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Optional legacy single-day filter in YYYY-MM-DD format. Equivalent to sending date_from and date_to as the same date.
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+            example: "2026-07-01"
+          description: Optional created date range start in YYYY-MM-DD format, interpreted in Asia/Bangkok.
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Optional created date range end in YYYY-MM-DD format, inclusive and interpreted in Asia/Bangkok.
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+          description: Optional. If sent, the API returns only that page and includes pagination metadata after operation_status filtering.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            example: 20
+          description: Optional page size. Used only when page is sent. Defaults to 20.
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search by ticketNo, license plate, gate transaction ref, marketCode/marketName, boothCode/boothName, productCode/productName/packageCode/packageName.
+        - in: query
+          name: operation_status
+          schema:
+            type: string
+            enum:
+              - cancelled
+              - completed
+              - reject
+              - wait_unload
+              - wait_worker
+              - ready_now
+              - working
+          description: >-
+            Mutually exclusive vehicle-level status — see
+            AdminVehicleOperationStatus for the full priority order used to decide
+            it. reject means at least one booth is currently REJECT and unresolved
+            (equivalent scope to has_issue=true, but as a status value instead of
+            a separate boolean). working also covers a vehicle job released early
+            via release-workers (VehicleJob.status=RELEASED, all booths already
+            submitted, waiting only on Vendor confirmation/timeout) since the work
+            itself is not done — filter or check vehicle_job.status directly if you
+            need to isolate released jobs specifically.
+        - in: query
+          name: status
+          schema:
+            type: string
+          description: Optional. Filter directly by vehicle_job.status (e.g. WORKING), separate from operation_status which cannot distinguish it.
+        - in: query
+          name: has_issue
+          schema:
+            type: boolean
+          description: >-
+            Optional. When true, only returns vehicles with at least one
+            currently-REJECT-status booth (market_summary.rejected > 0) — the same
+            vehicles operation_status=reject would return, kept as an independent
+            boolean filter for convenience.
+        - in: query
+          name: dropoff_point
+          schema:
+            type: string
+          description: >-
+            Optional. Filter to vehicle jobs with at least one MarketJob whose
+            dropoff_point exactly matches this value (case-insensitive). Applied
+            at the database query level alongside search and the date range, so
+            summary and pagination are computed after this filter — unlike
+            operation_status/status/has_issue which filter the already-built list.
+      responses:
+        "200":
+          description: Vehicle operation board list with summary, workers, markets, stall jobs, and products.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVehicleJobOperationListResponse"
+  /api/admin/vehicle-jobs/history:
+    get:
+      tags:
+        - Admin Jobs
+      summary: ดูประวัติงานรถ
+      description: >
+        คืนประวัติงานรถตามช่วงวันที่และตัวกรอง พร้อม market, booth, worker, timeline และข้อมูลการเงินที่ persist ไว้
+      operationId: listAdminVehicleJobHistory
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Optional legacy single-day filter in YYYY-MM-DD format. Equivalent to sending date_from and date_to as the same date.
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+            example: "2026-07-01"
+          description: Optional created date range start in YYYY-MM-DD format, interpreted in Asia/Bangkok.
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Optional created date range end in YYYY-MM-DD format, inclusive and interpreted in Asia/Bangkok.
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+          description: Optional. If sent, the API returns only that page and includes pagination metadata. If omitted, all matching rows are returned.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            example: 20
+          description: Optional page size. Used only when page is sent. Defaults to 20.
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search by ticketNo, license plate, gate transaction ref, marketCode/marketName, boothCode/boothName, productCode/productName/packageCode/packageName.
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum:
+              - WAIT
+              - WORKING
+              - RELEASED
+              - DELIVERED
+              - REJECT
+              - COMPLETED
+              - CANCELLED
+              - PENDING
+              - ACCEPTED
+              - SCANNED
+              - TIMEOUT
+          description: Filter by status at vehicle, market, stall, stall confirmation, or worker assignment level.
+        - in: query
+          name: history_status
+          schema:
+            type: string
+            enum:
+              - ALL
+              - COMPLETED
+              - CANCELLED
+              - REJECT_PENDING
+          description: >-
+            Optional. Work History business group, distinct from status above — ALL means the OR
+            of COMPLETED, CANCELLED, and REJECT_PENDING only, not every status in the database.
+            REJECT_PENDING is a non-terminal vehicle job (status not in COMPLETED/CANCELLED) with
+            at least one Booth (GateTicket) currently in REJECT status. Grouping priority is
+            CANCELLED > COMPLETED > REJECT_PENDING. Applied at the database query level so
+            pagination.total and available_dropoff_points reflect the filtered set. When sent
+            together with status above, both apply as AND.
+        - in: query
+          name: dropoff_point
+          schema:
+            type: string
+          description: >-
+            Optional. Filter to vehicle jobs with at least one MarketJob whose
+            dropoff_point exactly matches this value (case-insensitive), applied
+            at the database query level so pagination.total reflects the filtered set.
+      responses:
+        "200":
+          description: >
+            Vehicle job history list with markets, stall jobs, and products. Each item also
+            includes workers (workers who actually accepted a dispatch, deduplicated one row per
+            worker_account_id — see AdminHistoryWorker), timeline (a chronological merge of worker
+            lifecycle events, booth submission/reject/confirm events, and admin actions), finance
+            (job-level totals reused from the same persisted financial records as
+            /financials, plus a real per-worker earnings breakdown — see AdminHistoryFinance), and
+            derived job-level timestamps (ticket_created_at, work_started_at,
+            submitted_complete_at, completed_at, duration_seconds) plus history_status (the Work
+            History business group this vehicle job belongs to, or null if none — see
+            history_status query parameter above).
+            Nothing here is recalculated from a formula; everything is read from existing
+            persisted data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVehicleJobListResponse"
+  /api/admin/vehicle-jobs/history/daily-worker-income:
+    get:
+      tags:
+        - Admin Jobs
+      summary: ดูรายได้รายวันของ Worker
+      description: >
+        คืนรายได้ของ Worker แบบหนึ่งแถวต่อ Worker ต่อ Business Ticket พร้อมสถานะงานและ riskText สำหรับรายงานรายวัน
+      operationId: listAdminDailyWorkerIncome
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+            example: "2026-07-01"
+          description: Created date range start in YYYY-MM-DD, interpreted in Asia/Bangkok.
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+            example: "2026-07-07"
+          description: Created date range end in YYYY-MM-DD, inclusive, interpreted in Asia/Bangkok.
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+          description: Alias of date_from.
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+          description: Alias of date_to.
+        - in: query
+          name: worker_code
+          schema:
+            type: string
+          description: Filter to one worker's rows.
+        - in: query
+          name: workerCode
+          schema:
+            type: string
+          description: Alias of worker_code.
+        - in: query
+          name: status
+          schema:
+            type: string
+          description: Filter by TicketWorker status.
+        - in: query
+          name: shift
+          schema:
+            type: integer
+            minimum: 1
+          description: Filter by the worker's shift number.
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search by ticketNo, license plate, marketCode/marketName, or worker code/name.
+        - in: query
+          name: keyword
+          schema:
+            type: string
+          description: Alias of search.
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          description: Alias of limit.
+      responses:
+        "200":
+          description: One row per worker per Business Ticket, with the locked payout.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDailyWorkerIncomeListResponse"
+        "403":
+          description: Authenticated admin lacks jobs:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/{ticketNo}/financials:
+    get:
+      tags:
+        - Admin Jobs
+      summary: ดูรายละเอียดการเงินของงานรถ
+      description: >
+        คืนยอดเงินที่ finalize แล้วของ vehicle job แยกตาม booth, product และ worker โดยอ่านจากข้อมูลที่ persist ไว้ ไม่คำนวณใหม่จาก master rate
+      operationId: getAdminVehicleJobFinancials
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNo
+          required: true
+          schema:
+            type: string
+            example: TKT-20260723-000125
+          description: Vehicle TicketNo.
+      responses:
+        "200":
+          description: Persisted financial breakdown of the vehicle job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVehicleJobFinancialResponse"
+        "403":
+          description: Authenticated admin lacks jobs:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Vehicle job was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/assignment/cancel:
+    post:
+      tags:
+        - Admin Jobs
+      summary: ยกเลิกงานหรือ assignment ตาม scope
+      description: >
+        Admin ส่ง TicketNumber และตัวเลือก ticketNo, boothCode หรือ workerCode เพื่อยกเลิกทั้งรถ ทั้ง Business Ticket เฉพาะ Booth หรือ Worker รายคนใน endpoint เดียว
+      operationId: cancelAdminVehicleJobAssignment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminVehicleJobAssignmentCancelRequest"
+      responses:
+        "200":
+          description: Cancelled — shape depends on the resolved scope, see AdminVehicleJobAssignmentCancelResponse.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVehicleJobAssignmentCancelResponse"
+        "400":
+          description: INVALID_CANCEL_SCOPE — boothCode was given without ticket_no.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The resolved scope's target was not found (e.g. MARKET_JOB_NOT_FOUND, STALL_JOB_NOT_FOUND, ASSIGNMENT_NOT_FOUND, TICKET_WORKER_NOT_FOUND, WORKER_NOT_FOUND).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >-
+            The resolved scope's target is already closed or already submitted — e.g.
+            VEHICLE_JOB_CLOSED (whole-vehicle scope only — the vehicle is already COMPLETED or
+            CANCELLED; the row is locked and its status re-checked inside the same transaction
+            as the cancel, so this also rejects a vehicle a concurrent vendor confirm just closed),
+            MARKET_JOB_ALREADY_CLOSED, MARKET_JOB_ALREADY_SUBMITTED, STALL_JOB_ALREADY_CLOSED,
+            STALL_JOB_ALREADY_SUBMITTED, ASSIGNMENT_NOT_ACTIVE, WORKER_ALREADY_EXCLUDED_FROM_BOOTH
+            (worker + booth scope only — see the removed per-scope endpoints' prior documentation
+            for the exact guard each scope enforces). Cancelling a Business Ticket or Booth never
+            overwrites a sibling Market/Booth that already reached COMPLETED/CANCELLED, and always
+            rolls the parent Business Ticket/vehicle job status up afterward through the same
+            centralized lifecycle vendor confirmation uses (finalizing financials when applicable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/{ticketNo}/assign-workers:
+    post:
+      tags:
+        - Admin Jobs
+      summary: assign งานรถให้ Worker เอง
+      description: >
+        Admin เลือก Worker ที่พร้อมใน queue ให้รับ vehicle job โดยระบบตรวจจำนวนคนและสถานะกะก่อนสร้าง assignment
+      operationId: assignAdminVehicleJobWorkers
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNo
+          required: true
+          schema:
+            type: string
+            example: TKT-20260723-000125
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminAssignWorkersRequest"
+      responses:
+        "201":
+          description: Workers assigned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAssignWorkersResponse"
+        "403":
+          description: >
+            A listed worker is outside their work shift (WORKER_OUTSIDE_WORK_SHIFT) — this is
+            checked even if the worker's queue status shows ready, because ready alone does not
+            guarantee the worker is currently inside their shift window.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/{ticketNo}/scan-deadline/extend:
+    post:
+      tags:
+        - Admin Jobs
+      summary: ขยายเวลา scan check-in
+      description: >
+        Admin ขยาย scan deadline ให้ Worker ที่รับงานแล้วและยังไม่หมดเวลา พร้อมบันทึก reason ลง admin_action_logs
+      operationId: extendAdminVehicleJobScanDeadline
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNo
+          required: true
+          schema:
+            type: string
+            example: TKT-20260723-000125
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminExtendScanDeadlineRequest"
+      responses:
+        "200":
+          description: Scan deadline extended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminExtendScanDeadlineResponse"
+        "400":
+          description: reason_code is missing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/{ticketNumber}/tickets/{ticketNo}/stalls/{stallCode}/override-count:
+    post:
+      tags:
+        - Admin Jobs
+      summary: ส่งยอดสินค้าแทน Worker
+      description: >
+        Admin ส่งจำนวนสินค้าของ Booth ตาม ticketNumber, ticketNo และ stallCode เมื่อ Worker ส่งเองไม่ได้ ระบบส่งเข้า flow ยืนยันจาก Vendor เหมือนการส่งยอดปกติ
+      operationId: overrideAdminTicketProductCounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNumber
+          required: true
+          schema:
+            type: string
+            example: TRUCK-20260723-001
+        - in: path
+          name: ticketNo
+          required: true
+          schema:
+            type: string
+            example: TKT-20260723-000125
+        - in: path
+          name: stallCode
+          required: true
+          schema:
+            type: string
+            example: OM3/40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminOverrideCountRequest"
+      responses:
+        "200":
+          description: Booth counts submitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOverrideCountResponse"
+        "400":
+          description: Validation failed or submitted products are incomplete.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Authenticated admin lacks jobs:override_count permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Vehicle job or booth was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Booth cannot accept a new submission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/{ticketNumber}/wait:
+    post:
+      tags:
+        - Admin Jobs
+      summary: เปลี่ยน Status Dispatch ของงานรถ
+      description: >
+        Admin เปลี่ยนสถานะ Dispatch ของงานรถกลับไปรอลง unload ด้วยการกำหนด "DispatchNow": false และบันทึกเหตุผลลง timeline
+      operationId: setAdminVehicleJobToWait
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNumber
+          required: true
+          schema:
+            type: string
+            example: TRUCK-20260723-001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminVehicleWaitRequest"
+      responses:
+        "200":
+          description: Vehicle job dispatch toggled successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminVehicleWaitResponse"
+        "403":
+          description: Authenticated admin lacks jobs:wait permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Vehicle job was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >
+            VEHICLE_JOB_CLOSED (vehicle job is already COMPLETED/CANCELLED), or
+            VEHICLE_JOB_ALREADY_STARTED (the whole team has already checked in and started
+            working; dispatch can no longer be changed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/{ticketNumber}/release-workers:
+    post:
+      tags:
+        - Admin Jobs
+      summary: ปล่อยทีม Worker กลับคิว
+      description: >
+        Admin ปล่อยทีม Worker กลับ FIFO queue หลังทุก Booth ถูกส่งยอดแล้ว แม้ยังรอ Vendor confirm อยู่ โดยไม่ปิดสถานะ booth/ticket ทันที
+      operationId: releaseAdminVehicleJobWorkers
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNumber
+          required: true
+          schema:
+            type: string
+            example: TRUCK-20260723-001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReleaseWorkersRequest"
+      responses:
+        "200":
+          description: Workers released back to the FIFO queue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminReleaseWorkersResponse"
+        "403":
+          description: Authenticated admin lacks jobs:release_workers permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Vehicle job was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Vehicle job is already closed (VEHICLE_JOB_CLOSED), has no booths yet (NO_SUBMITTED_BOOTHS), has a booth still WAIT/WORKING/REJECT (BOOTHS_NOT_SUBMITTED), or has no releasable workers (NO_RELEASABLE_WORKERS).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

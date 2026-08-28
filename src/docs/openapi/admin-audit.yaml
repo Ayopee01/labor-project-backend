@@ -1,0 +1,120 @@
+paths:
+  /api/admin/audit/workers/performance:
+    get:
+      tags:
+        - Admin Audit
+      summary: ดูสถิติ performance การรับงานของ Worker
+      description: |
+        ใช้สำหรับหน้า Admin Audit เพื่อสรุปจำนวนงานที่ assign, accept, timeout, complete และ cancel ของ Worker
+        ช่วงวันที่อิง VehicleJobAssignment.CreatedAt ตามวันทำงาน Asia/Bangkok และคำนวณ AcceptRate จากงานที่ accept เทียบกับ accept timeout
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: worker_code
+          schema:
+            type: string
+          description: Optional WorkerCode filter. If omitted, workers with assignment history in the period are aggregated.
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+            example: "2026-08-01"
+          description: Start Bangkok business date. Must be sent together with DateTo.
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+            example: "2026-08-31"
+          description: End Bangkok business date, inclusive. Must be sent together with DateFrom.
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+            enum:
+              - accept_rate
+              - total_assigned
+              - accepted
+              - accept_timeout
+              - scan_timeout
+              - completed
+              - admin_cancelled
+              - worker_code
+          description: Optional DataTable sort column. Default is AcceptRate.
+        - in: query
+          name: sort_order
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+      responses:
+        "200":
+          description: Worker performance summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuditWorkerPerformanceResponse"
+              example:
+                Period:
+                  DateFrom: "2026-08-11"
+                  DateTo: "2026-08-11"
+                  Timezone: Asia/Bangkok
+                Pagination:
+                  Page: 1
+                  Limit: 20
+                  Total: 2
+                  TotalPages: 1
+                Data:
+                  - WorkerCode: "002"
+                    FullName: Worker B
+                    TotalAssignedJobCount: 8
+                    AcceptedJobCount: 7
+                    AcceptTimeoutJobCount: 1
+                    ScanTimeoutJobCount: 2
+                    CompletedJobCount: 5
+                    AdminCancelledJobCount: 0
+                    AcceptRate: "87.50"
+                  - WorkerCode: "001"
+                    FullName: Worker A
+                    TotalAssignedJobCount: 12
+                    AcceptedJobCount: 10
+                    AcceptTimeoutJobCount: 2
+                    ScanTimeoutJobCount: 1
+                    CompletedJobCount: 8
+                    AdminCancelledJobCount: 1
+                    AcceptRate: "83.33"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin role with jobs:read permission is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

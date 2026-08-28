@@ -1,0 +1,88 @@
+﻿paths:
+  /api/gate/options:
+    get:
+      tags:
+        - Gate
+      summary: ดึงข้อมูลตัวเลือกสำหรับทดสอบ Gate
+      description: >
+        ใช้ Gate Basic Auth เพื่อดึง master data สำหรับสร้าง request ทดสอบ ถ้าไม่ส่ง MarketCode จะคืน Markets และ Products พร้อม Packages
+        ถ้าส่ง MarketCode จะคืน Booths ของตลาดนั้น โดยไม่คืน rate หรือยอดเงินคำนวณ
+      operationId: getGateOptions
+      security:
+        - gateBasicAuth: []
+      parameters:
+        - in: query
+          name: MarketCode
+          required: false
+          schema:
+            type: string
+          example: "1123"
+      responses:
+        "200":
+          description: Gate test helper options.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateOptionsResponse"
+        "401":
+          description: Missing or invalid Gate client credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/gate/tickets:
+    post:
+      tags:
+        - Gate
+      summary: สร้างหรือเพิ่มข้อมูล Ticket จาก Gate
+      description: >
+        Gate ส่ง Business Ticket เข้าระบบด้วย Gate Basic Auth โดย TicketNumber คือรถ และ TicketNo คือ ticket ของตลาด
+        payload เดิมซ้ำจะคืน REPLAYED ส่วน TicketNo เดิมในตลาดเดิมสามารถเพิ่ม Booth ใหม่ได้ถ้ายังไม่ถูก lock
+        ระบบใช้ข้อมูลนี้สร้างงานรถ คำนวณจำนวน Worker ที่ต้องใช้ และ dispatch ตามค่า Dispatch โดยยังไม่คำนวณยอดเงิน
+      operationId: createGateTicket
+      security:
+        - gateBasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GateTicketRequest"
+      responses:
+        "200":
+          description: Existing Gate request replayed by idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateTicketResponse"
+        "201":
+          description: Gate ticket accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateTicketResponse"
+        "400":
+          description: Invalid Gate payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Gate client credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >
+            Duplicate Gate request, invalid master mapping, duplicate booth/product-package,
+            missing required Gate master data, TicketNo reused for a different market while the
+            existing Ticket is still active (GATE_TICKET_ALREADY_EXISTS), TicketNo+market reused
+            with a BoothCode that already exists in that Ticket
+            (GATE_BOOTH_ALREADY_EXISTS_IN_TICKET), or TicketNo+market reused after that Ticket's
+            worker roster is already locked (GATE_TICKET_ROSTER_LOCKED).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

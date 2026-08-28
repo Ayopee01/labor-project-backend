@@ -1,0 +1,62 @@
+import { RUNTIME_SETTING_KEYS } from "../../config/runtime.config";
+import { listSettings } from "../../repositories/shared/system-setting.repository";
+import { runtimeSettingsSchema } from "../../validation/schemas";
+import { parseWithSchema } from "../../validation/parser";
+import ApiError from "../../utils/api-error";
+
+import type { RuntimeSettingKey, RuntimeSettings } from "../../config/runtime.config";
+
+const SETTINGS_CACHE_TTL_MS = 30 * 1000;
+
+let cachedSettings: {
+  expiresAt: number;
+  value: RuntimeSettings;
+} | null = null;
+
+function mergeRuntimeSettings(
+  storedSettings: { key: string; value: string }[],
+): RuntimeSettings {
+  const rawSettings: Partial<Record<RuntimeSettingKey, unknown>> = {};
+
+  for (const setting of storedSettings) {
+    if (RUNTIME_SETTING_KEYS.includes(setting.key as RuntimeSettingKey)) {
+      rawSettings[setting.key as RuntimeSettingKey] = setting.value;
+    }
+  }
+
+  const missingKeys = RUNTIME_SETTING_KEYS.filter(
+    (key) => rawSettings[key] === undefined,
+  );
+
+  if (missingKeys.length > 0) {
+    throw new ApiError(
+      500,
+      "SYSTEM_SETTINGS_NOT_CONFIGURED",
+      "System settings are not fully configured.",
+      {
+        missing_settings: missingKeys,
+      },
+    );
+  }
+
+  return parseWithSchema(runtimeSettingsSchema, rawSettings);
+}
+
+export function clearRuntimeSettingsCache(): void {
+  cachedSettings = null;
+}
+
+export async function getRuntimeSettings(): Promise<RuntimeSettings> {
+  if (cachedSettings && cachedSettings.expiresAt > Date.now()) {
+    return cachedSettings.value;
+  }
+
+  const settings = mergeRuntimeSettings(await listSettings());
+
+  cachedSettings = {
+    expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS,
+    value: settings,
+  };
+
+  return settings;
+}

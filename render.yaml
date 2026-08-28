@@ -1,0 +1,150 @@
+services:
+  - type: web
+    name: labor-project-backend-dev
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /ready
+
+    envVars:
+      # Runtime
+      - key: NODE_ENV
+        value: "production"
+
+      - key: HOST
+        value: "0.0.0.0"
+
+      - key: TRUST_PROXY
+        value: "true"
+
+      - key: SHUTDOWN_TIMEOUT_MS
+        value: "20000"
+
+      # CORS
+      # สำหรับ frontend ที่รัน local
+      - key: CORS_ORIGIN
+        value: "*"
+
+      - key: ALLOW_CORS_WILDCARD
+        value: "true"
+
+      # Rate Limit
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "60000"
+
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "300"
+
+      - key: RATE_LIMIT_CLEANUP_INTERVAL_MS
+        value: "60000"
+
+      # PostgreSQL
+      - key: DATABASE_URL
+        fromDatabase:
+          name: labor-project-postgres-dev
+          property: connectionString
+
+      # Redis / Render Key Value
+      - key: REDIS_URL
+        fromService:
+          name: labor-project-redis-dev
+          type: keyvalue
+          property: connectionString
+
+      - key: REDIS_WORKER_QUEUE_KEY
+        value: "labor:worker:queue"
+
+      - key: REDIS_WORKER_STATUS_KEY_PREFIX
+        value: "labor:worker:status:"
+
+      - key: REDIS_WORKER_PRESENCE_KEY_PREFIX
+        value: "labor:worker:presence:"
+
+      - key: WORKER_PRESENCE_STALE_SECONDS
+        value: "90"
+
+      - key: WORKER_SOCKET_DISCONNECT_GRACE_MS
+        value: "15000"
+
+      - key: REDIS_WORKER_BREAK_COUNT_KEY_PREFIX
+        value: "labor:worker:break-count:"
+
+      - key: BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE
+        value: "labor-assignment-timeouts"
+
+      - key: BULLMQ_WORKER_BREAK_RETURN_QUEUE
+        value: "labor-worker-break-returns"
+
+      - key: BULLMQ_LINE_MESSAGE_QUEUE
+        value: "labor-line-messages"
+
+      # JWT
+      # Render จะสร้าง random secret ให้เอง
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+      - key: JWT_LOGIN_CHALLENGE_SECRET
+        generateValue: true
+
+      - key: REFRESH_TOKEN_HASH_SECRET
+        generateValue: true
+
+      - key: VENDOR_ACTION_TOKEN_SECRET
+        generateValue: true
+
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: "15m"
+
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: "7d"
+
+      - key: JWT_LOGIN_CHALLENGE_EXPIRES_IN
+        value: "5m"
+
+      # LINE OA
+      # Render จะถามค่าตอนสร้าง Blueprint
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+
+      # Firebase
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+
+      # Upload
+      # Render Free ไม่มี Persistent Disk
+      - key: UPLOAD_DIR
+        value: "uploads"
+
+  # Redis-compatible Key Value
+  - type: keyvalue
+    name: labor-project-redis-dev
+    plan: free
+    region: singapore
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+    persistenceMode: "off"
+
+# PostgreSQL
+databases:
+  - name: labor-project-postgres-dev
+    plan: free
+    region: singapore
+    postgresMajorVersion: "16"
+    databaseName: labor_project_dev
+    ipAllowList: []

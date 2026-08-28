@@ -1,0 +1,12 @@
+paths:
+  /ready:
+    get:
+      tags:
+        - System
+      summary: ตรวจความพร้อมของ dependency
+      description: ใช้ตรวจ readiness ของ backend และ dependency หลัก เช่น database เพื่อบอกว่า service พร้อมรับ traffic หรือยัง
+      responses:
+        "200":
+          description: Service is ready.
+        "503":
+          description: Service dependency is not ready.
