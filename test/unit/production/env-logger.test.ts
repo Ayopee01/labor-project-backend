@@ -398,7 +398,7 @@ test("logger redacts secrets and URL credentials in Error fields", () => {
   }
 });
 
-test("request completion logger context includes request id and duration", () => {
+test("request completion logger context includes request id, duration, clientType, userId, and ip", () => {
   assert.deepEqual(
     buildRequestLogContext({
       requestId: "request-1",
@@ -406,6 +406,10 @@ test("request completion logger context includes request id and duration", () =>
       path: "/ready",
       statusCode: 503,
       durationMs: 12.3456,
+      clientType: "admin_webapp",
+      clientVersion: "1.2.0",
+      userId: 42,
+      ip: "127.0.0.1",
     }),
     {
       requestId: "request-1",
@@ -413,6 +417,33 @@ test("request completion logger context includes request id and duration", () =>
       path: "/ready",
       statusCode: 503,
       durationMs: 12.35,
+      clientType: "admin_webapp",
+      clientVersion: "1.2.0",
+      userId: 42,
+      ip: "127.0.0.1",
+    },
+  );
+});
+
+test("request completion logger context omits clientType/clientVersion/userId/ip cleanly when not provided", () => {
+  assert.deepEqual(
+    buildRequestLogContext({
+      requestId: "request-2",
+      method: "GET",
+      path: "/api/line/webhook",
+      statusCode: 200,
+      durationMs: 1,
+    }),
+    {
+      requestId: "request-2",
+      method: "GET",
+      path: "/api/line/webhook",
+      statusCode: 200,
+      durationMs: 1,
+      clientType: undefined,
+      clientVersion: undefined,
+      userId: undefined,
+      ip: undefined,
     },
   );
 });

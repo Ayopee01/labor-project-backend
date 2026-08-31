@@ -1,8 +1,10 @@
 // Import Library
 import type { NextFunction, Request, Response } from "express";
 // Import Dependencies
+import { Sentry } from "../config/sentry";
 import type { ErrorLike, ErrorResponse } from "../types/shared/common.type";
 import ApiError from "../utils/api-error";
+import { detectClientType } from "../utils/client-type";
 import { logger } from "../utils/logger";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -60,12 +62,14 @@ function normalizeError(error: unknown): ApiError {
   );
 }
 
-// Function สร้าง error response สำหรับ Express middleware
-function buildErrorResponse(error: ApiError): ErrorResponse {
+// Function สร้าง error response สำหรับ Express middleware — แนบ requestId เสมอ เพื่อให้ user แจ้งปัญหา
+// แล้วทีมค้นหา log เจอเร็ว
+function buildErrorResponse(error: ApiError, requestId?: string): ErrorResponse {
   const response: ErrorResponse = {
     statusCode: error.statusCode,
     code: error.code,
     message: error.message,
+    requestId,
   };
 
   if (!error.details) {
@@ -94,19 +98,37 @@ export function errorHandler(
 ): void {
   const normalized = normalizeError(error);
   const response = shouldIncludeErrorDetails(normalized)
-    ? buildErrorResponse(normalized)
+    ? buildErrorResponse(normalized, req.requestId)
     : {
         statusCode: normalized.statusCode,
         code: normalized.code,
         message: "Unexpected server error.",
+        requestId: req.requestId,
       };
 
   if (normalized.statusCode >= 500) {
+    const clientType = detectClientType(req);
+
+    // Body ผ่าน logger.error -> redact() เดิมเสมอ (mask password/token/secret ฯลฯ อัตโนมัติ) ก่อนออก log
     logger.error("Request failed.", {
       requestId: req.requestId,
       method: req.method,
       path: req.path,
+      clientType,
+      userId: req.auth?.account_id,
+      body: req.body,
       error,
+    });
+
+    Sentry.captureException(error, {
+      tags: {
+        requestId: req.requestId,
+        clientType,
+        path: req.path,
+      },
+      user: req.auth?.account_id
+        ? { id: String(req.auth.account_id) }
+        : undefined,
     });
   }
 

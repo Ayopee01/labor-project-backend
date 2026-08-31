@@ -3,6 +3,10 @@ import { createServer } from "http";
 
 dotenv.config({ quiet: true });
 
+// ต้อง init ก่อนอย่างอื่นทั้งหมด (แม้แต่ก่อน assertRuntimeEnv) เพื่อให้ Sentry จับ error ได้ตั้งแต่
+// ต้นจริงๆ รวมถึงกรณี env var ที่ required ขาดหายจน assertRuntimeEnv throw เอง
+require("./src/config/sentry");
+
 const { assertRuntimeEnv } = require("./src/config/env.config");
 
 assertRuntimeEnv();

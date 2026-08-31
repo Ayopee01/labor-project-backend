@@ -23,11 +23,13 @@ export interface ErrorLike {
   details?: unknown;
 }
 
-// Type response error มาตรฐานที่ส่งออกจาก middleware
+// Type response error มาตรฐานที่ส่งออกจาก middleware — requestId มีเสมอ (มาจาก req.requestId) ให้ user
+// แจ้งปัญหาแล้วทีมค้นหา log เจอเร็ว
 export type ErrorResponse = {
   statusCode: number;
   code: string;
   message: string;
+  requestId?: string;
   details?: unknown;
 } & Record<string, unknown>;
 

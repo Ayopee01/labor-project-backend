@@ -25,6 +25,11 @@
         message:
           type: string
           example: Invalid or expired token.
+        request_id:
+          type: string
+          nullable: true
+          description: Correlation id for this request. Also echoed in the X-Request-Id response header — include it when reporting an issue so the team can find the matching log line.
+          example: 3fa4c1e2-9b7a-4e2f-8a5a-6f1a2b9c3d4e
         shift:
           type: object
           nullable: true

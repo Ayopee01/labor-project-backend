@@ -1,3 +1,5 @@
+import { pinoLogger } from "../config/logger";
+
 type LogLevel = "info" | "warn" | "error";
 
 type LogContext = Record<string, unknown>;
@@ -58,20 +60,7 @@ function redact(value: unknown): unknown {
 }
 
 function write(level: LogLevel, message: string, context: LogContext = {}): void {
-  const payload = {
-    level,
-    message,
-    timestamp: new Date().toISOString(),
-    ...(redact(context) as LogContext),
-  };
-  const line = JSON.stringify(payload);
-
-  if (level === "error") {
-    process.stderr.write(`${line}\n`);
-    return;
-  }
-
-  process.stdout.write(`${line}\n`);
+  pinoLogger[level](redact(context) as LogContext, message);
 }
 
 export const logger = {

@@ -113,3 +113,26 @@ npm test
 ```
 
 Runs unit tests and route tests (`test:unit` + `test:routes`). `npm run test:integration` additionally requires a real, isolated test database — `DATABASE_URL` must include `test` in its name (enforced in `test/setup/test-env.ts`).
+
+## Logging & Error Tracking
+
+Every request is logged once it completes, as a single structured JSON line to stdout (via [pino](https://getpino.io)) — never to a local file, since Render's filesystem is ephemeral. Fields logged per request:
+
+- `requestId` — from the inbound `X-Request-Id` header, or a generated UUID if not sent. Always echoed back in the `X-Request-Id` response header, and included in every error response body so a user can report an issue and the team can find the matching log line fast.
+- `method`, `path`, `statusCode`, `durationMs`
+- `clientType` — `worker_app` / `admin_webapp` / `driver_webapp` / `gate` / `line_oa` / `unknown`, detected from the URL path prefix first, then (for the shared `/api/auth` routes only) from the authenticated account's role, then from an `X-Client-Type` header, then `unknown` — see `src/utils/client-type.ts`
+- `clientVersion` — from an optional `X-Client-Version` header
+- `userId` — the authenticated account id, when present
+- `ip`
+
+Log level follows the response status code: `>=500` → `error`, `>=400` → `warn`, otherwise → `info`.
+
+**Sensitive data**: passwords, tokens, secrets, and `Authorization` headers are redacted (`[REDACTED]`) before anything is logged, via `src/utils/logger.ts`'s `redact()` — this applies to every `logger.*` call in the codebase, including the 5xx error log's request body, so this never needs to be handled per-endpoint.
+
+**5xx errors** additionally log full context (`requestId`, `path`, `userId`, `clientType`, the redacted request body, stack trace) and are reported to [Sentry](https://sentry.io) with the same `requestId`/`clientType`/`userId` attached as tags/user context (`src/middlewares/error.middleware.ts`). Sentry is a no-op until `SENTRY_DSN` is set.
+
+**Viewing logs on Render**: open the service in the Render dashboard → **Logs** tab. Every line is a JSON object; filter/search by any field above (e.g. `requestId` from an error response, or `clientType`).
+
+**Configuring Sentry / an external log service**: set the environment variables documented in `.env.example` (`SENTRY_DSN`, `LOG_LEVEL`, and `LOG_SERVICE_URL`/`LOG_SERVICE_TOKEN` — the latter two are reserved for forwarding stdout to a log service like Better Stack or Grafana Loki once one is actually subscribed to; nothing is wired to a specific vendor yet).
+
+In local development (`NODE_ENV=development`), logs are pretty-printed via `pino-pretty` instead of raw JSON.
