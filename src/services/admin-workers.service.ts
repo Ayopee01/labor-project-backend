@@ -1040,6 +1040,7 @@ export async function forceAdminWorkerStatus(
     actor_account_id: actorId,
     metadata: {
       worker_account_id: account.id,
+      worker_code: account.username,
       status: input.status,
     },
   });

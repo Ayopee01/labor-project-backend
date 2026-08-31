@@ -204,6 +204,9 @@ function mapGateRequestLogEvents(
     metadata: {
       ticketNumber: row.ticket_number,
       gateTransactionRef: row.gate_transaction_ref,
+      ...(row.ticket_no && { ticketNo: row.ticket_no }),
+      ...(row.market_code && { marketCode: row.market_code }),
+      ...(row.market_name && { marketName: row.market_name }),
     },
     occurred_at: row.created_at,
     search_text: buildSearchText([
@@ -211,6 +214,9 @@ function mapGateRequestLogEvents(
       "gate_arrival_received",
       row.ticket_number,
       row.gate_transaction_ref,
+      row.ticket_no,
+      row.market_code,
+      row.market_name,
     ]),
   }));
 }
@@ -307,6 +313,12 @@ function mapWorkerAssignmentEvents(
         metadata = {
           ...metadata,
           ...(matchedLog.metadata ?? {}),
+          ...(matchedLog.actor_worker_code && {
+            actorCode: matchedLog.actor_worker_code,
+          }),
+          ...(matchedLog.actor_full_name && {
+            actorName: matchedLog.actor_full_name,
+          }),
         };
       }
     }
@@ -609,6 +621,8 @@ function mapAdminActionLogEvents(
       ...(row.gate_ticket_booth_code && {
         boothCode: row.gate_ticket_booth_code,
       }),
+      ...(row.actor_worker_code && { actorCode: row.actor_worker_code }),
+      ...(row.actor_full_name && { actorName: row.actor_full_name }),
     };
 
     events.push({

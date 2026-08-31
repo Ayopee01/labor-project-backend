@@ -5073,11 +5073,21 @@
           type: object
           nullable: true
           additionalProperties: true
-          description: Free-form context, including business codes (ticketNumber/ticketNo/boothCode/workerCode) for search/display. Never contains passwords, full tokens, or session secrets.
+          description: >
+            Free-form context, including business codes for search/display — ticketNumber
+            (VehicleJob), ticketNo/marketCode/marketName (MarketJob), boothCode (GateTicket),
+            workerCode (Account.username of the worker involved), and actorCode/actorName
+            (Account.username/full_name of the admin actor, when actor_type is admin). Frontend
+            uses these to build a human-readable business reference instead of showing raw
+            internal ids. Never contains passwords, full tokens, or session secrets.
           example:
             minutes: 15
             assignment_ids: [455]
             ticketNumber: "20261234567890"
+            marketCode: "MKT-001"
+            marketName: "ตลาดไท"
+            actorCode: "admin01"
+            actorName: "สมชาย ใจดี"
         occurred_at:
           type: string
           format: date-time

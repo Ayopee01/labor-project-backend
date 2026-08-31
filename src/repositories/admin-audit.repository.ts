@@ -260,6 +260,7 @@ export async function listGateRequestLogsForAudit(
       gateTransactionRef: true,
       createdAt: true,
       vehicleJob: { select: { ticketNumber: true } },
+      marketJob: { select: { ticketNo: true, marketCode: true, marketName: true } },
     },
   });
 
@@ -269,6 +270,9 @@ export async function listGateRequestLogsForAudit(
     market_job_id: row.marketJobId,
     gate_transaction_ref: row.gateTransactionRef,
     ticket_number: row.vehicleJob?.ticketNumber ?? null,
+    ticket_no: row.marketJob?.ticketNo ?? null,
+    market_code: row.marketJob?.marketCode ?? null,
+    market_name: row.marketJob?.marketName ?? null,
     created_at: row.createdAt.toISOString(),
   }));
 }

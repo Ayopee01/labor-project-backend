@@ -120,6 +120,9 @@ export interface AdminAuditGateRequestLogRow {
   market_job_id: number | null;
   gate_transaction_ref: string;
   ticket_number: string | null;
+  ticket_no: string | null;
+  market_code: string | null;
+  market_name: string | null;
   created_at: string;
 }
 
