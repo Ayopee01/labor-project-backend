@@ -118,3 +118,128 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/audit/events:
+    get:
+      tags:
+        - Admin Audit
+      summary: ดู Audit Event timeline รวมของระบบ
+      description: |
+        รวม event จากข้อมูลเดิมที่มีอยู่แล้ว (VehicleJob, GateRequestLog, DriverSession,
+        WorkerAssignmentEvent, TicketCompletionSubmission, TicketRating, MessageDeliveryLog,
+        AdminActionLog) เป็น timeline เดียว โดยไม่มีตาราง audit_events กลาง — ไม่กระทบ
+        /api/admin/audit/workers/performance หรือ /api/admin/vehicle-jobs/history
+        เพราะเป็น endpoint คนละก้อนกันโดยสิ้นเชิง (event รายตัว vs สรุปผลงานรายคน)
+        Summary คำนวณจากชุดข้อมูลหลัง filter แต่ก่อน pagination เสมอ
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: ค้น EventId, event type, TicketNumber/TicketNo/BoothCode/WorkerCode ใน Metadata, actor username/name, reason code/text
+        - in: query
+          name: actor_type
+          schema:
+            type: string
+            enum:
+              - system
+              - admin
+              - worker
+              - driver
+              - vendor
+              - gate
+        - in: query
+          name: event_type
+          schema:
+            type: string
+          description: Stable event code หนึ่งค่า (เช่น worker_assigned, vendor_confirmed, admin_override)
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+            example: "2026-08-01"
+          description: Start Bangkok business date. Must be sent together with DateTo. ไม่ส่งเลยจะ default เป็นวันนี้ (Bangkok)
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+            example: "2026-08-31"
+          description: End Bangkok business date, inclusive. ห่างจาก DateFrom ได้ไม่เกิน 92 วัน
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Audit event timeline.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuditEventsResponse"
+              example:
+                Data:
+                  - EventId: "admin_action:982"
+                    EventType: scan_timer_extended
+                    ActorType: admin
+                    ActorId: "15"
+                    VehicleJobId: "120"
+                    MarketJobId: null
+                    TicketId: null
+                    AssignmentId: "455"
+                    WorkerId: null
+                    ReasonCode: WORKER_ISSUE
+                    ReasonText: "QR หน้างานเสียหาย"
+                    Metadata:
+                      minutes: 15
+                      assignment_ids: [455]
+                      ticketNumber: "20261234567890"
+                    OccurredAt: "2026-08-31T03:15:00.000Z"
+                Pagination:
+                  Page: 1
+                  Limit: 20
+                  Total: 145
+                  TotalPages: 8
+                Summary:
+                  UniqueVehicleCount: 18
+                  WithReasonCount: 12
+                  ActorTypeCounts:
+                    system: 70
+                    admin: 20
+                    worker: 45
+                    driver: 4
+                    vendor: 5
+                    gate: 1
+                  EventTypeCounts:
+                    worker_assigned: 30
+                    worker_accepted: 25
+                    worker_accept_timeout: 5
+        "400":
+          description: Validation error (e.g. DateFrom/DateTo not paired, or range exceeds 92 days).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin role with jobs:read permission is required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

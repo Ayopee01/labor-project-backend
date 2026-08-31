@@ -23,4 +23,17 @@ router.get(
   }
 );
 
+router.get(
+  "/audit/events",
+  permissionMiddleware(["jobs:read"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminAuditService.listAuditEvents(req.query);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;

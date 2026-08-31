@@ -3950,6 +3950,7 @@
       type: object
       required:
         - worker_codes
+        - reason_code
       properties:
         worker_codes:
           type: array
@@ -3960,6 +3961,14 @@
           example:
             - MN000115
             - MN000116
+        reason_code:
+          type: string
+          description: Recorded as a MANUAL_ASSIGNMENT admin_action_logs entry, with the authenticated admin as actor.
+          example: MANUAL_ASSIGNMENT
+        reason_text:
+          type: string
+          nullable: true
+          example: เติมแรงงานหลังมีคนถอนตัว
     AdminAssignWorkersResponse:
       type: object
       properties:
@@ -5001,6 +5010,126 @@
           type: array
           items:
             $ref: "#/components/schemas/AdminAuditWorkerPerformanceItem"
+    AdminAuditEventItem:
+      type: object
+      description: >
+        Unified audit event projected from existing transactional sources (VehicleJob,
+        GateRequestLog, DriverSession, WorkerAssignmentEvent, TicketCompletionSubmission,
+        TicketRating, MessageDeliveryLog, AdminActionLog). No central audit_events table exists —
+        this is a merged read view.
+      properties:
+        event_id:
+          type: string
+          description: Stable id composed from source + primary key (+ sub-event suffix). Not a DB UUID.
+          example: "admin_action:982"
+        event_type:
+          type: string
+          example: scan_timer_extended
+        actor_type:
+          type: string
+          enum:
+            - system
+            - admin
+            - worker
+            - driver
+            - vendor
+            - gate
+          example: admin
+        actor_id:
+          type: string
+          nullable: true
+          description: Internal id of the actor (Account id for admin/worker, LINE user id for vendor). Null when the source has no actor identity (system/gate/driver).
+          example: "15"
+        vehicle_job_id:
+          type: string
+          nullable: true
+          example: "120"
+        market_job_id:
+          type: string
+          nullable: true
+        ticket_id:
+          type: string
+          nullable: true
+        assignment_id:
+          type: string
+          nullable: true
+          example: "455"
+        worker_id:
+          type: string
+          nullable: true
+          description: Internal Account id of the worker involved, when the event concerns exactly one worker. Null for multi-worker events (see metadata for worker_account_ids/worker_codes instead).
+        reason_code:
+          type: string
+          nullable: true
+        reason_text:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Free-form context, including business codes (ticketNumber/ticketNo/boothCode/workerCode) for search/display. Never contains passwords, full tokens, or session secrets.
+          example:
+            minutes: 15
+            assignment_ids: [455]
+            ticketNumber: "20261234567890"
+        occurred_at:
+          type: string
+          format: date-time
+    AdminAuditEventsSummary:
+      type: object
+      properties:
+        unique_vehicle_count:
+          type: integer
+          example: 18
+        with_reason_count:
+          type: integer
+          example: 12
+        actor_type_counts:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            system: 70
+            admin: 20
+            worker: 45
+            driver: 4
+            vendor: 5
+            gate: 1
+        event_type_counts:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            worker_assigned: 30
+            worker_accepted: 25
+            worker_accept_timeout: 5
+    AdminAuditEventsPagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 145
+        total_pages:
+          type: integer
+          example: 8
+    AdminAuditEventsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAuditEventItem"
+        pagination:
+          $ref: "#/components/schemas/AdminAuditEventsPagination"
+        summary:
+          $ref: "#/components/schemas/AdminAuditEventsSummary"
     WorkerStatusResponse:
       type: object
       properties:

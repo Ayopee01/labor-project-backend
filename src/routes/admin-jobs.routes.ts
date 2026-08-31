@@ -129,7 +129,8 @@ router.post(
     try {
       const result = await adminJobsService.assignVehicleJobWorkers(
         req.params.ticketNumber,
-        req.body
+        req.body,
+        req.auth
       );
       res.status(201).json(result);
     } catch (error) {

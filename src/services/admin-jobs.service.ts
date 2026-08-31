@@ -95,6 +95,8 @@ function describeAdminAction(log: AdminActionLogDto): string {
       return `${actor} cancelled a worker assignment.`;
     case ADMIN_ACTION_TYPE.SCAN_DEADLINE_EXTENDED:
       return `${actor} extended the scan deadline.`;
+    case ADMIN_ACTION_TYPE.MANUAL_ASSIGNMENT:
+      return `${actor} manually assigned worker(s).`;
     default:
       return `${actor} performed ${log.action_type}.`;
   }
@@ -1752,10 +1754,12 @@ export async function cancelVehicleJobAssignment(
 export async function assignVehicleJobWorkers(
   idParam: unknown,
   body: unknown,
+  auth?: AccessTokenPayload,
 ): Promise<AdminAssignWorkersResponse> {
   const existingVehicleJob = await requireVehicleJobByRef(idParam);
   const vehicleJobId = existingVehicleJob.id;
   const input = parseWithSchema(adminAssignWorkersBodySchema, body);
+  const actorId = requireActorId(auth);
   const workerCodes = [...new Set(input.worker_codes)];
   const settings = await getRuntimeSettings();
   const acceptDeadlineMs = settings.worker_accept_deadline_seconds * 1000;
@@ -1844,6 +1848,27 @@ export async function assignVehicleJobWorkers(
 
         createdAssignments.push(assignment);
       }
+
+      await adminActionLogRepository.create(
+        {
+          vehicle_job_id: vehicleJobId,
+          action_type: ADMIN_ACTION_TYPE.MANUAL_ASSIGNMENT,
+          reason_code: input.reason_code,
+          reason_text: input.reason_text ?? null,
+          actor_account_id: actorId,
+          metadata: {
+            source: "manual_assign",
+            assignment_ids: createdAssignments.map(
+              (assignment) => assignment.id,
+            ),
+            worker_account_ids: createdAssignments.map(
+              (assignment) => assignment.worker_account_id,
+            ),
+            worker_codes: workerCodes,
+          },
+        },
+        transaction,
+      );
 
       return {
         assignments: createdAssignments,

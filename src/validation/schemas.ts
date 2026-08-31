@@ -607,6 +607,61 @@ export const adminAuditWorkerPerformanceQuerySchema = z
     }
   });
 
+const adminAuditEventsActorTypeValues = [
+  "system",
+  "admin",
+  "worker",
+  "driver",
+  "vendor",
+  "gate",
+] as const;
+
+export const adminAuditEventsQuerySchema = z
+  .object({
+    search: optionalTrimmedString,
+    actor_type: z.preprocess(
+      emptyStringToUndefined,
+      z.enum(adminAuditEventsActorTypeValues).optional()
+    ),
+    event_type: optionalTrimmedString,
+    date_from: optionalDateString,
+    date_to: optionalDateString,
+    page: z.preprocess(
+      emptyStringToUndefined,
+      z.coerce.number().int().min(1).default(1)
+    ),
+    limit: z.preprocess(
+      emptyStringToUndefined,
+      z.coerce.number().int().min(1).max(100).default(20)
+    ),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (Boolean(input.date_from) !== Boolean(input.date_to)) {
+      context.addIssue({
+        code: "custom",
+        path: input.date_from ? ["date_to"] : ["date_from"],
+        message: "date_from and date_to must be sent together.",
+      });
+    }
+
+    checkDateRangeOrder(input, context);
+
+    // Format จำกัดช่วงวันสูงสุดเพื่อกัน query หนักเกินไป
+    if (
+      input.date_from &&
+      input.date_to &&
+      input.date_from <= input.date_to &&
+      countInclusiveCalendarDays(input.date_from, input.date_to) > 92
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["date_to"],
+        message: "Date range must not exceed 92 calendar days.",
+      });
+    }
+  });
+
 export const adminCancelBodySchema = z.object({
   reason_code: optionalTrimmedString,
   reason_text: nullableOptionalTrimmedString,
@@ -630,6 +685,8 @@ export const adminVehicleJobAssignmentCancelBodySchema = z.object({
 
 export const adminAssignWorkersBodySchema = z.object({
   worker_codes: z.array(trimmedString).min(1),
+  reason_code: trimmedString,
+  reason_text: nullableOptionalTrimmedString,
 });
 
 const adminOverrideCountItemSchema = z.object({

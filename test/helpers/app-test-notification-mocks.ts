@@ -191,8 +191,53 @@ export const notificationQueueMock = {
   },
 };
 
+export const MESSAGE_DELIVERY_STATUS = {
+  PENDING: "PENDING",
+  SENT: "SENT",
+  FAILED: "FAILED",
+} as const;
+
 export const lineRepositoryMock = {
-  createMessageDeliveryLog: async () => 1,
+  MESSAGE_DELIVERY_STATUS,
+  createMessageDeliveryLog: async (
+    channel: string,
+    jobName: string,
+    payload: unknown,
+    target?: string | null,
+  ) => {
+    const now = new Date().toISOString();
+    const record = {
+      id: state.nextMessageDeliveryLogId++,
+      channel,
+      job_name: jobName,
+      target: target ?? null,
+      status: MESSAGE_DELIVERY_STATUS.PENDING,
+      sent_at: null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.messageDeliveryLogs.push(record);
+    return record.id;
+  },
+  updateMessageDeliveryLogStatus: async (
+    id: number,
+    status: string,
+    _error?: string | null,
+  ) => {
+    const record = state.messageDeliveryLogs.find((item) => item.id === id);
+
+    if (!record) {
+      return;
+    }
+
+    record.status = status;
+    record.updated_at = new Date().toISOString();
+
+    if (status === MESSAGE_DELIVERY_STATUS.SENT) {
+      record.sent_at = record.updated_at;
+    }
+  },
   listLineDevSubmissions: async () =>
     [...state.completionSubmissions]
       .sort(

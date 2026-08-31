@@ -257,6 +257,8 @@ export function resetRouteTestState(): void {
   state.ticketRatings.length = 0;
   state.lineActionTokens.length = 0;
   state.gateRequestLogs.length = 0;
+  state.driverSessions.length = 0;
+  state.messageDeliveryLogs.length = 0;
   state.adminActionLogs.length = 0;
   state.masterMarkets.length = 0;
   state.masterProducts.length = 0;
@@ -297,6 +299,9 @@ export function resetRouteTestState(): void {
   state.nextGateClientId = 1;
   state.nextShiftAttendanceId = 1;
   state.nextMobileAppVersionId = 1;
+  state.nextGateRequestLogId = 1;
+  state.nextDriverSessionId = 1;
+  state.nextMessageDeliveryLogId = 1;
   seedMasterDataForRouteTests();
 }
 

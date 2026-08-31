@@ -482,3 +482,520 @@ test("GET /api/admin/audit/workers/performance requires admin jobs:read permissi
 
   assert.equal(forbidden.status, 403);
 });
+
+/* -------------------------------------- Audit Events Tests -------------------------------------- */
+
+test("GET /api/admin/audit/events maps an AdminActionLog row via the action_type table, deriving admin_override + metadata.action for OVERRIDE_COUNT", async () => {
+  const { token } = await loginJobAdmin(13001);
+  const today = bangkokDateKey();
+  const occurredAt = bangkokDateToUtcIso(today, 5);
+  const job = addDispatchableJob(130010, 1);
+  job.created_at = bangkokDateToUtcIso(today, 1);
+
+  state.adminActionLogs.push({
+    id: state.nextAdminActionLogId++,
+    vehicle_job_id: job.id,
+    gate_ticket_id: null,
+    market_job_id: null,
+    action_type: "OVERRIDE_COUNT",
+    reason_code: "COUNT_MISMATCH",
+    reason_text: "นับใหม่",
+    actor_account_id: 13001,
+    metadata: { counts: [] },
+    created_at: occurredAt,
+  });
+
+  const response = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token }
+  );
+
+  assert.equal(response.status, 200);
+
+  const event = response.body.data.find(
+    (item: { event_type: string }) => item.event_type === "admin_override"
+  );
+
+  assert.ok(event);
+  assert.equal(event.actor_type, "admin");
+  assert.equal(event.actor_id, "13001");
+  assert.equal(event.vehicle_job_id, String(job.id));
+  assert.equal(event.reason_code, "COUNT_MISMATCH");
+  assert.equal(event.reason_text, "นับใหม่");
+  assert.equal(event.metadata.action, "override_count");
+});
+
+test("GET /api/admin/audit/events merges WorkerAssignmentEvent.ADMIN_CANCELLED with the matching AdminActionLog.ASSIGNMENT_CANCELLED into a single worker_assignment_cancelled event (regression: must not return both rows)", async () => {
+  const { token } = await loginJobAdmin(13101);
+  const today = bangkokDateKey();
+  const occurredAt = bangkokDateToUtcIso(today, 5);
+  const worker = addWorker(13102);
+  const job = addDispatchableJob(131010, 1);
+  job.created_at = bangkokDateToUtcIso(today, 1);
+
+  const assignment = addAuditAssignment({
+    id: 1310101,
+    workerId: worker.id,
+    vehicleJobId: job.id,
+    createdAt: bangkokDateToUtcIso(today, 1),
+    status: "CANCELLED",
+    acceptedAt: bangkokDateToUtcIso(today, 2),
+  });
+
+  state.workerAssignmentEvents.push({
+    id: state.nextWorkerAssignmentEventId++,
+    assignment_id: assignment.id,
+    worker_account_id: worker.id,
+    vehicle_job_id: job.id,
+    event_type: "ADMIN_CANCELLED",
+    occurred_at: occurredAt,
+    metadata: null,
+    created_at: occurredAt,
+  });
+
+  state.adminActionLogs.push({
+    id: state.nextAdminActionLogId++,
+    vehicle_job_id: job.id,
+    gate_ticket_id: null,
+    market_job_id: null,
+    action_type: "ASSIGNMENT_CANCELLED",
+    reason_code: "replacement",
+    reason_text: "สลับคนแทน",
+    actor_account_id: 13101,
+    metadata: {
+      assignment_id: assignment.id,
+      worker_account_id: worker.id,
+      worker_code: worker.username,
+    },
+    created_at: occurredAt,
+  });
+
+  const response = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token }
+  );
+
+  assert.equal(response.status, 200);
+
+  const cancelEvents = response.body.data.filter(
+    (item: { event_type: string }) => item.event_type === "worker_assignment_cancelled"
+  );
+
+  assert.equal(cancelEvents.length, 1);
+  assert.ok(cancelEvents[0].event_id.startsWith("worker_assignment_event:"));
+  assert.equal(cancelEvents[0].actor_type, "admin");
+  assert.equal(cancelEvents[0].actor_id, "13101");
+  assert.equal(cancelEvents[0].reason_code, "replacement");
+  assert.equal(cancelEvents[0].reason_text, "สลับคนแทน");
+  assert.equal(cancelEvents[0].assignment_id, String(assignment.id));
+
+  const adminActionEvents = response.body.data.filter(
+    (item: { event_id: string }) => item.event_id.startsWith("admin_action:")
+  );
+
+  assert.equal(
+    adminActionEvents.length,
+    0,
+    "The ASSIGNMENT_CANCELLED AdminActionLog row must not also appear as its own separate event."
+  );
+});
+
+test("GET /api/admin/audit/events suppresses the WorkerAssignmentEvent.ASSIGNED row for assignments listed in a MANUAL_ASSIGNMENT log's metadata.assignment_ids, returning the Manual Assign admin_override event as the sole event instead", async () => {
+  const { token } = await loginJobAdmin(13201);
+  const today = bangkokDateKey();
+  const occurredAt = bangkokDateToUtcIso(today, 5);
+  const worker = addWorker(13202);
+  const job = addDispatchableJob(132010, 1);
+  job.created_at = bangkokDateToUtcIso(today, 1);
+  const assignmentId = 1320101;
+
+  state.assignments.push({
+    id: assignmentId,
+    vehicle_job_id: job.id,
+    worker_account_id: worker.id,
+    status: "PENDING",
+    accept_deadline_at: null,
+    scan_deadline_at: null,
+    accepted_at: null,
+    scanned_at: null,
+    completed_at: null,
+    created_at: occurredAt,
+    updated_at: occurredAt,
+  });
+
+  state.workerAssignmentEvents.push({
+    id: state.nextWorkerAssignmentEventId++,
+    assignment_id: assignmentId,
+    worker_account_id: worker.id,
+    vehicle_job_id: job.id,
+    event_type: "ASSIGNED",
+    occurred_at: occurredAt,
+    metadata: null,
+    created_at: occurredAt,
+  });
+
+  state.adminActionLogs.push({
+    id: state.nextAdminActionLogId++,
+    vehicle_job_id: job.id,
+    gate_ticket_id: null,
+    market_job_id: null,
+    action_type: "MANUAL_ASSIGNMENT",
+    reason_code: "MANUAL_ASSIGNMENT",
+    reason_text: null,
+    actor_account_id: 13201,
+    metadata: {
+      source: "manual_assign",
+      assignment_ids: [assignmentId],
+      worker_account_ids: [worker.id],
+      worker_codes: [worker.username],
+    },
+    created_at: occurredAt,
+  });
+
+  const response = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token }
+  );
+
+  assert.equal(response.status, 200);
+
+  const assignedEvents = response.body.data.filter(
+    (item: { event_type: string }) => item.event_type === "worker_assigned"
+  );
+
+  assert.equal(
+    assignedEvents.length,
+    0,
+    "worker_assigned must be suppressed when the assignment was created via Manual Assign."
+  );
+
+  const manualAssignEvents = response.body.data.filter(
+    (item: { event_type: string; metadata: { action?: string } }) =>
+      item.event_type === "admin_override" && item.metadata.action === "manual_assign"
+  );
+
+  assert.equal(manualAssignEvents.length, 1);
+  assert.deepEqual(manualAssignEvents[0].metadata.assignment_ids, [assignmentId]);
+});
+
+test("GET /api/admin/audit/events gives a TicketCompletionSubmission distinct EventIds per sub-event (submitted/confirmed), with vendor as actor when resolved_by_line_user_id is set", async () => {
+  const { token } = await loginJobAdmin(13301);
+  const today = bangkokDateKey();
+  const submittedAt = bangkokDateToUtcIso(today, 3);
+  const confirmedAt = bangkokDateToUtcIso(today, 4);
+  const worker = addWorker(13302);
+  const job = addDispatchableJob(133010, 1);
+  job.created_at = bangkokDateToUtcIso(today, 1);
+  const ticket = addTicketForVehicleJob(job.id, 133011, 133012);
+
+  const submissionId = state.nextSubmissionId++;
+
+  state.completionSubmissions.push({
+    id: submissionId,
+    ticket_id: ticket.id,
+    submitted_by_account_id: worker.id,
+    submitted_by_role: "worker",
+    status: "CONFIRMED",
+    confirmed_at: confirmedAt,
+    rejected_at: null,
+    resolved_by_line_user_id: "line-vendor-a",
+    worker_count_snapshot: 1,
+    assignment_id: null,
+    created_at: submittedAt,
+  });
+
+  const response = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token }
+  );
+
+  assert.equal(response.status, 200);
+
+  const submittedEvent = response.body.data.find(
+    (item: { event_id: string }) => item.event_id === `submission:${submissionId}:submitted`
+  );
+  const confirmedEvent = response.body.data.find(
+    (item: { event_id: string }) => item.event_id === `submission:${submissionId}:confirmed`
+  );
+
+  assert.ok(submittedEvent);
+  assert.equal(submittedEvent.event_type, "count_submitted");
+  assert.equal(submittedEvent.actor_type, "worker");
+  assert.equal(submittedEvent.actor_id, String(worker.id));
+
+  assert.ok(confirmedEvent);
+  assert.equal(confirmedEvent.event_type, "vendor_confirmed");
+  assert.equal(confirmedEvent.actor_type, "vendor");
+  assert.equal(confirmedEvent.actor_id, "line-vendor-a");
+  assert.notEqual(submittedEvent.event_id, confirmedEvent.event_id);
+});
+
+test("GET /api/admin/audit/events marks an auto-confirmed submission (no resolved_by_line_user_id) as actor system with metadata.confirmationSource=timeout", async () => {
+  const { token } = await loginJobAdmin(13401);
+  const today = bangkokDateKey();
+  const confirmedAt = bangkokDateToUtcIso(today, 4);
+  const worker = addWorker(13402);
+  const job = addDispatchableJob(134010, 1);
+  job.created_at = bangkokDateToUtcIso(today, 1);
+  const ticket = addTicketForVehicleJob(job.id, 134011, 134012);
+  const submissionId = state.nextSubmissionId++;
+
+  state.completionSubmissions.push({
+    id: submissionId,
+    ticket_id: ticket.id,
+    submitted_by_account_id: worker.id,
+    submitted_by_role: "worker",
+    status: "CONFIRMED",
+    confirmed_at: confirmedAt,
+    rejected_at: null,
+    resolved_by_line_user_id: null,
+    worker_count_snapshot: 1,
+    assignment_id: null,
+    created_at: confirmedAt,
+  });
+
+  const response = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token }
+  );
+
+  assert.equal(response.status, 200);
+
+  const confirmedEvent = response.body.data.find(
+    (item: { event_id: string }) => item.event_id === `submission:${submissionId}:confirmed`
+  );
+
+  assert.ok(confirmedEvent);
+  assert.equal(confirmedEvent.actor_type, "system");
+  assert.equal(confirmedEvent.actor_id, null);
+  assert.equal(confirmedEvent.metadata.confirmationSource, "timeout");
+});
+
+test("GET /api/admin/audit/events Summary is computed from the full filtered set, not just the current page", async () => {
+  const { token } = await loginJobAdmin(13501);
+  const today = bangkokDateKey();
+  const job = addDispatchableJob(135010, 1);
+  // ตั้งนอกช่วง Query ตั้งใจ กัน VehicleJob.created_at ของตัวเองสร้าง vehicle_job_created event
+  // แถมมาปนกับ 3 event ที่ทดสอบเจาะจงด้านล่าง
+  job.created_at = new Date(0).toISOString();
+
+  for (let index = 0; index < 3; index += 1) {
+    state.adminActionLogs.push({
+      id: state.nextAdminActionLogId++,
+      vehicle_job_id: job.id,
+      gate_ticket_id: null,
+      market_job_id: null,
+      action_type: "WORKERS_RELEASED",
+      reason_code: "DONE",
+      reason_text: null,
+      actor_account_id: 13501,
+      metadata: null,
+      created_at: bangkokDateToUtcIso(today, 2 + index),
+    });
+  }
+
+  const page1 = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&limit=1&page=1`,
+    { token }
+  );
+  const page2 = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&limit=1&page=2`,
+    { token }
+  );
+
+  // actor_type_counts/event_type_counts มี key เป็นค่าจริง (เช่น "admin", "workers_released") ไม่ใช่
+  // fixed field name — ผ่าน pascalCaseApiResponse ก็ถูกแปลง key ไปด้วยตามมาตรฐาน API (ตั้งใจ ไม่ต้อง
+  // แก้ middleware ตาม spec ข้อ 27.1.3) จึง sum ค่าทั้งหมดแทนการ assert ตรงชื่อ key แบบเจาะจง
+  const sumCounts = (counts: Record<string, number>) =>
+    Object.values(counts).reduce((total, value) => total + value, 0);
+
+  assert.equal(page1.status, 200);
+  assert.equal(page1.body.data.length, 1);
+  assert.equal(page1.body.pagination.total, 3);
+  assert.equal(page1.body.pagination.total_pages, 3);
+  assert.equal(page1.body.summary.with_reason_count, 3);
+  assert.equal(sumCounts(page1.body.summary.actor_type_counts), 3);
+  assert.equal(sumCounts(page1.body.summary.event_type_counts), 3);
+
+  assert.equal(page2.body.data.length, 1);
+  assert.equal(page2.body.summary.with_reason_count, 3);
+  assert.notEqual(page1.body.data[0].event_id, page2.body.data[0].event_id);
+});
+
+test("GET /api/admin/audit/events actor_type and event_type filters narrow the result set, and search matches reason_text", async () => {
+  const { token } = await loginJobAdmin(13601);
+  const today = bangkokDateKey();
+  const job = addDispatchableJob(136010, 1);
+  job.created_at = bangkokDateToUtcIso(today, 1);
+
+  state.adminActionLogs.push({
+    id: state.nextAdminActionLogId++,
+    vehicle_job_id: job.id,
+    gate_ticket_id: null,
+    market_job_id: null,
+    action_type: "WORKERS_RELEASED",
+    reason_code: "DONE",
+    reason_text: "ปล่อยทีมกลับคิวก่อนเวลาแบบพิเศษ",
+    actor_account_id: 13601,
+    metadata: null,
+    created_at: bangkokDateToUtcIso(today, 2),
+  });
+
+  const filteredByActor = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&actor_type=worker`,
+    { token }
+  );
+  const filteredByEventType = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&event_type=workers_released`,
+    { token }
+  );
+  const filteredBySearch = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&search=${encodeURIComponent("ปล่อยทีมกลับคิวก่อนเวลาแบบพิเศษ")}`,
+    { token }
+  );
+  const filteredBySearchMiss = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&search=no-such-reason-text`,
+    { token }
+  );
+
+  assert.equal(filteredByActor.status, 200);
+  assert.equal(filteredByEventType.status, 200);
+  assert.equal(filteredBySearch.status, 200);
+  assert.equal(filteredBySearchMiss.status, 200);
+  assert.equal(
+    filteredByActor.body.data.filter((item: { vehicle_job_id: string }) => item.vehicle_job_id === String(job.id)).length,
+    0
+  );
+  assert.equal(
+    filteredByEventType.body.data.some((item: { event_type: string }) => item.event_type === "workers_released"),
+    true
+  );
+  assert.equal(filteredBySearch.body.data.length >= 1, true);
+  assert.equal(filteredBySearchMiss.body.data.length, 0);
+});
+
+test("GET /api/admin/audit/events rejects date_from without date_to, and a range longer than 92 days", async () => {
+  const { token } = await loginJobAdmin(13701);
+
+  const missingPair = await server.request(
+    "GET",
+    "/api/admin/audit/events?date_from=2026-08-01",
+    { token }
+  );
+  const tooLong = await server.request(
+    "GET",
+    "/api/admin/audit/events?date_from=2026-01-01&date_to=2026-12-31",
+    { token }
+  );
+
+  assert.equal(missingPair.status, 400);
+  assert.equal(missingPair.body.code, "VALIDATION_ERROR");
+  assert.equal(tooLong.status, 400);
+  assert.equal(tooLong.body.code, "VALIDATION_ERROR");
+});
+
+test("GET /api/admin/audit/events projects GateRequestLog, TicketRating, and MessageDeliveryLog rows into their respective events", async () => {
+  const { token } = await loginJobAdmin(13801);
+  const today = bangkokDateKey();
+  const occurredAt = bangkokDateToUtcIso(today, 5);
+  const job = addDispatchableJob(138010, 1);
+  job.created_at = bangkokDateToUtcIso(today, 1);
+  const ticket = addTicketForVehicleJob(job.id, 138011, 138012);
+  const submissionId = state.nextSubmissionId++;
+
+  state.completionSubmissions.push({
+    id: submissionId,
+    ticket_id: ticket.id,
+    submitted_by_account_id: addWorker(13802).id,
+    submitted_by_role: "worker",
+    status: "CONFIRMED",
+    confirmed_at: occurredAt,
+    rejected_at: null,
+    resolved_by_line_user_id: "line-vendor-a",
+    worker_count_snapshot: 1,
+    assignment_id: null,
+    created_at: bangkokDateToUtcIso(today, 4),
+  });
+
+  state.gateRequestLogs.push({
+    id: state.nextGateRequestLogId++,
+    gate_transaction_ref: "GATE-138010",
+    vehicle_job_id: job.id,
+    market_job_id: null,
+    payload_snapshot: {},
+    response_snapshot: null,
+    created_at: occurredAt,
+  });
+
+  state.ticketRatings.push({
+    id: state.nextRatingId++,
+    ticket_id: ticket.id,
+    submission_id: submissionId,
+    line_user_id: "line-vendor-a",
+    target_type: "worker",
+    score: 5,
+    rated_at: occurredAt,
+    created_at: occurredAt,
+    updated_at: occurredAt,
+  });
+
+  state.messageDeliveryLogs.push({
+    id: state.nextMessageDeliveryLogId++,
+    channel: "LINE",
+    job_name: "vendor_confirm_request",
+    target: "line-vendor-a",
+    status: "SENT",
+    sent_at: occurredAt,
+    created_at: occurredAt,
+    updated_at: occurredAt,
+  });
+  state.messageDeliveryLogs.push({
+    id: state.nextMessageDeliveryLogId++,
+    channel: "LINE",
+    job_name: "vendor_confirm_request",
+    target: "line-vendor-b",
+    status: "FAILED",
+    sent_at: null,
+    created_at: occurredAt,
+    updated_at: occurredAt,
+  });
+
+  const response = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token }
+  );
+
+  assert.equal(response.status, 200);
+
+  const eventTypes = response.body.data.map((item: { event_type: string }) => item.event_type);
+
+  assert.ok(eventTypes.includes("gate_arrival_received"));
+  assert.ok(eventTypes.includes("vendor_rated"));
+  assert.ok(eventTypes.includes("message_delivery_sent"));
+  assert.ok(eventTypes.includes("message_delivery_failed"));
+});
+
+test("GET /api/admin/audit/events requires admin jobs:read permission", async () => {
+  const unauthenticated = await server.request("GET", "/api/admin/audit/events");
+
+  assert.equal(unauthenticated.status, 401);
+
+  const workerLogin = await loginWorker(13901);
+  const workerResponse = await server.request("GET", "/api/admin/audit/events", {
+    token: workerLogin.token,
+  });
+
+  assert.equal(workerResponse.status, 403);
+});

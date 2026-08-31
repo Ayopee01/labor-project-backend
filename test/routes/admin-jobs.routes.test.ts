@@ -1125,6 +1125,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
         worker_codes: [
           replacementWorker.username,
         ],
+        reason_code: "MANUAL_ASSIGNMENT",
       },
     }
   );
@@ -1451,12 +1452,87 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a worker
       token: adminToken,
       body: {
         worker_codes: [worker.username],
+        reason_code: "MANUAL_ASSIGNMENT",
       },
     }
   );
 
   assert.equal(response.status, 403);
   assert.equal(response.body.code, "WORKER_OUTSIDE_WORK_SHIFT");
+
+  const assignment = state.assignments.find(
+    (item) =>
+      item.vehicle_job_id === job.id && item.worker_account_id === worker.id
+  );
+
+  assert.equal(assignment, undefined);
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers records a MANUAL_ASSIGNMENT AdminActionLog with the authenticated admin as actor, reason, and assignment/worker references", async () => {
+  const adminAccountId = 9660;
+  const { token: adminToken } = await loginJobAdmin(adminAccountId);
+  const job = addDispatchableJob(966, 1);
+  const worker = addWorker(9661);
+
+  await workerQueue.enqueueWorker(worker.id);
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/assign-workers`,
+    {
+      token: adminToken,
+      body: {
+        worker_codes: [worker.username],
+        reason_code: "MANUAL_ASSIGNMENT",
+        reason_text: "เติมแรงงานหลังมีคนถอนตัว",
+      },
+    }
+  );
+
+  assert.equal(response.status, 201);
+
+  const assignment = state.assignments.find(
+    (item) =>
+      item.vehicle_job_id === job.id && item.worker_account_id === worker.id
+  );
+
+  assert.ok(assignment);
+
+  const log = state.adminActionLogs.find(
+    (item) =>
+      item.vehicle_job_id === job.id &&
+      item.action_type === "MANUAL_ASSIGNMENT"
+  );
+
+  assert.ok(log);
+  assert.equal(log.reason_code, "MANUAL_ASSIGNMENT");
+  assert.equal(log.reason_text, "เติมแรงงานหลังมีคนถอนตัว");
+  assert.equal(log.actor_account_id, adminAccountId);
+  assert.deepEqual(log.metadata?.assignment_ids, [assignment?.id]);
+  assert.deepEqual(log.metadata?.worker_account_ids, [worker.id]);
+  assert.deepEqual(log.metadata?.worker_codes, [worker.username]);
+});
+
+test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a request with no reason_code with 400 VALIDATION_ERROR", async () => {
+  const { token: adminToken } = await loginJobAdmin(9662);
+  const job = addDispatchableJob(967, 1);
+  const worker = addWorker(9663);
+
+  await workerQueue.enqueueWorker(worker.id);
+
+  const response = await server.request(
+    "POST",
+    `/api/admin/vehicle-jobs/${job.ticket_number}/assign-workers`,
+    {
+      token: adminToken,
+      body: {
+        worker_codes: [worker.username],
+      },
+    }
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.code, "VALIDATION_ERROR");
 
   const assignment = state.assignments.find(
     (item) =>
@@ -2942,6 +3018,7 @@ test("worker globally cancelled before Business Ticket roster locks still keeps 
       token: adminToken,
       body: {
         worker_codes: [replacementWorker.username],
+        reason_code: "MANUAL_ASSIGNMENT",
       },
     }
   );

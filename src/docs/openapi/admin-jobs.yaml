@@ -486,6 +486,8 @@
       summary: assign งานรถให้ Worker เอง
       description: >
         Admin เลือก Worker ที่พร้อมใน queue ให้รับ vehicle job โดยระบบตรวจจำนวนคนและสถานะกะก่อนสร้าง assignment
+        พร้อมบันทึก MANUAL_ASSIGNMENT ลง admin_action_logs (actor = admin ที่ authenticated, metadata เก็บ
+        assignment_ids/worker_account_ids/worker_codes)
       operationId: assignAdminVehicleJobWorkers
       security:
         - bearerAuth: []
@@ -509,6 +511,12 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminAssignWorkersResponse"
+        "400":
+          description: reason_code is missing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "403":
           description: >
             A listed worker is outside their work shift (WORKER_OUTSIDE_WORK_SHIFT) — this is

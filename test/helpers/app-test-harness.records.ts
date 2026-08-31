@@ -298,11 +298,31 @@ export type LineActionTokenRecord = {
 };
 
 export type GateRequestLogRecord = {
+  id: number;
   gate_transaction_ref: string;
   vehicle_job_id: number | null;
   market_job_id: number | null;
   payload_snapshot: unknown;
   response_snapshot: unknown | null;
+  created_at: string;
+};
+
+export type DriverSessionRecord = {
+  id: number;
+  vehicle_job_id: number;
+  session_token: string;
+  created_at: string;
+};
+
+export type MessageDeliveryLogRecord = {
+  id: number;
+  channel: string;
+  job_name: string;
+  target: string | null;
+  status: string;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type MasterProductRecord = {

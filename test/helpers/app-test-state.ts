@@ -1,4 +1,4 @@
-import type { AccountRecord, AdminActionLogRecord, AssignmentRecord, GateClientRecord, GateRequestLogRecord, GateTicketRecord, GateTicketWorkerExclusionRecord, GateTicketWorkerSnapshotRecord, LineActionTokenRecord, MarketJobRecord, MobileAppVersionRecord, MasterMarketRecord, MasterMemberStallRecord, MasterOwnerStallRecord, MasterProductRecord, MasterRateRecord, SubmissionWorkerSnapshotRecord, TicketCompletionSubmissionRecord, TicketProductFinancialRecord, TicketProductRecord, TicketRatingRecord, TicketWorkerPaymentRecord, TicketWorkerRecord, VehicleJobRecord, WorkerAssignmentEventRecord, WorkerNotificationRecord, WorkerShiftAttendanceRecord } from "./app-test-harness.records";
+import type { AccountRecord, AdminActionLogRecord, AssignmentRecord, DriverSessionRecord, GateClientRecord, GateRequestLogRecord, GateTicketRecord, GateTicketWorkerExclusionRecord, GateTicketWorkerSnapshotRecord, LineActionTokenRecord, MarketJobRecord, MessageDeliveryLogRecord, MobileAppVersionRecord, MasterMarketRecord, MasterMemberStallRecord, MasterOwnerStallRecord, MasterProductRecord, MasterRateRecord, SubmissionWorkerSnapshotRecord, TicketCompletionSubmissionRecord, TicketProductFinancialRecord, TicketProductRecord, TicketRatingRecord, TicketWorkerPaymentRecord, TicketWorkerRecord, VehicleJobRecord, WorkerAssignmentEventRecord, WorkerNotificationRecord, WorkerShiftAttendanceRecord } from "./app-test-harness.records";
 
 /* -------------------------------------- Shared Test State -------------------------------------- */
 
@@ -43,6 +43,8 @@ export const state = {
   ticketRatings: [] as TicketRatingRecord[],
   lineActionTokens: [] as LineActionTokenRecord[],
   gateRequestLogs: [] as GateRequestLogRecord[],
+  driverSessions: [] as DriverSessionRecord[],
+  messageDeliveryLogs: [] as MessageDeliveryLogRecord[],
   masterMarkets: [] as MasterMarketRecord[],
   masterProducts: [] as MasterProductRecord[],
   masterRates: [] as MasterRateRecord[],
@@ -83,4 +85,7 @@ export const state = {
   nextShiftAttendanceId: 1,
   nextAdminActionLogId: 1,
   nextMobileAppVersionId: 1,
+  nextGateRequestLogId: 1,
+  nextDriverSessionId: 1,
+  nextMessageDeliveryLogId: 1,
 };

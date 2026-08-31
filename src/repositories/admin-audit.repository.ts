@@ -1,11 +1,34 @@
 import { Prisma } from "@prisma/client";
 
 import { client } from "./shared/repository-utils";
+import { mapAdminActionLog } from "./shared/mappers";
 import { ASSIGNMENT_STATUS } from "../constants/job-status";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 
 import type { DbConnection } from "../types/shared/common.type";
-import type { AdminAuditWorkerPerformanceQuery, AdminAuditWorkerPerformanceRecord } from "../types/admin-audit.type";
+import type { AdminActionLogDto } from "../types/shared/admin-action-log.type";
+import type {
+  AdminAuditActionLogRow,
+  AdminAuditCompletionSubmissionRow,
+  AdminAuditDriverSessionRow,
+  AdminAuditGateRequestLogRow,
+  AdminAuditMessageDeliveryLogRow,
+  AdminAuditTicketRatingRow,
+  AdminAuditVehicleJobRow,
+  AdminAuditWorkerAssignmentEventRow,
+  AdminAuditWorkerPerformanceQuery,
+  AdminAuditWorkerPerformanceRecord,
+} from "../types/admin-audit.type";
+
+export interface AdminAuditDateRange {
+  startAt: Date;
+  endAt: Date;
+}
+
+// Function แปลง Date เป็น ISO string แบบ nullable สำหรับแถว Audit Events
+function toNullableIsoString(value: Date | null): string | null {
+  return value ? value.toISOString() : null;
+}
 
 export interface WorkerPerformanceResult {
   total: number;
@@ -182,4 +205,302 @@ export async function listWorkerPerformance(
     total: countRows[0] ? toNumber(countRows[0].total) : 0,
     data: rows.map(mapWorkerPerformanceRecord),
   };
+}
+
+/* -------------------------------------- Audit Events: Raw Source Queries -------------------------------------- */
+// แต่ละ Function ดึงข้อมูลดิบจาก source เดิมหนึ่งแหล่ง ขอบเขตด้วยช่วงเวลาที่ Filter มา (ไม่เกิน 92 วัน
+// ตาม validation schema) — merge/derive เป็น Audit Event ที่สมบูรณ์ทำที่ service เพราะกฎ merge บาง
+// ข้อต้อง cross-reference ข้าม source (เช่น WorkerAssignmentEvent.ADMIN_CANCELLED กับ
+// AdminActionLog.ASSIGNMENT_CANCELLED) ซึ่งเขียนเป็น SQL เดียวได้ยากและเปราะบางกว่า
+
+// Function ดึง VehicleJob ที่มี timestamp (created/started/completed) อยู่ในช่วงที่ระบุ
+export async function listVehicleJobsForAudit(
+  range: AdminAuditDateRange,
+  connection?: DbConnection,
+): Promise<AdminAuditVehicleJobRow[]> {
+  const db = client(connection);
+  const rows = await db.vehicleJob.findMany({
+    where: {
+      OR: [
+        { createdAt: { gte: range.startAt, lt: range.endAt } },
+        { workStartedAt: { gte: range.startAt, lt: range.endAt } },
+        { completedAt: { gte: range.startAt, lt: range.endAt } },
+      ],
+    },
+    select: {
+      id: true,
+      ticketNumber: true,
+      createdAt: true,
+      workStartedAt: true,
+      completedAt: true,
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    ticket_number: row.ticketNumber,
+    created_at: row.createdAt.toISOString(),
+    work_started_at: toNullableIsoString(row.workStartedAt),
+    completed_at: toNullableIsoString(row.completedAt),
+  }));
+}
+
+// Function ดึง GateRequestLog ที่มาถึงในช่วงที่ระบุ
+export async function listGateRequestLogsForAudit(
+  range: AdminAuditDateRange,
+  connection?: DbConnection,
+): Promise<AdminAuditGateRequestLogRow[]> {
+  const db = client(connection);
+  const rows = await db.gateRequestLog.findMany({
+    where: { createdAt: { gte: range.startAt, lt: range.endAt } },
+    select: {
+      id: true,
+      vehicleJobId: true,
+      marketJobId: true,
+      gateTransactionRef: true,
+      createdAt: true,
+      vehicleJob: { select: { ticketNumber: true } },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    vehicle_job_id: row.vehicleJobId,
+    market_job_id: row.marketJobId,
+    gate_transaction_ref: row.gateTransactionRef,
+    ticket_number: row.vehicleJob?.ticketNumber ?? null,
+    created_at: row.createdAt.toISOString(),
+  }));
+}
+
+// Function ดึง DriverSession ที่เปิดในช่วงที่ระบุ
+export async function listDriverSessionsForAudit(
+  range: AdminAuditDateRange,
+  connection?: DbConnection,
+): Promise<AdminAuditDriverSessionRow[]> {
+  const db = client(connection);
+  const rows = await db.driverSession.findMany({
+    where: { createdAt: { gte: range.startAt, lt: range.endAt } },
+    select: {
+      id: true,
+      vehicleJobId: true,
+      createdAt: true,
+      vehicleJob: { select: { ticketNumber: true } },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    vehicle_job_id: row.vehicleJobId,
+    ticket_number: row.vehicleJob?.ticketNumber ?? null,
+    created_at: row.createdAt.toISOString(),
+  }));
+}
+
+// Function ดึง WorkerAssignmentEvent ที่เกิดขึ้นในช่วงที่ระบุ
+export async function listWorkerAssignmentEventsForAudit(
+  range: AdminAuditDateRange,
+  connection?: DbConnection,
+): Promise<AdminAuditWorkerAssignmentEventRow[]> {
+  const db = client(connection);
+  const rows = await db.workerAssignmentEvent.findMany({
+    where: { occurredAt: { gte: range.startAt, lt: range.endAt } },
+    select: {
+      id: true,
+      assignmentId: true,
+      workerAccountId: true,
+      vehicleJobId: true,
+      eventType: true,
+      occurredAt: true,
+      metadata: true,
+      worker: { select: { username: true } },
+      vehicleJob: { select: { ticketNumber: true } },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    assignment_id: row.assignmentId,
+    worker_account_id: row.workerAccountId,
+    vehicle_job_id: row.vehicleJobId,
+    event_type: row.eventType,
+    occurred_at: row.occurredAt.toISOString(),
+    metadata: (row.metadata as Record<string, unknown> | null) ?? null,
+    worker_code: row.worker?.username ?? null,
+    ticket_number: row.vehicleJob?.ticketNumber ?? null,
+  }));
+}
+
+// Function ดึง TicketCompletionSubmission ที่มี timestamp (submit/reject/confirm) อยู่ในช่วงที่ระบุ
+export async function listCompletionSubmissionsForAudit(
+  range: AdminAuditDateRange,
+  connection?: DbConnection,
+): Promise<AdminAuditCompletionSubmissionRow[]> {
+  const db = client(connection);
+  const rows = await db.ticketCompletionSubmission.findMany({
+    where: {
+      OR: [
+        { createdAt: { gte: range.startAt, lt: range.endAt } },
+        { rejectedAt: { gte: range.startAt, lt: range.endAt } },
+        { confirmedAt: { gte: range.startAt, lt: range.endAt } },
+      ],
+    },
+    select: {
+      id: true,
+      ticketId: true,
+      assignmentId: true,
+      submittedByAccountId: true,
+      submittedByRole: true,
+      createdAt: true,
+      rejectedAt: true,
+      confirmedAt: true,
+      resolvedByLineUserId: true,
+      submittedByAccount: { select: { username: true } },
+      ticket: {
+        select: {
+          boothCode: true,
+          marketJobId: true,
+          vehicleJobId: true,
+          marketJob: { select: { ticketNo: true } },
+          vehicleJob: { select: { ticketNumber: true } },
+        },
+      },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    ticket_id: row.ticketId,
+    assignment_id: row.assignmentId,
+    submitted_by_account_id: row.submittedByAccountId,
+    submitted_by_role: row.submittedByRole,
+    submitted_by_code: row.submittedByAccount?.username ?? null,
+    created_at: row.createdAt.toISOString(),
+    rejected_at: toNullableIsoString(row.rejectedAt),
+    confirmed_at: toNullableIsoString(row.confirmedAt),
+    resolved_by_line_user_id: row.resolvedByLineUserId,
+    booth_code: row.ticket?.boothCode ?? null,
+    market_job_id: row.ticket?.marketJobId ?? null,
+    ticket_no: row.ticket?.marketJob?.ticketNo ?? null,
+    vehicle_job_id: row.ticket?.vehicleJobId ?? null,
+    ticket_number: row.ticket?.vehicleJob?.ticketNumber ?? null,
+  }));
+}
+
+// Function ดึง TicketRating ที่ให้คะแนนในช่วงที่ระบุ
+export async function listTicketRatingsForAudit(
+  range: AdminAuditDateRange,
+  connection?: DbConnection,
+): Promise<AdminAuditTicketRatingRow[]> {
+  const db = client(connection);
+  const rows = await db.ticketRating.findMany({
+    where: { ratedAt: { gte: range.startAt, lt: range.endAt } },
+    select: {
+      id: true,
+      ticketId: true,
+      submissionId: true,
+      lineUserId: true,
+      targetType: true,
+      score: true,
+      ratedAt: true,
+      ticket: {
+        select: {
+          boothCode: true,
+          marketJobId: true,
+          vehicleJobId: true,
+          marketJob: { select: { ticketNo: true } },
+          vehicleJob: { select: { ticketNumber: true } },
+        },
+      },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    ticket_id: row.ticketId,
+    submission_id: row.submissionId,
+    line_user_id: row.lineUserId,
+    target_type: row.targetType,
+    score: row.score,
+    rated_at: row.ratedAt.toISOString(),
+    booth_code: row.ticket?.boothCode ?? null,
+    market_job_id: row.ticket?.marketJobId ?? null,
+    ticket_no: row.ticket?.marketJob?.ticketNo ?? null,
+    vehicle_job_id: row.ticket?.vehicleJobId ?? null,
+    ticket_number: row.ticket?.vehicleJob?.ticketNumber ?? null,
+  }));
+}
+
+// Function ดึง MessageDeliveryLog ที่ส่งสำเร็จหรือส่งไม่สำเร็จในช่วงที่ระบุ — ใช้ sentAt สำหรับ SENT
+// และ updatedAt สำหรับ FAILED เพราะ FAILED ไม่เคยมี sentAt (ดู updateMessageDeliveryLogStatus)
+export async function listMessageDeliveryLogsForAudit(
+  range: AdminAuditDateRange,
+  connection?: DbConnection,
+): Promise<AdminAuditMessageDeliveryLogRow[]> {
+  const db = client(connection);
+  const rows = await db.messageDeliveryLog.findMany({
+    where: {
+      OR: [
+        { status: "SENT", sentAt: { gte: range.startAt, lt: range.endAt } },
+        { status: "FAILED", updatedAt: { gte: range.startAt, lt: range.endAt } },
+      ],
+    },
+    select: {
+      id: true,
+      channel: true,
+      jobName: true,
+      target: true,
+      status: true,
+      sentAt: true,
+      updatedAt: true,
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    channel: row.channel,
+    job_name: row.jobName,
+    target: row.target,
+    status: row.status,
+    sent_at: row.status === "SENT" ? toNullableIsoString(row.sentAt) : null,
+    failed_at: row.status === "FAILED" ? row.updatedAt.toISOString() : null,
+  }));
+}
+
+// Function ดึง AdminActionLog ที่เกิดขึ้นในช่วงที่ระบุ พร้อม actor และ business code เสริม
+// (ticketNumber/ticketNo/boothCode) สำหรับค้นหา/แสดงผลใน Metadata — reuse mapper เดียวกับ Work
+// History Timeline สำหรับ field หลัก
+export async function listAdminActionLogsForAudit(
+  range: AdminAuditDateRange,
+  connection?: DbConnection,
+): Promise<Array<AdminActionLogDto & AdminAuditActionLogRow>> {
+  const db = client(connection);
+  const records = await db.adminActionLog.findMany({
+    where: { createdAt: { gte: range.startAt, lt: range.endAt } },
+    include: {
+      actor: true,
+      vehicleJob: { select: { ticketNumber: true } },
+      marketJob: { select: { ticketNo: true } },
+      gateTicket: { select: { boothCode: true } },
+    },
+  });
+
+  const result: Array<AdminActionLogDto & AdminAuditActionLogRow> = [];
+
+  for (const record of records) {
+    const mapped = mapAdminActionLog(record);
+
+    if (!mapped) {
+      continue;
+    }
+
+    result.push({
+      ...mapped,
+      vehicle_ticket_number: record.vehicleJob?.ticketNumber ?? null,
+      market_ticket_no: record.marketJob?.ticketNo ?? null,
+      gate_ticket_booth_code: record.gateTicket?.boothCode ?? null,
+    });
+  }
+
+  return result;
 }

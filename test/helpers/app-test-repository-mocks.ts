@@ -2311,11 +2311,13 @@ export const gateRepositoryMock = {
     ).length;
 
     state.gateRequestLogs.push({
+      id: state.nextGateRequestLogId++,
       gate_transaction_ref: market.gate_transaction_ref,
       vehicle_job_id: vehicleJob.id,
       market_job_id: marketJobId,
       payload_snapshot: payloadSnapshot,
       response_snapshot: null,
+      created_at: new Date().toISOString(),
     });
 
     return { vehicleJob, marketJob };
@@ -4816,5 +4818,233 @@ export const adminAuditRepositoryMock = {
       total: sorted.length,
       data: sorted.slice(startIndex, startIndex + filters.limit),
     };
+  },
+  listVehicleJobsForAudit: async (range: { startAt: Date; endAt: Date }) => {
+    const inRange = (iso: string | null | undefined) => {
+      if (!iso) {
+        return false;
+      }
+
+      const time = new Date(iso).getTime();
+      return time >= range.startAt.getTime() && time < range.endAt.getTime();
+    };
+
+    return state.vehicleJobs
+      .filter(
+        (job) =>
+          inRange(job.created_at) ||
+          inRange(job.work_started_at) ||
+          inRange(job.completed_at),
+      )
+      .map((job) => ({
+        id: job.id,
+        ticket_number: job.ticket_number,
+        created_at: job.created_at,
+        work_started_at: job.work_started_at ?? null,
+        completed_at: job.completed_at ?? null,
+      }));
+  },
+  listGateRequestLogsForAudit: async (range: { startAt: Date; endAt: Date }) =>
+    state.gateRequestLogs
+      .filter((log) => {
+        const time = new Date(log.created_at).getTime();
+        return time >= range.startAt.getTime() && time < range.endAt.getTime();
+      })
+      .map((log) => ({
+        id: log.id,
+        vehicle_job_id: log.vehicle_job_id,
+        market_job_id: log.market_job_id,
+        gate_transaction_ref: log.gate_transaction_ref,
+        ticket_number:
+          state.vehicleJobs.find((job) => job.id === log.vehicle_job_id)
+            ?.ticket_number ?? null,
+        created_at: log.created_at,
+      })),
+  listDriverSessionsForAudit: async (range: { startAt: Date; endAt: Date }) =>
+    state.driverSessions
+      .filter((session) => {
+        const time = new Date(session.created_at).getTime();
+        return time >= range.startAt.getTime() && time < range.endAt.getTime();
+      })
+      .map((session) => ({
+        id: session.id,
+        vehicle_job_id: session.vehicle_job_id,
+        ticket_number:
+          state.vehicleJobs.find((job) => job.id === session.vehicle_job_id)
+            ?.ticket_number ?? null,
+        created_at: session.created_at,
+      })),
+  listWorkerAssignmentEventsForAudit: async (range: {
+    startAt: Date;
+    endAt: Date;
+  }) =>
+    state.workerAssignmentEvents
+      .filter((event) => {
+        const time = new Date(event.occurred_at).getTime();
+        return time >= range.startAt.getTime() && time < range.endAt.getTime();
+      })
+      .map((event) => {
+        const worker =
+          state.workers.get(event.worker_account_id) ??
+          state.authAccountsById.get(event.worker_account_id);
+
+        return {
+          id: event.id,
+          assignment_id: event.assignment_id,
+          worker_account_id: event.worker_account_id,
+          vehicle_job_id: event.vehicle_job_id,
+          event_type: event.event_type,
+          occurred_at: event.occurred_at,
+          metadata: event.metadata ?? null,
+          worker_code: worker?.username ?? null,
+          ticket_number:
+            state.vehicleJobs.find((job) => job.id === event.vehicle_job_id)
+              ?.ticket_number ?? null,
+        };
+      }),
+  listCompletionSubmissionsForAudit: async (range: {
+    startAt: Date;
+    endAt: Date;
+  }) => {
+    const inRange = (iso: string | null | undefined) => {
+      if (!iso) {
+        return false;
+      }
+
+      const time = new Date(iso).getTime();
+      return time >= range.startAt.getTime() && time < range.endAt.getTime();
+    };
+
+    return state.completionSubmissions
+      .filter(
+        (submission) =>
+          inRange(submission.created_at) ||
+          inRange(submission.rejected_at) ||
+          inRange(submission.confirmed_at),
+      )
+      .map((submission) => {
+        const ticket = state.gateTickets.find(
+          (item) => item.id === submission.ticket_id,
+        );
+        const market = ticket
+          ? state.marketJobs.find((item) => item.id === ticket.market_job_id)
+          : undefined;
+        const vehicle = ticket
+          ? state.vehicleJobs.find((item) => item.id === ticket.vehicle_job_id)
+          : undefined;
+        const submitter =
+          state.workers.get(submission.submitted_by_account_id) ??
+          state.authAccountsById.get(submission.submitted_by_account_id);
+
+        return {
+          id: submission.id,
+          ticket_id: submission.ticket_id,
+          assignment_id: submission.assignment_id ?? null,
+          submitted_by_account_id: submission.submitted_by_account_id,
+          submitted_by_role: submission.submitted_by_role ?? "worker",
+          submitted_by_code: submitter?.username ?? null,
+          created_at: submission.created_at ?? new Date().toISOString(),
+          rejected_at: submission.rejected_at ?? null,
+          confirmed_at: submission.confirmed_at ?? null,
+          resolved_by_line_user_id: submission.resolved_by_line_user_id,
+          booth_code: ticket?.boothCode ?? null,
+          market_job_id: ticket?.market_job_id ?? null,
+          ticket_no: market?.ticket_no ?? null,
+          vehicle_job_id: ticket?.vehicle_job_id ?? null,
+          ticket_number: vehicle?.ticket_number ?? null,
+        };
+      });
+  },
+  listTicketRatingsForAudit: async (range: { startAt: Date; endAt: Date }) =>
+    state.ticketRatings
+      .filter((rating) => {
+        const time = new Date(rating.rated_at).getTime();
+        return time >= range.startAt.getTime() && time < range.endAt.getTime();
+      })
+      .map((rating) => {
+        const ticket = state.gateTickets.find(
+          (item) => item.id === rating.ticket_id,
+        );
+        const market = ticket
+          ? state.marketJobs.find((item) => item.id === ticket.market_job_id)
+          : undefined;
+        const vehicle = ticket
+          ? state.vehicleJobs.find((item) => item.id === ticket.vehicle_job_id)
+          : undefined;
+
+        return {
+          id: rating.id,
+          ticket_id: rating.ticket_id,
+          submission_id: rating.submission_id,
+          line_user_id: rating.line_user_id,
+          target_type: rating.target_type,
+          score: rating.score,
+          rated_at: rating.rated_at,
+          booth_code: ticket?.boothCode ?? null,
+          market_job_id: ticket?.market_job_id ?? null,
+          ticket_no: market?.ticket_no ?? null,
+          vehicle_job_id: ticket?.vehicle_job_id ?? null,
+          ticket_number: vehicle?.ticket_number ?? null,
+        };
+      }),
+  listMessageDeliveryLogsForAudit: async (range: {
+    startAt: Date;
+    endAt: Date;
+  }) =>
+    state.messageDeliveryLogs
+      .filter((log) => {
+        const relevantAt =
+          log.status === "SENT" ? log.sent_at : log.updated_at;
+
+        if (!relevantAt) {
+          return false;
+        }
+
+        const time = new Date(relevantAt).getTime();
+        return (
+          (log.status === "SENT" || log.status === "FAILED") &&
+          time >= range.startAt.getTime() &&
+          time < range.endAt.getTime()
+        );
+      })
+      .map((log) => ({
+        id: log.id,
+        channel: log.channel,
+        job_name: log.job_name,
+        target: log.target,
+        status: log.status,
+        sent_at: log.status === "SENT" ? log.sent_at : null,
+        failed_at: log.status === "FAILED" ? log.updated_at : null,
+      })),
+  listAdminActionLogsForAudit: async (range: { startAt: Date; endAt: Date }) => {
+    const actorInfoById = (accountId: number) => {
+      const account =
+        state.workers.get(accountId) ?? state.authAccountsById.get(accountId);
+
+      return {
+        actor_worker_code: account?.username ?? null,
+        actor_full_name: account?.full_name ?? null,
+        actor_role: account?.role ?? null,
+      };
+    };
+
+    return state.adminActionLogs
+      .filter((log) => {
+        const time = new Date(log.created_at).getTime();
+        return time >= range.startAt.getTime() && time < range.endAt.getTime();
+      })
+      .map((log) => ({
+        ...log,
+        ...actorInfoById(log.actor_account_id),
+        vehicle_ticket_number:
+          state.vehicleJobs.find((job) => job.id === log.vehicle_job_id)
+            ?.ticket_number ?? null,
+        market_ticket_no:
+          state.marketJobs.find((market) => market.id === log.market_job_id)
+            ?.ticket_no ?? null,
+        gate_ticket_booth_code:
+          state.gateTickets.find((ticket) => ticket.id === log.gate_ticket_id)
+            ?.boothCode ?? null,
+      }));
   },
 };
