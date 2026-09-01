@@ -236,6 +236,7 @@ export type AdminWorkerStatusItem = {
   full_name: string | null;
   worker_code: string;
   labor_color: string | null;
+  coat_no: string | null;
   picture: string | null;
   shift_name: string | null;
   latest_activity_at: string | null;

@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 import { closePrisma, getPrisma } from "../src/db/prisma";
-import { ADMIN_PERMISSIONS, OWNER_ONLY_PERMISSIONS } from "../src/config/permission.config";
+import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS, OWNER_ONLY_PERMISSIONS } from "../src/config/permission.config";
 import type { AdminPermission, AdminPermissionLevel } from "../src/config/permission.config";
 import { hashPassword } from "../src/utils/password";
 
@@ -15,11 +15,41 @@ import { seedMobileAppVersion } from "./version.seed";
 dotenv.config({ quiet: true });
 
 const prisma = getPrisma();
-const SEED_ADMIN = {
-  username: "admin",
-  password: "Admin@123456",
-  email: "admin@simmummuang.local",
-  phone: "081-000-0001",
+
+type SeedAdminAccount = {
+  username: string;
+  password: string;
+  fullName: string;
+  position: string;
+  email: string;
+  phone: string;
+};
+
+const SEED_ADMIN_ACCOUNTS: Record<AdminPermissionLevel, SeedAdminAccount> = {
+  owner: {
+    username: "admin",
+    password: "Admin@123456",
+    fullName: "System Admin",
+    position: "Administrator",
+    email: "admin@simmummuang.local",
+    phone: "081-000-0001",
+  },
+  manager: {
+    username: "manager01",
+    password: "Manager@123456",
+    fullName: "Branch Manager",
+    position: "Manager",
+    email: "manager01@simmummuang.local",
+    phone: "081-000-0002",
+  },
+  supervisor: {
+    username: "supervisor01",
+    password: "Supervisor@123456",
+    fullName: "Operations Supervisor",
+    position: "Supervisor",
+    email: "supervisor01@simmummuang.local",
+    phone: "081-000-0003",
+  },
 };
 
 const SEED_GATE_CLIENT = {
@@ -72,29 +102,59 @@ const SEED_ROLE_PERMISSION_TEMPLATES: Record<
   supervisor: [...SEED_SUPERVISOR_PERMISSIONS],
 };
 
-// Function เตรียมข้อมูลเริ่มต้นของ admin, supervisor, worker, settings และ permission
-async function main(): Promise<void> {
-  const admin = await prisma.account.upsert({
+// Function upsert บัญชีผู้ดูแลจาก seed โดยไม่เขียนทับ password เดิมเมื่อรัน seed ซ้ำ
+async function upsertSeedAdminAccount(
+  seedAccount: SeedAdminAccount,
+  permissionLevel: AdminPermissionLevel,
+  createdBy?: number,
+) {
+  return prisma.account.upsert({
     where: {
-      username: SEED_ADMIN.username,
+      username: seedAccount.username,
     },
     update: {
-      email: SEED_ADMIN.email,
-      phone: SEED_ADMIN.phone,
-      permissionLevel: "owner",
-    },
-    create: {
-      username: SEED_ADMIN.username,
-      passwordHash: await hashPassword(SEED_ADMIN.password),
       role: "admin",
       status: "active",
-      fullName: "System Admin",
-      position: "Administrator",
-      email: SEED_ADMIN.email,
-      phone: SEED_ADMIN.phone,
-      permissionLevel: "owner",
+      fullName: seedAccount.fullName,
+      position: seedAccount.position,
+      email: seedAccount.email,
+      phone: seedAccount.phone,
+      permissionLevel,
+      ...(createdBy !== undefined ? { createdBy } : {}),
+    },
+    create: {
+      username: seedAccount.username,
+      passwordHash: await hashPassword(seedAccount.password),
+      role: "admin",
+      status: "active",
+      fullName: seedAccount.fullName,
+      position: seedAccount.position,
+      email: seedAccount.email,
+      phone: seedAccount.phone,
+      permissionLevel,
+      createdBy,
     },
   });
+}
+
+// Function เตรียมข้อมูลเริ่มต้นของ admins ทุก permission level, workers, settings และ permissions
+async function main(): Promise<void> {
+  const admin = await upsertSeedAdminAccount(SEED_ADMIN_ACCOUNTS.owner, "owner");
+  const adminAccounts = [admin];
+
+  for (const permissionLevel of ADMIN_PERMISSION_LEVELS) {
+    if (permissionLevel === "owner") {
+      continue;
+    }
+
+    adminAccounts.push(
+      await upsertSeedAdminAccount(
+        SEED_ADMIN_ACCOUNTS[permissionLevel],
+        permissionLevel,
+        admin.id,
+      ),
+    );
+  }
 
   for (const [key, value] of Object.entries(SEED_RUNTIME_SETTINGS)) {
     await prisma.systemSetting.upsert({
@@ -133,7 +193,7 @@ async function main(): Promise<void> {
     },
   });
 
-  for (const account of [admin]) {
+  for (const account of adminAccounts) {
     const permissions =
       account.permissionLevel &&
       account.permissionLevel in SEED_ROLE_PERMISSION_TEMPLATES
@@ -157,8 +217,11 @@ async function main(): Promise<void> {
         skipDuplicates: true,
       });
     }
+
+    console.log(
+      `Seed admin account ready: ${account.username} (${account.permissionLevel}, ${permissions.length} permissions)`,
+    );
   }
-  console.log(`Seed admin account ready: ${SEED_ADMIN.username}`);
 
   console.log("Seeding master markets...");
   await seedMasterMarkets(prisma);

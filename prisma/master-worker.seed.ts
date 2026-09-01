@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { hashPassword } from "../src/utils/password";
+import { resolveShiftPreset } from "../src/utils/shift";
 
 /**
  * Source:
@@ -58,6 +59,12 @@ interface MasterWorkerSeedRecord {
   updateDate: Date | null;
 }
 
+interface OperationalShiftSeed {
+  shiftNo: 1 | 2;
+  shiftStartTime: string;
+  shiftEndTime: string;
+}
+
 /* -------------------------------------- Parsing helpers -------------------------------------- */
 
 // Function จัดการ trim + คืน null แทน empty string จาก field ดิบ
@@ -76,6 +83,25 @@ function nullableInt(value: string | undefined): number | null {
   }
 
   return Number.parseInt(trimmed, 10);
+}
+
+// Function แปลงชื่อกะดิบจาก Master เป็น operational shift ที่ queue/dispatch ใช้งานจริง
+// ค่าอื่นหรือค่าว่างไม่ถูกเดา เพื่อไม่สร้างตารางกะผิดให้ข้อมูลที่ระบบยังไม่รู้จัก
+function resolveOperationalShift(timeWork: string | null): OperationalShiftSeed | null {
+  const normalized = timeWork?.trim().toLowerCase();
+  const shiftNo = normalized === "morning" ? 1 : normalized === "evening" ? 2 : null;
+
+  if (shiftNo === null) {
+    return null;
+  }
+
+  const preset = resolveShiftPreset(shiftNo);
+
+  return {
+    shiftNo: preset.shift_no,
+    shiftStartTime: preset.shift_start_time,
+    shiftEndTime: preset.shift_end_time,
+  };
 }
 
 // Function parse วันที่รูปแบบ Master D/M/YYYY (ไม่มีเลขศูนย์นำหน้า) -> Date, parse ไม่ได้ -> null
@@ -279,6 +305,7 @@ export async function seedMasterWorkers(prisma: PrismaClient): Promise<void> {
   const inputs: Prisma.MasterWorkerUpsertArgs[] = await Promise.all(
     workers.map(async (worker) => {
       const passwordHash = worker.telephone ? await hashPassword(worker.telephone) : null;
+      const operationalShift = resolveOperationalShift(worker.timeWork);
       const data: Prisma.MasterWorkerUncheckedCreateInput = {
         laborId: worker.laborId,
         laborCode: worker.laborCode,
@@ -305,15 +332,45 @@ export async function seedMasterWorkers(prisma: PrismaClient): Promise<void> {
 
       return {
         where: { laborId: worker.laborId },
+        // operational shift เป็นค่าที่ Admin ปรับได้ จึงไม่เขียนทับตอน seed ซ้ำ
         update: data,
-        create: data,
+        create: {
+          ...data,
+          ...(operationalShift ?? {}),
+        },
       };
     })
   );
 
   await prisma.$transaction(inputs.map((input) => prisma.masterWorker.upsert(input)));
 
+  // รองรับฐานข้อมูลที่เคย seed ก่อนเพิ่ม operational shift: เติมเฉพาะ worker ที่ทั้งสามค่ายังว่าง
+  // เท่านั้น เพื่อรักษาค่ากะที่ Admin ตั้งไว้แล้วเมื่อรัน seed ซ้ำ
+  const shiftBackfills = ([1, 2] as const).map((shiftNo) => {
+    const preset = resolveShiftPreset(shiftNo);
+    const laborIds = workers
+      .filter((worker) => resolveOperationalShift(worker.timeWork)?.shiftNo === shiftNo)
+      .map((worker) => worker.laborId);
+
+    return prisma.masterWorker.updateMany({
+      where: {
+        laborId: { in: laborIds },
+        shiftNo: null,
+        shiftStartTime: null,
+        shiftEndTime: null,
+      },
+      data: {
+        shiftNo: preset.shift_no,
+        shiftStartTime: preset.shift_start_time,
+        shiftEndTime: preset.shift_end_time,
+      },
+    });
+  });
+  const backfillResults = await prisma.$transaction(shiftBackfills);
+  const backfilledWorkers = backfillResults.reduce((total, result) => total + result.count, 0);
+
   console.log(
-    `Seeded ${workers.length} master_workers records (from ${dataRows.length} CSV rows).`
+    `Seeded ${workers.length} master_workers records (from ${dataRows.length} CSV rows); ` +
+      `backfilled operational shift for ${backfilledWorkers} existing records.`
   );
 }

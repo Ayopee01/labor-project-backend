@@ -2636,14 +2636,18 @@
         full_name:
           type: string
           example: MANY MANY
-        shirt_number:
+        labor_color:
           type: string
           nullable: true
-          example: "115"
-        image_url:
+          example: NAVY
+        coat_no:
           type: string
           nullable: true
-          example: https://example.com/uploads/workers/mn000115.jpg
+          example: N0115
+        picture:
+          type: string
+          nullable: true
+          example: null
         shift_name:
           type: string
           nullable: true

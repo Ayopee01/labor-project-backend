@@ -666,6 +666,7 @@ function formatAdminWorkerStatusItem(
     full_name: worker.full_name,
     worker_code: worker.labor_code,
     labor_color: worker.labor_color,
+    coat_no: worker.coat_no,
     picture: worker.picture,
     shift_name: scheduleWithShift?.shift_name ?? null,
     latest_activity_at: resolveLatestActivityAt(queue, assignment, presence),

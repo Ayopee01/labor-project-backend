@@ -435,6 +435,7 @@ test("GET /api/admin/jobs/workers/status shows queued worker when socket is disc
   assert.equal(response.body.summary.total, 1);
   assert.equal(response.body.summary.ready, 1);
   assert.equal(response.body.data[0].worker_code, worker.labor_code);
+  assert.equal(response.body.data[0].coat_no, worker.coat_no);
   assert.equal(response.body.data[0].status, "ready");
   assert.equal(response.body.data[0].socket_connected, false);
 });
