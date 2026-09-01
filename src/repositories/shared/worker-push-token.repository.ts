@@ -30,6 +30,7 @@ function hashFcmToken(token: string): string {
 function mapWorkerPushToken(record: WorkerPushToken): WorkerPushTokenDto {
   return {
     id: record.id,
+    worker_id: record.workerId,
     worker_code: record.workerCode,
     session_id: record.sessionId,
     device_id: record.deviceId,
@@ -52,6 +53,7 @@ export async function upsertWorkerPushToken(
   const platform = normalizePushPlatform(input.platform);
   const now = new Date();
   const data = {
+    workerId: input.worker_id,
     workerCode: input.worker_code,
     sessionId: input.session_id ?? null,
     deviceId: input.device_id,
@@ -66,8 +68,8 @@ export async function upsertWorkerPushToken(
 
   const record = await db.workerPushToken.upsert({
     where: {
-      workerCode_deviceId_platform: {
-        workerCode: input.worker_code,
+      workerId_deviceId_platform: {
+        workerId: input.worker_id,
         deviceId: input.device_id,
         platform,
       },

@@ -10,18 +10,18 @@ import type { TicketWorkerDto } from "../../types/worker.type";
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function ค้นหา TicketWorker หนึ่งแถวของ worker คนหนึ่งใน Business Ticket ใบหนึ่งจาก DB — ใช้หา id
-// ก่อนสร้าง GateTicketWorkerExclusion (ต้องใช้ ticketWorkerId เป็น FK ไม่ใช่ workerAccountId ตรงๆ)
+// ก่อนสร้าง GateTicketWorkerExclusion (ต้องใช้ ticketWorkerId เป็น FK ไม่ใช่ workerId ตรงๆ)
 export async function findTicketWorkerByMarketJobAndWorkerAccountId(
   marketJobId: number,
-  workerAccountId: number,
+  workerId: number,
   connection?: DbConnection
 ): Promise<TicketWorkerDto | null> {
   const db = client(connection);
   const worker = await db.ticketWorker.findUnique({
     where: {
-      marketJobId_workerAccountId: {
+      marketJobId_workerId: {
         marketJobId,
-        workerAccountId,
+        workerId,
       },
     },
   });
@@ -84,7 +84,7 @@ export async function syncTicketWorkersFromVehicleAssignments(
   });
   const activeWorkerAccountIds = [
     ...new Set(
-      assignments.map((assignment) => assignment.workerAccountId)
+      assignments.map((assignment) => assignment.workerId)
     ),
   ];
   const existingWorkers = await db.ticketWorker.findMany({
@@ -96,17 +96,17 @@ export async function syncTicketWorkersFromVehicleAssignments(
     },
   });
   const existingWorkerAccountIds = new Set(
-    existingWorkers.map((worker) => worker.workerAccountId)
+    existingWorkers.map((worker) => worker.workerId)
   );
   const missingWorkerAccountIds = activeWorkerAccountIds.filter(
-    (workerAccountId) => !existingWorkerAccountIds.has(workerAccountId)
+    (workerId) => !existingWorkerAccountIds.has(workerId)
   );
 
   if (missingWorkerAccountIds.length > 0) {
     await db.ticketWorker.createMany({
-      data: missingWorkerAccountIds.map((workerAccountId) => ({
+      data: missingWorkerAccountIds.map((workerId) => ({
         marketJobId,
-        workerAccountId,
+        workerId,
         status: TICKET_WORKER_STATUS.WORKING,
         joinedAt: now,
       })),
@@ -122,7 +122,7 @@ export async function syncTicketWorkersFromVehicleAssignments(
       status: TICKET_WORKER_STATUS.WORKING,
       ...(activeWorkerAccountIds.length > 0
         ? {
-          workerAccountId: {
+          workerId: {
             notIn: activeWorkerAccountIds,
           },
         }

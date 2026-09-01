@@ -15,7 +15,7 @@ function toIsoString(value: Date | string | null): string | null {
 
 function mapWorkerNotification(record: {
   id: number;
-  workerAccountId: number;
+  workerId: number;
   type: string;
   notificationKey: string | null;
   lang: string;
@@ -28,7 +28,7 @@ function mapWorkerNotification(record: {
 }): WorkerNotificationDto {
   return {
     id: record.id,
-    worker_account_id: record.workerAccountId,
+    worker_id: record.workerId,
     type: record.type,
     notification_key: record.notificationKey,
     lang: record.lang,
@@ -61,7 +61,7 @@ export async function createWorkerNotification(
 ): Promise<WorkerNotificationDto> {
   const record = await client(connection).workerNotification.create({
     data: {
-      workerAccountId: input.worker_account_id,
+      workerId: input.worker_id,
       type: input.type,
       notificationKey: input.notification_key ?? null,
       lang: input.lang ?? "TH",
@@ -84,7 +84,7 @@ export async function createWorkerNotifications(
 
   await client(connection).workerNotification.createMany({
     data: inputs.map((input) => ({
-        workerAccountId: input.worker_account_id,
+        workerId: input.worker_id,
         type: input.type,
         notificationKey: input.notification_key ?? null,
         lang: input.lang ?? "TH",
@@ -96,14 +96,14 @@ export async function createWorkerNotifications(
 }
 
 export async function listWorkerNotifications(
-  workerAccountId: number,
+  workerId: number,
   page: number,
   limit: number,
   connection?: DbConnection,
 ): Promise<{ items: WorkerNotificationDto[]; total: number }> {
   const db = client(connection);
   const where = {
-    workerAccountId,
+    workerId,
   };
   const [total, items] = await Promise.all([
     db.workerNotification.count({ where }),

@@ -17,7 +17,7 @@ async function loginWorker(accountId: number): Promise<{ token: string; worker: 
   const worker = addWorker(accountId, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: `mobile-${accountId}`,
       device_name: "Worker Mobile",
@@ -99,6 +99,27 @@ async function loginJobAdmin(accountId: number): Promise<{ token: string }> {
   };
 }
 
+// Function เตรียมการ login job admin ที่มี audit:read เพิ่มจาก loginJobAdmin — ใช้เจาะจงกับ test
+// ของ SecurityAuditLog quick filter/visibility (27.12) เพราะ event กลุ่มนี้ sensitive กว่า event เดิม
+async function loginAuditAdmin(accountId: number): Promise<{ token: string }> {
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(accountId, passwordHash);
+  state.adminPermissions.set(admin.id, ["jobs:read", "audit:read"]);
+
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: admin.username,
+      password: "Admin@123456",
+    },
+  });
+
+  assert.equal(login.status, 200);
+
+  return {
+    token: login.body.access_token,
+  };
+}
+
 function bangkokDateKey(value = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Bangkok",
@@ -131,7 +152,7 @@ function addAuditAssignment(input: {
   const assignment = {
     id: input.id,
     vehicle_job_id: input.vehicleJobId,
-    worker_account_id: input.workerId,
+    worker_id: input.workerId,
     status: input.status ?? "PENDING",
     accept_deadline_at: null,
     scan_deadline_at: null,
@@ -147,7 +168,7 @@ function addAuditAssignment(input: {
     state.workerAssignmentEvents.push({
       id: state.nextWorkerAssignmentEventId++,
       assignment_id: assignment.id,
-      worker_account_id: assignment.worker_account_id,
+      worker_id: assignment.worker_id,
       vehicle_job_id: assignment.vehicle_job_id,
       event_type: eventType,
       occurred_at: assignment.updated_at,
@@ -271,16 +292,16 @@ test("GET /api/admin/audit/workers/performance aggregates today's Bangkok assign
     total: 3,
     total_pages: 1,
   });
-  assert.equal(response.body.data[0].worker_code, workerB.username);
+  assert.equal(response.body.data[0].worker_code, workerB.labor_code);
   assert.equal(response.body.data[0].acceptRate, "100.00");
-  assert.equal(response.body.data[1].worker_code, workerA.username);
+  assert.equal(response.body.data[1].worker_code, workerA.labor_code);
   assert.equal(response.body.data[1].totalAssignedJobCount, 3);
   assert.equal(response.body.data[1].acceptedJobCount, 2);
   assert.equal(response.body.data[1].acceptTimeoutJobCount, 1);
   assert.equal(response.body.data[1].scanTimeoutJobCount, 1);
   assert.equal(response.body.data[1].completed_job_count, 1);
   assert.equal(response.body.data[1].acceptRate, "66.67");
-  assert.equal(response.body.data[2].worker_code, workerNull.username);
+  assert.equal(response.body.data[2].worker_code, workerNull.labor_code);
   assert.equal(response.body.data[2].adminCancelledJobCount, 1);
   assert.equal(response.body.data[2].acceptRate, null);
   assert.equal("issue_count" in response.body.data[0], false);
@@ -334,13 +355,13 @@ test("GET /api/admin/audit/workers/performance supports date range, worker filte
 
   const filtered = await server.request(
     "GET",
-    `/api/admin/audit/workers/performance?worker_code=${workerA.username}&date_from=2026-08-01&date_to=2026-08-31`,
+    `/api/admin/audit/workers/performance?worker_code=${workerA.labor_code}&date_from=2026-08-01&date_to=2026-08-31`,
     { token }
   );
 
   assert.equal(filtered.status, 200);
   assert.equal(filtered.body.pagination.total, 1);
-  assert.equal(filtered.body.data[0].worker_code, workerA.username);
+  assert.equal(filtered.body.data[0].worker_code, workerA.labor_code);
   assert.equal(filtered.body.data[0].totalAssignedJobCount, 2);
   assert.equal(filtered.body.data[0].scanTimeoutJobCount, 1);
   assert.equal(filtered.body.data[0].acceptRate, "50.00");
@@ -355,7 +376,7 @@ test("GET /api/admin/audit/workers/performance supports date range, worker filte
   assert.equal(sorted.body.pagination.total, 2);
   assert.equal(sorted.body.pagination.total_pages, 2);
   assert.equal(sorted.body.data.length, 1);
-  assert.notEqual(sorted.body.data[0].worker_code, workerNoHistory.username);
+  assert.notEqual(sorted.body.data[0].worker_code, workerNoHistory.labor_code);
 });
 
 test("GET /api/admin/audit/workers/performance keeps total on empty pages beyond the last page", async () => {
@@ -546,7 +567,7 @@ test("GET /api/admin/audit/events merges WorkerAssignmentEvent.ADMIN_CANCELLED w
   state.workerAssignmentEvents.push({
     id: state.nextWorkerAssignmentEventId++,
     assignment_id: assignment.id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     vehicle_job_id: job.id,
     event_type: "ADMIN_CANCELLED",
     occurred_at: occurredAt,
@@ -565,8 +586,8 @@ test("GET /api/admin/audit/events merges WorkerAssignmentEvent.ADMIN_CANCELLED w
     actor_account_id: 13101,
     metadata: {
       assignment_id: assignment.id,
-      worker_account_id: worker.id,
-      worker_code: worker.username,
+      worker_id: worker.id,
+      worker_code: worker.labor_code,
     },
     created_at: occurredAt,
   });
@@ -614,7 +635,7 @@ test("GET /api/admin/audit/events suppresses the WorkerAssignmentEvent.ASSIGNED 
   state.assignments.push({
     id: assignmentId,
     vehicle_job_id: job.id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "PENDING",
     accept_deadline_at: null,
     scan_deadline_at: null,
@@ -628,7 +649,7 @@ test("GET /api/admin/audit/events suppresses the WorkerAssignmentEvent.ASSIGNED 
   state.workerAssignmentEvents.push({
     id: state.nextWorkerAssignmentEventId++,
     assignment_id: assignmentId,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     vehicle_job_id: job.id,
     event_type: "ASSIGNED",
     occurred_at: occurredAt,
@@ -648,8 +669,8 @@ test("GET /api/admin/audit/events suppresses the WorkerAssignmentEvent.ASSIGNED 
     metadata: {
       source: "manual_assign",
       assignment_ids: [assignmentId],
-      worker_account_ids: [worker.id],
-      worker_codes: [worker.username],
+      worker_ids: [worker.id],
+      worker_codes: [worker.labor_code],
     },
     created_at: occurredAt,
   });
@@ -985,6 +1006,403 @@ test("GET /api/admin/audit/events projects GateRequestLog, TicketRating, and Mes
   assert.ok(eventTypes.includes("vendor_rated"));
   assert.ok(eventTypes.includes("message_delivery_sent"));
   assert.ok(eventTypes.includes("message_delivery_failed"));
+});
+
+test("GET /api/admin/audit/events quick filters (has_vehicle, has_reason, severity) narrow Data, Pagination, and Summary consistently, and combine with other filters", async () => {
+  const { token } = await loginJobAdmin(14001);
+  const today = bangkokDateKey();
+  const job = addDispatchableJob(140010, 1);
+  // ตั้งนอกช่วง Query กัน VehicleJob.created_at ของตัวเองสร้าง vehicle_job_created event ปนมา
+  job.created_at = new Date(0).toISOString();
+
+  state.adminActionLogs.push({
+    id: state.nextAdminActionLogId++,
+    vehicle_job_id: job.id,
+    gate_ticket_id: null,
+    market_job_id: null,
+    action_type: "WORKERS_RELEASED",
+    reason_code: "DONE",
+    reason_text: "ปล่อยทีมกลับคิว",
+    actor_account_id: 14001,
+    metadata: null,
+    created_at: bangkokDateToUtcIso(today, 2),
+  });
+
+  state.adminActionLogs.push({
+    id: state.nextAdminActionLogId++,
+    vehicle_job_id: null,
+    gate_ticket_id: null,
+    market_job_id: null,
+    action_type: "WORKER_STATUS_FORCED",
+    reason_code: null,
+    reason_text: null,
+    actor_account_id: 14001,
+    metadata: { worker_account_id: 14001, worker_code: "W-14001", status: "ready" },
+    created_at: bangkokDateToUtcIso(today, 3),
+  });
+
+  state.adminActionLogs.push({
+    id: state.nextAdminActionLogId++,
+    vehicle_job_id: job.id,
+    gate_ticket_id: null,
+    market_job_id: null,
+    action_type: "VEHICLE_JOB_CANCELLED",
+    reason_code: "NO_SHOW",
+    reason_text: "รถไม่มา",
+    actor_account_id: 14001,
+    metadata: null,
+    created_at: bangkokDateToUtcIso(today, 4),
+  });
+
+  const base = `/api/admin/audit/events?date_from=${today}&date_to=${today}`;
+
+  const hasVehicle = await server.request("GET", `${base}&has_vehicle=true`, { token });
+  const hasReason = await server.request("GET", `${base}&has_reason=true`, { token });
+  const critical = await server.request("GET", `${base}&severity=critical`, { token });
+  const combined = await server.request(
+    "GET",
+    `${base}&has_vehicle=true&severity=critical`,
+    { token }
+  );
+  const invalidSeverity = await server.request("GET", `${base}&severity=invalid`, { token });
+
+  assert.equal(hasVehicle.status, 200);
+  assert.equal(hasVehicle.body.pagination.total, 2);
+  assert.equal(
+    hasVehicle.body.data.every(
+      (item: { vehicle_job_id: string | null }) => item.vehicle_job_id !== null
+    ),
+    true
+  );
+
+  assert.equal(hasReason.status, 200);
+  assert.equal(hasReason.body.pagination.total, 2);
+  assert.equal(
+    hasReason.body.data.every(
+      (item: { reason_code: string | null; reason_text: string | null }) =>
+        Boolean(item.reason_code || item.reason_text)
+    ),
+    true
+  );
+
+  assert.equal(critical.status, 200);
+  assert.equal(critical.body.pagination.total, 1);
+  assert.equal(critical.body.data[0].event_type, "vehicle_cancelled");
+  // event_type_counts เป็น dynamic key (ตรงกับ event_type จริง) ที่ผ่าน pascalCaseApiResponse ไปด้วย
+  // จึง sum ค่าทั้งหมดแทนการ assert ตรงชื่อ key แบบเจาะจง (ดู test Summary ด้านบน)
+  const sumCounts = (counts: Record<string, number>) =>
+    Object.values(counts).reduce((total, value) => total + value, 0);
+  assert.equal(sumCounts(critical.body.summary.event_type_counts), 1);
+
+  assert.equal(combined.status, 200);
+  assert.equal(combined.body.pagination.total, 1);
+  assert.equal(combined.body.data[0].event_type, "vehicle_cancelled");
+
+  assert.equal(invalidSeverity.status, 400);
+  assert.equal(invalidSeverity.body.code, "VALIDATION_ERROR");
+});
+
+test("GET /api/admin/audit/events includes Metadata.boothName from GateTicket.boothName for vendor-facing completion submission and ticket rating events", async () => {
+  const { token } = await loginJobAdmin(14101);
+  const today = bangkokDateKey();
+  const occurredAt = bangkokDateToUtcIso(today, 5);
+  const job = addDispatchableJob(141010, 1);
+  job.created_at = new Date(0).toISOString();
+  const ticket = addTicketForVehicleJob(job.id, 141011, 141012);
+  const submissionId = state.nextSubmissionId++;
+
+  state.completionSubmissions.push({
+    id: submissionId,
+    ticket_id: ticket.id,
+    submitted_by_account_id: addWorker(14102).id,
+    submitted_by_role: "worker",
+    status: "CONFIRMED",
+    confirmed_at: occurredAt,
+    rejected_at: null,
+    resolved_by_line_user_id: "line-vendor-a",
+    worker_count_snapshot: 1,
+    assignment_id: null,
+    created_at: occurredAt,
+  });
+
+  state.ticketRatings.push({
+    id: state.nextRatingId++,
+    ticket_id: ticket.id,
+    submission_id: submissionId,
+    line_user_id: "line-vendor-a",
+    target_type: "worker",
+    score: 5,
+    rated_at: occurredAt,
+    created_at: occurredAt,
+    updated_at: occurredAt,
+  });
+
+  const response = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token }
+  );
+
+  assert.equal(response.status, 200);
+
+  const confirmedEvent = response.body.data.find(
+    (item: { event_id: string }) => item.event_id === `submission:${submissionId}:confirmed`
+  );
+  const ratedEvent = response.body.data.find(
+    (item: { event_type: string }) => item.event_type === "vendor_rated"
+  );
+
+  assert.ok(confirmedEvent);
+  assert.equal(confirmedEvent.metadata.boothName, ticket.boothName);
+  assert.ok(ratedEvent);
+  assert.equal(ratedEvent.metadata.boothName, ticket.boothName);
+});
+
+test("GET /api/admin/audit/events includes Before/After on worker_force_status_changed, derived from the worker's queue status right before the force", async () => {
+  const { token } = await loginJobAdmin(14201);
+  const worker = addWorker(14202);
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.recordWorkerHeartbeat(worker.id);
+
+  const today = bangkokDateKey();
+
+  const firstForce = await server.request(
+    "POST",
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
+    { token, body: { status: "ready", reason_code: "test" } }
+  );
+  assert.equal(firstForce.status, 200, JSON.stringify(firstForce.body));
+
+  const secondForce = await server.request(
+    "POST",
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
+    { token, body: { status: "open_app", reason_code: "test" } }
+  );
+  assert.equal(secondForce.status, 200, JSON.stringify(secondForce.body));
+
+  const logs = state.adminActionLogs.filter(
+    (log) => log.action_type === "WORKER_STATUS_FORCED" && log.actor_account_id === 14201,
+  );
+
+  assert.equal(logs.length, 2);
+
+  const response = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token }
+  );
+
+  assert.equal(response.status, 200);
+
+  const firstEvent = response.body.data.find(
+    (item: { event_id: string }) => item.event_id === `admin_action:${logs[0].id}`
+  );
+  const secondEvent = response.body.data.find(
+    (item: { event_id: string }) => item.event_id === `admin_action:${logs[1].id}`
+  );
+
+  assert.ok(firstEvent);
+  assert.equal(firstEvent.event_type, "worker_force_status_changed");
+  // ก่อนหน้านี้ worker ไม่เคยเข้าคิวมาก่อน — ห้ามสร้าง Before ปลอม ส่งเฉพาะ After
+  assert.equal(firstEvent.before, undefined);
+  assert.deepEqual(firstEvent.after, { status: "ready" });
+
+  assert.ok(secondEvent);
+  assert.equal(secondEvent.event_type, "worker_force_status_changed");
+  assert.deepEqual(secondEvent.before, { status: "ready" });
+  assert.deepEqual(secondEvent.after, { status: "open_app" });
+});
+
+test("GET /api/admin/audit/events omits SecurityAuditLog events for a caller without audit:read, and maps actorCode/workerCode/attemptedUsername correctly for a caller with audit:read (27.12 phase 1)", async () => {
+  const today = bangkokDateKey();
+
+  const unknownUsernameLogId = state.nextSecurityAuditLogId++;
+  state.securityAuditLogs.push({
+    id: unknownUsernameLogId,
+    event_type: "auth_login_failed",
+    outcome: "failure",
+    actor_type: null,
+    actor_account_id: null,
+    actor_worker_id: null,
+    actor_username: "attempted-user-x",
+    actor_full_name: null,
+    session_id: null,
+    request_id: null,
+    ip_address: "203.0.113.5",
+    user_agent: "TestAgent/1.0",
+    failure_code: "unknown_username",
+    metadata: null,
+    created_at: bangkokDateToUtcIso(today, 2),
+  });
+
+  const adminLoginLogId = state.nextSecurityAuditLogId++;
+  state.securityAuditLogs.push({
+    id: adminLoginLogId,
+    event_type: "auth_login_succeeded",
+    outcome: "success",
+    actor_type: "admin",
+    actor_account_id: 15002,
+    actor_worker_id: null,
+    actor_username: "admin-15002",
+    actor_full_name: "Admin 15002",
+    session_id: 999,
+    request_id: null,
+    ip_address: "203.0.113.6",
+    user_agent: "AdminWebTestAgent/1.0",
+    failure_code: null,
+    metadata: null,
+    created_at: bangkokDateToUtcIso(today, 3),
+  });
+
+  const workerLogoutLogId = state.nextSecurityAuditLogId++;
+  state.securityAuditLogs.push({
+    id: workerLogoutLogId,
+    event_type: "auth_logout",
+    outcome: "success",
+    actor_type: "worker",
+    actor_account_id: null,
+    actor_worker_id: 15003,
+    actor_username: "W15003",
+    actor_full_name: "Worker 15003",
+    session_id: 888,
+    request_id: null,
+    ip_address: null,
+    user_agent: null,
+    failure_code: null,
+    metadata: null,
+    created_at: bangkokDateToUtcIso(today, 4),
+  });
+
+  const { token: jobsOnlyToken } = await loginJobAdmin(15001);
+  const { token: auditReadToken } = await loginAuditAdmin(15004);
+
+  const withoutAuditRead = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token: jobsOnlyToken }
+  );
+  const withAuditRead = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token: auditReadToken }
+  );
+
+  assert.equal(withoutAuditRead.status, 200);
+  assert.equal(
+    withoutAuditRead.body.data.some(
+      (item: { event_id: string }) => item.event_id === `security_audit:${unknownUsernameLogId}`
+    ),
+    false,
+    "a caller without audit:read must not see SecurityAuditLog events at all"
+  );
+
+  assert.equal(withAuditRead.status, 200);
+
+  const unknownUsernameEvent = withAuditRead.body.data.find(
+    (item: { event_id: string }) => item.event_id === `security_audit:${unknownUsernameLogId}`
+  );
+  const adminLoginEvent = withAuditRead.body.data.find(
+    (item: { event_id: string }) => item.event_id === `security_audit:${adminLoginLogId}`
+  );
+  const workerLogoutEvent = withAuditRead.body.data.find(
+    (item: { event_id: string }) => item.event_id === `security_audit:${workerLogoutLogId}`
+  );
+
+  assert.ok(unknownUsernameEvent);
+  assert.equal(unknownUsernameEvent.actor_type, "system");
+  assert.equal(unknownUsernameEvent.actor_id, null);
+  assert.equal(unknownUsernameEvent.metadata.attemptedUsername, "attempted-user-x");
+  assert.equal(unknownUsernameEvent.metadata.failureCode, "unknown_username");
+  assert.equal(unknownUsernameEvent.metadata.outcome, "failure");
+  assert.equal(unknownUsernameEvent.metadata.actorCode, undefined);
+
+  assert.ok(adminLoginEvent);
+  assert.equal(adminLoginEvent.actor_type, "admin");
+  assert.equal(adminLoginEvent.actor_id, "15002");
+  assert.equal(adminLoginEvent.metadata.actorCode, "admin-15002");
+  // Response casing middleware แปลง "actorName" -> "ActorName" บน wire แล้วชนกับ requestKeyMap
+  // เดิม (ActorName: "actor_name") ที่ออกแบบไว้สำหรับ actor_name field อื่นอยู่แล้ว (เช่น Work
+  // History Timeline) ทำให้ server.request() ฝั่ง test แปลงกลับเป็น "actor_name" ไม่ใช่ "actorName" —
+  // พฤติกรรมนี้ตั้งใจและสอดคล้องกับ field actor_name อื่นทั้งระบบ ไม่ใช่ bug
+  assert.equal(adminLoginEvent.metadata.actor_name, "Admin 15002");
+  assert.equal(adminLoginEvent.metadata.sessionId, 999);
+
+  assert.ok(workerLogoutEvent);
+  assert.equal(workerLogoutEvent.actor_type, "worker");
+  assert.equal(workerLogoutEvent.actor_id, "15003");
+  assert.equal(workerLogoutEvent.worker_id, "15003");
+  // requestKeyMap มี WorkerCode -> worker_code เหมือนกัน (ดูเหตุผลเดียวกับ actor_name ด้านบน)
+  assert.equal(workerLogoutEvent.metadata.worker_code, "W15003");
+});
+
+test("GET /api/admin/audit/events paginates SecurityAuditLog events correctly (total/total_pages/page overflow) merged in with the same code path as the other 8 sources, and excludes them entirely from pagination for a caller without audit:read (27.12 item 9 — merged pagination)", async () => {
+  const today = bangkokDateKey();
+  const workerId = 15101;
+
+  for (let hour = 1; hour <= 5; hour += 1) {
+    state.securityAuditLogs.push({
+      id: state.nextSecurityAuditLogId++,
+      event_type: "auth_logout",
+      outcome: "success",
+      actor_type: "worker",
+      actor_account_id: null,
+      actor_worker_id: workerId,
+      actor_username: "W15101",
+      actor_full_name: "Worker 15101",
+      session_id: 1000 + hour,
+      request_id: null,
+      ip_address: null,
+      user_agent: null,
+      failure_code: null,
+      metadata: null,
+      created_at: bangkokDateToUtcIso(today, hour),
+    });
+  }
+
+  const { token: auditReadToken } = await loginAuditAdmin(15102);
+  const { token: jobsOnlyToken } = await loginJobAdmin(15103);
+
+  const page1 = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&event_type=auth_logout&limit=2&page=1`,
+    { token: auditReadToken }
+  );
+  const page2 = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&event_type=auth_logout&limit=2&page=2`,
+    { token: auditReadToken }
+  );
+  const page3 = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&event_type=auth_logout&limit=2&page=3`,
+    { token: auditReadToken }
+  );
+  const withoutAuditRead = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&event_type=auth_logout&limit=2&page=1`,
+    { token: jobsOnlyToken }
+  );
+
+  assert.equal(page1.status, 200);
+  assert.equal(page1.body.pagination.total, 5);
+  assert.equal(page1.body.pagination.total_pages, 3);
+  assert.equal(page1.body.data.length, 2);
+  // Sort ล่าสุดก่อนเสมอ (DESC by occurred_at) เหมือน source อื่นทุกตัว
+  assert.equal(page1.body.data[0].metadata.sessionId, 1005);
+  assert.equal(page1.body.data[1].metadata.sessionId, 1004);
+
+  assert.equal(page2.status, 200);
+  assert.equal(page2.body.data.length, 2);
+  assert.equal(page2.body.data[0].metadata.sessionId, 1003);
+  assert.equal(page2.body.data[1].metadata.sessionId, 1002);
+
+  assert.equal(page3.status, 200);
+  assert.equal(page3.body.data.length, 1);
+  assert.equal(page3.body.data[0].metadata.sessionId, 1001);
+
+  assert.equal(withoutAuditRead.status, 200);
+  assert.equal(withoutAuditRead.body.pagination.total, 0);
+  assert.deepEqual(withoutAuditRead.body.data, []);
 });
 
 test("GET /api/admin/audit/events requires admin jobs:read permission", async () => {

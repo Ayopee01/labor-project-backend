@@ -27,7 +27,7 @@ test(
     process.env.REFRESH_TOKEN_HASH_SECRET = "service-test-refresh-hash-secret";
 
     const authService = await import("../../../src/services/auth.service");
-    const { accountRepository } = await import(
+    const { workerRepository } = await import(
       "../../../src/repositories/admin-workers.repository"
     );
     const userService = await import("../../../src/services/admin-workers.service");
@@ -63,12 +63,15 @@ test(
       );
 
       assert.equal(created.message, "Worker created successfully.");
-      const workerAccount = await accountRepository.findUserByIdentifier(workerCode);
-      assert.ok(workerAccount);
-      assert.equal(workerAccount.phone, phone);
-      assert.equal(await verifyPassword(phone, workerAccount.password_hash), true);
+      const worker = await workerRepository.findByIdentifier(workerCode);
+      assert.ok(worker);
+      assert.equal(worker.telephone, phone);
+      assert.equal(await verifyPassword(phone, worker.password_hash ?? ""), true);
 
-      const admin = await accountRepository.create({
+      const { accountRepository } = await import(
+        "../../../src/repositories/admin-settings.repository"
+      );
+      const admin = await accountRepository.createAdmin({
         username: `service-admin-${suffix}`,
         password_hash: await hashPassword("Admin@123456"),
         role: "admin",
@@ -149,7 +152,7 @@ test(
         (createdUser as { username?: string }).username,
         undefined
       );
-      assert.equal(createdUser.shirt_number, shirtNumber);
+      assert.equal(createdUser.labor_color, "Navy");
       assert.equal(createdUser.full_name, "Service Worker");
       assert.equal(createdUser.status, "active");
       assert.equal(createdUser.work_start_date, "2024-07-15");
@@ -163,7 +166,7 @@ test(
         undefined
       );
       assert.equal(
-        (createdUser.work_schedule as { account_id?: number } | null)?.account_id,
+        (createdUser.work_schedule as { worker_id?: number } | null)?.worker_id,
         undefined
       );
       assert.equal(
@@ -190,7 +193,6 @@ test(
         workerCode,
         {
           status: "inactive",
-          position: "Worker",
           shift_start_time: "18:00",
           shift_end_time: "06:00",
         },
@@ -204,7 +206,6 @@ test(
 
       assert.equal(updated.status, "inactive");
       assert.equal(updated.worker_code, workerCode);
-      assert.equal(updated.details.position, "Worker");
       assert.equal(updated.details.work_start_date, "2024-07-15");
       assert.equal((updated.details as { work_schedules?: unknown }).work_schedules, undefined);
       assert.equal(updated.details.shift_no, 2);

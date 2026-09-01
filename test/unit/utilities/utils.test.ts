@@ -53,6 +53,7 @@ test("jwt utilities sign and verify token types", () => {
   const refreshJwt = jwt.signRefreshToken(
     {
       account_id: 1,
+      role: "admin",
       session_id: 2,
     },
     { expiresIn: "1m" }
@@ -486,7 +487,7 @@ test("worker create schema rejects missing or invalid shift number", () => {
 test("shift utility builds a stable break counter key for one shift instance", () => {
   const schedule = {
     id: 1,
-    account_id: 1,
+    worker_id: 1,
     shift_no: 1,
     work_date: "2026-07-13",
     shift_start_time: "18:00",
@@ -856,7 +857,7 @@ test("shift utility rejects invalid shift time", () => {
 test("shift utility checks whether a time is inside work schedule", () => {
   const morningSchedule = {
     id: 1,
-    account_id: 1,
+    worker_id: 1,
     shift_no: 1,
     work_date: "2026-07-07",
     shift_start_time: "08:00",

@@ -6,58 +6,140 @@ datasource db {
   provider = "postgresql"
 }
 
+// Account = Admin / back-office identity เท่านั้น (login, permission, session) Worker ทั้งหมด
+// ย้ายไปเป็น MasterWorker แล้ว — ห้ามเก็บ worker profile/sync field กลับมาที่นี่อีก
 model Account {
-  id              Int       @id @default(autoincrement())
-  username        String    @unique @db.VarChar(100)
-  passwordHash    String    @map("password_hash") @db.VarChar(512)
-  role            String    @db.VarChar(20)
-  status          String    @default("active") @db.VarChar(20)
-  fullName        String    @map("full_name") @db.VarChar(255)
-  position        String?   @db.VarChar(255)
-  email           String?   @db.VarChar(255)
-  phone           String?   @db.VarChar(50)
-  imageUrl        String?   @map("image_url") @db.VarChar(512)
-  nationality     String?   @db.VarChar(100)
-  workStartDate   String?   @map("work_start_date") @db.Char(10)
-  shirtType       String?   @map("shirt_type") @db.VarChar(50)
-  shirtNumber     String?   @unique @map("shirt_number") @db.VarChar(50)
-  shiftNo         Int?      @map("shift_no")
-  shiftStartTime  String?   @map("shift_start_time") @db.Char(5)
-  shiftEndTime    String?   @map("shift_end_time") @db.Char(5)
-  lang            String    @default("TH") @db.VarChar(10)
-  source          String    @default("internal") @db.VarChar(30)
-  masterWorkerId  String?   @unique @map("master_worker_id") @db.VarChar(100)
-  masterUpdatedAt DateTime? @map("master_updated_at") @db.Timestamp(3)
-  syncedAt        DateTime? @map("synced_at") @db.Timestamp(3)
-  permissionLevel String?   @map("permission_level") @db.VarChar(50)
-  createdBy       Int?      @map("created_by")
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+  id              Int      @id @default(autoincrement())
+  username        String   @unique @db.VarChar(100)
+  passwordHash    String   @map("password_hash") @db.VarChar(512)
+  role            String   @db.VarChar(20)
+  status          String   @default("active") @db.VarChar(20)
+  fullName        String   @map("full_name") @db.VarChar(255)
+  position        String?  @db.VarChar(255)
+  email           String?  @db.VarChar(255)
+  phone           String?  @db.VarChar(50)
+  imageUrl        String?  @map("image_url") @db.VarChar(512)
+  lang            String   @default("TH") @db.VarChar(10)
+  permissionLevel String?  @map("permission_level") @db.VarChar(50)
+  createdBy       Int?     @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
 
   creator                    Account?                     @relation("AccountCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdAccounts            Account[]                    @relation("AccountCreatedBy")
   sessions                   UserSession[]
-  jobAssignments             VehicleJobAssignment[]       @relation("AssignmentWorker")
-  workerAssignmentEvents     WorkerAssignmentEvent[]      @relation("WorkerAssignmentEventWorker")
-  shiftAttendances           WorkerShiftAttendance[]      @relation("WorkerShiftAttendanceAccount")
   permissions                AccountPermission[]
-  ticketWorkers              TicketWorker[]
-  submittedTicketCompletions TicketCompletionSubmission[] @relation("TicketCompletionSubmitter")
-  workerNotifications        WorkerNotification[]         @relation("WorkerNotificationAccount")
+  submittedTicketCompletions TicketCompletionSubmission[] @relation("TicketCompletionSubmitterAdmin")
   createdGateClients         GateClient[]                 @relation("GateClientCreatedBy")
   updatedGateClients         GateClient[]                 @relation("GateClientUpdatedBy")
   adminActionLogs            AdminActionLog[]             @relation("AdminActionLogActor")
-  createdMobileAppVersions   MobileAppVersion[]            @relation("MobileAppVersionCreatedBy")
-  updatedMobileAppVersions   MobileAppVersion[]            @relation("MobileAppVersionUpdatedBy")
+  createdMobileAppVersions   MobileAppVersion[]           @relation("MobileAppVersionCreatedBy")
+  updatedMobileAppVersions   MobileAppVersion[]           @relation("MobileAppVersionUpdatedBy")
 
-  @@index([role, source])
-  @@index([masterUpdatedAt])
+  @@index([role])
   @@map("accounts")
+}
+
+// MasterWorker = Worker master data ที่ sync มาจาก Master DB ภายนอก (LMSDB.dbo.LaborMaster ผ่าน
+// docs/worker.csv ตอน seed) ผูกด้วย laborId เป็น identifier หลักฝั่ง Master ส่วน id (internal) ใช้
+// เป็น FK ให้ทุกตารางธุรกิจในระบบนี้ Worker ที่ source = "admin_created" ยังไม่มี laborId จนกว่าจะถูก
+// จับคู่กับ Master ภายหลัง (laborId จึงต้องเป็น nullable unique)
+model MasterWorker {
+  id Int @id @default(autoincrement())
+
+  laborId   Int?   @unique @map("labor_id")
+  laborCode String @unique @map("labor_code") @db.VarChar(50)
+
+  prefix   String? @db.VarChar(20)
+  name     String? @db.VarChar(255)
+  fullName String? @map("full_name") @db.VarChar(255)
+
+  laborStatus String? @map("labor_status") @db.VarChar(50)
+  // ตัวบอก active/inactive หลักของ Worker ทั้งระบบ (1 = active) ห้าม derive จาก laborStatus/workCode
+  status      Int?
+  workCode    Int?    @map("work_code")
+
+  nationality   String?   @db.VarChar(100)
+  telephone     String?   @db.VarChar(50)
+  workStartDate DateTime? @map("work_start_date") @db.Date
+
+  laborColor String? @map("labor_color") @db.VarChar(50)
+  laborCoat  String? @map("labor_coat") @db.VarChar(50)
+  coatNo     String? @map("coat_no") @db.VarChar(50)
+
+  timeWork String? @map("time_work") @db.VarChar(50)
+  timeIn   String? @map("time_in") @db.Char(5)
+  timeOut  String? @map("time_out") @db.Char(5)
+
+  picture Bytes?
+
+  // UpdateDate ล่าสุดจาก Master ที่เคย sync มา (ไม่ใช่ updatedAt ของแถวนี้ในระบบเรา) ใช้เทียบตอน sync
+  // รอบถัดไปว่า Master มีข้อมูลใหม่กว่าหรือไม่
+  updateDate DateTime? @map("update_date") @db.Timestamp(3)
+
+  // Shift assignment สำหรับ queue/dispatch/attendance — เดิมอยู่บน Account (shiftNo/shiftStartTime/
+  // shiftEndTime) เป็น field operational ของระบบเรา ไม่ได้ sync มาจาก Master (คนละเรื่องกับ
+  // timeWork/timeIn/timeOut ด้านบนที่เป็น raw data จาก Master) ต้องย้ายมาอยู่ที่นี่เพราะเป็น
+  // worker-specific state ที่ Account เก็บไม่ได้อีกต่อไป
+  shiftNo        Int?    @map("shift_no")
+  shiftStartTime String? @map("shift_start_time") @db.Char(5)
+  shiftEndTime   String? @map("shift_end_time") @db.Char(5)
+
+  // Preference สำหรับ localize การแจ้งเตือน — เดิมอยู่บน Account เช่นกัน เป็น operational
+  // preference ของระบบเรา ไม่ได้มาจาก Master
+  lang String @default("TH") @db.VarChar(10)
+
+  // "master_sync" = ได้มาจาก Worker(1).csv/Master DB, "admin_created" = Admin สร้างเองในระบบ ยังไม่มี
+  // laborId จาก Master
+  source       String  @default("master_sync") @db.VarChar(30)
+  // Password ของ Worker = เบอร์โทรศัพท์ hash ด้วย argon2 เดียวกับ Account.passwordHash — ต้อง
+  // re-hash ทุกครั้งที่ telephone เปลี่ยน (ทั้งจาก Admin แก้เองและจาก Master sync)
+  passwordHash String? @map("password_hash") @db.VarChar(512)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  sessions                   WorkerSession[]
+  jobAssignments             VehicleJobAssignment[]       @relation("AssignmentWorker")
+  workerAssignmentEvents     WorkerAssignmentEvent[]      @relation("WorkerAssignmentEventWorker")
+  shiftAttendances           WorkerShiftAttendance[]      @relation("WorkerShiftAttendanceWorker")
+  ticketWorkers              TicketWorker[]
+  workerNotifications        WorkerNotification[]         @relation("WorkerNotificationWorker")
+  submittedTicketCompletions TicketCompletionSubmission[] @relation("TicketCompletionSubmitterWorker")
+  pushTokens                 WorkerPushToken[]
+
+  @@index([status])
+  @@index([source])
+  @@map("master_workers")
+}
+
+// WorkerSession = คู่ขนานของ UserSession แต่สำหรับ Worker (ผูก MasterWorker แทน Account) แยกจาก
+// Admin โดยสิ้นเชิงตามสถาปัตยกรรมใหม่ที่ Worker ไม่มี Account record อีกต่อไป
+model WorkerSession {
+  id               Int       @id @default(autoincrement())
+  workerId         Int       @map("worker_id")
+  refreshTokenHash String    @map("refresh_token_hash") @db.VarChar(512)
+  deviceId         String    @map("device_id") @db.VarChar(255)
+  deviceName       String    @map("device_name") @db.VarChar(255)
+  ipAddress        String?   @map("ip_address") @db.VarChar(64)
+  userAgent        String?   @map("user_agent") @db.VarChar(512)
+  isActive         Boolean   @default(true) @map("is_active")
+  lastActiveAt     DateTime  @default(now()) @map("last_active_at") @db.Timestamp(3)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamp(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamp(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  worker           MasterWorker      @relation(fields: [workerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  workerPushTokens WorkerPushToken[] @relation("WorkerPushTokenSession")
+
+  @@index([workerId, isActive])
+  @@map("worker_sessions")
 }
 
 model WorkerNotification {
   id              Int       @id @default(autoincrement())
-  workerAccountId Int       @map("worker_account_id")
+  workerId        Int       @map("worker_id")
   type            String    @db.VarChar(100)
   notificationKey String?   @map("notification_key") @db.VarChar(100)
   lang            String    @default("TH") @db.VarChar(10)
@@ -68,17 +150,17 @@ model WorkerNotification {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  worker Account @relation("WorkerNotificationAccount", fields: [workerAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  worker MasterWorker @relation("WorkerNotificationWorker", fields: [workerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([workerAccountId, createdAt])
-  @@index([workerAccountId, readAt])
+  @@index([workerId, createdAt])
+  @@index([workerId, readAt])
   @@index([type, createdAt])
   @@map("worker_notifications")
 }
 
 model WorkerShiftAttendance {
   id                  Int       @id @default(autoincrement())
-  accountId           Int       @map("account_id")
+  workerId            Int       @map("worker_id")
   workerCode          String    @map("worker_code") @db.VarChar(100)
   shiftInstanceKey    String    @map("shift_instance_key") @db.VarChar(100)
   shiftNo             Int       @map("shift_no")
@@ -94,9 +176,9 @@ model WorkerShiftAttendance {
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  account Account @relation("WorkerShiftAttendanceAccount", fields: [accountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  worker MasterWorker @relation("WorkerShiftAttendanceWorker", fields: [workerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([accountId, shiftInstanceKey])
+  @@unique([workerId, shiftInstanceKey])
   @@index([workerCode, shiftInstanceKey])
   @@index([closedAt])
   @@map("worker_shift_attendances")
@@ -135,24 +217,24 @@ model GateClient {
 //   เองยัง resolve จาก forceUpdateAt เทียบเวลา server เท่านั้น ไม่ได้พึ่ง BullMQ job นี้ที่ทำหน้าที่
 //   แค่ยิง FCM คู่ขนานไปเฉยๆ ถ้า BullMQ job พลาดด้วยเหตุใดก็ตาม version ก็ยัง activate ตรงเวลาปกติ
 model MobileAppVersion {
-  id                             Int       @id @default(autoincrement())
-  version                        String    @db.VarChar(50)
-  buildNumber                    Int       @unique @map("build_number")
-  releaseAt                      DateTime? @map("release_at") @db.Timestamp(3)
-  androidDownloadUrl             String?   @map("android_download_url") @db.VarChar(512)
-  iosDownloadUrl                 String?   @map("ios_download_url") @db.VarChar(512)
+  id                            Int       @id @default(autoincrement())
+  version                       String    @db.VarChar(50)
+  buildNumber                   Int       @unique @map("build_number")
+  releaseAt                     DateTime? @map("release_at") @db.Timestamp(3)
+  androidDownloadUrl            String?   @map("android_download_url") @db.VarChar(512)
+  iosDownloadUrl                String?   @map("ios_download_url") @db.VarChar(512)
   // มีค่า = Version นี้มี deadline บังคับ Update (ทั้งเวลา Activate และเวลาส่ง FCM บังคับอัตโนมัติ)
   // ไม่มีค่า = ไม่บังคับ, Version มีผลทันทีตั้งแต่ CreatedAt แบบ Optional Update
-  forceUpdateAt                  DateTime? @map("force_update_at") @db.Timestamp(3)
-  releaseNotificationAt          DateTime? @map("release_notification_at") @db.Timestamp(3)
-  releaseNotificationSentAt      DateTime? @map("release_notification_sent_at") @db.Timestamp(3)
-  forceUpdateNotificationSentAt  DateTime? @map("force_update_notification_sent_at") @db.Timestamp(3)
-  releaseMessage                 String?   @map("release_message") @db.Text
-  releaseNotes                   String?   @map("release_notes") @db.Text
-  createdBy                      Int?      @map("created_by")
-  updatedBy                      Int?      @map("updated_by")
-  createdAt                      DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt                      DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+  forceUpdateAt                 DateTime? @map("force_update_at") @db.Timestamp(3)
+  releaseNotificationAt         DateTime? @map("release_notification_at") @db.Timestamp(3)
+  releaseNotificationSentAt     DateTime? @map("release_notification_sent_at") @db.Timestamp(3)
+  forceUpdateNotificationSentAt DateTime? @map("force_update_notification_sent_at") @db.Timestamp(3)
+  releaseMessage                String?   @map("release_message") @db.Text
+  releaseNotes                  String?   @map("release_notes") @db.Text
+  createdBy                     Int?      @map("created_by")
+  updatedBy                     Int?      @map("updated_by")
+  createdAt                     DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt                     DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
   creator Account? @relation("MobileAppVersionCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
   updater Account? @relation("MobileAppVersionUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -270,7 +352,7 @@ model MarketJob {
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  vehicleJob      VehicleJob             @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vehicleJob      VehicleJob       @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tickets         GateTicket[]
   ticketWorkers   TicketWorker[]
   gateRequestLogs GateRequestLog[]
@@ -437,25 +519,25 @@ model MasterRate {
 // not one booth. This is the participation/financial-eligibility record — see
 // VehicleJobAssignment for the vehicle-level (TicketNumber) team membership.
 model TicketWorker {
-  id                 Int                   @id @default(autoincrement())
-  marketJobId        Int                   @map("market_job_id")
-  workerAccountId    Int                   @map("worker_account_id")
-  status             String                @default("WORKING") @db.VarChar(30)
-  finalEarningAmount Decimal?              @map("final_earning_amount") @db.Decimal(18, 2)
-  joinedAt           DateTime              @default(now()) @map("joined_at") @db.Timestamp(3)
-  cancelledAt        DateTime?             @map("cancelled_at") @db.Timestamp(3)
-  completedAt        DateTime?             @map("completed_at") @db.Timestamp(3)
-  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamp(3)
-  marketJob          MarketJob             @relation(fields: [marketJobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  worker             Account               @relation(fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  payments           TicketWorkerPayment[]
-  boothSnapshots     GateTicketWorkerSnapshot[]
-  boothExclusions    GateTicketWorkerExclusion[]
+  id                  Int                         @id @default(autoincrement())
+  marketJobId         Int                         @map("market_job_id")
+  workerId            Int                         @map("worker_id")
+  status              String                      @default("WORKING") @db.VarChar(30)
+  finalEarningAmount  Decimal?                    @map("final_earning_amount") @db.Decimal(18, 2)
+  joinedAt            DateTime                    @default(now()) @map("joined_at") @db.Timestamp(3)
+  cancelledAt         DateTime?                   @map("cancelled_at") @db.Timestamp(3)
+  completedAt         DateTime?                   @map("completed_at") @db.Timestamp(3)
+  createdAt           DateTime                    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt           DateTime                    @updatedAt @map("updated_at") @db.Timestamp(3)
+  marketJob           MarketJob                   @relation(fields: [marketJobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  worker              MasterWorker                @relation(fields: [workerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payments            TicketWorkerPayment[]
+  boothSnapshots      GateTicketWorkerSnapshot[]
+  boothExclusions     GateTicketWorkerExclusion[]
   submissionSnapshots SubmissionWorkerSnapshot[]
 
-  @@unique([marketJobId, workerAccountId])
-  @@index([workerAccountId, status])
+  @@unique([marketJobId, workerId])
+  @@index([workerId, status])
   @@index([marketJobId, status])
   @@map("ticket_workers")
 }
@@ -526,7 +608,11 @@ model GateTicketWorkerExclusion {
 model TicketCompletionSubmission {
   id                   Int       @id @default(autoincrement())
   ticketId             Int       @map("ticket_id")
-  submittedByAccountId Int       @map("submitted_by_account_id")
+  // Submitter คือ Admin หรือ Worker อย่างใดอย่างหนึ่งเท่านั้น (ดู submittedByRole) — แยกเป็นสอง FK
+  // คนละตารางเพราะ Worker ไม่มี Account record อีกต่อไปตั้งแต่ MasterWorker refactor พอดี ๆ กับ role
+  // ต้องมีค่าตรงกับ FK ที่ไม่ null เสมอ (admin -> submittedByAccountId, worker -> submittedByWorkerId)
+  submittedByAccountId Int?      @map("submitted_by_account_id")
+  submittedByWorkerId  Int?      @map("submitted_by_worker_id")
   // Snapshot of the submitting account's role at the moment of THIS submission ("worker" or
   // "admin" — see TICKET_SUBMITTER_ROLE). Must always be written explicitly by the service that
   // creates this row, never derived by joining Account.role at read time — Account.role can
@@ -558,16 +644,18 @@ model TicketCompletionSubmission {
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  ticket           GateTicket           @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  submittedByAccount Account            @relation("TicketCompletionSubmitter", fields: [submittedByAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  assignment       VehicleJobAssignment? @relation(fields: [assignmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  ratings          TicketRating[]
-  lineActionTokens LineActionToken[]
-  workerSnapshots  SubmissionWorkerSnapshot[]
+  ticket             GateTicket                 @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  submittedByAccount Account?                   @relation("TicketCompletionSubmitterAdmin", fields: [submittedByAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  submittedByWorker  MasterWorker?              @relation("TicketCompletionSubmitterWorker", fields: [submittedByWorkerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  assignment         VehicleJobAssignment?      @relation(fields: [assignmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ratings            TicketRating[]
+  lineActionTokens   LineActionToken[]
+  workerSnapshots    SubmissionWorkerSnapshot[]
 
   @@index([ticketId, status])
   @@index([resolvedByLineUserId])
   @@index([assignmentId])
+  @@index([submittedByWorkerId])
   @@map("ticket_completion_submissions")
 }
 
@@ -716,50 +804,50 @@ model DriverSession {
 }
 
 model VehicleJobAssignment {
-  id                Int       @id @default(autoincrement())
-  vehicleJobId      Int       @map("vehicle_job_id")
-  workerAccountId   Int       @map("worker_account_id")
-  status            String    @default("PENDING") @db.VarChar(30)
-  acceptDeadlineAt  DateTime? @map("accept_deadline_at") @db.Timestamp(3)
-  scanDeadlineAt    DateTime? @map("scan_deadline_at") @db.Timestamp(3)
-  acceptedAt        DateTime? @map("accepted_at") @db.Timestamp(3)
-  scannedAt         DateTime? @map("scanned_at") @db.Timestamp(3)
-  completedAt       DateTime? @map("completed_at") @db.Timestamp(3)
+  id               Int       @id @default(autoincrement())
+  vehicleJobId     Int       @map("vehicle_job_id")
+  workerId         Int       @map("worker_id")
+  status           String    @default("PENDING") @db.VarChar(30)
+  acceptDeadlineAt DateTime? @map("accept_deadline_at") @db.Timestamp(3)
+  scanDeadlineAt   DateTime? @map("scan_deadline_at") @db.Timestamp(3)
+  acceptedAt       DateTime? @map("accepted_at") @db.Timestamp(3)
+  scannedAt        DateTime? @map("scanned_at") @db.Timestamp(3)
+  completedAt      DateTime? @map("completed_at") @db.Timestamp(3)
   // Set when Admin explicitly releases this worker back to the FIFO queue after they have
   // submitted all their assigned booths, without waiting for the whole TicketNumber to close.
   // Distinct from completedAt: completed means the whole vehicle job finished; released means
   // only this worker's own work is done early.
-  releasedAt        DateTime? @map("released_at") @db.Timestamp(3)
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+  releasedAt       DateTime? @map("released_at") @db.Timestamp(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  vehicleJob      VehicleJob                   @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  worker          Account                      @relation("AssignmentWorker", fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  events          WorkerAssignmentEvent[]
+  vehicleJob            VehicleJob                   @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  worker                MasterWorker                 @relation("AssignmentWorker", fields: [workerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  events                WorkerAssignmentEvent[]
   completionSubmissions TicketCompletionSubmission[]
 
-  @@index([workerAccountId, status])
+  @@index([workerId, status])
   @@index([vehicleJobId, status])
   @@map("vehicle_job_assignments")
 }
 
 model WorkerAssignmentEvent {
-  id              Int      @id @default(autoincrement())
-  assignmentId    Int      @map("assignment_id")
-  workerAccountId Int      @map("worker_account_id")
-  vehicleJobId    Int      @map("vehicle_job_id")
-  eventType       String   @map("event_type") @db.VarChar(30)
-  occurredAt      DateTime @map("occurred_at") @db.Timestamp(3)
-  metadata        Json?
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  id           Int      @id @default(autoincrement())
+  assignmentId Int      @map("assignment_id")
+  workerId     Int      @map("worker_id")
+  vehicleJobId Int      @map("vehicle_job_id")
+  eventType    String   @map("event_type") @db.VarChar(30)
+  occurredAt   DateTime @map("occurred_at") @db.Timestamp(3)
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(3)
 
   assignment VehicleJobAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  worker     Account              @relation("WorkerAssignmentEventWorker", fields: [workerAccountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  worker     MasterWorker         @relation("WorkerAssignmentEventWorker", fields: [workerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   vehicleJob VehicleJob           @relation(fields: [vehicleJobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([assignmentId, eventType])
-  @@index([workerAccountId, occurredAt])
-  @@index([workerAccountId, eventType, occurredAt])
+  @@index([workerId, occurredAt])
+  @@index([workerId, eventType, occurredAt])
   @@index([assignmentId, occurredAt])
   @@index([vehicleJobId])
   @@index([eventType, occurredAt])
@@ -781,8 +869,7 @@ model UserSession {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  account          Account           @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  workerPushTokens WorkerPushToken[] @relation("WorkerPushTokenSession")
+  account Account @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([accountId, isActive])
   @@map("user_sessions")
@@ -790,6 +877,7 @@ model UserSession {
 
 model WorkerPushToken {
   id           Int       @id @default(autoincrement())
+  workerId     Int       @map("worker_id")
   workerCode   String    @map("worker_code") @db.VarChar(100)
   sessionId    Int?      @map("session_id")
   deviceId     String    @map("device_id") @db.VarChar(255)
@@ -802,11 +890,12 @@ model WorkerPushToken {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  session UserSession? @relation("WorkerPushTokenSession", fields: [sessionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  worker  MasterWorker   @relation(fields: [workerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  session WorkerSession? @relation("WorkerPushTokenSession", fields: [sessionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
-  @@unique([workerCode, deviceId, platform])
+  @@unique([workerId, deviceId, platform])
   @@index([fcmTokenHash])
-  @@index([workerCode, isActive])
+  @@index([workerId, isActive])
   @@index([sessionId, isActive])
   @@map("worker_push_tokens")
 }
@@ -842,4 +931,37 @@ model AdminActionLog {
   @@index([marketJobId, createdAt])
   @@index([actionType, createdAt])
   @@map("admin_action_logs")
+}
+
+// Append-only auth/security event log (27.12, phase 1: login/logout/force-login only) — separate
+// from AdminActionLog because that table requires a non-null Account actor and is scoped to
+// job/ticket operational actions, while a failed login may have no resolvable actor at all (unknown
+// username). actorAccountId/actorWorkerId are plain non-FK ids (no relation, mirroring how worker
+// refs are already handled loosely elsewhere in this schema) so a later account/worker deletion can
+// never be blocked by, or silently cascade into, security history. actorUsername/actorFullName are
+// denormalized snapshots taken at write time, not joined at read time — keeps this table fully
+// self-contained for the merged GET /api/admin/audit/events timeline.
+model SecurityAuditLog {
+  id            Int      @id @default(autoincrement())
+  eventType     String   @map("event_type") @db.VarChar(50)
+  outcome       String   @db.VarChar(20)
+  // "admin" | "worker" | null (actor could not be resolved at all, e.g. login with an unknown
+  // username — never fabricate a value here just to fill the column)
+  actorType     String?  @map("actor_type") @db.VarChar(20)
+  actorAccountId Int?    @map("actor_account_id")
+  actorWorkerId Int?     @map("actor_worker_id")
+  actorUsername String?  @map("actor_username") @db.VarChar(100)
+  actorFullName String?  @map("actor_full_name") @db.VarChar(255)
+  sessionId     Int?     @map("session_id")
+  requestId     String?  @map("request_id") @db.VarChar(100)
+  ipAddress     String?  @map("ip_address") @db.VarChar(100)
+  userAgent     String?  @map("user_agent") @db.VarChar(500)
+  failureCode   String?  @map("failure_code") @db.VarChar(50)
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+
+  @@index([eventType, createdAt])
+  @@index([actorAccountId])
+  @@index([actorWorkerId])
+  @@map("security_audit_logs")
 }

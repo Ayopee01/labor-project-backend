@@ -51,13 +51,13 @@ async function createWorker(
   suffix: string,
   sequence: number,
 ) {
-  return tx.account.create({
+  return tx.masterWorker.create({
     data: {
-      username: `audit-${suffix}-${String(sequence).padStart(3, "0")}`,
+      laborCode: `audit-${suffix}-${String(sequence).padStart(3, "0")}`,
       passwordHash: "integration-test-hash",
-      role: "worker",
-      status: "active",
+      status: 1,
       fullName: `Audit Worker ${sequence}`,
+      source: "admin_created",
     },
   });
 }
@@ -100,7 +100,7 @@ async function createAssignment(
   const assignment = await tx.vehicleJobAssignment.create({
     data: {
       vehicleJobId: vehicleJob.id,
-      workerAccountId: input.workerId,
+      workerId: input.workerId,
       status: input.status,
       acceptedAt: input.acceptedAt ?? null,
       scannedAt: input.scannedAt ?? null,
@@ -114,7 +114,7 @@ async function createAssignment(
     await tx.workerAssignmentEvent.create({
       data: {
         assignmentId: assignment.id,
-        workerAccountId: input.workerId,
+        workerId: input.workerId,
         vehicleJobId: vehicleJob.id,
         eventType,
         occurredAt: input.completedAt ?? input.createdAt,
@@ -231,11 +231,11 @@ test(
       );
 
       assert.equal(result.total, 3);
-      assert.equal(result.data[0].worker_code, workerB.username);
+      assert.equal(result.data[0].worker_code, workerB.laborCode);
       assert.equal(result.data[0].accept_rate, "100.00");
 
       const workerAMetrics = result.data.find(
-        (record) => record.worker_code === workerA.username,
+        (record) => record.worker_code === workerA.laborCode,
       );
 
       assert.ok(workerAMetrics);
@@ -248,7 +248,7 @@ test(
       assert.equal(workerAMetrics.accept_rate, "60.00");
 
       const nullMetrics = result.data.find(
-        (record) => record.worker_code === workerNull.username,
+        (record) => record.worker_code === workerNull.laborCode,
       );
 
       assert.ok(nullMetrics);
@@ -259,7 +259,7 @@ test(
         {
           startAt,
           endAt,
-          worker_code: workerA.username,
+          worker_code: workerA.laborCode,
           page: 1,
           limit: 20,
           sort_by: "accept_rate",
@@ -269,7 +269,7 @@ test(
       );
 
       assert.equal(filtered.total, 1);
-      assert.equal(filtered.data[0].worker_code, workerA.username);
+      assert.equal(filtered.data[0].worker_code, workerA.laborCode);
     });
   },
 );

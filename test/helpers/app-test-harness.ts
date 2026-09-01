@@ -5,7 +5,7 @@ import { applyIsolatedTestEnv } from "../setup/test-env";
 import { FakeQueue, FakeRedis, FakeWorker } from "./app-test-infra-mocks";
 import type { AccountRecord } from "./app-test-harness.records";
 import { lineRepositoryMock, notificationQueueMock, notificationServiceMock, realtimeNotificationServiceMock, workerSocketMock } from "./app-test-notification-mocks";
-import { accountRepositoryMock, adminActionLogRepositoryMock, adminAuditRepositoryMock, adminJobsRepositoryMock, adminSettingsRepositoryMock, adminWorkersRepositoryMock, authRepositoryMock, driverRepositoryMock, gateClientRepositoryMock, gateTicketRepositoryMock, gateRepositoryMock, mobileAppVersionRepositoryMock, marketJobRepositoryMock, masterDataRepositoryMock, systemSettingRepositoryMock, ticketFinancialRepositoryMock, ticketWorkerRepositoryMock, vehicleJobAssignmentRepositoryMock, vehicleJobRepositoryMock, profileRepositoryMock, workerShiftAttendanceRepositoryMock, workerNotificationRepositoryMock, workerPushTokenRepositoryMock, workerRepositoryMock, workScheduleRepositoryMock } from "./app-test-repository-mocks";
+import { accountRepositoryMock, adminActionLogRepositoryMock, adminAuditRepositoryMock, adminJobsRepositoryMock, adminSettingsRepositoryMock, adminWorkersRepositoryMock, authRepositoryMock, driverRepositoryMock, gateClientRepositoryMock, gateTicketRepositoryMock, gateRepositoryMock, masterWorkerRepositoryMock, mobileAppVersionRepositoryMock, marketJobRepositoryMock, masterDataRepositoryMock, securityAuditLogRepositoryMock, systemSettingRepositoryMock, ticketFinancialRepositoryMock, ticketWorkerRepositoryMock, vehicleJobAssignmentRepositoryMock, vehicleJobRepositoryMock, profileRepositoryMock, workerShiftAttendanceRepositoryMock, workerNotificationRepositoryMock, workerPushTokenRepositoryMock, workerRepositoryMock, workerSessionRepositoryMock, workScheduleRepositoryMock } from "./app-test-repository-mocks";
 import { state } from "./app-test-state";
 
 export { state } from "./app-test-state";
@@ -138,6 +138,20 @@ function patchModuleLoader(): void {
     }
 
     if (
+      request === "../repositories/shared/master-worker.repository" ||
+      request === "../../repositories/shared/master-worker.repository"
+    ) {
+      return masterWorkerRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/worker-session.repository" ||
+      request === "../../repositories/shared/worker-session.repository"
+    ) {
+      return workerSessionRepositoryMock;
+    }
+
+    if (
       request === "../repositories/shared/profile.repository" ||
       request === "../../repositories/shared/profile.repository"
     ) {
@@ -212,6 +226,13 @@ function patchModuleLoader(): void {
       request === "../../repositories/shared/admin-action-log.repository"
     ) {
       return adminActionLogRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/security-audit-log.repository" ||
+      request === "../../repositories/shared/security-audit-log.repository"
+    ) {
+      return securityAuditLogRepositoryMock;
     }
 
     if (request === "../repositories/admin-jobs.repository") {

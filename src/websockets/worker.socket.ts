@@ -5,13 +5,12 @@ import type { Duplex } from "stream";
 import { WebSocket, WebSocketServer } from "ws";
 
 // Import Dependencies
-import * as accountRepository from "../repositories/shared/account.repository";
-import * as profileRepository from "../repositories/shared/profile.repository";
-import { findActiveByIdAndAccountId } from "../repositories/shared/session.repository";
+import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
+import { findActiveById as findActiveWorkerSessionById } from "../repositories/shared/worker-session.repository";
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
 import { getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";
 import { buildWorkerNotification, persistWorkerNotification, publishNotification } from "../services/notifications.service";
-import { sendWorkerPushNotificationByAccountIds } from "../services/shared/worker-push.service";
+import { sendWorkerPushNotificationByWorkerIds } from "../services/shared/worker-push.service";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
 
 // Import Types
@@ -107,16 +106,16 @@ async function authenticateWorkerSocket(
     throw new ApiError(403, "FORBIDDEN", "Worker account is required.");
   }
 
-  const [account, session] = await Promise.all([
-    accountRepository.findUserById(payload.account_id),
-    findActiveByIdAndAccountId(payload.session_id, payload.account_id),
+  const [worker, session] = await Promise.all([
+    masterWorkerRepository.findById(payload.account_id),
+    findActiveWorkerSessionById(payload.session_id),
   ]);
 
-  if (!account || account.status !== "active") {
+  if (!worker || worker.status !== 1) {
     throw new ApiError(403, "WORKER_NOT_ACTIVE", "Worker account is not active.");
   }
 
-  if (!session) {
+  if (!session || session.account_id !== payload.account_id) {
     throw new ApiError(401, "SESSION_REVOKED", "Worker session is not active.");
   }
 
@@ -151,7 +150,7 @@ function registerWorkerSocket(accountId: number, socket: WorkerSocket): void {
     disconnectTimers.delete(accountId);
   }
 
-  socket.accountId = accountId;
+  socket.workerId = accountId;
   socket.isAlive = true;
   sockets.add(socket);
   workerSockets.set(accountId, sockets);
@@ -159,7 +158,7 @@ function registerWorkerSocket(accountId: number, socket: WorkerSocket): void {
 
 // Function ลบ socket ออกจาก registry และเริ่ม grace period ก่อนประกาศว่า disconnected
 function unregisterWorkerSocket(socket: WorkerSocket): void {
-  const accountId = socket.accountId;
+  const accountId = socket.workerId;
 
   if (!accountId) {
     return;
@@ -189,16 +188,16 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
     return;
   }
 
-  const [assignment, queueEntry, profile] = await Promise.all([
+  const [assignment, queueEntry, worker] = await Promise.all([
     findCurrentAssignmentByWorker(accountId),
     getWorkerQueueStatus(accountId),
-    profileRepository.findByAccountId(accountId).catch((error) => {
+    masterWorkerRepository.findById(accountId).catch((error: unknown) => {
       logger.error("Failed to load worker profile for disconnect event.", { error });
       return null;
     }),
   ]);
 
-  const workerCode = profile?.worker_code ?? null;
+  const workerCode = worker?.labor_code ?? null;
 
   publishNotification({
     type: "WORKER_CONNECTION_CHANGED",
@@ -230,10 +229,10 @@ export function sendWorkerSocketEvent(
   const fallbackTitle = options.fallbackTitle ?? buildWorkerPushTitle(type);
   const fallbackMessage = options.fallbackMessage ?? buildWorkerPushMessage(type, payload);
 
-  void accountRepository.findById(accountId).then((account) => {
+  void masterWorkerRepository.findById(accountId).then((worker) => {
     const localized = buildWorkerNotification({
       type,
-      lang: account?.lang,
+      lang: worker?.lang,
       notification_key: options.notificationKey,
       notification_params: options.notificationParams,
       payload,
@@ -249,7 +248,7 @@ export function sendWorkerSocketEvent(
 
     if (shouldPush) {
       persistWorkerNotification({
-        worker_account_id: accountId,
+        worker_id: accountId,
         type,
         notification_key: localized.key,
         lang: localized.lang,
@@ -258,15 +257,15 @@ export function sendWorkerSocketEvent(
         payload,
       });
 
-      void sendWorkerPushNotificationByAccountIds({
-        account_ids: [accountId],
+      void sendWorkerPushNotificationByWorkerIds({
+        worker_ids: [accountId],
         type,
         title: fallbackTitle,
         message: fallbackMessage,
         notification_key: localized.key,
         notification_params: options.notificationParams,
         payload,
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         logger.error("Failed to send worker push notification.", { error });
       });
     }
@@ -288,7 +287,7 @@ export function sendWorkerSocketEvent(
         socket.send(message);
       }
     }
-  }).catch((error) => {
+  }).catch((error: unknown) => {
     logger.error("Failed to send worker socket event.", { error });
   });
 
@@ -377,15 +376,15 @@ export function isWorkerSocketConnected(accountId: number): boolean {
 async function handleWorkerSocketConnected(accountId: number): Promise<void> {
   await recordWorkerHeartbeat(accountId);
 
-  const [assignment, queueEntry, profile] = await Promise.all([
+  const [assignment, queueEntry, worker] = await Promise.all([
     findCurrentAssignmentByWorker(accountId),
     getWorkerQueueStatus(accountId),
-    profileRepository.findByAccountId(accountId).catch((error) => {
+    masterWorkerRepository.findById(accountId).catch((error: unknown) => {
       logger.error("Failed to load worker profile for WebSocket connection.", { error });
       return null;
     }),
   ]);
-  const workerCode = profile?.worker_code ?? null;
+  const workerCode = worker?.labor_code ?? null;
 
   sendWorkerSocketEvent(accountId, "WORKER_CONNECTED", {
     worker_code: workerCode,
@@ -443,8 +442,8 @@ export function setupWorkerWebSocket(server: Server): void {
 
       socket.on("pong", () => {
         socket.isAlive = true;
-        if (socket.accountId) {
-          void recordWorkerHeartbeat(socket.accountId);
+        if (socket.workerId) {
+          void recordWorkerHeartbeat(socket.workerId);
         }
       });
 

@@ -12,16 +12,42 @@ export type AccountRecord = {
   phone?: string | null;
   image_url?: string | null;
   permission_level?: string | null;
+  lang: string;
+  created_at?: string;
+  updated_at?: string;
+  // Field ต่อไปนี้มีไว้เฉพาะ "shadow" ของ worker ใน authAccountsById สำหรับ mock ส่วนที่ยังไม่ได้
+  // migrate ไป MasterWorker เต็มรูปแบบ (admin-jobs/admin-audit — รอ Phase 3) ลบทิ้งได้เมื่อ Phase 3
+  // ย้าย mock สองไฟล์นั้นไปอ่าน state.workers (MasterWorkerRecord) โดยตรงแทน
   shirt_number?: string | null;
   shift_no?: number | null;
+};
+
+// Worker master data — คู่ขนานของ AccountRecord แต่สำหรับ Worker (ไม่มี Account record อีกต่อไป)
+// Field เป็น snake_case ตรงกับ MasterWorkerDto จริง (mock ส่วนใหญ่ในไฟล์นี้คืน record ตรงๆ แทน DTO)
+export type MasterWorkerRecord = {
+  id: number;
+  labor_code: string;
+  password_hash: string | null;
+  status: number | null;
+  full_name: string | null;
+  telephone?: string | null;
+  nationality?: string | null;
+  labor_color?: string | null;
+  coat_no?: string | null;
+  picture?: string | null;
+  work_start_date?: string | null;
+  shift_no?: number | null;
+  shift_start_time?: string | null;
+  shift_end_time?: string | null;
   lang: string;
+  source: "master_sync" | "admin_created";
   created_at?: string;
   updated_at?: string;
 };
 
 export type WorkerNotificationRecord = {
   id: number;
-  worker_account_id: number;
+  worker_id: number;
   type: string;
   notification_key: string | null;
   lang: string;
@@ -68,7 +94,7 @@ export type MobileAppVersionRecord = {
 export type AssignmentRecord = {
   id: number;
   vehicle_job_id: number;
-  worker_account_id: number;
+  worker_id: number;
   status: string;
   accept_deadline_at: string | null;
   scan_deadline_at: string | null;
@@ -83,7 +109,7 @@ export type AssignmentRecord = {
 export type WorkerAssignmentEventRecord = {
   id: number;
   assignment_id: number;
-  worker_account_id: number;
+  worker_id: number;
   vehicle_job_id: number;
   event_type: string;
   occurred_at: string;
@@ -153,7 +179,7 @@ export type GateTicketRecord = {
 
 export type WorkerShiftAttendanceRecord = {
   id: number;
-  accountId: number;
+  workerId: number;
   workerCode: string;
   shiftInstanceKey: string;
   shiftNo: number;
@@ -199,7 +225,7 @@ export type TicketProductRecord = {
 export type TicketWorkerRecord = {
   id: number;
   market_job_id: number;
-  worker_account_id: number;
+  worker_id: number;
   status: string;
   final_earning_amount?: string | null;
   joined_at: string;
@@ -256,7 +282,8 @@ export type SubmissionWorkerSnapshotRecord = {
 export type TicketCompletionSubmissionRecord = {
   id: number;
   ticket_id: number;
-  submitted_by_account_id: number;
+  submitted_by_account_id?: number | null;
+  submitted_by_worker_id?: number | null;
   // Defaults to "worker" in the mock builder when omitted — matches every pre-existing fixture
   // that predates Admin being able to submit on behalf.
   submitted_by_role?: string;
@@ -392,6 +419,24 @@ export type AdminActionLogRecord = {
   reason_code: string | null;
   reason_text: string | null;
   actor_account_id: number;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type SecurityAuditLogRecord = {
+  id: number;
+  event_type: string;
+  outcome: string;
+  actor_type: string | null;
+  actor_account_id: number | null;
+  actor_worker_id: number | null;
+  actor_username: string | null;
+  actor_full_name: string | null;
+  session_id: number | null;
+  request_id: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  failure_code: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 };

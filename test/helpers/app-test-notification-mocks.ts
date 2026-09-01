@@ -1,17 +1,17 @@
 import { state } from "./app-test-state";
 
+// Function จำลอง resolveTicketResultAudience จริงใน realtime-notification.service.ts — คืนเฉพาะ
+// worker id เท่านั้น (Admin กระจายแยกผ่าน publishRealtimeEvent's admin:true เสมอ ไม่พึ่ง id list นี้
+// — ดู comment ในไฟล์จริงเรื่องทำไมห้ามรวม Account.id กับ MasterWorker.id เข้าด้วยกัน)
 async function resolveTicketResultAudience(ticket: { id: number; market_job_id?: number }) {
   const marketJobId =
     ticket.market_job_id ??
     state.gateTickets.find((item) => item.id === ticket.id)?.market_job_id;
   const ticketWorkerIds = state.ticketWorkers
     .filter((worker) => worker.market_job_id === marketJobId)
-    .map((worker) => worker.worker_account_id);
-  const adminIds = Array.from(state.authAccountsById.values())
-    .filter((account) => account.role === "admin")
-    .map((account) => account.id);
+    .map((worker) => worker.worker_id);
 
-  return [...new Set([...ticketWorkerIds, ...adminIds])];
+  return [...new Set(ticketWorkerIds)];
 }
 
 export const notificationServiceMock = {
@@ -37,7 +37,7 @@ export const notificationServiceMock = {
     message: input.fallbackMessage,
   }),
   persistWorkerNotification: (input: {
-    worker_account_id: number;
+    worker_id: number;
     type: string;
     notification_key?: string | null;
     lang?: string | null;
@@ -49,7 +49,7 @@ export const notificationServiceMock = {
 
     state.workerNotifications.push({
       id: state.nextWorkerNotificationId++,
-      worker_account_id: input.worker_account_id,
+      worker_id: input.worker_id,
       type: input.type,
       notification_key: input.notification_key ?? null,
       lang: input.lang ?? "TH",
@@ -63,7 +63,7 @@ export const notificationServiceMock = {
   },
   persistWorkerNotifications: (
     inputs: Array<{
-      worker_account_id: number;
+      worker_id: number;
       type: string;
       notification_key?: string | null;
       lang?: string | null;
@@ -83,7 +83,7 @@ export const notificationServiceMock = {
     const page = Number(query.page ?? 1);
     const limit = Number(query.limit ?? 20);
     const filtered = state.workerNotifications
-      .filter((item) => item.worker_account_id === auth?.account_id)
+      .filter((item) => item.worker_id === auth?.account_id)
       .sort((left, right) =>
         right.created_at.localeCompare(left.created_at) || right.id - left.id
       );
@@ -152,15 +152,15 @@ export const realtimeNotificationServiceMock = {
 };
 
 export const workerSocketMock = {
-  isWorkerSocketConnected: (accountId: number) =>
-    state.connectedWorkers.has(accountId),
+  isWorkerSocketConnected: (workerId: number) =>
+    state.connectedWorkers.has(workerId),
   sendWorkerSocketEvent: (
-    accountId: number,
+    workerId: number,
     event: string,
     payload: unknown,
   ) => {
     state.socketEvents.push({
-      accountId,
+      workerId,
       event,
       payload,
     });
@@ -255,9 +255,14 @@ export const lineRepositoryMock = {
         const vehicle = state.vehicleJobs.find(
           (item) => item.id === ticket.vehicle_job_id,
         )!;
-        const submitter =
-          state.authAccountsById.get(submission.submitted_by_account_id) ??
-          state.workers.get(submission.submitted_by_account_id)!;
+        const submitterAccount = submission.submitted_by_account_id
+          ? state.authAccountsById.get(submission.submitted_by_account_id)
+          : undefined;
+        const submitterWorker = submission.submitted_by_worker_id
+          ? state.workers.get(submission.submitted_by_worker_id)
+          : undefined;
+        const submitterCode = submitterAccount?.username ?? submitterWorker?.labor_code ?? null;
+        const submitterName = submitterAccount?.full_name ?? submitterWorker?.full_name ?? null;
 
         return {
           submission_id: submission.id,
@@ -273,8 +278,8 @@ export const lineRepositoryMock = {
           market_name: market.marketName,
           boothCode: ticket.boothCode,
           boothName: ticket.boothName,
-          submitted_by_code: submitter.username,
-          submitted_by_name: submitter.full_name,
+          submitted_by_code: submitterCode,
+          submitted_by_name: submitterName,
           submitted_by_role: submission.submitted_by_role ?? "worker",
           submitted_at: submission.created_at ?? new Date().toISOString(),
           confirmed_at: submission.confirmed_at,

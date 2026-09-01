@@ -7,9 +7,21 @@ import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 import * as adminSettingsService from "../services/admin-settings.service";
 
+import type { Request } from "express";
+import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
+
 const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
+
+// Function ดึง IP/User-Agent/RequestId จาก request ปัจจุบันสำหรับ Security Audit Log (27.12)
+function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
+  return {
+    ip_address: req.ip ?? null,
+    user_agent: req.header("user-agent") ?? null,
+    request_id: req.requestId ?? null,
+  };
+}
 
 router.get(
   "/settings",
@@ -31,7 +43,8 @@ router.patch(
     try {
       const result = await adminSettingsService.updateSystemSettings(
         req.body,
-        req.auth
+        req.auth,
+        buildSecurityAuditContext(req)
       );
       res.json(result);
     } catch (error) {
@@ -58,7 +71,11 @@ router.post(
   permissionMiddleware(["mobile_app_versions:create"]),
   async (req, res, next) => {
     try {
-      const result = await adminSettingsService.createMobileAppVersion(req.body, req.auth);
+      const result = await adminSettingsService.createMobileAppVersion(
+        req.body,
+        req.auth,
+        buildSecurityAuditContext(req)
+      );
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -74,7 +91,8 @@ router.patch(
       const result = await adminSettingsService.updateMobileAppVersion(
         req.params.id,
         req.body,
-        req.auth
+        req.auth,
+        buildSecurityAuditContext(req)
       );
       res.json(result);
     } catch (error) {
@@ -114,7 +132,11 @@ router.post(
   permissionMiddleware(["gate_clients:create"]),
   async (req, res, next) => {
     try {
-      const result = await adminSettingsService.createGateClient(req.body, req.auth);
+      const result = await adminSettingsService.createGateClient(
+        req.body,
+        req.auth,
+        buildSecurityAuditContext(req)
+      );
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -130,7 +152,8 @@ router.patch(
       const result = await adminSettingsService.updateGateClient(
         req.params.clientId,
         req.body,
-        req.auth
+        req.auth,
+        buildSecurityAuditContext(req)
       );
       res.json(result);
     } catch (error) {
@@ -146,7 +169,8 @@ router.post(
     try {
       const result = await adminSettingsService.rotateGateClientSecret(
         req.params.clientId,
-        req.auth
+        req.auth,
+        buildSecurityAuditContext(req)
       );
       res.json(result);
     } catch (error) {
@@ -162,7 +186,8 @@ router.post(
     try {
       const result = await adminSettingsService.createAdminAccount(
         req.body,
-        req.auth
+        req.auth,
+        buildSecurityAuditContext(req)
       );
       res.status(201).json(result);
     } catch (error) {
@@ -179,7 +204,8 @@ router.patch(
       const result = await adminSettingsService.updateAdminAccount(
         req.params.id,
         req.body,
-        req.auth
+        req.auth,
+        buildSecurityAuditContext(req)
       );
       res.json(result);
     } catch (error) {
@@ -196,7 +222,8 @@ router.patch(
       const result = await adminSettingsService.resetAdminPassword(
         req.params.id,
         req.body,
-        req.auth
+        req.auth,
+        buildSecurityAuditContext(req)
       );
       res.json(result);
     } catch (error) {
@@ -229,7 +256,8 @@ router.patch(
       const result = await adminSettingsService.updateAdminUserPermissions(
         req.params.id,
         req.body,
-        req.auth
+        req.auth,
+        buildSecurityAuditContext(req)
       );
       res.json(result);
     } catch (error) {

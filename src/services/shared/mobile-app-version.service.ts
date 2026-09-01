@@ -2,9 +2,32 @@
 import * as mobileAppVersionRepository from "../../repositories/shared/mobile-app-version.repository";
 import { sendWorkerPushNotificationToAllActive } from "./worker-push.service";
 import { removeMobileAppForceUpdateNotification, removeMobileAppReleaseNotification, scheduleMobileAppForceUpdateNotification, scheduleMobileAppReleaseNotification } from "../../queues/worker-queue";
+import { diffChangedFields, writeSecurityAuditLogBestEffort } from "./security-audit-log.service";
+import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../../types/shared/security-audit-log.type";
 
 // Import Types
 import type { MobileAppVersionCreateInput, MobileAppVersionDto, MobileAppVersionStatus, MobileAppVersionUpdateInput } from "../../types/shared/mobile-app-version.type";
+import type { SecurityAuditRequestContext } from "../../types/shared/security-audit-log.type";
+
+const EMPTY_SECURITY_AUDIT_CONTEXT: SecurityAuditRequestContext = {
+  ip_address: null,
+  user_agent: null,
+  request_id: null,
+};
+
+// Type actor snapshot ที่ caller (admin-settings.service.ts) resolve มาให้แล้ว — ไฟล์นี้ไม่มี
+// accountRepository ของตัวเองและตั้งใจไม่เพิ่ม เพื่อไม่ให้ shared service ผูกกับ Account model โดยตรง
+export interface SecurityAuditActorSnapshot {
+  actor_account_id: number | null;
+  username: string | null;
+  full_name: string | null;
+}
+
+const EMPTY_ACTOR_SNAPSHOT: SecurityAuditActorSnapshot = {
+  actor_account_id: null,
+  username: null,
+  full_name: null,
+};
 
 // Import Validation
 import { parseId, parseWithSchema } from "../../validation/parser";
@@ -368,6 +391,8 @@ export async function getAdminMobileAppVersionOverview(): Promise<AdminMobileApp
 export async function createMobileAppVersion(
   body: unknown,
   actorId: number | null,
+  actorSnapshot: SecurityAuditActorSnapshot = EMPTY_ACTOR_SNAPSHOT,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT,
 ): Promise<AdminMobileAppVersionSummary> {
   const input = parseWithSchema(createMobileAppVersionBodySchema, body);
   const conflict = await mobileAppVersionRepository.findMobileAppVersionByBuildNumber(
@@ -397,6 +422,30 @@ export async function createMobileAppVersion(
   };
   const created = await mobileAppVersionRepository.createMobileAppVersion(createInput);
 
+  // Best-effort เหมือน sync notification ด้านล่าง — flow นี้ไม่มี transaction ห่ออยู่แล้วแต่เดิม
+  // (create + sync notification เป็นคนละ statement กันมาตั้งแต่แรก) จึงไม่ยกระดับความเข้มงวดของ
+  // audit write ให้เกินกว่า mutation เดิมที่มันกำกับอยู่
+  void writeSecurityAuditLogBestEffort({
+    event_type: SECURITY_AUDIT_EVENT_TYPE.MOBILE_APP_VERSION_CREATED,
+    outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+    actor_type: "admin",
+    actor_account_id: actorSnapshot.actor_account_id,
+    actor_username: actorSnapshot.username,
+    actor_full_name: actorSnapshot.full_name,
+    ip_address: context.ip_address,
+    user_agent: context.user_agent,
+    request_id: context.request_id,
+    metadata: {
+      targetType: "mobile_app_version",
+      targetVersionId: created.id,
+      after: {
+        version: created.version,
+        build_number: created.build_number,
+        force_update_at: created.force_update_at,
+      },
+    },
+  });
+
   await syncReleaseNotification(created);
   await syncForceUpdateNotification(created);
 
@@ -414,6 +463,8 @@ export async function updateMobileAppVersion(
   idParam: unknown,
   body: unknown,
   actorId: number | null,
+  actorSnapshot: SecurityAuditActorSnapshot = EMPTY_ACTOR_SNAPSHOT,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT,
 ): Promise<AdminMobileAppVersionSummary> {
   const id = parseId(idParam);
   const existing = await mobileAppVersionRepository.findMobileAppVersionById(id);
@@ -422,6 +473,8 @@ export async function updateMobileAppVersion(
     throw new ApiError(404, "MOBILE_APP_VERSION_NOT_FOUND", "Mobile app version not found.");
   }
 
+  // Snapshot ก่อนแก้ไขจริง กัน repository (โดยเฉพาะ mock ของ test) คืน object เดิมแทน fresh copy
+  const existingBeforeUpdate = { ...existing };
   const input = parseWithSchema(updateMobileAppVersionBodySchema, body);
   const versionsBeforeUpdate = await mobileAppVersionRepository.listMobileAppVersions();
   const statusBeforeUpdate = resolveMobileAppVersionStatus(
@@ -515,6 +568,37 @@ export async function updateMobileAppVersion(
     (await mobileAppVersionRepository.findMobileAppVersionById(id)) ?? updated;
   const versionsAfterUpdate = await mobileAppVersionRepository.listMobileAppVersions();
   const classifiedAfterUpdate = classifyMobileAppVersions(versionsAfterUpdate, new Date());
+  const diff = diffChangedFields(existingBeforeUpdate, finalVersion, [
+    "version",
+    "build_number",
+    "release_at",
+    "android_download_url",
+    "ios_download_url",
+    "force_update_at",
+    "release_notification_at",
+    "release_message",
+    "release_notes",
+  ]);
+
+  if (diff) {
+    void writeSecurityAuditLogBestEffort({
+      event_type: SECURITY_AUDIT_EVENT_TYPE.MOBILE_APP_VERSION_UPDATED,
+      outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+      actor_type: "admin",
+      actor_account_id: actorSnapshot.actor_account_id,
+      actor_username: actorSnapshot.username,
+      actor_full_name: actorSnapshot.full_name,
+      ip_address: context.ip_address,
+      user_agent: context.user_agent,
+      request_id: context.request_id,
+      metadata: {
+        targetType: "mobile_app_version",
+        targetVersionId: id,
+        before: diff.before,
+        after: diff.after,
+      },
+    });
+  }
 
   return toAdminSummary(finalVersion, resolveMobileAppVersionStatus(id, classifiedAfterUpdate));
 }

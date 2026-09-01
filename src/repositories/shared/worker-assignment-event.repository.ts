@@ -15,7 +15,7 @@ export async function createOnce(
     await db.workerAssignmentEvent.create({
       data: {
         assignmentId: input.assignment_id,
-        workerAccountId: input.worker_account_id,
+        workerId: input.worker_id,
         vehicleJobId: input.vehicle_job_id,
         eventType: input.event_type,
         occurredAt: input.occurred_at ?? new Date(),

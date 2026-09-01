@@ -29,6 +29,10 @@ export const ADMIN_PERMISSIONS = [
   "mobile_app_versions:read",
   "mobile_app_versions:create",
   "mobile_app_versions:update",
+  // 27.12: อ่าน security/auth event ใน GET /api/admin/audit/events (auth_login_succeeded/failed,
+  // auth_logout, auth_force_login) — แยกจาก jobs:read เพราะเนื้อหา sensitive กว่า audit เดิมที่ผูก
+  // กับ job/ticket operational เท่านั้น (ดู admin-audit.service.ts listAuditEvents)
+  "audit:read",
 ] as const;
 
 // Permission config สำหรับ admin user
@@ -54,6 +58,13 @@ export const OWNER_ONLY_PERMISSIONS: readonly AdminPermission[] = [
   "mobile_app_versions:read",
   "mobile_app_versions:create",
   "mobile_app_versions:update",
+  // 27.12 ข้อ 7: audit:read ต้อง "กำหนดค่าเริ่มต้นตาม permission level" — ใช้กลไก owner-only เดิม
+  // แทนการสร้างระบบ default-grant ใหม่ (ไม่มี precedent อื่นในระบบเลยที่ auto-grant permission ตาม
+  // level ตอน runtime) ผลคือ owner ได้ audit:read เป็นค่าเริ่มต้นจริงผ่าน SEED_ROLE_PERMISSION_TEMPLATES
+  // ใน prisma/seed.ts (owner = permission ทั้งหมดที่ไม่ผ่านการกรอง) ส่วน manager/supervisor ไม่ได้ค่า
+  // เริ่มต้นนี้ (ถูกกรองออกจาก template เพราะอยู่ใน OWNER_ONLY_PERMISSIONS) และมีแต่ owner เท่านั้นที่
+  // grant ให้ admin คนอื่นได้ต่อ (ผ่าน assertOwnerOnlyPermissionsUnchanged ที่มีอยู่แล้ว)
+  "audit:read",
 ];
 
 // Function ตรวจว่า Level admin

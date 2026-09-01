@@ -213,7 +213,7 @@ function formatCancellationResponse(
 // ที่ created_at ใกล้ releasedAt ที่สุด
 function findWorkersReleasedLog(
   adminActionLogs: AdminActionLogDto[],
-  workerAccountId: number,
+  workerId: number,
   releasedAt: Date,
 ): AdminActionLogDto | null {
   const candidates = adminActionLogs.filter((log) => {
@@ -221,13 +221,13 @@ function findWorkersReleasedLog(
       return false;
     }
 
-    const workerAccountIds = (
-      log.metadata as { worker_account_ids?: number[] } | null
-    )?.worker_account_ids;
+    const workerIds = (
+      log.metadata as { worker_ids?: number[] } | null
+    )?.worker_ids;
 
     return (
-      Array.isArray(workerAccountIds) &&
-      workerAccountIds.includes(workerAccountId)
+      Array.isArray(workerIds) &&
+      workerIds.includes(workerId)
     );
   });
 
@@ -247,7 +247,7 @@ function findWorkersReleasedLog(
   });
 }
 
-// Function เลือก accepted assignment ล่าสุดต่อ worker หนึ่งคน (stable identity = workerAccountId)
+// Function เลือก accepted assignment ล่าสุดต่อ worker หนึ่งคน (stable identity = workerId)
 // จาก assignments ทั้งหมดของ VehicleJob นี้ — คนที่ถูก dispatch เข้ามาแต่ไม่เคยกด Accept
 // (acceptedAt เป็น null) ต้องไม่ถูกเลือกเลย ส่วนคนที่ถูก dispatch/กดรับมากกว่าหนึ่งครั้งให้เหลือ
 // เพียงแถวเดียวจาก transaction ที่ acceptedAt ล่าสุด (tie-break ด้วย id ล่าสุด)
@@ -261,7 +261,7 @@ function selectLatestAcceptedAssignmentPerWorker(
       continue;
     }
 
-    const existing = latestByWorkerId.get(assignment.workerAccountId);
+    const existing = latestByWorkerId.get(assignment.workerId);
 
     if (
       !existing ||
@@ -270,7 +270,7 @@ function selectLatestAcceptedAssignmentPerWorker(
       (assignment.acceptedAt.getTime() === existing.acceptedAt.getTime() &&
         assignment.id > existing.id)
     ) {
-      latestByWorkerId.set(assignment.workerAccountId, assignment);
+      latestByWorkerId.set(assignment.workerId, assignment);
     }
   }
 
@@ -314,11 +314,11 @@ function formatAdminHistoryWorkers(
     );
 
     return {
-      worker_account_id: assignment.workerAccountId,
+      worker_id: assignment.workerId,
       assignment_id: assignment.id,
-      worker_code: assignment.worker.username,
-      full_name: assignment.worker.fullName,
-      shirt_number: assignment.worker.shirtNumber ?? null,
+      worker_code: assignment.worker.laborCode,
+      full_name: assignment.worker.fullName ?? assignment.worker.laborCode,
+      labor_color: assignment.worker.laborColor ?? null,
       accepted_at: assignment.acceptedAt?.toISOString() ?? null,
       scanned_at: assignment.scannedAt?.toISOString() ?? null,
       // Business Definition: Worker ถือว่าเริ่มงานตั้งแต่กด Accept Assignment ไม่ใช่ตอน Scan
@@ -382,14 +382,14 @@ function formatAdminHistoryTimeline(
         actor_name: isAdminCancelled
           ? cancelLog?.actor_full_name ?? null
           : assignment.worker.fullName,
-        description: `${assignment.worker.username}: ${event.eventType.toLowerCase()}.`,
+        description: `${assignment.worker.laborCode}: ${event.eventType.toLowerCase()}.`,
       });
     }
 
     if (assignment.releasedAt) {
       const releaseLog = findWorkersReleasedLog(
         adminActionLogs,
-        assignment.workerAccountId,
+        assignment.workerId,
         assignment.releasedAt,
       );
 
@@ -399,7 +399,7 @@ function formatAdminHistoryTimeline(
         actor_type: "admin",
         // Release Actor ต้องเป็นแอดมินที่กดปล่อย (จาก AdminActionLog) ไม่ใช่ชื่อ Worker ที่ถูกปล่อย
         actor_name: releaseLog?.actor_full_name ?? null,
-        description: `${assignment.worker.username} released back to queue.`,
+        description: `${assignment.worker.laborCode} released back to queue.`,
       });
     }
   }
@@ -408,15 +408,17 @@ function formatAdminHistoryTimeline(
     for (const ticket of market.tickets) {
       for (const submission of ticket.completionSubmissions) {
         const isAdminSubmitted = submission.submittedByRole === TICKET_SUBMITTER_ROLE.ADMIN;
+        const submitterName = resolveSubmitterName(submission);
+        const submitterCode = resolveSubmitterCode(submission);
 
         items.push({
           type: "COUNT_SUBMITTED",
           occurred_at: submission.createdAt.toISOString(),
           actor_type: isAdminSubmitted ? "admin" : "worker",
-          actor_name: submission.submittedByAccount.fullName,
+          actor_name: submitterName,
           description: isAdminSubmitted
-            ? `${submission.submittedByAccount.username} submitted counts for booth ${ticket.boothCode} on behalf of the worker.`
-            : `${submission.submittedByAccount.username} submitted counts for booth ${ticket.boothCode}.`,
+            ? `${submitterCode} submitted counts for booth ${ticket.boothCode} on behalf of the worker.`
+            : `${submitterCode} submitted counts for booth ${ticket.boothCode}.`,
         });
 
         if (submission.rejectedAt) {
@@ -616,9 +618,27 @@ function formatSubmissionWorkerSnapshot(
   submission: AdminVehicleJobHistoryRecord["marketJobs"][number]["tickets"][number]["completionSubmissions"][number],
 ): AdminHistoryBoothResponse["submission_worker_snapshot"] {
   return submission.workerSnapshots.map((snapshot) => ({
-    worker_code: snapshot.ticketWorker.worker.username,
-    full_name: snapshot.ticketWorker.worker.fullName,
+    worker_code: snapshot.ticketWorker.worker.laborCode,
+    full_name: snapshot.ticketWorker.worker.fullName ?? snapshot.ticketWorker.worker.laborCode,
   }));
+}
+
+// Function ดึง WorkerCode ของผู้ส่งยอด (Admin หรือ Worker แล้วแต่ submittedByRole) ใน service flow
+function resolveSubmitterCode(
+  submission: AdminVehicleJobHistoryRecord["marketJobs"][number]["tickets"][number]["completionSubmissions"][number],
+): string | null {
+  return submission.submittedByRole === TICKET_SUBMITTER_ROLE.ADMIN
+    ? submission.submittedByAccount?.username ?? null
+    : submission.submittedByWorker?.laborCode ?? null;
+}
+
+// Function ดึงชื่อเต็มของผู้ส่งยอด (Admin หรือ Worker แล้วแต่ submittedByRole) ใน service flow
+function resolveSubmitterName(
+  submission: AdminVehicleJobHistoryRecord["marketJobs"][number]["tickets"][number]["completionSubmissions"][number],
+): string | null {
+  return submission.submittedByRole === TICKET_SUBMITTER_ROLE.ADMIN
+    ? submission.submittedByAccount?.fullName ?? null
+    : submission.submittedByWorker?.fullName ?? null;
 }
 
 // Function จัดรูปแบบ Booth หนึ่งใบสำหรับ Work History ใน service flow
@@ -643,7 +663,11 @@ function formatAdminHistoryBooth(
   const latestSubmission =
     submissions.length > 0 ? submissions[submissions.length - 1] : null;
   const submittedByCodes = [
-    ...new Set(submissions.map((submission) => submission.submittedByAccount.username)),
+    ...new Set(
+      submissions
+        .map((submission) => resolveSubmitterCode(submission))
+        .filter((code): code is string => code !== null),
+    ),
   ];
   const owner = ownerByBoothKey.get(buildOwnerStallKey(market.marketCode, ticket.boothCode)) ?? null;
   const rejectionHistory: AdminHistoryRejectionResponse[] = [];
@@ -679,8 +703,8 @@ function formatAdminHistoryBooth(
     submitted_by_codes: submittedByCodes,
     submitted_by_role:
       (latestSubmission?.submittedByRole as "worker" | "admin" | undefined) ?? null,
-    latest_submitted_by_code: latestSubmission?.submittedByAccount.username ?? null,
-    latest_submitted_by_name: latestSubmission?.submittedByAccount.fullName ?? null,
+    latest_submitted_by_code: latestSubmission ? resolveSubmitterCode(latestSubmission) : null,
+    latest_submitted_by_name: latestSubmission ? resolveSubmitterName(latestSubmission) : null,
     submission_worker_snapshot: latestSubmission
       ? formatSubmissionWorkerSnapshot(latestSubmission)
       : [],
@@ -704,12 +728,12 @@ function formatAdminHistoryBooth(
 }
 
 // Function สร้าง Job-level Worker Earnings ของ Work History ใน service flow — เงินจริงต่อ Worker
-// ไม่ใช่ค่าเฉลี่ย: GROUP BY workerAccountId แล้ว SUM(TicketWorker.finalEarningAmount) ที่ finalize
+// ไม่ใช่ค่าเฉลี่ย: GROUP BY workerId แล้ว SUM(TicketWorker.finalEarningAmount) ที่ finalize
 // ไว้แล้วในทุก MarketJob (Business Ticket) ของ VehicleJob นี้
 function buildAdminHistoryJobWorkerEarnings(
   record: AdminVehicleJobHistoryRecord,
 ): Array<{
-  worker_account_id: number;
+  worker_id: number;
   worker_code: string | null;
   full_name: string;
   total_amount: string;
@@ -719,9 +743,9 @@ function buildAdminHistoryJobWorkerEarnings(
   for (const market of record.marketJobs) {
     for (const ticketWorker of market.ticketWorkers) {
       const amount = ticketWorker.finalEarningAmount ?? new Prisma.Decimal(0);
-      const existing = totalByWorkerId.get(ticketWorker.workerAccountId) ?? new Prisma.Decimal(0);
+      const existing = totalByWorkerId.get(ticketWorker.workerId) ?? new Prisma.Decimal(0);
 
-      totalByWorkerId.set(ticketWorker.workerAccountId, existing.plus(amount));
+      totalByWorkerId.set(ticketWorker.workerId, existing.plus(amount));
     }
   }
 
@@ -731,11 +755,11 @@ function buildAdminHistoryJobWorkerEarnings(
   const acceptedWorkers = selectLatestAcceptedAssignmentPerWorker(record.assignments);
 
   return acceptedWorkers.map((assignment) => ({
-    worker_account_id: assignment.workerAccountId,
-    worker_code: assignment.worker.username,
-    full_name: assignment.worker.fullName,
+    worker_id: assignment.workerId,
+    worker_code: assignment.worker.laborCode,
+    full_name: assignment.worker.fullName ?? assignment.worker.laborCode,
     total_amount: (
-      totalByWorkerId.get(assignment.workerAccountId) ?? new Prisma.Decimal(0)
+      totalByWorkerId.get(assignment.workerId) ?? new Prisma.Decimal(0)
     ).toFixed(2),
   }));
 }
@@ -1008,8 +1032,8 @@ function formatAdminFinancialProduct(
     workers:
       financial?.workerPayments.map((payment) => ({
         ticket_worker_id: payment.ticketWorker.id,
-        worker_code: payment.ticketWorker.worker.username,
-        full_name: payment.ticketWorker.worker.fullName,
+        worker_code: payment.ticketWorker.worker.laborCode,
+        full_name: payment.ticketWorker.worker.fullName ?? payment.ticketWorker.worker.laborCode,
         membership_status: payment.ticketWorker.status,
         raw_amount: payment.rawAmount.toFixed(8),
         remainder_amount: payment.remainderAmount.toFixed(8),
@@ -1060,8 +1084,8 @@ function formatAdminFinancialBooth(
       );
 
       boothWorkerTotals.set(payment.ticketWorker.id, {
-        worker_code: payment.ticketWorker.worker.username,
-        full_name: payment.ticketWorker.worker.fullName,
+        worker_code: payment.ticketWorker.worker.laborCode,
+        full_name: payment.ticketWorker.worker.fullName ?? payment.ticketWorker.worker.laborCode,
         membership_status: payment.ticketWorker.status,
         total,
       });
@@ -1076,8 +1100,8 @@ function formatAdminFinancialBooth(
     }
 
     boothWorkerTotals.set(ticketWorker.id, {
-      worker_code: ticketWorker.worker.username,
-      full_name: ticketWorker.worker.fullName,
+      worker_code: ticketWorker.worker.laborCode,
+      full_name: ticketWorker.worker.fullName ?? ticketWorker.worker.laborCode,
       membership_status: ticketWorker.status,
       total: new Prisma.Decimal(0),
     });
@@ -1194,11 +1218,11 @@ async function buildScanDeadlineAssignmentResponses(
   assignments: VehicleJobAssignmentDto[],
 ): Promise<AdminScanDeadlineAssignmentResponse[]> {
   const workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
-    assignments.map((assignment) => assignment.worker_account_id),
+    assignments.map((assignment) => assignment.worker_id),
   );
 
   return assignments.map((assignment) => ({
-    worker_code: workerCodeMap.get(assignment.worker_account_id) ?? null,
+    worker_code: workerCodeMap.get(assignment.worker_id) ?? null,
     status: assignment.status,
     scan_deadline_at: assignment.scan_deadline_at,
     scan_deadline_unix_ms: toUnixMs(assignment.scan_deadline_at),
@@ -1211,12 +1235,12 @@ async function buildAdminAssignmentResponses(
   assignments: VehicleJobAssignmentDto[],
 ): Promise<AdminAssignmentResponse[]> {
   const workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
-    assignments.map((assignment) => assignment.worker_account_id),
+    assignments.map((assignment) => assignment.worker_id),
   );
 
   return assignments.map((assignment) => ({
     ticket_number: ticketNumber,
-    worker_code: workerCodeMap.get(assignment.worker_account_id) ?? null,
+    worker_code: workerCodeMap.get(assignment.worker_id) ?? null,
     status: assignment.status,
     accept_deadline_at: assignment.accept_deadline_at,
     accept_deadline_unix_ms: toUnixMs(assignment.accept_deadline_at),
@@ -1235,7 +1259,7 @@ async function listVehicleJobWorkerIds(
     await adminJobsRepository.listActiveAssignmentsByVehicleJob(vehicleJobId);
 
   return [
-    ...new Set(assignments.map((assignment) => assignment.worker_account_id)),
+    ...new Set(assignments.map((assignment) => assignment.worker_id)),
   ];
 }
 
@@ -1247,7 +1271,7 @@ async function listStallJobWorkerIds(ticket: GateTicketDto): Promise<number[]> {
 
   if (ticketWorkers.length > 0) {
     return [
-      ...new Set(ticketWorkers.map((worker) => worker.worker_account_id)),
+      ...new Set(ticketWorkers.map((worker) => worker.worker_id)),
     ];
   }
 
@@ -1624,7 +1648,7 @@ async function cancelVehicleJobAndRequeue(
   const sortedAssignments =
     sortAssignmentsByAcceptedAt(activeAssignments);
   const requeuedWorkerIds = sortedAssignments.map(
-    (assignment) => assignment.worker_account_id,
+    (assignment) => assignment.worker_id,
   );
 
   await enqueueWorkersAtFront(requeuedWorkerIds);
@@ -1650,7 +1674,7 @@ async function cancelVehicleJobAndRequeue(
       requeued: true,
       reason: "vehicle_job_cancelled_requeue",
     },
-    worker_account_ids: requeuedWorkerIds,
+    worker_ids: requeuedWorkerIds,
   });
   await dispatchReadyWorkers();
   const requeuedWorkerCodes =
@@ -1798,7 +1822,7 @@ export async function assignVehicleJobWorkers(
             transaction,
           );
 
-        if (worker.status !== "active") {
+        if (worker.status !== 1) {
           throw new ApiError(
             403,
             "WORKER_NOT_ACTIVE",
@@ -1861,8 +1885,8 @@ export async function assignVehicleJobWorkers(
             assignment_ids: createdAssignments.map(
               (assignment) => assignment.id,
             ),
-            worker_account_ids: createdAssignments.map(
-              (assignment) => assignment.worker_account_id,
+            worker_ids: createdAssignments.map(
+              (assignment) => assignment.worker_id,
             ),
             worker_codes: workerCodes,
           },
@@ -1882,14 +1906,14 @@ export async function assignVehicleJobWorkers(
   );
 
   for (const assignment of assignments) {
-    await markWorkerAssigned(assignment.worker_account_id);
+    await markWorkerAssigned(assignment.worker_id);
     await scheduleAssignmentTimeout(
       assignment.id,
-      assignment.worker_account_id,
+      assignment.worker_id,
       acceptDeadlineMs,
     );
     sendWorkerSocketEvent(
-      assignment.worker_account_id,
+      assignment.worker_id,
       "WORKER_ASSIGNED",
       buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos),
     );
@@ -2000,7 +2024,7 @@ async function cancelAssignment(
           actor_account_id: actorId,
           metadata: {
             assignment_id: assignment.id,
-            worker_account_id: assignment.worker_account_id,
+            worker_id: assignment.worker_id,
             worker_code: workerCode,
           },
         },
@@ -2014,12 +2038,12 @@ async function cancelAssignment(
   await removeAssignmentTimeout(assignment.id);
   await removeScanTimeout(assignment.id);
   await removeScanWarning(assignment.id);
-  await markWorkerOpenApp(assignment.worker_account_id);
+  await markWorkerOpenApp(assignment.worker_id);
   const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
     assignment.vehicle_job_id,
   );
 
-  sendWorkerSocketEvent(assignment.worker_account_id, "ASSIGNMENT_CANCELLED", {
+  sendWorkerSocketEvent(assignment.worker_id, "ASSIGNMENT_CANCELLED", {
     ticketNumber: vehicleJob?.ticket_number ?? null,
     ticketNos,
     reason: "admin_cancel_assignment",
@@ -2101,8 +2125,8 @@ export async function extendVehicleJobScanDeadline(
         metadata: {
           minutes: input.minutes,
           assignment_ids: results.map((assignment) => assignment.id),
-          worker_account_ids: results.map(
-            (assignment) => assignment.worker_account_id,
+          worker_ids: results.map(
+            (assignment) => assignment.worker_id,
           ),
         },
       },
@@ -2115,12 +2139,12 @@ export async function extendVehicleJobScanDeadline(
     updatedAssignments.flatMap((assignment) => [
       scheduleScanTimeout(
         assignment.id,
-        assignment.worker_account_id,
+        assignment.worker_id,
         getDelayUntil(assignment.scan_deadline_at),
       ),
       scheduleScanWarning(
         assignment.id,
-        assignment.worker_account_id,
+        assignment.worker_id,
         assignment.scan_deadline_at,
       ),
     ]),
@@ -2148,8 +2172,8 @@ export async function extendVehicleJobScanDeadline(
       assignments: assignmentResponses,
     },
     admin: true,
-    worker_account_ids: updatedAssignments.map(
-      (assignment) => assignment.worker_account_id,
+    worker_ids: updatedAssignments.map(
+      (assignment) => assignment.worker_id,
     ),
   });
 
@@ -2196,7 +2220,7 @@ async function handleVehicleJobClosedByCascadeCancellation(
       status: result.vehicle_job.status,
     },
     admin: true,
-    worker_account_ids: result.completed_worker_account_ids,
+    worker_ids: result.completed_worker_ids,
   });
 }
 
@@ -2332,7 +2356,7 @@ async function cancelMarketJobById(
       status: marketJob.status,
     },
     admin: true,
-    worker_account_ids: await listVehicleJobWorkerIds(marketJob.vehicle_job_id),
+    worker_ids: await listVehicleJobWorkerIds(marketJob.vehicle_job_id),
   });
 
   await handleVehicleJobClosedByCascadeCancellation(completedVehicleJob);
@@ -2483,7 +2507,7 @@ async function cancelStallJobById(
       confirmation_status: ticket.confirmation_status,
     },
     admin: true,
-    worker_account_ids: await listStallJobWorkerIds(ticket),
+    worker_ids: await listStallJobWorkerIds(ticket),
   });
 
   await handleVehicleJobClosedByCascadeCancellation(completedVehicleJob);
@@ -2562,7 +2586,7 @@ async function cancelTicketWorker(
         reason_text: input.reason_text ?? null,
         actor_account_id: actorId,
         metadata: {
-          worker_account_id: worker.id,
+          worker_id: worker.id,
           worker_code: workerCode,
         },
       },
@@ -2723,7 +2747,7 @@ async function cancelTicketWorkerFromBooth(
         reason_text: input.reason_text ?? null,
         actor_account_id: actorId,
         metadata: {
-          worker_account_id: worker.id,
+          worker_id: worker.id,
           worker_code: workerCode,
         },
       },
@@ -2941,7 +2965,7 @@ export async function changeVehicleJobToWait(
         actor_account_id: actorId,
         metadata: {
           dispatch: input.dispatch,
-          worker_account_ids: cancelled.map((assignment) => assignment.worker_account_id),
+          worker_ids: cancelled.map((assignment) => assignment.worker_id),
         },
       },
       transaction,
@@ -2955,7 +2979,7 @@ export async function changeVehicleJobToWait(
   if (!input.dispatch && cancelledAssignments.length > 0) {
     const sortedAssignments = sortAssignmentsByAcceptedAt(cancelledAssignments);
     const requeuedWorkerIds = sortedAssignments.map(
-      (assignment) => assignment.worker_account_id,
+      (assignment) => assignment.worker_id,
     );
 
     await enqueueWorkersAtFront(requeuedWorkerIds);
@@ -3109,8 +3133,8 @@ export async function releaseVehicleJobWorkers(
         reason_text: input.reason_text ?? null,
         actor_account_id: actorId,
         metadata: {
-          worker_account_ids: releasable.map(
-            (assignment) => assignment.worker_account_id,
+          worker_ids: releasable.map(
+            (assignment) => assignment.worker_id,
           ),
         },
       },
@@ -3121,13 +3145,13 @@ export async function releaseVehicleJobWorkers(
   });
 
   const releasedWorkerAccountIds = releasableAssignments.map(
-    (assignment) => assignment.worker_account_id,
+    (assignment) => assignment.worker_id,
   );
   const releasedWorkerCodes = await returnCompletedWorkersToQueue({
     vehicle_job: {
       ticket_number: vehicleJob.ticket_number,
     },
-    completed_worker_account_ids: releasedWorkerAccountIds,
+    completed_worker_ids: releasedWorkerAccountIds,
   });
 
   publishRealtimeEvent({
@@ -3347,7 +3371,7 @@ function formatDailyWorkerIncomeItem(
   const { marketJob } = record;
   const { vehicleJob } = marketJob;
   const matchingAssignments = vehicleJob.assignments
-    .filter((assignment) => assignment.workerAccountId === record.workerAccountId)
+    .filter((assignment) => assignment.workerId === record.workerId)
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   const assignment = matchingAssignments[0] ?? null;
   // เวลาส่งยอดล่าสุดของ booth ล่าสุดใน ticket_no นี้ ไม่ว่า worker คนไหนในทีมเป็นคนกดส่ง (ตรงข้ามกับ
@@ -3390,9 +3414,9 @@ function formatDailyWorkerIncomeItem(
 
   return {
     worker: {
-      code: record.worker.username,
-      name: record.worker.fullName,
-      shirt: record.worker.shirtNumber ?? null,
+      code: record.worker.laborCode,
+      name: record.worker.fullName ?? record.worker.laborCode,
+      shirt: record.worker.laborColor ?? null,
     },
     accepted_at: assignment?.acceptedAt?.toISOString() ?? null,
     shift: record.worker.shiftNo ?? null,

@@ -1152,3 +1152,318 @@ test("PATCH /api/admin/mobile-app-versions/:id never resends the force-update FC
   assert.equal(response.body.force_update_notification_sent_at, sentAtBefore);
   assert.equal(findForceUpdateNotificationJob(alreadySent.id), undefined);
 });
+
+/* -------------------------------------- Security Audit Log Tests (27.12 phase 2-4) -------------------------------------- */
+
+test("PATCH /api/admin/settings writes a system_settings_updated SecurityAuditLog with only the changed keys", async () => {
+  const { token, admin } = await loginAdmin(9601, "owner");
+
+  const response = await server.request("PATCH", "/api/admin/settings", {
+    token,
+    body: { worker_break_limit: 5 },
+  });
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+
+  const log = state.securityAuditLogs.find(
+    (item) => item.event_type === "system_settings_updated" && item.actor_account_id === admin.id,
+  );
+
+  assert.ok(log);
+  assert.equal(log.outcome, "success");
+  assert.equal(
+    (log.metadata as { after?: { worker_break_limit?: string } } | null)?.after
+      ?.worker_break_limit,
+    "5",
+  );
+});
+
+test("Gate client create/update/secret-rotate write gate_client_* SecurityAuditLog events, and the secret rotation event never contains the plaintext secret or its hash", async () => {
+  const { token, admin } = await loginAdmin(9611, "owner");
+
+  const created = await server.request("POST", "/api/admin/gate-clients", {
+    token,
+    body: { client_id: "gate-audit-9611", name: "Audit Gate" },
+  });
+
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+
+  const createdLog = state.securityAuditLogs.find(
+    (item) => item.event_type === "gate_client_created" && item.actor_account_id === admin.id,
+  );
+
+  assert.ok(createdLog);
+  assert.equal(
+    (createdLog.metadata as { targetClientId?: string } | null)?.targetClientId,
+    "gate-audit-9611",
+  );
+
+  const updated = await server.request(
+    "PATCH",
+    "/api/admin/gate-clients/gate-audit-9611",
+    { token, body: { name: "Renamed Gate", status: "inactive" } },
+  );
+
+  assert.equal(updated.status, 200, JSON.stringify(updated.body));
+
+  const updatedLog = state.securityAuditLogs.find(
+    (item) => item.event_type === "gate_client_updated" && item.actor_account_id === admin.id,
+  );
+
+  assert.ok(updatedLog);
+  assert.equal(
+    (updatedLog.metadata as { after?: { name?: string; status?: string } } | null)?.after?.name,
+    "Renamed Gate",
+  );
+
+  const rotated = await server.request(
+    "POST",
+    "/api/admin/gate-clients/gate-audit-9611/secret/rotate",
+    { token },
+  );
+
+  assert.equal(rotated.status, 200, JSON.stringify(rotated.body));
+
+  const rotatedLog = state.securityAuditLogs.find(
+    (item) => item.event_type === "gate_client_secret_rotated" && item.actor_account_id === admin.id,
+  );
+
+  assert.ok(rotatedLog);
+  const rotatedLogJson = JSON.stringify(rotatedLog);
+
+  assert.equal(rotatedLogJson.includes(rotated.body.client_secret), false);
+  assert.equal(rotatedLogJson.toLowerCase().includes("secret_hash"), false);
+});
+
+test("Admin account create/update/password-reset write admin_account_*/account_password_reset SecurityAuditLog events with only the changed fields", async () => {
+  const { token: ownerToken, admin: owner } = await loginAdmin(9621, "owner");
+
+  const created = await server.request("POST", "/api/admin/admins", {
+    token: ownerToken,
+    body: {
+      username: "audited-manager-9621",
+      password: "Manager@123456",
+      full_name: "Audited Manager",
+      permission_level: "manager",
+      permissions: ["workers:read"],
+    },
+  });
+
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+
+  const createdLog = state.securityAuditLogs.find(
+    (item) => item.event_type === "admin_account_created" && item.actor_account_id === owner.id,
+  );
+
+  assert.ok(createdLog);
+  assert.equal(
+    (createdLog.metadata as { targetUsername?: string } | null)?.targetUsername,
+    "audited-manager-9621",
+  );
+
+  const targetId = created.body.account.id;
+
+  const updated = await server.request("PATCH", `/api/admin/admins/${targetId}`, {
+    token: ownerToken,
+    body: { full_name: "Renamed Manager" },
+  });
+
+  assert.equal(updated.status, 200, JSON.stringify(updated.body));
+
+  const updatedLog = state.securityAuditLogs.find(
+    (item) => item.event_type === "admin_account_updated" && item.actor_account_id === owner.id,
+  );
+
+  assert.ok(updatedLog);
+  assert.equal(
+    (updatedLog.metadata as { before?: { full_name?: string } } | null)?.before?.full_name,
+    "Audited Manager",
+  );
+  assert.equal(
+    (updatedLog.metadata as { after?: { full_name?: string } } | null)?.after?.full_name,
+    "Renamed Manager",
+  );
+
+  const resetPassword = await server.request(
+    "PATCH",
+    `/api/admin/admins/${targetId}/password`,
+    { token: ownerToken, body: { new_password: "NewManager@123456" } },
+  );
+
+  assert.equal(resetPassword.status, 200, JSON.stringify(resetPassword.body));
+
+  const resetLog = state.securityAuditLogs.find(
+    (item) => item.event_type === "account_password_reset" && item.actor_account_id === owner.id,
+  );
+
+  assert.ok(resetLog);
+  assert.equal(
+    (resetLog.metadata as { targetAccountId?: number } | null)?.targetAccountId,
+    targetId,
+  );
+});
+
+test("PATCH /api/admin/users/:id/permissions writes both admin_permissions_changed and admin_status_changed SecurityAuditLog events when both actually change", async () => {
+  const { token: ownerToken, admin: owner } = await loginAdmin(9631, "owner");
+  const { admin: target } = await loginAdmin(9632, "supervisor");
+
+  const response = await server.request(
+    "PATCH",
+    `/api/admin/users/${target.id}/permissions`,
+    {
+      token: ownerToken,
+      body: {
+        permission_level: "supervisor",
+        status: "inactive",
+        permissions: ["workers:read"],
+      },
+    },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+
+  const permissionsLog = state.securityAuditLogs.find(
+    (item) =>
+      item.event_type === "admin_permissions_changed" && item.actor_account_id === owner.id,
+  );
+  const statusLog = state.securityAuditLogs.find(
+    (item) => item.event_type === "admin_status_changed" && item.actor_account_id === owner.id,
+  );
+
+  assert.ok(permissionsLog);
+  assert.deepEqual(
+    (permissionsLog.metadata as { after?: { permissions?: string[] } } | null)?.after
+      ?.permissions,
+    ["workers:read"],
+  );
+
+  assert.ok(statusLog);
+  assert.equal(
+    (statusLog.metadata as { before?: { status?: string } } | null)?.before?.status,
+    "active",
+  );
+  assert.equal(
+    (statusLog.metadata as { after?: { status?: string } } | null)?.after?.status,
+    "inactive",
+  );
+});
+
+test("Mobile app version create/update write mobile_app_version_* SecurityAuditLog events", async () => {
+  const { token, admin } = await loginAdmin(9641, "owner");
+
+  const created = await server.request("POST", "/api/admin/mobile-app-versions", {
+    token,
+    body: { version: "9.6.41", build_number: 96410 },
+  });
+
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+
+  const createdLog = state.securityAuditLogs.find(
+    (item) =>
+      item.event_type === "mobile_app_version_created" && item.actor_account_id === admin.id,
+  );
+
+  assert.ok(createdLog);
+  assert.equal(
+    (createdLog.metadata as { after?: { version?: string } } | null)?.after?.version,
+    "9.6.41",
+  );
+
+  const updated = await server.request(
+    "PATCH",
+    `/api/admin/mobile-app-versions/${created.body.id}`,
+    { token, body: { release_message: "Updated release message" } },
+  );
+
+  assert.equal(updated.status, 200, JSON.stringify(updated.body));
+
+  const updatedLog = state.securityAuditLogs.find(
+    (item) =>
+      item.event_type === "mobile_app_version_updated" && item.actor_account_id === admin.id,
+  );
+
+  assert.ok(updatedLog);
+  assert.equal(
+    (updatedLog.metadata as { after?: { release_message?: string } } | null)?.after
+      ?.release_message,
+    "Updated release message",
+  );
+});
+
+test("Redaction sweep: no SecurityAuditLog event ever stores the plaintext password/secret involved in the flow that produced it, across login failure, password change, password reset, and secret rotation (27.12 item 4 + item 9)", async () => {
+  const { token: ownerToken, admin: owner } = await loginAdmin(9651, "owner");
+  const target = addAdmin(9652, await password.hashPassword("Original@Password999999"));
+  target.permission_level = "manager";
+
+  const wrongPassword = "WrongDistinctivePassword_XYZ999888";
+  const changedOwnPassword = "OwnerNewDistinctivePassword_ABC777666";
+  const resetTargetPassword = "TargetResetDistinctivePassword_DEF555444";
+
+  const failedLogin = await server.request("POST", "/api/auth/login", {
+    body: { username: owner.username, password: wrongPassword },
+  });
+
+  assert.equal(failedLogin.status, 401);
+
+  const passwordChange = await server.request("PATCH", "/api/auth/me/password", {
+    token: ownerToken,
+    body: {
+      current_password: "Admin@123456",
+      new_password: changedOwnPassword,
+    },
+  });
+
+  assert.equal(passwordChange.status, 200, JSON.stringify(passwordChange.body));
+
+  // Re-login เพราะ session เดิมถูก revoke ตอนเปลี่ยนรหัสผ่านตัวเอง (revokeActiveByAccountIdExcept
+  // ยกเว้นเฉพาะ session ปัจจุบัน — เผื่อพฤติกรรมเปลี่ยนในอนาคตจึง login ใหม่ให้ชัดเจนไม่พึ่ง token เดิม)
+  const relogin = await server.request("POST", "/api/auth/login", {
+    body: { username: owner.username, password: changedOwnPassword },
+  });
+
+  assert.equal(relogin.status, 200, JSON.stringify(relogin.body));
+
+  const resetTarget = await server.request(
+    "PATCH",
+    `/api/admin/admins/${target.id}/password`,
+    {
+      token: relogin.body.access_token,
+      body: { new_password: resetTargetPassword },
+    },
+  );
+
+  assert.equal(resetTarget.status, 200, JSON.stringify(resetTarget.body));
+
+  addGateClient("gate-redaction-9651", await password.hashPassword("GateSecret@Original123456"));
+
+  const rotateSecret = await server.request(
+    "POST",
+    "/api/admin/gate-clients/gate-redaction-9651/secret/rotate",
+    { token: relogin.body.access_token },
+  );
+
+  assert.equal(rotateSecret.status, 200, JSON.stringify(rotateSecret.body));
+
+  const allLogsJson = JSON.stringify(state.securityAuditLogs);
+
+  for (const secret of [
+    wrongPassword,
+    changedOwnPassword,
+    resetTargetPassword,
+    rotateSecret.body.client_secret,
+    "Admin@123456",
+    "Original@Password999999",
+    "GateSecret@Original123456",
+  ]) {
+    assert.equal(
+      allLogsJson.includes(secret),
+      false,
+      `SecurityAuditLog must never contain the plaintext secret: ${secret}`,
+    );
+  }
+
+  assert.equal(allLogsJson.toLowerCase().includes("password_hash"), false);
+  assert.equal(allLogsJson.toLowerCase().includes("secret_hash"), false);
+  assert.equal(allLogsJson.toLowerCase().includes("access_token"), false);
+  assert.equal(allLogsJson.toLowerCase().includes("refresh_token"), false);
+});

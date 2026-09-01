@@ -7,6 +7,7 @@ import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-
 
 import type { DbConnection } from "../types/shared/common.type";
 import type { AdminActionLogDto } from "../types/shared/admin-action-log.type";
+import type { SecurityAuditLogDto } from "../types/shared/security-audit-log.type";
 import type {
   AdminAuditActionLogRow,
   AdminAuditCompletionSubmissionRow,
@@ -100,20 +101,20 @@ function buildWorkerPerformanceRecordsCte(filters: {
   worker_code?: string;
 }): Prisma.Sql {
   const workerFilter = filters.worker_code
-    ? Prisma.sql`AND a.username = ${filters.worker_code}`
+    ? Prisma.sql`AND a.labor_code = ${filters.worker_code}`
     : Prisma.empty;
 
   return Prisma.sql`
     WITH cohort AS (
       SELECT
         vja.id AS assignment_id,
-        vja.worker_account_id,
+        vja.worker_id,
         vja.vehicle_job_id,
         vja.status,
         vja.accepted_at,
         vja.scanned_at
       FROM vehicle_job_assignments vja
-      JOIN accounts a ON a.id = vja.worker_account_id
+      JOIN master_workers a ON a.id = vja.worker_id
       WHERE vja.created_at >= ${filters.startAt}
         AND vja.created_at < ${filters.endAt}
         ${workerFilter}
@@ -132,7 +133,7 @@ function buildWorkerPerformanceRecordsCte(filters: {
     ),
     assignment_metrics AS (
       SELECT
-        a.username AS worker_code,
+        a.labor_code AS worker_code,
         a.full_name,
         COUNT(*)::int AS total_assigned_job_count,
         SUM(CASE WHEN cohort.accepted_at IS NOT NULL OR COALESCE(ae.has_accepted, false) THEN 1 ELSE 0 END)::int AS accepted_job_count,
@@ -141,9 +142,9 @@ function buildWorkerPerformanceRecordsCte(filters: {
         SUM(CASE WHEN cohort.status = ${ASSIGNMENT_STATUS.COMPLETED} OR COALESCE(ae.has_completed, false) THEN 1 ELSE 0 END)::int AS completed_job_count,
         SUM(CASE WHEN COALESCE(ae.has_admin_cancelled, false) THEN 1 ELSE 0 END)::int AS admin_cancelled_job_count
       FROM cohort
-      JOIN accounts a ON a.id = cohort.worker_account_id
+      JOIN master_workers a ON a.id = cohort.worker_id
       LEFT JOIN assignment_events ae ON ae.assignment_id = cohort.assignment_id
-      GROUP BY a.username, a.full_name
+      GROUP BY a.labor_code, a.full_name
     ),
     records AS (
       SELECT
@@ -312,12 +313,12 @@ export async function listWorkerAssignmentEventsForAudit(
     select: {
       id: true,
       assignmentId: true,
-      workerAccountId: true,
+      workerId: true,
       vehicleJobId: true,
       eventType: true,
       occurredAt: true,
       metadata: true,
-      worker: { select: { username: true } },
+      worker: { select: { laborCode: true } },
       vehicleJob: { select: { ticketNumber: true } },
     },
   });
@@ -325,12 +326,12 @@ export async function listWorkerAssignmentEventsForAudit(
   return rows.map((row) => ({
     id: row.id,
     assignment_id: row.assignmentId,
-    worker_account_id: row.workerAccountId,
+    worker_id: row.workerId,
     vehicle_job_id: row.vehicleJobId,
     event_type: row.eventType,
     occurred_at: row.occurredAt.toISOString(),
     metadata: (row.metadata as Record<string, unknown> | null) ?? null,
-    worker_code: row.worker?.username ?? null,
+    worker_code: row.worker?.laborCode ?? null,
     ticket_number: row.vehicleJob?.ticketNumber ?? null,
   }));
 }
@@ -354,15 +355,18 @@ export async function listCompletionSubmissionsForAudit(
       ticketId: true,
       assignmentId: true,
       submittedByAccountId: true,
+      submittedByWorkerId: true,
       submittedByRole: true,
       createdAt: true,
       rejectedAt: true,
       confirmedAt: true,
       resolvedByLineUserId: true,
       submittedByAccount: { select: { username: true } },
+      submittedByWorker: { select: { laborCode: true } },
       ticket: {
         select: {
           boothCode: true,
+          boothName: true,
           marketJobId: true,
           vehicleJobId: true,
           marketJob: { select: { ticketNo: true } },
@@ -377,13 +381,15 @@ export async function listCompletionSubmissionsForAudit(
     ticket_id: row.ticketId,
     assignment_id: row.assignmentId,
     submitted_by_account_id: row.submittedByAccountId,
+    submitted_by_worker_id: row.submittedByWorkerId,
     submitted_by_role: row.submittedByRole,
-    submitted_by_code: row.submittedByAccount?.username ?? null,
+    submitted_by_code: row.submittedByAccount?.username ?? row.submittedByWorker?.laborCode ?? null,
     created_at: row.createdAt.toISOString(),
     rejected_at: toNullableIsoString(row.rejectedAt),
     confirmed_at: toNullableIsoString(row.confirmedAt),
     resolved_by_line_user_id: row.resolvedByLineUserId,
     booth_code: row.ticket?.boothCode ?? null,
+    booth_name: row.ticket?.boothName ?? null,
     market_job_id: row.ticket?.marketJobId ?? null,
     ticket_no: row.ticket?.marketJob?.ticketNo ?? null,
     vehicle_job_id: row.ticket?.vehicleJobId ?? null,
@@ -410,6 +416,7 @@ export async function listTicketRatingsForAudit(
       ticket: {
         select: {
           boothCode: true,
+          boothName: true,
           marketJobId: true,
           vehicleJobId: true,
           marketJob: { select: { ticketNo: true } },
@@ -428,6 +435,7 @@ export async function listTicketRatingsForAudit(
     score: row.score,
     rated_at: row.ratedAt.toISOString(),
     booth_code: row.ticket?.boothCode ?? null,
+    booth_name: row.ticket?.boothName ?? null,
     market_job_id: row.ticket?.marketJobId ?? null,
     ticket_no: row.ticket?.marketJob?.ticketNo ?? null,
     vehicle_job_id: row.ticket?.vehicleJobId ?? null,
@@ -507,4 +515,35 @@ export async function listAdminActionLogsForAudit(
   }
 
   return result;
+}
+
+// Function ดึง SecurityAuditLog (27.12 phase 1: auth/session event) ที่เกิดขึ้นในช่วงที่ระบุ —
+// ไม่มี relation ให้ join เพราะ actor เป็น snapshot ที่เขียนไว้ตอนสร้างแถวแล้ว (ดู
+// security-audit-log.repository.ts ฝั่ง write)
+export async function listSecurityAuditLogsForAudit(
+  range: AdminAuditDateRange,
+  connection?: DbConnection,
+): Promise<SecurityAuditLogDto[]> {
+  const db = client(connection);
+  const records = await db.securityAuditLog.findMany({
+    where: { createdAt: { gte: range.startAt, lt: range.endAt } },
+  });
+
+  return records.map((record) => ({
+    id: record.id,
+    event_type: record.eventType,
+    outcome: record.outcome,
+    actor_type: record.actorType,
+    actor_account_id: record.actorAccountId,
+    actor_worker_id: record.actorWorkerId,
+    actor_username: record.actorUsername,
+    actor_full_name: record.actorFullName,
+    session_id: record.sessionId,
+    request_id: record.requestId,
+    ip_address: record.ipAddress,
+    user_agent: record.userAgent,
+    failure_code: record.failureCode,
+    metadata: (record.metadata as Record<string, unknown> | null) ?? null,
+    created_at: record.createdAt.toISOString(),
+  }));
 }

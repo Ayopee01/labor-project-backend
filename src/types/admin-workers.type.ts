@@ -2,10 +2,8 @@ import type { WorkerWorkStatus } from "./shared/worker-status.type";
 import type { AccountStatus } from "./shared/account.type";
 
 export const ACCOUNT_ROLES = ["admin", "worker"] as const;
-export const ACCOUNT_SOURCES = ["internal", "master_sync"] as const;
 
 export type AccountRole = (typeof ACCOUNT_ROLES)[number];
-export type AccountSource = (typeof ACCOUNT_SOURCES)[number];
 
 export type { AccountStatus };
 
@@ -19,6 +17,7 @@ export interface BuildWorkerCodeInput {
   shirt_number: string;
 }
 
+// Type DTO ของ Admin/back-office account — Worker ไม่มี record ในตารางนี้อีกต่อไป (ดู MasterWorkerDto)
 export interface AccountDto {
   id: number;
   username: string;
@@ -30,50 +29,60 @@ export interface AccountDto {
   email: string | null;
   phone: string | null;
   image_url: string | null;
-  nationality: string | null;
-  work_start_date: string | null;
-  shirt_type: string | null;
-  shirt_number: string | null;
-  shift_no: number | null;
-  shift_start_time: string | null;
-  shift_end_time: string | null;
   lang: string;
-  source: AccountSource;
-  master_worker_id: string | null;
-  master_updated_at: string | null;
-  synced_at: string | null;
   permission_level: string | null;
   created_by: number | null;
   created_at: string;
   updated_at: string;
 }
 
-export type SafeAccountDto = Omit<
-  AccountDto,
-  | "password_hash"
-  | "source"
-  | "master_worker_id"
-  | "master_updated_at"
-  | "synced_at"
->;
+export type SafeAccountDto = Omit<AccountDto, "password_hash">;
 
-// Type DTO profile ของ worker โดย field profile ถูกเก็บบน accounts หลังรวมตาราง
-export interface ProfileDto {
+export const MASTER_WORKER_SOURCES = ["master_sync", "admin_created"] as const;
+
+export type MasterWorkerSource = (typeof MASTER_WORKER_SOURCES)[number];
+
+// Type DTO ของ MasterWorker — source of truth เดียวของข้อมูล Worker ทั้งหมดในระบบ (แทน
+// Account/Profile/WorkSchedule เดิม) picture ถูกแปลงเป็น base64 ไว้แล้วที่ชั้น mapper ตามข้อ 29 ของ
+// worker.md ไม่ส่ง Buffer ดิบออกไป
+export interface MasterWorkerDto {
   id: number;
-  account_id: number;
-  worker_code: string | null;
-  image_url: string | null;
-  nationality: string;
-  work_start_date: string;
-  phone: string | null;
-  shirt_type: string | null;
-  shirt_number: string | null;
+  labor_id: number | null;
+  labor_code: string;
+  prefix: string | null;
+  name: string | null;
+  full_name: string | null;
+  labor_status: string | null;
+  status: number | null;
+  work_code: number | null;
+  nationality: string | null;
+  telephone: string | null;
+  work_start_date: string | null;
+  labor_color: string | null;
+  labor_coat: string | null;
+  coat_no: string | null;
+  time_work: string | null;
+  time_in: string | null;
+  time_out: string | null;
+  picture: string | null;
+  update_date: string | null;
+  shift_no: number | null;
+  shift_start_time: string | null;
+  shift_end_time: string | null;
+  lang: string;
+  source: MasterWorkerSource;
+  password_hash: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-// Type DTO ตารางกะปัจจุบันของ worker โดย field schedule ถูกเก็บบน accounts หลังรวมตาราง
+export type SafeMasterWorkerDto = Omit<MasterWorkerDto, "password_hash">;
+
+// Type schedule ปัจจุบันของ worker หนึ่งคน — field เก็บอยู่บน MasterWorker เอง (shiftNo/
+// shiftStartTime/shiftEndTime) ไม่ใช่ entity แยก เหมือนที่เคยเป็น Account มาก่อน
 export interface WorkScheduleDto {
   id: number;
-  account_id: number;
+  worker_id: number;
   shift_no: number;
   work_date: string;
   shift_start_time: string;
@@ -108,17 +117,6 @@ export interface AccountCreateInput {
   email?: string | null;
   phone?: string | null;
   image_url?: string | null;
-  nationality?: string | null;
-  work_start_date?: string | null;
-  shirt_type?: string | null;
-  shirt_number?: string | null;
-  shift_no?: number | null;
-  shift_start_time?: string | null;
-  shift_end_time?: string | null;
-  source?: AccountSource;
-  master_worker_id?: string | null;
-  master_updated_at?: Date | string | null;
-  synced_at?: Date | string | null;
   permission_level?: string | null;
   created_by?: number | null;
 }
@@ -131,39 +129,34 @@ export interface UserAccountUpdateInput {
   phone?: string | null;
 }
 
-export interface ProfileCreateInput {
-  account_id: number;
-  image_url?: string | null;
+// Type input สร้าง MasterWorker จาก Admin panel (source = "admin_created") — labor_code ถูก
+// generate จาก nationality/shirt_type/shirt_number ด้วย buildWorkerCode() เดิม (ดู worker-code.ts)
+// ไม่ใช้กับ record ที่ sync มาจาก Master ซึ่ง labor_code มาจาก Master ตรงๆ
+export interface MasterWorkerCreateInput {
+  labor_code: string;
+  full_name: string;
+  telephone?: string | null;
   nationality: string;
-  work_start_date: string;
-  shirt_type?: string | null;
-  shirt_number?: string | null;
+  labor_color: string;
+  work_start_date?: string | null;
+  shift_no?: number | null;
+  shift_start_time?: string | null;
+  shift_end_time?: string | null;
+  status?: number;
 }
 
-export type ProfileUpdateInput = Partial<
-  Omit<ProfileCreateInput, "account_id">
->;
-
-export type ProfileDataInput = ProfileCreateInput | ProfileUpdateInput;
-
-export type ProfileData = {
-  imageUrl?: string | null;
-  nationality?: string;
-  workStartDate?: string;
-  shirtType?: string | null;
-  shirtNumber?: string | null;
-};
-
-export type ProfileCreateData = {
-  imageUrl?: string | null;
-  nationality: string;
-  workStartDate: string;
-  shirtType?: string | null;
-  shirtNumber?: string | null;
-};
+export interface MasterWorkerUpdateInput {
+  labor_code?: string;
+  full_name?: string;
+  telephone?: string | null;
+  nationality?: string | null;
+  labor_color?: string | null;
+  work_start_date?: string | null;
+  status?: number;
+}
 
 export interface WorkScheduleCreateInput {
-  account_id: number;
+  worker_id: number;
   shift_no?: number;
   work_date: string;
   shift_start_time: string;
@@ -198,9 +191,9 @@ export interface UserListSchedule {
 }
 
 export interface UserListItem {
-  worker_code: string | null;
-  shirt_number: string | null;
-  full_name: string;
+  worker_code: string;
+  labor_color: string | null;
+  full_name: string | null;
   phone: string | null;
   work_start_date: string | null;
   work_schedule: UserListSchedule | null;
@@ -210,10 +203,8 @@ export interface UserListItem {
 
 interface UserDetailInfo {
   phone: string | null;
-  position: string | null;
   nationality: string | null;
-  shirt_number: string | null;
-  shirt_type: string | null;
+  labor_color: string | null;
   work_start_date: string | null;
   shift_no: number | null;
   shift_start_time: string | null;
@@ -222,9 +213,9 @@ interface UserDetailInfo {
 }
 
 export interface UserDetailResponse {
-  image_url: string | null;
-  worker_code: string | null;
-  full_name: string;
+  picture: string | null;
+  worker_code: string;
+  full_name: string | null;
   status: AccountStatus;
   details: UserDetailInfo;
 }
@@ -242,10 +233,10 @@ export type AdminWorkerStatusAssignment = {
 };
 
 export type AdminWorkerStatusItem = {
-  full_name: string;
-  worker_code: string | null;
-  shirt_number: string | null;
-  image_url: string | null;
+  full_name: string | null;
+  worker_code: string;
+  labor_color: string | null;
+  picture: string | null;
   shift_name: string | null;
   latest_activity_at: string | null;
   status_entered_at: string | null;

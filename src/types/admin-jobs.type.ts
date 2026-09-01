@@ -81,6 +81,7 @@ export type AdminVehicleJobHistoryRecord = Prisma.VehicleJobGetPayload<{
             completionSubmissions: {
               include: {
                 submittedByAccount: true;
+                submittedByWorker: true;
                 workerSnapshots: {
                   include: {
                     ticketWorker: {
@@ -446,12 +447,12 @@ export interface AdminHistoryCancellationResponse {
 
 export interface AdminHistoryWorkerResponse {
   // Stable identity สำหรับ join กับ finance.workers[] และรายงานอื่น — ห้าม join ด้วยชื่อ/เบอร์เสื้อ
-  worker_account_id: number;
+  worker_id: number;
   // Accepted assignment ที่ถูกเลือกมาแสดงแถวนี้ (ดู selectLatestAcceptedAssignmentPerWorker)
   assignment_id: number;
   worker_code: string | null;
   full_name: string;
-  shirt_number: string | null;
+  labor_color: string | null;
   accepted_at: string | null;
   scanned_at: string | null;
   // Business Definition: Worker ถือว่าเริ่มงานตั้งแต่กด Accept Assignment จึงใช้ accepted_at เป็น started_at
@@ -482,10 +483,10 @@ export interface AdminHistoryFinanceResponse {
   // vehicle_job history workers[] (formatAdminHistoryWorkers) เป๊ะ
   worker_count: number;
   // เงินจริงต่อ Worker แต่ละคน รวมทุก Business Ticket ของ VehicleJob นี้ — ห้ามหารเฉลี่ย (SUM ของ
-  // TicketWorker.finalEarningAmount ต่อ workerAccountId) ชุด Worker คือคนที่กดรับงานจริงและไม่ซ้ำ
+  // TicketWorker.finalEarningAmount ต่อ workerId) ชุด Worker คือคนที่กดรับงานจริงและไม่ซ้ำ
   // ต่อคน (เดียวกับ vehicle_job history workers[]) — "0.00" เมื่อกดรับแล้วแต่ยังไม่มีรายได้จริง
   workers: Array<{
-    worker_account_id: number;
+    worker_id: number;
     worker_code: string | null;
     full_name: string;
     total_amount: string;
@@ -558,8 +559,8 @@ export interface AdminVehicleJobOperationMarketSummaryResponse {
 interface AdminVehicleJobOperationWorkerResponse {
   worker_code: string | null;
   full_name: string;
-  shirt_number: string | null;
-  image_url: string | null;
+  labor_color: string | null;
+  picture: string | null;
   shift_name: string | null;
   assignment_status: string;
   worker_status: string;
@@ -853,7 +854,7 @@ export interface DailyWorkerIncomeItemResponse {
   ticket_no: string;
   plate: string;
   // ยอดรวมที่ worker คนนี้ได้จาก ticket_no ใบนี้เท่านั้น (TicketWorker.final_earning_amount
-  // ผูกกับ marketJobId+workerAccountId อยู่แล้ว จึงไม่ต้องรวมข้าม ticket_no อื่น แม้จะเป็น
+  // ผูกกับ marketJobId+workerId อยู่แล้ว จึงไม่ต้องรวมข้าม ticket_no อื่น แม้จะเป็น
   // ticket_number/รถคันเดียวกัน)
   payable: string;
   scanned_at: string | null;

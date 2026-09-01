@@ -8,11 +8,13 @@ import { accountRepository } from "../repositories/admin-settings.repository";
 import * as gateClientRepository from "../repositories/shared/gate-client.repository";
 import * as permissionRepository from "../repositories/shared/permission.repository";
 import * as sessionRepository from "../repositories/shared/session.repository";
-import { upsertSettings } from "../repositories/shared/system-setting.repository";
+import { listSettings, upsertSettings } from "../repositories/shared/system-setting.repository";
 import { publishRuntimeSettingsInvalidation } from "../queues/runtime-settings-sync";
 import { getAccountPermissions } from "./shared/account-permission.service";
 import { clearRuntimeSettingsCache, getRuntimeSettings } from "./shared/runtime-settings.service";
+import { diffChangedFields, writeSecurityAuditLog } from "./shared/security-audit-log.service";
 import * as mobileAppVersionService from "./shared/mobile-app-version.service";
+import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { AccountDto } from "../types/admin-workers.type";
@@ -21,6 +23,7 @@ import type { AccountPermissionsResponse } from "../types/shared/account-permiss
 import type { AdminRoleListResponse, RuntimeSettingsResponse } from "../types/admin-settings.type";
 import type { GateClientDto, PublicGateClient } from "../types/shared/gate-client.type";
 import type { GateClientListResponse, GateClientMutationResponse, GateClientSecretResponse } from "../types/admin-settings.type";
+import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
 // Import Validation
 import { parseId, parseWithSchema } from "../validation/parser";
 import { createAdminAccountBodySchema, createGateClientBodySchema, resetPasswordBodySchema, updateAccountPermissionsBodySchema, updateAdminAccountBodySchema, updateGateClientBodySchema, updateSystemSettingsBodySchema } from "../validation/schemas";
@@ -28,6 +31,30 @@ import { createAdminAccountBodySchema, createGateClientBodySchema, resetPassword
 import { getActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
+
+const EMPTY_SECURITY_AUDIT_CONTEXT: SecurityAuditRequestContext = {
+  ip_address: null,
+  user_agent: null,
+  request_id: null,
+};
+
+// Function ประกอบ actor snapshot (username/full_name) สำหรับ Security Audit Log จาก actorId ที่มีอยู่
+// แล้ว — คืน null ทั้งคู่เมื่อไม่มี actorId (ไม่ควรเกิดจริงเพราะทุก route ผ่าน authMiddleware มาก่อน)
+async function findActorSnapshot(
+  actorId: number | null,
+  connection?: DbConnection
+): Promise<{ username: string | null; full_name: string | null }> {
+  if (!actorId) {
+    return { username: null, full_name: null };
+  }
+
+  const actor = await accountRepository.findAdminById(actorId, connection);
+
+  return {
+    username: actor?.username ?? null,
+    full_name: actor?.full_name ?? null,
+  };
+}
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -347,14 +374,59 @@ export async function listSystemSettings(): Promise<RuntimeSettingsResponse> {
 // Function อัปเดต system settings ใน service flow
 export async function updateSystemSettings(
   body: unknown,
-  auth?: AccessTokenPayload
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
 ): Promise<RuntimeSettingsResponse> {
   const input = parseWithSchema(updateSystemSettingsBodySchema, body);
   const settingsToSave = Object.fromEntries(
     Object.entries(input).map(([key, value]) => [key, String(value)])
   );
+  const actorId = getActorId(auth);
 
-  await upsertSettings(settingsToSave, getActorId(auth));
+  await withTransaction(async (transaction) => {
+    // อ่าน "ก่อน" ให้ครบก่อน upsert เพราะ SystemSetting ไม่มีประวัติ ค่าเดิมหายทันทีที่เขียนทับ
+    const before = await listSettings(transaction);
+    const beforeByKey = new Map(before.map((setting) => [setting.key, setting.value]));
+
+    await upsertSettings(settingsToSave, actorId, transaction);
+
+    const changedBefore: Record<string, unknown> = {};
+    const changedAfter: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(settingsToSave)) {
+      const previousValue = beforeByKey.get(key) ?? null;
+
+      if (previousValue !== value) {
+        changedBefore[key] = previousValue;
+        changedAfter[key] = value;
+      }
+    }
+
+    if (Object.keys(changedAfter).length > 0) {
+      const actorSnapshot = await findActorSnapshot(actorId, transaction);
+
+      await writeSecurityAuditLog(
+        {
+          event_type: SECURITY_AUDIT_EVENT_TYPE.SYSTEM_SETTINGS_UPDATED,
+          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+          actor_type: "admin",
+          actor_account_id: actorId,
+          actor_username: actorSnapshot.username,
+          actor_full_name: actorSnapshot.full_name,
+          ip_address: context.ip_address,
+          user_agent: context.user_agent,
+          request_id: context.request_id,
+          metadata: {
+            targetType: "system_settings",
+            before: changedBefore,
+            after: changedAfter,
+          },
+        },
+        transaction
+      );
+    }
+  });
+
   clearRuntimeSettingsCache();
   // แจ้ง instance อื่น (ถ้ามี) ให้ล้าง cache ของตัวเองด้วย — วันนี้รันอยู่ instance เดียวจึงยังไม่มีผล
   // อะไรเพิ่ม แต่พร้อมรองรับตอน scale หลาย instance โดยไม่ต้องแก้โค้ดตรงนี้อีก
@@ -369,17 +441,39 @@ export async function listMobileAppVersions() {
 }
 
 // Function สร้าง Mobile App Version ใหม่ใน service flow
-export async function createMobileAppVersion(body: unknown, auth?: AccessTokenPayload) {
-  return mobileAppVersionService.createMobileAppVersion(body, getActorId(auth));
+export async function createMobileAppVersion(
+  body: unknown,
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+) {
+  const actorId = getActorId(auth);
+  const actorSnapshot = await findActorSnapshot(actorId);
+
+  return mobileAppVersionService.createMobileAppVersion(
+    body,
+    actorId,
+    { actor_account_id: actorId, ...actorSnapshot },
+    context
+  );
 }
 
 // Function แก้ไข Mobile App Version ใน service flow
 export async function updateMobileAppVersion(
   idParam: unknown,
   body: unknown,
-  auth?: AccessTokenPayload
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
 ) {
-  return mobileAppVersionService.updateMobileAppVersion(idParam, body, getActorId(auth));
+  const actorId = getActorId(auth);
+  const actorSnapshot = await findActorSnapshot(actorId);
+
+  return mobileAppVersionService.updateMobileAppVersion(
+    idParam,
+    body,
+    actorId,
+    { actor_account_id: actorId, ...actorSnapshot },
+    context
+  );
 }
 
 // Function ดึงรายการ Gate clients ใน service flow
@@ -394,10 +488,12 @@ export async function listGateClients(): Promise<GateClientListResponse> {
 // Function สร้าง Gate client ใน service flow
 export async function createGateClient(
   body: unknown,
-  auth?: AccessTokenPayload
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
 ): Promise<GateClientSecretResponse> {
   const input = parseWithSchema(createGateClientBodySchema, body);
   const clientId = input.client_id ?? (await generateUniqueClientId());
+  const actorId = getActorId(auth);
 
   if (await gateClientRepository.clientIdExists(clientId)) {
     throw new ApiError(
@@ -408,63 +504,151 @@ export async function createGateClient(
   }
 
   const clientSecret = generateGateClientSecret();
-  const client = await gateClientRepository.createGateClient({
-    client_id: clientId,
-    name: input.name,
-    secret_hash: await hashPassword(clientSecret),
-    status: input.status,
-    created_by: getActorId(auth),
-    updated_by: getActorId(auth),
-  });
 
-  return {
-    message: "Gate client created successfully. Save client_secret now because it will not be shown again.",
-    ...toPublicGateClient(client),
-    client_secret: clientSecret,
-  };
+  return withTransaction(async (transaction) => {
+    const client = await gateClientRepository.createGateClient(
+      {
+        client_id: clientId,
+        name: input.name,
+        secret_hash: await hashPassword(clientSecret),
+        status: input.status,
+        created_by: actorId,
+        updated_by: actorId,
+      },
+      transaction
+    );
+    const actorSnapshot = await findActorSnapshot(actorId, transaction);
+
+    await writeSecurityAuditLog(
+      {
+        event_type: SECURITY_AUDIT_EVENT_TYPE.GATE_CLIENT_CREATED,
+        outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+        actor_type: "admin",
+        actor_account_id: actorId,
+        actor_username: actorSnapshot.username,
+        actor_full_name: actorSnapshot.full_name,
+        ip_address: context.ip_address,
+        user_agent: context.user_agent,
+        request_id: context.request_id,
+        metadata: {
+          targetType: "gate_client",
+          targetClientId: client.client_id,
+          after: { name: client.name, status: client.status },
+        },
+      },
+      transaction
+    );
+
+    return {
+      message: "Gate client created successfully. Save client_secret now because it will not be shown again.",
+      ...toPublicGateClient(client),
+      client_secret: clientSecret,
+    };
+  });
 }
 
 // Function อัปเดต Gate client ใน service flow
 export async function updateGateClient(
   clientIdParam: unknown,
   body: unknown,
-  auth?: AccessTokenPayload
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
 ): Promise<GateClientMutationResponse> {
   const existingClient = await requireGateClient(clientIdParam);
+  // Snapshot ก่อนแก้ไขจริง กัน repository (โดยเฉพาะ mock ของ test) คืน object เดิมแทน fresh copy
+  const existingClientBeforeUpdate = { ...existingClient };
   const input = parseWithSchema(updateGateClientBodySchema, body);
-  const client = await gateClientRepository.updateGateClient(
-    existingClient.client_id,
-    {
-      name: input.name,
-      status: input.status,
-      updated_by: getActorId(auth),
-    }
-  );
+  const actorId = getActorId(auth);
 
-  return {
-    message: "Gate client updated successfully.",
-    ...toPublicGateClient(client),
-  };
+  return withTransaction(async (transaction) => {
+    const client = await gateClientRepository.updateGateClient(
+      existingClient.client_id,
+      {
+        name: input.name,
+        status: input.status,
+        updated_by: actorId,
+      },
+      transaction
+    );
+    const diff = diffChangedFields(existingClientBeforeUpdate, client, ["name", "status"]);
+
+    if (diff) {
+      const actorSnapshot = await findActorSnapshot(actorId, transaction);
+
+      await writeSecurityAuditLog(
+        {
+          event_type: SECURITY_AUDIT_EVENT_TYPE.GATE_CLIENT_UPDATED,
+          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+          actor_type: "admin",
+          actor_account_id: actorId,
+          actor_username: actorSnapshot.username,
+          actor_full_name: actorSnapshot.full_name,
+          ip_address: context.ip_address,
+          user_agent: context.user_agent,
+          request_id: context.request_id,
+          metadata: {
+            targetType: "gate_client",
+            targetClientId: client.client_id,
+            before: diff.before,
+            after: diff.after,
+          },
+        },
+        transaction
+      );
+    }
+
+    return {
+      message: "Gate client updated successfully.",
+      ...toPublicGateClient(client),
+    };
+  });
 }
 
 // Function จัดการ rotate Gate client secret ใน service flow
 export async function rotateGateClientSecret(
   clientIdParam: unknown,
-  auth?: AccessTokenPayload
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
 ): Promise<GateClientSecretResponse> {
   const existingClient = await requireGateClient(clientIdParam);
   const clientSecret = generateGateClientSecret();
-  const client = await gateClientRepository.updateGateClientSecret(
-    existingClient.client_id,
-    await hashPassword(clientSecret),
-    getActorId(auth)
-  );
+  const actorId = getActorId(auth);
 
-  return {
-    message: "Gate client secret rotated successfully. Save client_secret now because it will not be shown again.",
-    ...toPublicGateClient(client),
-    client_secret: clientSecret,
-  };
+  return withTransaction(async (transaction) => {
+    const client = await gateClientRepository.updateGateClientSecret(
+      existingClient.client_id,
+      await hashPassword(clientSecret),
+      actorId,
+      transaction
+    );
+    const actorSnapshot = await findActorSnapshot(actorId, transaction);
+
+    // ห้ามเก็บ secret เดิม/ใหม่หรือ hash ของมันใน metadata เด็ดขาด — เก็บแค่ว่า client ไหนถูก rotate
+    await writeSecurityAuditLog(
+      {
+        event_type: SECURITY_AUDIT_EVENT_TYPE.GATE_CLIENT_SECRET_ROTATED,
+        outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+        actor_type: "admin",
+        actor_account_id: actorId,
+        actor_username: actorSnapshot.username,
+        actor_full_name: actorSnapshot.full_name,
+        ip_address: context.ip_address,
+        user_agent: context.user_agent,
+        request_id: context.request_id,
+        metadata: {
+          targetType: "gate_client",
+          targetClientId: client.client_id,
+        },
+      },
+      transaction
+    );
+
+    return {
+      message: "Gate client secret rotated successfully. Save client_secret now because it will not be shown again.",
+      ...toPublicGateClient(client),
+      client_secret: clientSecret,
+    };
+  });
 }
 
 // Function ดึงรายการ roles ใน service flow
@@ -499,7 +683,8 @@ export async function listRoles(): Promise<AdminRoleListResponse> {
 // Function สร้าง admin account ใน service flow
 export async function createAdminAccount(
   body: unknown,
-  auth?: AccessTokenPayload
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
 ) {
   const input = parseWithSchema(createAdminAccountBodySchema, body);
   const actorId = getActorId(auth);
@@ -538,6 +723,32 @@ export async function createAdminAccount(
       transaction
     );
 
+    await writeSecurityAuditLog(
+      {
+        event_type: SECURITY_AUDIT_EVENT_TYPE.ADMIN_ACCOUNT_CREATED,
+        outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+        actor_type: "admin",
+        actor_account_id: actorId,
+        actor_username: actorAccount.username,
+        actor_full_name: actorAccount.full_name,
+        ip_address: context.ip_address,
+        user_agent: context.user_agent,
+        request_id: context.request_id,
+        metadata: {
+          targetType: "admin_account",
+          targetAccountId: account.id,
+          targetUsername: account.username,
+          after: {
+            full_name: account.full_name,
+            status: account.status,
+            permission_level: account.permission_level,
+            permissions: input.permissions,
+          },
+        },
+      },
+      transaction
+    );
+
     return {
       message: "Admin account created successfully.",
       account: accountRepository.sanitizeAccount(account),
@@ -562,7 +773,8 @@ export async function getAdminUserPermissions(
 export async function updateAdminUserPermissions(
   accountIdParam: unknown,
   body: unknown,
-  auth?: AccessTokenPayload
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
 ): Promise<AccountPermissionsResponse & { message: string }> {
   const input = parseWithSchema(updateAccountPermissionsBodySchema, body);
   const account = await requireAdminAccount(accountIdParam);
@@ -587,6 +799,10 @@ export async function updateAdminUserPermissions(
     if (!freshTarget) {
       throw new ApiError(404, "ADMIN_NOT_FOUND", "Admin account not found.");
     }
+
+    // Snapshot ก่อนแก้ไขจริง กัน repository (โดยเฉพาะ mock ของ test) คืน object เดิมแทน fresh copy —
+    // updatePermissionLevel/updateStatus ด้านล่างจะ mutate freshTarget ถ้าไม่ snapshot ไว้ก่อน
+    const targetBeforeUpdate = { ...freshTarget };
 
     if (
       !canManagePermissionLevel(
@@ -635,6 +851,64 @@ export async function updateAdminUserPermissions(
     );
     await sessionRepository.revokeActiveByAccountId(account.id, transaction);
 
+    const actorSnapshot = await findActorSnapshot(actorAccount.id, transaction);
+    const baseLog = {
+      actor_type: "admin" as const,
+      actor_account_id: actorAccount.id,
+      actor_username: actorSnapshot.username,
+      actor_full_name: actorSnapshot.full_name,
+      ip_address: context.ip_address,
+      user_agent: context.user_agent,
+      request_id: context.request_id,
+    };
+    const sortedCurrentPermissions = [...currentPermissions].sort();
+    const sortedNextPermissions = [...input.permissions].sort();
+    const permissionsChanged =
+      targetBeforeUpdate.permission_level !== input.permission_level ||
+      sortedCurrentPermissions.join(",") !== sortedNextPermissions.join(",");
+
+    if (permissionsChanged) {
+      await writeSecurityAuditLog(
+        {
+          ...baseLog,
+          event_type: SECURITY_AUDIT_EVENT_TYPE.ADMIN_PERMISSIONS_CHANGED,
+          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+          metadata: {
+            targetType: "admin_account",
+            targetAccountId: account.id,
+            targetUsername: targetBeforeUpdate.username,
+            before: {
+              permission_level: targetBeforeUpdate.permission_level,
+              permissions: sortedCurrentPermissions,
+            },
+            after: {
+              permission_level: input.permission_level,
+              permissions: sortedNextPermissions,
+            },
+          },
+        },
+        transaction
+      );
+    }
+
+    if (input.status !== undefined && input.status !== targetBeforeUpdate.status) {
+      await writeSecurityAuditLog(
+        {
+          ...baseLog,
+          event_type: SECURITY_AUDIT_EVENT_TYPE.ADMIN_STATUS_CHANGED,
+          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+          metadata: {
+            targetType: "admin_account",
+            targetAccountId: account.id,
+            targetUsername: targetBeforeUpdate.username,
+            before: { status: targetBeforeUpdate.status },
+            after: { status: input.status },
+          },
+        },
+        transaction
+      );
+    }
+
     return {
       message: "Admin permissions updated successfully. Active sessions were revoked.",
       ...(await getAccountPermissions(updatedAccount, transaction)),
@@ -647,24 +921,66 @@ export async function updateAdminUserPermissions(
 export async function updateAdminAccount(
   accountIdParam: unknown,
   body: unknown,
-  auth?: AccessTokenPayload
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
 ) {
   const input = parseWithSchema(updateAdminAccountBodySchema, body);
   const account = await requireAdminAccount(accountIdParam);
+  // Snapshot ก่อนแก้ไขจริง กัน repository (โดยเฉพาะ mock ของ test) คืน object เดิมแทน fresh copy
+  const accountBeforeUpdate = { ...account };
 
   await assertCanManageAdminAccount(account, auth);
 
-  const updatedAccount = await accountRepository.updateAdminAccount(account.id, {
-    full_name: input.full_name,
-    position: input.position,
-    email: input.email,
-    phone: input.phone,
-  });
+  return withTransaction(async (transaction) => {
+    const updatedAccount = await accountRepository.updateAdminAccount(
+      account.id,
+      {
+        full_name: input.full_name,
+        position: input.position,
+        email: input.email,
+        phone: input.phone,
+      },
+      transaction
+    );
+    const diff = diffChangedFields(accountBeforeUpdate, updatedAccount, [
+      "full_name",
+      "position",
+      "email",
+      "phone",
+    ]);
 
-  return {
-    message: "Admin account updated successfully.",
-    account: accountRepository.sanitizeAccount(updatedAccount),
-  };
+    if (diff) {
+      const actorAccount = await requireAdminActor(auth);
+      const actorSnapshot = await findActorSnapshot(actorAccount.id, transaction);
+
+      await writeSecurityAuditLog(
+        {
+          event_type: SECURITY_AUDIT_EVENT_TYPE.ADMIN_ACCOUNT_UPDATED,
+          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+          actor_type: "admin",
+          actor_account_id: actorAccount.id,
+          actor_username: actorSnapshot.username,
+          actor_full_name: actorSnapshot.full_name,
+          ip_address: context.ip_address,
+          user_agent: context.user_agent,
+          request_id: context.request_id,
+          metadata: {
+            targetType: "admin_account",
+            targetAccountId: account.id,
+            targetUsername: updatedAccount.username,
+            before: diff.before,
+            after: diff.after,
+          },
+        },
+        transaction
+      );
+    }
+
+    return {
+      message: "Admin account updated successfully.",
+      account: accountRepository.sanitizeAccount(updatedAccount),
+    };
+  });
 }
 
 // Function รีเซ็ตรหัสผ่านของแอดมินอีกคนหนึ่ง ใน service flow — revoke active session ทั้งหมดของ
@@ -672,7 +988,8 @@ export async function updateAdminAccount(
 export async function resetAdminPassword(
   accountIdParam: unknown,
   body: unknown,
-  auth?: AccessTokenPayload
+  auth?: AccessTokenPayload,
+  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
 ): Promise<{ message: string }> {
   const { new_password: newPassword } = parseWithSchema(
     resetPasswordBodySchema,
@@ -689,6 +1006,29 @@ export async function resetAdminPassword(
       transaction
     );
     await sessionRepository.revokeActiveByAccountId(account.id, transaction);
+
+    const actorAccount = await requireAdminActor(auth);
+    const actorSnapshot = await findActorSnapshot(actorAccount.id, transaction);
+
+    await writeSecurityAuditLog(
+      {
+        event_type: SECURITY_AUDIT_EVENT_TYPE.ACCOUNT_PASSWORD_RESET,
+        outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+        actor_type: "admin",
+        actor_account_id: actorAccount.id,
+        actor_username: actorSnapshot.username,
+        actor_full_name: actorSnapshot.full_name,
+        ip_address: context.ip_address,
+        user_agent: context.user_agent,
+        request_id: context.request_id,
+        metadata: {
+          targetType: "admin_account",
+          targetAccountId: account.id,
+          targetUsername: account.username,
+        },
+      },
+      transaction
+    );
 
     return {
       message: "Admin password reset successfully. Active sessions were revoked.",

@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { clearLoginRateLimitBuckets } from "../../src/middlewares/security.middleware";
 import { FakeRedis } from "./app-test-infra-mocks";
 import { state } from "./app-test-state";
-import type { AccountRecord, AssignmentRecord, GateClientRecord, MobileAppVersionRecord, GateTicketRecord, MarketJobRecord, VehicleJobRecord } from "./app-test-harness.records";
+import type { AccountRecord, AssignmentRecord, GateClientRecord, MasterWorkerRecord, MobileAppVersionRecord, GateTicketRecord, MarketJobRecord, VehicleJobRecord } from "./app-test-harness.records";
 
 /* -------------------------------------- Test Data Builders -------------------------------------- */
 
@@ -179,15 +179,15 @@ function seedMasterDataForRouteTests(): void {
 /* -------------------------------------- Test Data Builders -------------------------------------- */
 
 // Function สร้าง schedule ของวันนี้สำหรับ test data
-function todaySchedule(accountId: number) {
+function todaySchedule(workerId: number) {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
 
   return {
-    id: accountId,
-    account_id: accountId,
+    id: workerId,
+    worker_id: workerId,
     shift_no: 1,
     work_date: `${year}-${month}-${day}`,
     shift_start_time: "00:00",
@@ -218,7 +218,7 @@ export function recordWorkerAssignmentEventOnce(
   state.workerAssignmentEvents.push({
     id: state.nextWorkerAssignmentEventId++,
     assignment_id: assignment.id,
-    worker_account_id: assignment.worker_account_id,
+    worker_id: assignment.worker_id,
     vehicle_job_id: assignment.vehicle_job_id,
     event_type: eventType,
     occurred_at: occurredAt,
@@ -241,6 +241,8 @@ export function resetRouteTestState(): void {
   state.workerPushTokens.length = 0;
   state.workerNotifications.length = 0;
   state.workers.clear();
+  state.workersByLaborCode.clear();
+  state.workerSessions.clear();
   state.schedules.clear();
   state.vehicleJobs.length = 0;
   state.marketJobs.length = 0;
@@ -260,6 +262,7 @@ export function resetRouteTestState(): void {
   state.driverSessions.length = 0;
   state.messageDeliveryLogs.length = 0;
   state.adminActionLogs.length = 0;
+  state.securityAuditLogs.length = 0;
   state.masterMarkets.length = 0;
   state.masterProducts.length = 0;
   state.masterRates.length = 0;
@@ -288,6 +291,7 @@ export function resetRouteTestState(): void {
   state.nextWorkerAssignmentEventId = 1;
   state.nextWorkerNotificationId = 1;
   state.nextSessionId = 1;
+  state.nextWorkerSessionId = 1;
   state.nextTicketWorkerId = 1;
   state.nextTicketProductFinancialId = 1;
   state.nextTicketWorkerPaymentId = 1;
@@ -305,46 +309,63 @@ export function resetRouteTestState(): void {
   seedMasterDataForRouteTests();
 }
 
-// Function จัดการ add worker สำหรับ test
+// Function จัดการ add worker สำหรับ test — Worker เป็น MasterWorkerRecord ล้วนๆ ไม่มี Account
+// record อีกต่อไป (ดู MasterWorker refactor) worker.md เก็บ password = telephone แต่ test fixture
+// ยังรับ passwordHash ตรงๆ เพื่อให้ test เดิมที่ควบคุม hash เองยังทำงานได้
 export function addWorker(
-  accountId: number,
+  workerId: number,
   passwordHash = "hash",
-): AccountRecord {
-  const workerCode = `W${accountId}`;
-  const worker: AccountRecord = {
-    id: accountId,
-    username: workerCode,
+): MasterWorkerRecord {
+  const laborCode = `W${workerId}`;
+  const now = new Date().toISOString();
+  const worker: MasterWorkerRecord = {
+    id: workerId,
+    labor_code: laborCode,
+    password_hash: passwordHash,
+    status: 1,
+    full_name: `Worker ${workerId}`,
+    telephone: `081-${String(workerId).padStart(7, "0")}`,
+    nationality: "Thai",
+    labor_color: "standard",
+    coat_no: String(workerId),
+    picture: null,
+    work_start_date: "2026-01-01",
+    shift_no: 1,
+    shift_start_time: "00:00",
+    shift_end_time: "23:59",
+    lang: "TH",
+    source: "admin_created",
+    created_at: now,
+    updated_at: now,
+  };
+
+  state.workers.set(workerId, worker);
+  state.workersByLaborCode.set(laborCode, worker);
+  state.schedules.set(workerId, todaySchedule(workerId));
+
+  // Shadow record เก็บไว้ใน authAccountsById (ตาม id เท่านั้น ไม่ใส่ authAccountsByUsername) เพื่อให้
+  // ส่วนที่ยังไม่ได้ migrate ไป MasterWorker เต็มรูปแบบ (admin-jobs/admin-audit mock — รอ Phase 3)
+  // ที่ resolve "worker info by id" จาก Account เดิม ยังทำงานได้ตามปกติ — ต้องไม่ใส่ใน
+  // authAccountsByUsername เพราะ auth.service.ts login ใหม่ใช้ accountRepository.findByUsername
+  // เพื่อแยกว่า username นี้เป็น Admin หรือไม่ ถ้า worker หลุดเข้ามาในนั้นจะถูกเข้าใจผิดว่าเป็น Admin
+  state.authAccountsById.set(workerId, {
+    id: workerId,
+    username: laborCode,
     password_hash: passwordHash,
     role: "worker",
     status: "active",
-    full_name: `Worker ${accountId}`,
+    full_name: worker.full_name ?? `Worker ${workerId}`,
     position: null,
     email: null,
-    phone: `081-${String(accountId).padStart(7, "0")}`,
-    shirt_number: String(accountId),
-    shift_no: null,
+    phone: worker.telephone ?? null,
+    image_url: worker.picture ?? null,
+    shirt_number: worker.coat_no ?? null,
+    shift_no: worker.shift_no ?? null,
     permission_level: null,
-    lang: "TH",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-  state.workers.set(accountId, worker);
-  state.schedules.set(accountId, todaySchedule(accountId));
-  state.authAccountsByUsername.set(worker.username, worker);
-  state.authAccountsById.set(worker.id, worker);
-  state.profiles.set(worker.id, {
-    id: worker.id,
-    account_id: worker.id,
-    worker_code: workerCode,
-    image_url: null,
-    nationality: "Thai",
-    work_start_date: "2026-01-01",
-    phone: worker.phone,
-    shirt_type: "standard",
-    shirt_number: String(worker.id),
+    lang: worker.lang,
+    created_at: now,
+    updated_at: now,
   });
-  state.authSchedules.set(worker.id, state.schedules.get(worker.id));
 
   return worker;
 }
@@ -518,14 +539,14 @@ export function addMarketJobForVehicle(
 export function addPendingAssignment(
   id: number,
   vehicleJobId: number,
-  workerAccountId: number,
+  workerId: number,
   deadlineMs = 60_000,
 ): AssignmentRecord {
   const now = new Date().toISOString();
   const assignment = {
     id,
     vehicle_job_id: vehicleJobId,
-    worker_account_id: workerAccountId,
+    worker_id: workerId,
     status: "PENDING",
     accept_deadline_at: new Date(Date.now() + deadlineMs).toISOString(),
     scan_deadline_at: null,

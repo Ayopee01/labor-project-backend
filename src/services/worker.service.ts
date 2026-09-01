@@ -6,7 +6,7 @@ import { decrementWorkerBreakCount, enqueueWorker, getWorkerQueueStatus, increme
 import { dispatchReadyWorkers, handleAssignmentAcceptTimeout } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as workerApplicationRepository from "../repositories/worker.repository";
-import * as accountRepository from "../repositories/shared/account.repository";
+import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
 import * as profileRepository from "../repositories/shared/profile.repository";
 import * as assignmentRepository from "../repositories/shared/vehicle-job-assignment.repository";
@@ -86,12 +86,12 @@ function buildWorkerAssignmentAcceptResponse(
   team: WorkerAssignmentTeamMemberDto[],
   assignment: VehicleJobAssignmentDto,
   workerCode: string | null,
-  shirtNumber: string | null,
+  coatNo: string | null,
 ): WorkerAssignmentAcceptResponse {
   return {
     ticket_number: detail.vehicle_job.ticket_number,
     worker_code: workerCode,
-    shirt_number: shirtNumber,
+    coat_no: coatNo,
     accepted_at: assignment.accepted_at,
     license_plate: detail.vehicle_job.license_plate,
     license_plate_province: detail.vehicle_job.license_plate_province,
@@ -100,8 +100,8 @@ function buildWorkerAssignmentAcceptResponse(
     team: team.map((member) => ({
       full_name: member.full_name,
       worker_code: member.worker_code,
-      shirt_number: member.shirt_number ?? null,
-      image_url: member.image_url,
+      coat_no: member.coat_no ?? null,
+      picture: member.picture,
       scan_status: member.scan_status,
     })),
     markets: detail.markets.map((market) => ({
@@ -197,7 +197,7 @@ function buildWorkerCurrentJobResponse(
       })),
     })),
     team: team.map((member) => ({
-      shirt_number: member.shirt_number ?? null,
+      coat_no: member.coat_no ?? null,
       full_name: member.full_name,
       scan_status: member.scanned_at ? "scanned" : "not_scanned",
       scanned_at: member.scanned_at ?? null,
@@ -239,9 +239,9 @@ function buildAssignmentTeamUpdatedSocketPayload(
     team_scan: buildWorkerTeamScanResponse(teamScan),
     team: team.map((member) => ({
       worker_code: member.worker_code,
-      shirt_number: member.shirt_number ?? null,
+      coat_no: member.coat_no ?? null,
       full_name: member.full_name,
-      image_url: member.image_url,
+      picture: member.picture,
       scan_status: member.scan_status,
       accepted_at: member.accepted_at ?? null,
       scanned_at: member.scanned_at ?? null,
@@ -260,13 +260,13 @@ function sendAssignmentTeamUpdatedSocketEvents(
     teamScan,
   );
 
-  for (const workerAccountId of new Set(
+  for (const workerId of new Set(
     team
-      .map((member) => member.worker_account_id)
+      .map((member) => member.worker_id)
       .filter((value): value is number => typeof value === "number"),
   )) {
     sendWorkerSocketEvent(
-      workerAccountId,
+      workerId,
       "ASSIGNMENT_TEAM_UPDATED",
       payload,
       {
@@ -318,9 +318,9 @@ async function requireWorker(auth?: AccessTokenPayload) {
     throw new ApiError(403, "FORBIDDEN", "Worker account is required.");
   }
 
-  const account = await accountRepository.findUserById(auth.account_id);
+  const worker = await masterWorkerRepository.findById(auth.account_id);
 
-  if (!account || account.status !== "active") {
+  if (!worker || worker.status !== 1) {
     throw new ApiError(
       403,
       "WORKER_NOT_ACTIVE",
@@ -328,7 +328,7 @@ async function requireWorker(auth?: AccessTokenPayload) {
     );
   }
 
-  return account;
+  return worker;
 }
 
 // Function อ่านค่า assignment reference ใน service flow
@@ -349,7 +349,7 @@ function parseAssignmentReference(value: unknown): string {
 // Function ค้นหา worker assignment ตาม reference ใน service flow
 async function findWorkerAssignmentByReference(
   value: unknown,
-  workerAccountId: number,
+  workerId: number,
   connection?: Parameters<
     typeof assignmentRepository.findCurrentAssignmentByVehicleJobRefAndWorker
   >[2],
@@ -358,7 +358,7 @@ async function findWorkerAssignmentByReference(
 
   return assignmentRepository.findCurrentAssignmentByVehicleJobRefAndWorker(
     reference,
-    workerAccountId,
+    workerId,
     connection,
   );
 }
@@ -367,7 +367,7 @@ async function findWorkerAssignmentByReference(
 // service flow — scope ด้วย vehicle_job_id ของ assignment ที่ worker กำลัง active อยู่ แทนที่จะรับ
 // TicketNumber จาก client (worker ส่งยอดได้แค่ของรถที่ตัวเองกำลังทำงานอยู่เท่านั้นอยู่แล้ว)
 async function findGateTicketForCompletionByCurrentAssignment(
-  workerAccountId: number,
+  workerId: number,
   ticketNoParam: unknown,
   boothCodeParam: unknown,
   connection?: Parameters<
@@ -386,7 +386,7 @@ async function findGateTicketForCompletionByCurrentAssignment(
   }
 
   const assignment = await assignmentRepository.findCurrentAssignmentByWorker(
-    workerAccountId,
+    workerId,
     connection,
   );
 
@@ -410,7 +410,7 @@ async function findGateTicketForCompletionByCurrentAssignment(
   // ที่ active อยู่ตอนนี้ — ยึดจากประวัติ scan เข้างานจริงแทน (SCANNED_ASSIGNMENT_STATUSES รวม RELEASED)
   const ticketViaHistory =
     await gateTicketRepository.findGateTicketForCompletionByWorkerHistoryAndTicketNoAndBoothCode(
-      workerAccountId,
+      workerId,
       ticketNo,
       boothCode,
       connection,
@@ -565,7 +565,7 @@ export async function workerOnline(
     const attendance =
       await workerShiftAttendanceRepository.findByWorkerAndShift(
         {
-          account_id: account.id,
+          worker_id: account.id,
           shift_instance_key: shiftInstanceKey,
         },
         transaction,
@@ -622,7 +622,7 @@ export async function workerOnline(
       );
     }
 
-    const workerCode = account.username;
+    const workerCode = account.labor_code;
     const response = buildWorkerQueueActionResponse(
       "WORKER_ONLINE_SUCCESS",
       "Worker entered queue successfully.",
@@ -679,7 +679,7 @@ export async function workerOffline(
   }
 
   const queueEntry = await markWorkerOpenApp(account.id);
-  const workerCode = account.username;
+  const workerCode = account.labor_code;
   const response = buildWorkerQueueActionResponse(
     "WORKER_OFFLINE_SUCCESS",
     "Worker left queue successfully.",
@@ -788,7 +788,7 @@ export async function workerBreak(
     breakCountUsed,
     settings.worker_break_limit,
   );
-  const workerCode = account.username;
+  const workerCode = account.labor_code;
   sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
     queue: buildWorkerQueueSocketPayload(breakQueueEntry, workerCode),
   });
@@ -801,7 +801,7 @@ export async function workerBreak(
   });
 
   return {
-    full_name: account.full_name,
+    full_name: account.full_name ?? account.labor_code,
     worker_code: workerCode,
     status: resolveWorkerWorkStatus(breakQueueEntry, null),
     break_count_used: breakCountUsed,
@@ -815,9 +815,8 @@ export async function getWorkerStatus(
 ): Promise<WorkerStatusResponse> {
   const account = await requireWorker(auth);
 
-  const [profile, currentSchedule, queueEntry, currentAssignment] =
+  const [currentSchedule, queueEntry, currentAssignment] =
     await Promise.all([
-      profileRepository.findByAccountId(account.id),
       workScheduleRepository.findCurrentByAccountId(account.id),
       getWorkerQueueStatus(account.id),
       assignmentRepository.findCurrentAssignmentByWorker(account.id),
@@ -839,20 +838,20 @@ export async function getWorkerStatus(
   );
   const attendance = currentSchedule
     ? await workerShiftAttendanceRepository.findByWorkerAndShift({
-        account_id: account.id,
+        worker_id: account.id,
         shift_instance_key: buildWorkScheduleShiftInstanceKey(currentSchedule),
       })
     : null;
   const hasShiftAttendanceEligibility = attendance?.closedAt == null;
   const response: WorkerStatusResponse = {
-    full_name: account.full_name,
-    worker_code: account.username,
-    image_url: profile?.image_url ?? null,
+    full_name: account.full_name ?? account.labor_code,
+    worker_code: account.labor_code,
+    picture: account.picture,
     status,
     ...dailySummary,
-    nationality: profile?.nationality ?? null,
-    work_start_date: profile?.work_start_date ?? null,
-    phone: account.phone,
+    nationality: account.nationality,
+    work_start_date: account.work_start_date,
+    phone: account.telephone,
     shift: schedule
       ? {
           name: schedule.shift_name,
@@ -1066,11 +1065,11 @@ export async function acceptWorkerAssignment(
     const vehicleJob = await vehicleJobRepository.findVehicleJobById(
       assignment.vehicle_job_id,
     );
-    const workerCode = account.username;
+    const workerCode = account.labor_code;
     const timeoutResult = await withTransaction(async (transaction) =>
       handleAssignmentAcceptTimeout({
         assignment,
-        workerAccountId: account.id,
+        workerId: account.id,
         connection: transaction,
       }),
     );
@@ -1131,8 +1130,8 @@ export async function acceptWorkerAssignment(
     const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
 
     await workerShiftAttendanceRepository.resetAcceptTimeoutStreak({
-      account_id: account.id,
-      worker_code: account.username,
+      worker_id: account.id,
+      worker_code: account.labor_code,
       schedule: currentSchedule,
       shift_instance_key: shiftInstanceKey,
     });
@@ -1156,12 +1155,12 @@ export async function acceptWorkerAssignment(
 
   await scheduleScanTimeout(
     acceptedAssignment.id,
-    acceptedAssignment.worker_account_id,
+    acceptedAssignment.worker_id,
     getDelayUntil(acceptedAssignment.scan_deadline_at),
   );
   await scheduleScanWarning(
     acceptedAssignment.id,
-    acceptedAssignment.worker_account_id,
+    acceptedAssignment.worker_id,
     acceptedAssignment.scan_deadline_at,
   );
   const [vehicleJobDetail, team, teamScan] = await Promise.all([
@@ -1182,10 +1181,10 @@ export async function acceptWorkerAssignment(
     vehicleJobDetail,
     team,
     acceptedAssignment,
-    account.username,
-    account.shirt_number,
+    account.labor_code,
+    account.coat_no,
   );
-  const workerCode = account.username;
+  const workerCode = account.labor_code;
 
   sendWorkerSocketEvent(
     account.id,
@@ -1396,7 +1395,7 @@ export async function scanWorkerAssignment(
     await removeScanWarning(result.timedOutAssignment.id);
     const queue = await markWorkerOpenApp(account.id);
     await dispatchReadyWorkers();
-    const workerCode = account.username;
+    const workerCode = account.labor_code;
     const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
       result.timedOutAssignment.vehicle_job_id,
     );
@@ -1434,17 +1433,17 @@ export async function scanWorkerAssignment(
     shortenedAssignments.flatMap((assignment) => [
       scheduleScanTimeout(
         assignment.id,
-        assignment.worker_account_id,
+        assignment.worker_id,
         getDelayUntil(assignment.scan_deadline_at),
       ),
       scheduleScanWarning(
         assignment.id,
-        assignment.worker_account_id,
+        assignment.worker_id,
         assignment.scan_deadline_at,
       ),
     ]),
   );
-  const workerCode = account.username;
+  const workerCode = account.labor_code;
 
   if (shortenedAssignments.length > 0) {
     const [firstShortenedAssignment] = shortenedAssignments;
@@ -1471,8 +1470,8 @@ export async function scanWorkerAssignment(
         scan_deadline_unix_ms: toUnixMs(firstShortenedAssignment.scan_deadline_at),
       },
       admin: true,
-      worker_account_ids: shortenedAssignments.map(
-        (assignment) => assignment.worker_account_id,
+      worker_ids: shortenedAssignments.map(
+        (assignment) => assignment.worker_id,
       ),
     });
   }
@@ -1487,7 +1486,7 @@ export async function scanWorkerAssignment(
   // สำคัญที่ worker ที่ปิดแอพ/ไม่ได้ต่อ socket อยู่ก็ต้องรู้ว่าเริ่มงานได้แล้ว
   if (teamScan.is_ready) {
     const teamWorkerAccountIds = team
-      .map((member) => member.worker_account_id)
+      .map((member) => member.worker_id)
       .filter((value): value is number => typeof value === "number");
     const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
       vehicleJob.id,
@@ -1505,7 +1504,7 @@ export async function scanWorkerAssignment(
         ticketNumber: vehicleJob.ticket_number,
         ticketNos,
       },
-      worker_account_ids: teamWorkerAccountIds,
+      worker_ids: teamWorkerAccountIds,
     });
   }
 
@@ -1547,9 +1546,9 @@ async function completeWorkerAssignmentTicket(
   auth?: AccessTokenPayload,
 ): Promise<TicketCompletionResponse> {
   return completeResolvedWorkerTicket(
-    (connection, workerAccountId) =>
+    (connection, workerId) =>
       findGateTicketForCompletionByCurrentAssignment(
-        workerAccountId,
+        workerId,
         ticketNoParam,
         boothCodeParam,
         connection,
@@ -1577,7 +1576,7 @@ export async function completeWorkerAssignmentTicketFromBody(
 async function completeResolvedWorkerTicket(
   findTicket: (
     connection: DbConnection,
-    workerAccountId: number,
+    workerId: number,
   ) => Promise<GateTicketDto | null>,
   body: unknown,
   auth?: AccessTokenPayload,
@@ -1617,14 +1616,14 @@ async function completeResolvedWorkerTicket(
 
     if (isWorkerSocketConnected(account.id)) {
       sendWorkerSocketEvent(account.id, "WORKER_STATUS_CHANGED", {
-        queue: buildWorkerQueueSocketPayload(queue, account.username),
+        queue: buildWorkerQueueSocketPayload(queue, account.labor_code),
         reason: "ticket_delivered_after_shift_end",
       });
     }
     publishAdminWorkerStatusChanged({
       title: "Worker moved to open_app",
       message: `Worker ${account.full_name} moved to open_app after submitting ticket completion outside the shift.`,
-      workerCode: account.username,
+      workerCode: account.labor_code,
       queue,
       reason: "ticket_delivered_after_shift_end",
     });

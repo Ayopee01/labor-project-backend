@@ -154,6 +154,12 @@ export async function listLineDevSubmissions(
           fullName: true,
         },
       },
+      submittedByWorker: {
+        select: {
+          laborCode: true,
+          fullName: true,
+        },
+      },
       ticket: {
         include: {
           vehicleJob: true,
@@ -187,8 +193,8 @@ export async function listLineDevSubmissions(
     market_name: submission.ticket.marketJob.marketName,
     boothCode: submission.ticket.boothCode,
     boothName: submission.ticket.boothName,
-    submitted_by_code: submission.submittedByAccount.username,
-    submitted_by_name: submission.submittedByAccount.fullName,
+    submitted_by_code: submission.submittedByAccount?.username ?? submission.submittedByWorker?.laborCode ?? null,
+    submitted_by_name: submission.submittedByAccount?.fullName ?? submission.submittedByWorker?.fullName ?? null,
     submitted_by_role: submission.submittedByRole,
     submitted_at: submission.createdAt.toISOString(),
     confirmed_at: submission.confirmedAt?.toISOString() ?? null,

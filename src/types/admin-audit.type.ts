@@ -57,12 +57,17 @@ export const ADMIN_AUDIT_ACTOR_TYPE_VALUES = [
 
 export type AdminAuditActorType = (typeof ADMIN_AUDIT_ACTOR_TYPE_VALUES)[number];
 
+export type AdminAuditEventsSeverity = "critical";
+
 export interface AdminAuditEventsQuery {
   search?: string;
   actor_type?: AdminAuditActorType;
   event_type?: string;
   date_from?: string;
   date_to?: string;
+  has_vehicle?: boolean;
+  has_reason?: boolean;
+  severity?: AdminAuditEventsSeverity;
   page: number;
   limit: number;
 }
@@ -80,6 +85,11 @@ export interface AdminAuditEventItem {
   reason_code: string | null;
   reason_text: string | null;
   metadata: Record<string, unknown> | null;
+  // Field ที่เกี่ยวข้องก่อน/หลังดำเนินการ — มีเฉพาะ event ที่ source เก็บสถานะก่อนหน้าไว้จริง (เช่น
+  // worker_force_status_changed) event operational เดิมที่ไม่มีข้อมูลนี้จะไม่ส่ง field มาเลย (undefined)
+  // ไม่ใช่ null เพื่อไม่ให้ Frontend เข้าใจผิดว่าเป็นค่าที่ตรวจสอบแล้วว่าไม่มี
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
   occurred_at: string;
 }
 
@@ -136,7 +146,7 @@ export interface AdminAuditDriverSessionRow {
 export interface AdminAuditWorkerAssignmentEventRow {
   id: number;
   assignment_id: number;
-  worker_account_id: number;
+  worker_id: number;
   vehicle_job_id: number;
   event_type: string;
   occurred_at: string;
@@ -149,7 +159,8 @@ export interface AdminAuditCompletionSubmissionRow {
   id: number;
   ticket_id: number;
   assignment_id: number | null;
-  submitted_by_account_id: number;
+  submitted_by_account_id: number | null;
+  submitted_by_worker_id: number | null;
   submitted_by_role: string;
   submitted_by_code: string | null;
   created_at: string;
@@ -157,6 +168,7 @@ export interface AdminAuditCompletionSubmissionRow {
   confirmed_at: string | null;
   resolved_by_line_user_id: string | null;
   booth_code: string | null;
+  booth_name: string | null;
   market_job_id: number | null;
   ticket_no: string | null;
   vehicle_job_id: number | null;
@@ -172,6 +184,7 @@ export interface AdminAuditTicketRatingRow {
   score: number;
   rated_at: string;
   booth_code: string | null;
+  booth_name: string | null;
   market_job_id: number | null;
   ticket_no: string | null;
   vehicle_job_id: number | null;

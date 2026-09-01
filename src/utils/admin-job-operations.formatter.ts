@@ -60,13 +60,13 @@ function resolveOperationWorkerShiftName(
 
   const scheduleDto = {
     id: worker.id,
-    account_id: worker.id,
+    worker_id: worker.id,
     shift_no: worker.shiftNo,
-    work_date: worker.workStartDate ?? worker.createdAt.toISOString().slice(0, 10),
+    work_date: (worker.workStartDate ?? worker.createdAt).toISOString().slice(0, 10),
     shift_start_time: worker.shiftStartTime,
     shift_end_time: worker.shiftEndTime,
     is_current: true,
-    created_by: worker.createdBy,
+    created_by: null,
     updated_by: null,
     created_at: worker.createdAt.toISOString(),
     updated_at: worker.updatedAt.toISOString(),
@@ -347,10 +347,12 @@ export function formatVehicleOperationItem(
     },
     timing: buildOperationTiming(record),
     workers: record.assignments.map((assignment) => ({
-      worker_code: assignment.worker.username,
-      full_name: assignment.worker.fullName,
-      shirt_number: assignment.worker.shirtNumber ?? null,
-      image_url: assignment.worker.imageUrl ?? null,
+      worker_code: assignment.worker.laborCode,
+      full_name: assignment.worker.fullName ?? assignment.worker.laborCode,
+      labor_color: assignment.worker.laborColor ?? null,
+      picture: assignment.worker.picture
+        ? Buffer.from(assignment.worker.picture).toString("base64")
+        : null,
       shift_name: resolveOperationWorkerShiftName(assignment.worker),
       assignment_status: assignment.status,
       worker_status: toOperationWorkerStatus(assignment.status),

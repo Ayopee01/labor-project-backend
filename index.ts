@@ -15,6 +15,7 @@ const { default: app } = require("./src/app");
 const { startAssignmentTimeoutProcessing } = require("./src/queues/worker-dispatch");
 const { startNotificationWorkers } = require("./src/queues/notification-queue");
 const { startRuntimeSettingsSync } = require("./src/queues/runtime-settings-sync");
+const { scheduleSecurityAuditLogCleanup, startSecurityAuditLogCleanupWorker } = require("./src/queues/security-audit-log-cleanup");
 const { registerGracefulShutdown } = require("./src/runtime/shutdown");
 const { setupWorkerWebSocket } = require("./src/websockets/worker.socket");
 const { reconcileOrphanedTicketSubmissions } = require("./src/services/shared/ticket-completion.service");
@@ -27,6 +28,10 @@ const server = createServer(app);
 startAssignmentTimeoutProcessing();
 startNotificationWorkers();
 startRuntimeSettingsSync();
+startSecurityAuditLogCleanupWorker();
+void scheduleSecurityAuditLogCleanup().catch((error: unknown) => {
+  logger.error("Failed to schedule security audit log cleanup job.", { error });
+});
 setupWorkerWebSocket(server);
 registerGracefulShutdown(server);
 

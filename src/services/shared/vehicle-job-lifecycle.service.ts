@@ -213,7 +213,7 @@ export async function closeCompletedVehicleJobIfReady(
     (assignment) => assignment.id,
   );
   const completedWorkerAccountIds = activeAssignments.map(
-    (assignment) => assignment.workerAccountId,
+    (assignment) => assignment.workerId,
   );
 
   if (completedAssignmentIds.length > 0) {
@@ -227,7 +227,7 @@ export async function closeCompletedVehicleJobIfReady(
     await workerAssignmentEventRepository.createManyOnce(
       activeAssignments.map((assignment) => ({
         assignment_id: assignment.id,
-        worker_account_id: assignment.workerAccountId,
+        worker_id: assignment.workerId,
         vehicle_job_id: assignment.vehicleJobId,
         event_type: WORKER_ASSIGNMENT_EVENT_TYPE.COMPLETED,
         occurred_at: completedAt,
@@ -240,7 +240,7 @@ export async function closeCompletedVehicleJobIfReady(
     ? {
         vehicle_job: vehicleJobDto,
         completed_assignment_ids: completedAssignmentIds,
-        completed_worker_account_ids: completedWorkerAccountIds,
+        completed_worker_ids: completedWorkerAccountIds,
       }
     : null;
 }

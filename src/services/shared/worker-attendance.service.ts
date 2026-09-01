@@ -6,7 +6,7 @@ import * as assignmentRepository from "../../repositories/shared/vehicle-job-ass
 import * as workerShiftAttendanceRepository from "../../repositories/shared/worker-shift-attendance.repository";
 
 // Import Types
-import type { AccountDto, WorkScheduleDto } from "../../types/admin-workers.type";
+import type { MasterWorkerDto, WorkScheduleDto } from "../../types/admin-workers.type";
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerShiftCloseReason, WorkerStatusResponse } from "../../types/worker.type";
 
@@ -70,15 +70,15 @@ export async function scheduleWorkerShiftEndIfNeeded(
 
 // Function บันทึกว่า worker online แล้วในกะปัจจุบัน
 export async function markWorkerAttendanceOnline(
-  account: AccountDto,
+  worker: MasterWorkerDto,
   schedule: WorkScheduleDto,
   shiftInstanceKey: string,
   connection?: DbConnection,
 ): Promise<void> {
   await workerShiftAttendanceRepository.markWorkerShiftOnline(
     {
-      account_id: account.id,
-      worker_code: account.username,
+      worker_id: worker.id,
+      worker_code: worker.labor_code,
       schedule,
       shift_instance_key: shiftInstanceKey,
     },
@@ -88,7 +88,7 @@ export async function markWorkerAttendanceOnline(
 
 // Function ปิด attendance ของกะ worker พร้อมเหตุผลที่ออกจากกะ
 export async function closeWorkerAttendanceShift(
-  account: AccountDto,
+  worker: MasterWorkerDto,
   schedule: WorkScheduleDto,
   shiftInstanceKey: string,
   reason: WorkerShiftCloseReason,
@@ -96,8 +96,8 @@ export async function closeWorkerAttendanceShift(
 ): Promise<void> {
   await workerShiftAttendanceRepository.closeWorkerShift(
     {
-      account_id: account.id,
-      worker_code: account.username,
+      worker_id: worker.id,
+      worker_code: worker.labor_code,
       schedule,
       shift_instance_key: shiftInstanceKey,
       reason,

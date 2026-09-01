@@ -17,7 +17,7 @@ async function loginWorker(accountId: number): Promise<{ token: string; worker: 
   const worker = addWorker(accountId, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: `mobile-${accountId}`,
       device_name: "Worker Mobile",
@@ -145,7 +145,7 @@ function addAuditAssignment(input: {
   const assignment = {
     id: input.id,
     vehicle_job_id: input.vehicleJobId,
-    worker_account_id: input.workerId,
+    worker_id: input.workerId,
     status: input.status ?? "PENDING",
     accept_deadline_at: null,
     scan_deadline_at: null,
@@ -161,7 +161,7 @@ function addAuditAssignment(input: {
     state.workerAssignmentEvents.push({
       id: state.nextWorkerAssignmentEventId++,
       assignment_id: assignment.id,
-      worker_account_id: assignment.worker_account_id,
+      worker_id: assignment.worker_id,
       vehicle_job_id: assignment.vehicle_job_id,
       event_type: eventType,
       occurred_at: assignment.updated_at,
@@ -530,7 +530,7 @@ test("POST /api/gate/tickets dispatches a ready connected worker to the new Gate
   assert.equal(state.vehicleJobs.length, 1);
   assert.equal(state.assignments.length, 1);
   assert.equal(state.assignments[0].vehicle_job_id, state.vehicleJobs[0].id);
-  assert.equal(state.assignments[0].worker_account_id, worker.id);
+  assert.equal(state.assignments[0].worker_id, worker.id);
   assert.equal(
     state.workerAssignmentEvents.filter(
       (event) =>
@@ -542,7 +542,7 @@ test("POST /api/gate/tickets dispatches a ready connected worker to the new Gate
   assert.equal(queueEntry?.status, "assigned");
   assert.ok(
     state.socketEvents.some(
-      (event) => event.accountId === worker.id && event.event === "WORKER_ASSIGNED"
+      (event) => event.workerId === worker.id && event.event === "WORKER_ASSIGNED"
     )
   );
 });
@@ -587,7 +587,7 @@ test("POST /api/gate/tickets dispatch skips a READY worker who is outside their 
 
   assert.equal(response.status, 201);
   assert.equal(state.assignments.length, 1);
-  assert.equal(state.assignments[0].worker_account_id, readyWorker.id);
+  assert.equal(state.assignments[0].worker_id, readyWorker.id);
 
   const outsideShiftQueueEntry = await workerQueue.getWorkerQueueStatus(
     outsideShiftWorker.id
@@ -694,7 +694,7 @@ test("POST /api/gate/tickets dispatches exactly the required FIFO workers", asyn
   assert.deepEqual(
     state.assignments.map(
       (assignment) =>
-        assignment.worker_account_id
+        assignment.worker_id
     ),
     workers
       .slice(0, 3)

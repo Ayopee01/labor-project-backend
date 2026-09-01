@@ -1,6 +1,6 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
-import * as accountRepository from "../../repositories/shared/account.repository";
+import * as masterWorkerRepository from "../../repositories/shared/master-worker.repository";
 import * as workerPushTokenRepository from "../../repositories/shared/worker-push-token.repository";
 import { buildLocalizedNotification } from "../../utils/notification-localization";
 import type { AccessTokenPayload, SessionDto } from "../../types/auth.type";
@@ -117,14 +117,15 @@ export async function registerWorkerPushToken(
 
   const input = parseWithSchema(workerPushTokenBodySchema, body);
   const deviceId = input.device_id ?? session.device_id;
-  const account = await accountRepository.findUserById(auth.account_id);
+  const worker = await masterWorkerRepository.findById(auth.account_id);
 
-  if (!account || account.role !== "worker" || account.status !== "active") {
+  if (!worker || worker.status !== 1) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
   }
 
   const token = await workerPushTokenRepository.upsertWorkerPushToken({
-    worker_code: account.username,
+    worker_id: worker.id,
+    worker_code: worker.labor_code,
     session_id: auth.session_id,
     device_id: deviceId,
     platform: input.platform,
@@ -144,6 +145,7 @@ export async function registerWorkerPushToken(
 // Function ลงทะเบียน FCM token ตอน auth login/force-login เมื่อ Mobile ส่ง token มา
 export async function registerWorkerPushTokenForAccount(
   input: {
+    worker_id: number;
     worker_code: string;
     session_id: number;
     device_id: string;
@@ -158,6 +160,7 @@ export async function registerWorkerPushTokenForAccount(
 
   await workerPushTokenRepository.upsertWorkerPushToken(
     {
+      worker_id: input.worker_id,
       worker_code: input.worker_code,
       session_id: input.session_id,
       device_id: input.device_id,
@@ -239,9 +242,9 @@ async function sendWorkerPushNotificationToTokens(
   await workerPushTokenRepository.revokeByTokenHashes(invalidTokenHashes);
 }
 
-// Function แปลง account id ภายในเป็น WorkerCode ก่อนส่ง push notification ไป Mobile
-export async function sendWorkerPushNotificationByAccountIds(input: {
-  account_ids: number[];
+// Function แปลง worker id ภายในเป็น WorkerCode ก่อนส่ง push notification ไป Mobile
+export async function sendWorkerPushNotificationByWorkerIds(input: {
+  worker_ids: number[];
   type: string;
   title: string;
   message: string;
@@ -249,19 +252,19 @@ export async function sendWorkerPushNotificationByAccountIds(input: {
   notification_params?: Record<string, unknown>;
   payload?: Record<string, unknown>;
 }): Promise<void> {
-  const accounts = await accountRepository.listByIds(input.account_ids);
-  const accountById = new Map(accounts.map((account) => [account.id, account]));
+  const workers = await masterWorkerRepository.findByIds(input.worker_ids);
+  const workerById = new Map(workers.map((worker) => [worker.id, worker]));
 
-  for (const accountId of [...new Set(input.account_ids)]) {
-    const account = accountById.get(accountId);
+  for (const workerId of [...new Set(input.worker_ids)]) {
+    const worker = workerById.get(workerId);
 
-    if (!account || account.role !== "worker") {
+    if (!worker) {
       continue;
     }
 
     const localized = buildLocalizedNotification({
       type: input.type,
-      lang: account.lang,
+      lang: worker.lang,
       key: input.notification_key,
       params: input.notification_params ?? input.payload,
       fallbackTitle: input.title,
@@ -269,7 +272,7 @@ export async function sendWorkerPushNotificationByAccountIds(input: {
     });
 
     await sendWorkerPushNotification({
-      worker_codes: [account.username],
+      worker_codes: [worker.labor_code],
       type: input.type,
       title: localized.title,
       message: localized.message,
@@ -302,8 +305,8 @@ export async function sendWorkerPushNotificationToAllActive(input: {
   }
 
   const workerCodes = [...new Set(tokens.map((token) => token.worker_code))];
-  const accounts = await accountRepository.listActiveWorkersByUsernames(workerCodes);
-  const langByWorkerCode = new Map(accounts.map((account) => [account.username, account.lang]));
+  const workers = await masterWorkerRepository.listActiveByLaborCodes(workerCodes);
+  const langByWorkerCode = new Map(workers.map((worker) => [worker.labor_code, worker.lang]));
 
   const tokensByLang = new Map<string, WorkerPushTokenDto[]>();
 

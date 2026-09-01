@@ -28,7 +28,10 @@ router.get(
   permissionMiddleware(["jobs:read"]),
   async (req, res, next) => {
     try {
-      const result = await adminAuditService.listAuditEvents(req.query);
+      const result = await adminAuditService.listAuditEvents(
+        req.query,
+        req.auth?.permissions ?? []
+      );
       res.json(result);
     } catch (error) {
       next(error);

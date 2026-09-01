@@ -126,7 +126,7 @@ export async function processLineDevSubmission(
     payload: realtimePayload,
     worker_payload: realtimePayload,
     admin: true,
-    worker_account_ids: result.receiverAccountIds,
+    worker_ids: result.receiverAccountIds,
   });
 
   return {

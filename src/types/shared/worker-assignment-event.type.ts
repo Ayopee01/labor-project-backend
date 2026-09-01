@@ -13,7 +13,7 @@ export type WorkerAssignmentEventType =
 
 export interface WorkerAssignmentEventWriteInput {
   assignment_id: number;
-  worker_account_id: number;
+  worker_id: number;
   vehicle_job_id: number;
   event_type: WorkerAssignmentEventType;
   occurred_at?: Date;

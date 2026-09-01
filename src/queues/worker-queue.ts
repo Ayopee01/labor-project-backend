@@ -69,7 +69,7 @@ function mapQueueStatus(
 
   return {
     id: accountId,
-    account_id: accountId,
+    worker_id: accountId,
     status: normalizeWorkerQueueStatus(status.status),
     ready_at: status.ready_at || null,
     break_until: status.break_until || null,
@@ -421,14 +421,14 @@ export async function decrementWorkerBreakCount(
 // Function ตั้งเวลา delayed job assignment timeout ใน Redis/BullMQ queue
 export async function scheduleAssignmentTimeout(
   assignmentId: number,
-  workerAccountId: number,
+  workerId: number,
   delayMs: number
 ): Promise<void> {
   await assignmentTimeoutQueue.add(
     "assignment-timeout",
     {
       assignmentId,
-      workerAccountId,
+      workerId,
       kind: "accept",
     },
     {
@@ -452,7 +452,7 @@ export async function removeAssignmentTimeout(assignmentId: number): Promise<voi
 // Function ตั้ง delayed job สำหรับ timeout การ scan QR หลัง accept assignment
 export async function scheduleScanTimeout(
   assignmentId: number,
-  workerAccountId: number,
+  workerId: number,
   delayMs: number
 ): Promise<void> {
   await removeScanTimeout(assignmentId);
@@ -460,7 +460,7 @@ export async function scheduleScanTimeout(
     "assignment-scan-timeout",
     {
       assignmentId,
-      workerAccountId,
+      workerId,
       kind: "scan",
     },
     {
@@ -484,7 +484,7 @@ export async function removeScanTimeout(assignmentId: number): Promise<void> {
 // Function ตั้งเวลา delayed job scan warning ใน Redis/BullMQ queue
 export async function scheduleScanWarning(
   assignmentId: number,
-  workerAccountId: number,
+  workerId: number,
   scanDeadlineAt: string | null
 ): Promise<void> {
   await removeScanWarning(assignmentId);
@@ -502,7 +502,7 @@ export async function scheduleScanWarning(
     "assignment-scan-warning",
     {
       assignmentId,
-      workerAccountId,
+      workerId,
       kind: "scan_warning",
     },
     {

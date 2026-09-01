@@ -30,7 +30,7 @@ export async function countActiveAssignments(
 }
 
 export async function getWorkerDailyAssignmentCounts(
-  workerAccountId: number,
+  workerId: number,
   startAt: Date,
   endAt: Date,
   connection?: DbConnection,
@@ -42,7 +42,7 @@ export async function getWorkerDailyAssignmentCounts(
   const [todayJobCount, completedJobCount] = await Promise.all([
     db.vehicleJobAssignment.count({
       where: {
-        workerAccountId,
+        workerId,
         createdAt: {
           gte: startAt,
           lt: endAt,
@@ -54,7 +54,7 @@ export async function getWorkerDailyAssignmentCounts(
     }),
     db.vehicleJobAssignment.count({
       where: {
-        workerAccountId,
+        workerId,
         createdAt: {
           gte: startAt,
           lt: endAt,
@@ -82,13 +82,13 @@ export async function getWorkerDailyAssignmentCounts(
 // Function สร้าง assignment จาก DB
 export async function createAssignment(
   vehicleJobId: number,
-  workerAccountId: number,
+  workerId: number,
   acceptDeadlineAt: Date,
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto> {
   if (!connection) {
     return withTransaction((transaction) =>
-      createAssignment(vehicleJobId, workerAccountId, acceptDeadlineAt, transaction)
+      createAssignment(vehicleJobId, workerId, acceptDeadlineAt, transaction)
     );
   }
 
@@ -96,7 +96,7 @@ export async function createAssignment(
   const assignment = await db.vehicleJobAssignment.create({
     data: {
       vehicleJobId,
-      workerAccountId,
+      workerId,
       status: ASSIGNMENT_STATUS.PENDING,
       acceptDeadlineAt,
     },
@@ -104,7 +104,7 @@ export async function createAssignment(
   await workerAssignmentEventRepository.createOnce(
     {
       assignment_id: assignment.id,
-      worker_account_id: assignment.workerAccountId,
+      worker_id: assignment.workerId,
       vehicle_job_id: assignment.vehicleJobId,
       event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ASSIGNED,
       occurred_at: assignment.createdAt,
@@ -117,13 +117,13 @@ export async function createAssignment(
 
 // Function ค้นหา current assignment ตาม worker จาก DB
 export async function findCurrentAssignmentByWorker(
-  workerAccountId: number,
+  workerId: number,
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto | null> {
   const db = client(connection);
   const assignment = await db.vehicleJobAssignment.findFirst({
     where: {
-      workerAccountId,
+      workerId,
       status: {
         in: ACTIVE_ASSIGNMENT_STATUSES,
       },
@@ -242,11 +242,13 @@ export async function listVehicleJobAssignmentTeam(
     );
 
     return {
-      worker_account_id: assignment.workerAccountId,
-      full_name: assignment.worker.fullName,
-      worker_code: assignment.worker.username,
-      shirt_number: assignment.worker.shirtNumber ?? null,
-      image_url: assignment.worker.imageUrl ?? null,
+      worker_id: assignment.workerId,
+      full_name: assignment.worker.fullName ?? assignment.worker.name ?? assignment.worker.laborCode,
+      worker_code: assignment.worker.laborCode,
+      coat_no: assignment.worker.coatNo ?? null,
+      picture: assignment.worker.picture
+        ? Buffer.from(assignment.worker.picture).toString("base64")
+        : null,
       scan_status: buildAssignmentScanStatus(assignmentDto),
       accepted_at: assignmentDto.accepted_at,
       scanned_at: assignmentDto.scanned_at,
@@ -256,13 +258,13 @@ export async function listVehicleJobAssignmentTeam(
 
 export async function findCurrentAssignmentByVehicleJobRefAndWorker(
   ticketNumber: string,
-  workerAccountId: number,
+  workerId: number,
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto | null> {
   const db = client(connection);
   const assignment = await db.vehicleJobAssignment.findFirst({
     where: {
-      workerAccountId,
+      workerId,
       status: {
         in: ACTIVE_ASSIGNMENT_STATUSES,
       },
@@ -283,14 +285,14 @@ export async function findCurrentAssignmentByVehicleJobRefAndWorker(
 // เพราะผู้เรียกส่วนใหญ่ (เช่น ticket-completion.service.ts) มี id อยู่แล้ว
 export async function findCurrentAssignmentByVehicleJobIdAndWorker(
   vehicleJobId: number,
-  workerAccountId: number,
+  workerId: number,
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto | null> {
   const db = client(connection);
   const assignment = await db.vehicleJobAssignment.findFirst({
     where: {
       vehicleJobId,
-      workerAccountId,
+      workerId,
       status: {
         in: ACTIVE_ASSIGNMENT_STATUSES,
       },
@@ -341,7 +343,7 @@ export async function acceptAssignment(
   await workerAssignmentEventRepository.createOnce(
     {
       assignment_id: assignment.id,
-      worker_account_id: assignment.workerAccountId,
+      worker_id: assignment.workerId,
       vehicle_job_id: assignment.vehicleJobId,
       event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ACCEPTED,
       occurred_at: acceptedAt,
@@ -441,7 +443,7 @@ export async function timeoutAssignment(
   await workerAssignmentEventRepository.createOnce(
     {
       assignment_id: assignment.id,
-      worker_account_id: assignment.workerAccountId,
+      worker_id: assignment.workerId,
       vehicle_job_id: assignment.vehicleJobId,
       event_type: eventType,
       occurred_at: occurredAt,
@@ -489,7 +491,7 @@ export async function scanAssignment(
   await workerAssignmentEventRepository.createOnce(
     {
       assignment_id: assignment.id,
-      worker_account_id: assignment.workerAccountId,
+      worker_id: assignment.workerId,
       vehicle_job_id: assignment.vehicleJobId,
       event_type: WORKER_ASSIGNMENT_EVENT_TYPE.SCANNED,
       occurred_at: scannedAt,

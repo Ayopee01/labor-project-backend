@@ -1,34 +1,28 @@
-import * as accountRepository from "./shared/account.repository";
-import * as profileRepository from "./shared/profile.repository";
-import * as sessionRepository from "./shared/session.repository";
-import * as workScheduleRepository from "./shared/work-schedule.repository";
-import { mapAccount, mapProfile, mapSchedule } from "./shared/mappers";
+import * as baseMasterWorkerRepository from "./shared/master-worker.repository";
+import * as workerSessionRepository from "./shared/worker-session.repository";
+import { mapMasterWorker } from "./shared/mappers";
 import { client, requireMapped, toId } from "./shared/repository-utils";
 
 import type { Prisma } from "@prisma/client";
 import type { DbConnection } from "../types/shared/common.type";
-import type { AccountCreateInput, AccountDto, ProfileCreateInput, ProfileCreateData, ProfileData, ProfileDataInput, ProfileDto, ProfileUpdateInput, UserAccountUpdateInput, UserListFilters, WorkScheduleCreateInput, WorkScheduleDto } from "../types/admin-workers.type";
+import type { MasterWorkerCreateInput, MasterWorkerDto, MasterWorkerUpdateInput, UserListFilters } from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
-
-const WORKER_ROLE = "worker";
-
-const DEFAULT_ACCOUNT_STATUS = "active";
 
 const SEARCH_MODE = "insensitive" as const;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ตรวจว่า account DTO จาก DB
-function isAccountDto(account: AccountDto | null): account is AccountDto {
-  return account !== null;
+// Function ตรวจว่า master worker DTO จาก DB
+function isMasterWorkerDto(worker: MasterWorkerDto | null): worker is MasterWorkerDto {
+  return worker !== null;
 }
 
-// Function สร้าง user search where จาก DB
-function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
+// Function สร้าง worker search where จาก DB
+function buildWorkerSearchWhere(search: string): Prisma.MasterWorkerWhereInput[] {
   return [
     {
-      username: {
+      laborCode: {
         contains: search,
         mode: SEARCH_MODE,
       },
@@ -46,13 +40,7 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
       },
     },
     {
-      phone: {
-        contains: search,
-        mode: SEARCH_MODE,
-      },
-    },
-    {
-      shirtNumber: {
+      telephone: {
         contains: search,
         mode: SEARCH_MODE,
       },
@@ -60,200 +48,82 @@ function buildUserSearchWhere(search: string): Prisma.AccountWhereInput[] {
   ];
 }
 
-// Function สร้าง user where จาก DB
-function buildUserWhere(
-  filters: Partial<UserListFilters> = {},
-): Prisma.AccountWhereInput {
-  const where: Prisma.AccountWhereInput = {
-    role: WORKER_ROLE,
-  };
+// Function สร้าง worker where จาก DB
+function buildWorkerWhere(filters: Partial<UserListFilters> = {}): Prisma.MasterWorkerWhereInput {
+  const where: Prisma.MasterWorkerWhereInput = {};
 
-  if (filters.status) {
-    where.status = filters.status;
+  if (filters.status !== undefined) {
+    where.status = filters.status === "active" ? 1 : { not: 1 };
   }
 
   if (filters.search) {
-    where.OR = buildUserSearchWhere(filters.search);
+    where.OR = buildWorkerSearchWhere(filters.search);
   }
 
   return where;
 }
 
-// Function สร้าง user identifier where จาก DB
-function buildUserIdentifierWhere(
-  identifier: string,
-): Prisma.AccountWhereInput {
-  return {
-    role: WORKER_ROLE,
-    username: identifier,
-  };
-}
-
-// Function สร้าง username exists where จาก DB
-function buildUsernameExistsWhere(
-  username: string,
-  exceptAccountId?: number | string | null,
-): Prisma.AccountWhereInput {
-  return {
-    username,
-    ...(exceptAccountId !== undefined &&
-      exceptAccountId !== null && {
-        id: {
-          not: toId(exceptAccountId),
-        },
-      }),
-  };
-}
-
-// Function สร้าง account create data จาก DB
-function buildAccountCreateData(
-  account: AccountCreateInput,
-): Prisma.AccountUncheckedCreateInput {
-  return {
-    username: account.username,
-    passwordHash: account.password_hash,
-    role: account.role,
-    status: account.status ?? DEFAULT_ACCOUNT_STATUS,
-    fullName: account.full_name,
-    position: account.position ?? null,
-    email: account.email ?? null,
-    phone: account.phone ?? null,
-    imageUrl: account.image_url ?? null,
-    nationality: account.nationality ?? null,
-    workStartDate: account.work_start_date ?? null,
-    shirtType: account.shirt_type ?? null,
-    shirtNumber: account.shirt_number ?? null,
-    shiftNo: account.shift_no ?? null,
-    shiftStartTime: account.shift_start_time ?? null,
-    shiftEndTime: account.shift_end_time ?? null,
-    source: account.source ?? "internal",
-    masterWorkerId: account.master_worker_id ?? null,
-    masterUpdatedAt: account.master_updated_at ?? null,
-    syncedAt: account.synced_at ?? null,
-    permissionLevel: account.permission_level ?? null,
-    createdBy: account.created_by ?? null,
-  };
-}
-
-// Function สร้าง user account update data จาก DB
-function buildUserAccountUpdateData(
-  fields: UserAccountUpdateInput,
-): Prisma.AccountUpdateInput {
-  const data: Prisma.AccountUpdateInput = {};
-
-  if (fields.username !== undefined) {
-    data.username = fields.username;
-  }
-
-  if (fields.full_name !== undefined) {
-    data.fullName = fields.full_name;
-  }
-
-  if (fields.position !== undefined) {
-    data.position = fields.position;
-  }
-
-  if (fields.email !== undefined) {
-    data.email = fields.email;
-  }
-
-  if (fields.phone !== undefined) {
-    data.phone = fields.phone;
-  }
-
-  return data;
-}
-
-// Function สร้าง profile data จาก DB
-function buildProfileData(profile: ProfileDataInput): ProfileData {
-  const data: ProfileData = {};
-
-  if (profile.image_url !== undefined) {
-    data.imageUrl = profile.image_url;
-  }
-
-  if (profile.nationality !== undefined) {
-    data.nationality = profile.nationality;
-  }
-
-  if (profile.work_start_date !== undefined) {
-    data.workStartDate = profile.work_start_date;
-  }
-
-  if (profile.shirt_type !== undefined) {
-    data.shirtType = profile.shirt_type;
-  }
-
-  if (profile.shirt_number !== undefined) {
-    data.shirtNumber = profile.shirt_number;
-  }
-
-  return data;
-}
-
-// Function สร้าง profile create data จาก DB
-function buildProfileCreateData(
-  profile: ProfileCreateInput,
-): ProfileCreateData {
-  return {
-    imageUrl: profile.image_url,
-    nationality: profile.nationality,
-    workStartDate: profile.work_start_date,
-    shirtType: profile.shirt_type,
-    shirtNumber: profile.shirt_number,
-  };
-}
-
-// Function สร้าง schedule create data จาก DB
-function buildScheduleCreateData(
-  schedule: WorkScheduleCreateInput,
-): Prisma.AccountUncheckedUpdateInput {
-  return {
-    shiftNo: schedule.shift_no ?? 1,
-    workStartDate: schedule.work_date,
-    shiftStartTime: schedule.shift_start_time,
-    shiftEndTime: schedule.shift_end_time,
-  };
-}
-
-// Function จัดการ username exists จาก DB
-async function usernameExists(
-  username: string,
-  exceptAccountId?: number | string | null,
+// Function จัดการ laborCode exists จาก DB — laborCode คือ identifier หลักของ worker เทียบเท่า
+// username เดิม ใช้ตรวจก่อนสร้าง/แก้ worker ทั้งคู่ (เดิมแยก usernameExists/workerCodeExists/
+// shirtNumberExists เพราะ Account เก็บ username แยกจาก Profile.shirt_number แต่ตอนนี้ laborCode
+// เป็น field เดียวบน MasterWorker)
+export async function laborCodeExists(
+  laborCode: string,
+  exceptWorkerId?: number | string | null,
   connection?: DbConnection,
 ): Promise<boolean> {
   const db = client(connection);
-  const account = await db.account.findFirst({
-    where: buildUsernameExistsWhere(username, exceptAccountId),
+  const worker = await db.masterWorker.findFirst({
+    where: {
+      laborCode,
+      ...(exceptWorkerId !== undefined &&
+        exceptWorkerId !== null && {
+          id: {
+            not: toId(exceptWorkerId),
+          },
+        }),
+    },
     select: {
       id: true,
     },
   });
 
-  return Boolean(account);
+  return Boolean(worker);
 }
 
-// Function สร้าง create จาก DB
-async function create(
-  account: AccountCreateInput,
+// Function สร้าง worker (source = "admin_created") จาก DB
+export async function create(
+  input: MasterWorkerCreateInput,
   connection?: DbConnection,
-): Promise<AccountDto> {
+): Promise<MasterWorkerDto> {
   const db = client(connection);
-  const createdAccount = await db.account.create({
-    data: buildAccountCreateData(account),
+  const created = await db.masterWorker.create({
+    data: {
+      laborCode: input.labor_code,
+      fullName: input.full_name,
+      telephone: input.telephone ?? null,
+      nationality: input.nationality,
+      laborColor: input.labor_color,
+      workStartDate: input.work_start_date ? new Date(input.work_start_date) : null,
+      shiftNo: input.shift_no ?? null,
+      shiftStartTime: input.shift_start_time ?? null,
+      shiftEndTime: input.shift_end_time ?? null,
+      status: input.status ?? 1,
+      source: "admin_created",
+    },
   });
 
-  return requireMapped(mapAccount(createdAccount), "Account", "create");
+  return requireMapped(mapMasterWorker(created), "MasterWorker", "create");
 }
 
-// Function ดึงรายการ users จาก DB
-async function listUsers(
+// Function ดึงรายการ workers จาก DB
+export async function listUsers(
   filters: UserListFilters,
   connection?: DbConnection,
-): Promise<AccountDto[]> {
+): Promise<MasterWorkerDto[]> {
   const db = client(connection);
-  const accounts = await db.account.findMany({
-    where: buildUserWhere(filters),
+  const workers = await db.masterWorker.findMany({
+    where: buildWorkerWhere(filters),
     orderBy: [
       {
         createdAt: "desc",
@@ -266,206 +136,115 @@ async function listUsers(
     take: filters.limit,
   });
 
-  return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
+  return workers.map((worker) => mapMasterWorker(worker)).filter(isMasterWorkerDto);
 }
 
-// Function นับ users จาก DB
-async function countUsers(
+// Function นับ workers จาก DB
+export async function countUsers(
   filters: UserListFilters,
   connection?: DbConnection,
 ): Promise<number> {
   const db = client(connection);
 
-  return db.account.count({
-    where: buildUserWhere(filters),
+  return db.masterWorker.count({
+    where: buildWorkerWhere(filters),
   });
 }
 
-// Function ค้นหา user ตาม identifier จาก DB
-async function findUserByIdentifier(
+// Function ค้นหา worker ตาม identifier (laborCode) จาก DB
+export async function findByIdentifier(
   identifier: string,
   connection?: DbConnection,
-): Promise<AccountDto | null> {
-  const db = client(connection);
-  const account = await db.account.findFirst({
-    where: buildUserIdentifierWhere(identifier),
-  });
-
-  return mapAccount(account);
+): Promise<MasterWorkerDto | null> {
+  return baseMasterWorkerRepository.findByLaborCode(identifier, connection);
 }
 
-// Function อัปเดต user account จาก DB
-async function updateUserAccount(
+// Function อัปเดตข้อมูล worker จาก DB
+export async function update(
   id: number | string,
-  fields: UserAccountUpdateInput,
+  fields: MasterWorkerUpdateInput,
   connection?: DbConnection,
-): Promise<AccountDto> {
+): Promise<MasterWorkerDto> {
   const db = client(connection);
-  const updatedAccount = await db.account.update({
+  const data: Prisma.MasterWorkerUpdateInput = {};
+
+  if (fields.labor_code !== undefined) {
+    data.laborCode = fields.labor_code;
+  }
+
+  if (fields.full_name !== undefined) {
+    data.fullName = fields.full_name;
+  }
+
+  if (fields.telephone !== undefined) {
+    data.telephone = fields.telephone;
+  }
+
+  if (fields.nationality !== undefined) {
+    data.nationality = fields.nationality;
+  }
+
+  if (fields.labor_color !== undefined) {
+    data.laborColor = fields.labor_color;
+  }
+
+  if (fields.work_start_date !== undefined) {
+    data.workStartDate = fields.work_start_date ? new Date(fields.work_start_date) : null;
+  }
+
+  if (fields.status !== undefined) {
+    data.status = fields.status;
+  }
+
+  const updated = await db.masterWorker.update({
     where: {
       id: toId(id),
     },
-    data: buildUserAccountUpdateData(fields),
+    data,
   });
 
-  return requireMapped(mapAccount(updatedAccount), "Account", "update");
+  return requireMapped(mapMasterWorker(updated), "MasterWorker", "update");
 }
 
-// Function อัปเดต password จาก DB
-async function updatePassword(
+// Function อัปเดต shift assignment ปัจจุบันของ worker จาก DB (field อยู่บน MasterWorker เอง)
+export async function updateShift(
   id: number | string,
-  passwordHash: string,
+  shift: {
+    shift_no: number;
+    shift_start_time: string;
+    shift_end_time: string;
+    work_start_date?: string | null;
+  },
   connection?: DbConnection,
-): Promise<AccountDto> {
+): Promise<MasterWorkerDto> {
   const db = client(connection);
-  const updatedAccount = await db.account.update({
+  const updated = await db.masterWorker.update({
     where: {
       id: toId(id),
     },
     data: {
-      passwordHash,
+      shiftNo: shift.shift_no,
+      shiftStartTime: shift.shift_start_time,
+      shiftEndTime: shift.shift_end_time,
+      ...(shift.work_start_date !== undefined
+        ? { workStartDate: shift.work_start_date ? new Date(shift.work_start_date) : null }
+        : {}),
     },
   });
 
-  return requireMapped(
-    mapAccount(updatedAccount),
-    "Account",
-    "password update",
-  );
+  return requireMapped(mapMasterWorker(updated), "MasterWorker", "shift update");
 }
 
-// Function อัปเดต status จาก DB
-async function updateStatus(
+// Function ล้าง shift assignment ปัจจุบันของ worker จาก DB
+export async function clearShift(
   id: number | string,
-  status: string,
-  connection?: DbConnection,
-): Promise<AccountDto> {
-  const db = client(connection);
-  const updatedAccount = await db.account.update({
-    where: {
-      id: toId(id),
-    },
-    data: {
-      status,
-    },
-  });
-
-  return requireMapped(mapAccount(updatedAccount), "Account", "status update");
-}
-
-// Function จัดการ WorkerCode exists จาก DB
-async function workerCodeExists(
-  workerCode: string,
-  exceptAccountId?: number | string | null,
-  connection?: DbConnection,
-): Promise<boolean> {
-  const db = client(connection);
-  const account = await db.account.findFirst({
-    where: {
-      username: workerCode,
-      role: WORKER_ROLE,
-      ...(exceptAccountId !== undefined &&
-        exceptAccountId !== null && {
-          id: {
-            not: toId(exceptAccountId),
-          },
-        }),
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  return Boolean(account);
-}
-
-// Function จัดการ shirt number exists จาก DB
-async function shirtNumberExists(
-  shirtNumber: string,
-  exceptAccountId?: number | string | null,
-  connection?: DbConnection,
-): Promise<boolean> {
-  const db = client(connection);
-  const account = await db.account.findFirst({
-    where: {
-      shirtNumber,
-      role: WORKER_ROLE,
-      ...(exceptAccountId !== undefined &&
-        exceptAccountId !== null && {
-          id: {
-            not: toId(exceptAccountId),
-          },
-        }),
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  return Boolean(account);
-}
-
-// Function สร้าง profile จาก DB
-async function createProfile(
-  profile: ProfileCreateInput,
-  connection?: DbConnection,
-): Promise<ProfileDto> {
-  const db = client(connection);
-  const updatedAccount = await db.account.update({
-    where: {
-      id: toId(profile.account_id),
-    },
-    data: {
-      ...buildProfileCreateData(profile),
-    },
-  });
-
-  return requireMapped(mapProfile(updatedAccount), "Profile", "create");
-}
-
-// Function อัปเดต profile ตาม account ID จาก DB
-async function updateProfileByAccountId(
-  accountId: number | string,
-  profile: ProfileUpdateInput,
-  connection?: DbConnection,
-): Promise<ProfileDto> {
-  const db = client(connection);
-  const updatedAccount = await db.account.update({
-    where: {
-      id: toId(accountId),
-    },
-    data: buildProfileData(profile),
-  });
-
-  return requireMapped(mapProfile(updatedAccount), "Profile", "update");
-}
-
-// Function สร้าง work schedule จาก DB
-async function createWorkSchedule(
-  schedule: WorkScheduleCreateInput,
-  connection?: DbConnection,
-): Promise<WorkScheduleDto> {
-  const db = client(connection);
-  const updatedAccount = await db.account.update({
-    where: {
-      id: toId(schedule.account_id),
-    },
-    data: buildScheduleCreateData(schedule),
-  });
-
-  return requireMapped(mapSchedule(updatedAccount), "Schedule", "create");
-}
-
-// Function ลบ current work schedules ตาม account ID จาก DB
-async function deleteCurrentWorkSchedulesByAccountId(
-  accountId: number | string,
   connection?: DbConnection,
 ): Promise<void> {
   const db = client(connection);
 
-  await db.account.updateMany({
+  await db.masterWorker.update({
     where: {
-      id: toId(accountId),
+      id: toId(id),
     },
     data: {
       shiftNo: null,
@@ -475,35 +254,16 @@ async function deleteCurrentWorkSchedulesByAccountId(
   });
 }
 
-const adminWorkersAccountRepository = {
-  ...accountRepository,
-  usernameExists,
+const workerRepository = {
+  ...baseMasterWorkerRepository,
+  laborCodeExists,
   create,
   listUsers,
   countUsers,
-  findUserByIdentifier,
-  updateUserAccount,
-  updatePassword,
-  updateStatus,
+  findByIdentifier,
+  update,
+  updateShift,
+  clearShift,
 };
 
-const adminWorkersProfileRepository = {
-  ...profileRepository,
-  workerCodeExists,
-  shirtNumberExists,
-  create: createProfile,
-  updateByAccountId: updateProfileByAccountId,
-};
-
-const adminWorkersWorkScheduleRepository = {
-  ...workScheduleRepository,
-  create: createWorkSchedule,
-  deleteCurrentByAccountId: deleteCurrentWorkSchedulesByAccountId,
-};
-
-export {
-  adminWorkersAccountRepository as accountRepository,
-  adminWorkersProfileRepository as profileRepository,
-  sessionRepository,
-  adminWorkersWorkScheduleRepository as workScheduleRepository,
-};
+export { workerRepository, workerSessionRepository };

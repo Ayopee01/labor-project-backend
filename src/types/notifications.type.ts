@@ -26,7 +26,7 @@ export type PublishRealtimeEventInput = {
   payload?: Record<string, unknown>;
   worker_payload?: Record<string, unknown>;
   admin?: boolean;
-  worker_account_ids?: number[];
+  worker_ids?: number[];
 };
 
 export type NotificationClient = {
@@ -38,7 +38,7 @@ export type NotificationClient = {
 
 export interface WorkerNotificationDto {
   id: number;
-  worker_account_id: number;
+  worker_id: number;
   type: string;
   notification_key: string | null;
   lang: string;
@@ -51,7 +51,7 @@ export interface WorkerNotificationDto {
 }
 
 export interface CreateWorkerNotificationInput {
-  worker_account_id: number;
+  worker_id: number;
   type: string;
   notification_key?: string | null;
   lang?: string | null;
@@ -92,6 +92,7 @@ export type PushPlatform = "android" | "ios" | "web" | "unknown";
 // Type DTO ของตาราง worker_push_tokens สำหรับส่ง push notification ไป Mobile
 export interface WorkerPushTokenDto {
   id: number;
+  worker_id: number;
   worker_code: string;
   session_id: number | null;
   device_id: string;
@@ -107,6 +108,7 @@ export interface WorkerPushTokenDto {
 
 // Type input ของ repository สำหรับลงทะเบียนหรือ refresh FCM token ของ worker
 export interface UpsertWorkerPushTokenInput {
+  worker_id: number;
   worker_code: string;
   session_id?: number | null;
   device_id: string;

@@ -122,8 +122,8 @@ export interface LineDevSubmissionItem {
   market_name: string;
   boothCode: string;
   boothName: string | null;
-  submitted_by_code: string;
-  submitted_by_name: string;
+  submitted_by_code: string | null;
+  submitted_by_name: string | null;
   submitted_by_role: string;
   submitted_at: string;
   confirmed_at: string | null;

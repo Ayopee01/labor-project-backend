@@ -23,6 +23,7 @@ import type {
   AdminAuditWorkerPerformanceResponse,
 } from "../types/admin-audit.type";
 import type { AdminAuditDateRange } from "../repositories/admin-audit.repository";
+import type { SecurityAuditLogDto } from "../types/shared/security-audit-log.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -75,6 +76,22 @@ export async function listWorkerPerformance(
 interface RawAuditEvent extends AdminAuditEventItem {
   search_text: string;
 }
+
+// Config event_type ที่นับเป็น severity=critical สำหรับการ์ด "ต้องตรวจสอบ" (27.10) — ต้องตรงกับ
+// กฎที่ Frontend ใช้คำนวณการ์ดนี้อยู่แล้ว ห้ามเพิ่ม/ลดโดยไม่เช็คกับ Frontend ก่อน เพราะยอด backend
+// (quick filter) กับยอดการ์ดฝั่ง Frontend ต้องตรงกันเป๊ะ
+const SEVERITY_CRITICAL_EVENT_TYPES = new Set<string>([
+  "message_delivery_failed",
+  "worker_accept_timeout",
+  "worker_scan_timeout",
+  "vendor_rejected",
+  "vehicle_cancelled",
+  "market_cancelled",
+  "ticket_cancelled",
+  "worker_assignment_cancelled",
+  "ticket_worker_cancelled",
+  "booth_worker_cancelled",
+]);
 
 // Function แปลงค่าเป็น string สำหรับ ID field ที่เป็น nullable แบบเดียวกันทุก event
 function toIdString(value: number | string | null | undefined): string | null {
@@ -289,7 +306,7 @@ function mapWorkerAssignmentEvents(
       ? "worker"
       : "system";
     let actorId: string | null = isWorkerActor
-      ? toIdString(row.worker_account_id)
+      ? toIdString(row.worker_id)
       : null;
     let reasonCode: string | null = null;
     let reasonText: string | null = null;
@@ -332,7 +349,7 @@ function mapWorkerAssignmentEvents(
       market_job_id: null,
       ticket_id: null,
       assignment_id: toIdString(row.assignment_id),
-      worker_id: toIdString(row.worker_account_id),
+      worker_id: toIdString(row.worker_id),
       reason_code: reasonCode,
       reason_text: reasonText,
       metadata,
@@ -364,6 +381,7 @@ function mapCompletionSubmissionEvents(
       ticketNumber: row.ticket_number,
       ticketNo: row.ticket_no,
       boothCode: row.booth_code,
+      ...(row.booth_name && { boothName: row.booth_name }),
     };
     const base = {
       vehicle_job_id: toIdString(row.vehicle_job_id),
@@ -396,6 +414,7 @@ function mapCompletionSubmissionEvents(
           row.ticket_number,
           row.ticket_no,
           row.booth_code,
+          row.booth_name,
           row.submitted_by_code,
         ]),
       });
@@ -421,6 +440,7 @@ function mapCompletionSubmissionEvents(
           row.ticket_number,
           row.ticket_no,
           row.booth_code,
+          row.booth_name,
         ]),
       });
     }
@@ -447,6 +467,7 @@ function mapCompletionSubmissionEvents(
           row.ticket_number,
           row.ticket_no,
           row.booth_code,
+          row.booth_name,
         ]),
       });
     }
@@ -475,6 +496,7 @@ function mapTicketRatingEvents(
       ticketNumber: row.ticket_number,
       ticketNo: row.ticket_no,
       boothCode: row.booth_code,
+      ...(row.booth_name && { boothName: row.booth_name }),
       score: row.score,
       targetType: row.target_type,
     },
@@ -485,6 +507,7 @@ function mapTicketRatingEvents(
       row.ticket_number,
       row.ticket_no,
       row.booth_code,
+      row.booth_name,
     ]),
   }));
 }
@@ -537,6 +560,79 @@ function mapMessageDeliveryLogEvents(
   }
 
   return events;
+}
+
+// Function map แถว SecurityAuditLog ดิบเป็น auth/security event (27.12 phase 1) — ไม่มี
+// vehicle_job_id/market_job_id/ticket_id/assignment_id เกี่ยวข้องเลย (source นี้เป็น auth event
+// ล้วนๆ ไม่ผูกกับ job ใดๆ) actor_type เป็น null ได้กรณี login ด้วย username ที่ไม่มีตัวตนจริง — แปลง
+// เป็น "system" ใน response เพราะ AdminAuditActorType ไม่มีค่า "unknown" แต่ยังคง attemptedUsername
+// ไว้ใน Metadata แยกจาก actorCode/workerCode ของ actor ที่ resolve ได้จริง เพื่อไม่ให้ปนกัน
+function mapSecurityAuditLogEvents(
+  rows: SecurityAuditLogDto[],
+): RawAuditEvent[] {
+  return rows.map((row) => {
+    const isAdminActor = row.actor_type === "admin";
+    const isWorkerActor = row.actor_type === "worker";
+    const actorType: AdminAuditEventItem["actor_type"] = isAdminActor
+      ? "admin"
+      : isWorkerActor
+        ? "worker"
+        : "system";
+    const actorId = isAdminActor
+      ? toIdString(row.actor_account_id)
+      : isWorkerActor
+        ? toIdString(row.actor_worker_id)
+        : null;
+    // Mutation event (account/settings/gate-client/mobile-version, 27.12 phase 2-4) เก็บ before/after
+    // ไว้ใน row.metadata.before/.after ตอนเขียน (ดู services ที่เรียก writeSecurityAuditLog) — ต้อง
+    // ดึงออกมาเป็น top-level field ตาม contract ของ 27.13 ไม่ใช่ปล่อยให้ซ้ำอยู่ใน Metadata ด้วย
+    const rowMetadata = (row.metadata ?? {}) as {
+      before?: Record<string, unknown>;
+      after?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    const { before: rawBefore, after: rawAfter, ...restMetadata } = rowMetadata;
+
+    return {
+      event_id: `security_audit:${row.id}`,
+      event_type: row.event_type,
+      actor_type: actorType,
+      actor_id: actorId,
+      vehicle_job_id: null,
+      market_job_id: null,
+      ticket_id: null,
+      assignment_id: null,
+      worker_id: isWorkerActor ? toIdString(row.actor_worker_id) : null,
+      reason_code: null,
+      reason_text: null,
+      metadata: {
+        outcome: row.outcome,
+        ...(isAdminActor && row.actor_username && { actorCode: row.actor_username }),
+        ...(isAdminActor && row.actor_full_name && { actorName: row.actor_full_name }),
+        ...(isWorkerActor && row.actor_username && { workerCode: row.actor_username }),
+        ...(!isAdminActor && !isWorkerActor && row.actor_username && {
+          attemptedUsername: row.actor_username,
+        }),
+        ...(row.failure_code && { failureCode: row.failure_code }),
+        ...(row.session_id && { sessionId: row.session_id }),
+        ...(row.ip_address && { ipAddress: row.ip_address }),
+        ...(row.user_agent && { userAgent: row.user_agent }),
+        ...(row.request_id && { requestId: row.request_id }),
+        ...restMetadata,
+      },
+      ...(rawBefore && { before: rawBefore }),
+      ...(rawAfter && { after: rawAfter }),
+      occurred_at: row.created_at,
+      search_text: buildSearchText([
+        `security_audit:${row.id}`,
+        row.event_type,
+        row.actor_username,
+        row.actor_full_name,
+        row.failure_code,
+        row.ip_address,
+      ]),
+    };
+  });
 }
 
 // Config map AdminActionLog.action_type -> Audit EventType คงที่ (ตาราง 27.5) — action ที่ต้อง
@@ -609,9 +705,9 @@ function mapAdminActionLogEvents(
     const assignmentId =
       (row.metadata as { assignment_id?: number } | null)?.assignment_id ??
       null;
-    const workerAccountId =
-      (row.metadata as { worker_account_id?: number } | null)
-        ?.worker_account_id ?? null;
+    const workerId =
+      (row.metadata as { worker_id?: number } | null)
+        ?.worker_id ?? null;
     const enrichedMetadata = {
       ...(metadata ?? {}),
       ...(row.vehicle_ticket_number && {
@@ -625,6 +721,28 @@ function mapAdminActionLogEvents(
       ...(row.actor_full_name && { actorName: row.actor_full_name }),
     };
 
+    // Before/After เฉพาะ worker_force_status_changed (27.13) — previous_status มาจากค่าที่ service
+    // อ่าน queueEntry.status ไว้ก่อนเปลี่ยนสถานะจริง (ดู admin-workers.service.ts) ห้ามสร้างค่าปลอมเมื่อ
+    // ไม่มี queueEntry เดิม (worker คนนี้ไม่เคยเข้าคิวมาก่อน) จึงส่งเฉพาะ After ในกรณีนั้น
+    let before: Record<string, unknown> | undefined;
+    let after: Record<string, unknown> | undefined;
+
+    if (eventType === "worker_force_status_changed") {
+      const previousStatus = (
+        row.metadata as { previous_status?: string | null } | null
+      )?.previous_status;
+      const targetStatus = (row.metadata as { status?: string } | null)
+        ?.status;
+
+      if (previousStatus) {
+        before = { status: previousStatus };
+      }
+
+      if (targetStatus) {
+        after = { status: targetStatus };
+      }
+    }
+
     events.push({
       event_id: `admin_action:${row.id}`,
       event_type: eventType,
@@ -634,10 +752,12 @@ function mapAdminActionLogEvents(
       market_job_id: toIdString(row.market_job_id),
       ticket_id: toIdString(row.gate_ticket_id),
       assignment_id: toIdString(assignmentId),
-      worker_id: toIdString(workerAccountId),
+      worker_id: toIdString(workerId),
       reason_code: row.reason_code,
       reason_text: row.reason_text,
       metadata: enrichedMetadata,
+      ...(before && { before }),
+      ...(after && { after }),
       occurred_at: row.created_at,
       search_text: buildSearchText([
         `admin_action:${row.id}`,
@@ -658,6 +778,7 @@ function mapAdminActionLogEvents(
 
 export async function listAuditEvents(
   query: unknown,
+  callerPermissions: string[] = [],
 ): Promise<AdminAuditEventsResponse> {
   const filters = parseWithSchema(
     adminAuditEventsQuerySchema,
@@ -672,6 +793,10 @@ export async function listAuditEvents(
     startAt: dateRange.startAt as Date,
     endAt: dateRange.endAt as Date,
   };
+  // 27.12: security/auth event มีเนื้อหา sensitive กว่า 8 source เดิม (IP, user agent, ความพยายาม
+  // login ที่ล้มเหลว) จึงต้องมี audit:read เพิ่มเติมจาก jobs:read ถึงจะเห็น — caller ที่ไม่มี permission
+  // นี้ยังเรียก endpoint เดิมได้ปกติ แค่ไม่เห็น event กลุ่มนี้ปนมาใน timeline เท่านั้น ไม่ใช่ 403
+  const canReadSecurityAudit = callerPermissions.includes("audit:read");
 
   const [
     vehicleJobRows,
@@ -682,6 +807,7 @@ export async function listAuditEvents(
     ticketRatingRows,
     messageDeliveryLogRows,
     adminActionLogRows,
+    securityAuditLogRows,
   ] = await Promise.all([
     adminAuditRepository.listVehicleJobsForAudit(range),
     adminAuditRepository.listGateRequestLogsForAudit(range),
@@ -691,6 +817,9 @@ export async function listAuditEvents(
     adminAuditRepository.listTicketRatingsForAudit(range),
     adminAuditRepository.listMessageDeliveryLogsForAudit(range),
     adminAuditRepository.listAdminActionLogsForAudit(range),
+    canReadSecurityAudit
+      ? adminAuditRepository.listSecurityAuditLogsForAudit(range)
+      : Promise.resolve([]),
   ]);
 
   const assignmentCancelLogByAssignmentId = new Map<number, AdminActionLogDto>();
@@ -734,6 +863,7 @@ export async function listAuditEvents(
     ...mapTicketRatingEvents(ticketRatingRows),
     ...mapMessageDeliveryLogEvents(messageDeliveryLogRows),
     ...mapAdminActionLogEvents(adminActionLogRows, consumedAdminActionLogIds),
+    ...mapSecurityAuditLogEvents(securityAuditLogRows),
   ];
 
   const searchTerm = filters.search?.toLowerCase();
@@ -747,6 +877,29 @@ export async function listAuditEvents(
     }
 
     if (searchTerm && !event.search_text.includes(searchTerm)) {
+      return false;
+    }
+
+    if (filters.has_vehicle !== undefined) {
+      const hasVehicle = event.vehicle_job_id !== null;
+
+      if (hasVehicle !== filters.has_vehicle) {
+        return false;
+      }
+    }
+
+    if (filters.has_reason !== undefined) {
+      const hasReason = Boolean(event.reason_code || event.reason_text);
+
+      if (hasReason !== filters.has_reason) {
+        return false;
+      }
+    }
+
+    if (
+      filters.severity === "critical" &&
+      !SEVERITY_CRITICAL_EVENT_TYPES.has(event.event_type)
+    ) {
       return false;
     }
 

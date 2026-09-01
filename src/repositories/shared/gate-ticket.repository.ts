@@ -1,4 +1,4 @@
-import { SCANNED_ASSIGNMENT_STATUSES, TICKET_STATUS, TICKET_WORKER_STATUS } from "../../constants/job-status";
+import { SCANNED_ASSIGNMENT_STATUSES, TICKET_STATUS, TICKET_SUBMITTER_ROLE, TICKET_WORKER_STATUS } from "../../constants/job-status";
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct } from "./mappers";
 import { client, requireDto } from "./repository-utils";
 
@@ -135,7 +135,7 @@ export async function findGateTicketForCompletionByVehicleJobIdAndTicketNoAndBoo
 
 // Function หา GateTicket จาก ticketNo+boothCode หลัง Worker เคย scan
 export async function findGateTicketForCompletionByWorkerHistoryAndTicketNoAndBoothCode(
-  workerAccountId: number,
+  workerId: number,
   ticketNo: string,
   boothCode: string,
   connection?: DbConnection
@@ -150,7 +150,7 @@ export async function findGateTicketForCompletionByWorkerHistoryAndTicketNoAndBo
       vehicleJob: {
         assignments: {
           some: {
-            workerAccountId,
+            workerId,
             status: {
               in: SCANNED_ASSIGNMENT_STATUSES,
             },
@@ -349,17 +349,19 @@ export async function markTicketDelivered(
 
 export async function createTicketCompletionSubmission(
   ticketId: number,
-  submittedByAccountId: number,
+  submitterId: number,
   submittedByRole: string,
   workerCountSnapshot: number,
   assignmentId: number | null,
   connection?: DbConnection
 ): Promise<TicketCompletionSubmissionDto> {
   const db = client(connection);
+  const isAdmin = submittedByRole === TICKET_SUBMITTER_ROLE.ADMIN;
   const submission = await db.ticketCompletionSubmission.create({
     data: {
       ticketId,
-      submittedByAccountId,
+      submittedByAccountId: isAdmin ? submitterId : null,
+      submittedByWorkerId: isAdmin ? null : submitterId,
       submittedByRole,
       status: TICKET_STATUS.DELIVERED,
       workerCountSnapshot,

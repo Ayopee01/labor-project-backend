@@ -1,7 +1,7 @@
 import { buildWorkerNotification, persistWorkerNotifications, publishNotification } from "../notifications.service";
-import * as accountRepository from "../../repositories/shared/account.repository";
+import * as masterWorkerRepository from "../../repositories/shared/master-worker.repository";
 import * as ticketWorkerRepository from "../../repositories/shared/ticket-worker.repository";
-import { sendWorkerPushNotificationByAccountIds } from "./worker-push.service";
+import { sendWorkerPushNotificationByWorkerIds } from "./worker-push.service";
 import { sendWorkerSocketEvent } from "../../websockets/worker.socket";
 import { logger } from "../../utils/logger";
 
@@ -24,18 +24,18 @@ export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
     });
   }
 
-  const workerAccountIds = [...new Set(input.worker_account_ids ?? [])];
+  const workerIds = [...new Set(input.worker_ids ?? [])];
   const workerPayload = input.worker_payload ?? payload;
 
-  if (workerAccountIds.length > 0) {
-    void accountRepository.listByIds(workerAccountIds).then((accounts) => {
-      const accountById = new Map(accounts.map((account) => [account.id, account]));
+  if (workerIds.length > 0) {
+    void masterWorkerRepository.findByIds(workerIds).then((workers) => {
+      const workerById = new Map(workers.map((worker) => [worker.id, worker]));
 
       persistWorkerNotifications(
-        workerAccountIds.map((workerAccountId) => {
+        workerIds.map((workerId) => {
           const localized = buildWorkerNotification({
             type: input.type,
-            lang: accountById.get(workerAccountId)?.lang,
+            lang: workerById.get(workerId)?.lang,
             notification_key: input.notification_key,
             notification_params: input.notification_params,
             payload: workerPayload,
@@ -44,7 +44,7 @@ export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
           });
 
           return {
-            worker_account_id: workerAccountId,
+            worker_id: workerId,
             type: input.type,
             notification_key: localized.key,
             lang: localized.lang,
@@ -54,26 +54,26 @@ export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
           };
         }),
       );
-    }).catch((error) => {
+    }).catch((error: unknown) => {
       logger.error("Failed to localize worker notifications.", { error });
     });
 
-    void sendWorkerPushNotificationByAccountIds({
-      account_ids: workerAccountIds,
+    void sendWorkerPushNotificationByWorkerIds({
+      worker_ids: workerIds,
       type: input.type,
       title: input.title,
       message: input.message,
       notification_key: input.notification_key,
       notification_params: input.notification_params,
       payload: workerPayload,
-    }).catch((error) => {
+    }).catch((error: unknown) => {
       logger.error("Failed to send worker push notification.", { error });
     });
   }
 
-  for (const workerAccountId of workerAccountIds) {
+  for (const workerId of workerIds) {
     sendWorkerSocketEvent(
-      workerAccountId,
+      workerId,
       input.type as WorkerSocketEventType,
       workerPayload,
       {
@@ -87,19 +87,19 @@ export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
   }
 }
 
+// Function หา Worker ที่ต้องได้รับแจ้งเตือนผลของ Ticket — คืนเฉพาะ worker id เท่านั้น (Admin ไม่รวม
+// ในนี้อีกต่อไป เพราะ MasterWorker.id และ Account.id เป็นคนละ id space กันแล้วตั้งแต่แยก Worker ออก
+// จาก Account — ทุกจุดที่เรียกฟังก์ชันนี้ส่ง worker_ids ต่อให้ publishRealtimeEvent พร้อม admin: true
+// อยู่แล้วเสมอ ซึ่งกระจายแจ้งเตือนไปหา Admin ทุกคนผ่าน role แยกต่างหาก ไม่ต้องพึ่ง id list นี้)
 export async function resolveTicketResultAudience(
   ticket: GateTicketDto,
   connection?: DbConnection
 ): Promise<number[]> {
-  const [ticketWorkers, admins] = await Promise.all([
-    // Roster เป็นระดับ Business Ticket (market job) ไม่ใช่ระดับ Booth แล้ว
-    ticketWorkerRepository.listTicketWorkers(ticket.market_job_id, connection),
-    accountRepository.listAdmins(connection),
-  ]);
+  // Roster เป็นระดับ Business Ticket (market job) ไม่ใช่ระดับ Booth แล้ว
+  const ticketWorkers = await ticketWorkerRepository.listTicketWorkers(ticket.market_job_id, connection);
   const receiverIds = new Set<number>();
 
-  ticketWorkers.forEach((worker) => receiverIds.add(worker.worker_account_id));
-  admins.forEach((admin) => receiverIds.add(admin.id));
+  ticketWorkers.forEach((worker) => receiverIds.add(worker.worker_id));
 
   return Array.from(receiverIds);
 }

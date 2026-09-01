@@ -21,6 +21,10 @@ type ShutdownDependencies = {
   closeNotificationQueueConnections: () => Promise<void>;
   closeWorkerQueueConnections: () => Promise<void>;
   closeRuntimeSettingsSyncConnections: () => Promise<void>;
+  // Optional (ต่างจาก close*Connections ตัวอื่น) เพื่อไม่ต้องแก้ ShutdownDependencies literal ที่มีอยู่
+  // แล้วในเทสเดิม (env-logger.test.ts) — job นี้เป็น housekeeping เสริม ไม่ใช่ core flow ที่ทุก caller
+  // ของ createGracefulShutdownHandler ต้องระบุเสมอ
+  closeSecurityAuditLogCleanupConnections?: () => Promise<void>;
   closePrisma: () => Promise<void>;
   stopRateLimitCleanupTimer: () => void;
   logger: Pick<typeof logger, "info" | "error">;
@@ -48,6 +52,10 @@ const defaultShutdownDependencies: ShutdownDependencies = {
   closeRuntimeSettingsSyncConnections: async () => {
     const runtimeSettingsSync = await import("../queues/runtime-settings-sync");
     await runtimeSettingsSync.closeRuntimeSettingsSyncConnections();
+  },
+  closeSecurityAuditLogCleanupConnections: async () => {
+    const securityAuditLogCleanup = await import("../queues/security-audit-log-cleanup");
+    await securityAuditLogCleanup.closeSecurityAuditLogCleanupConnections();
   },
   closePrisma: async () => {
     const prisma = await import("../db/prisma");
@@ -108,6 +116,7 @@ export function createGracefulShutdownHandler(
       await dependencies.closeNotificationQueueConnections();
       await dependencies.closeWorkerQueueConnections();
       await dependencies.closeRuntimeSettingsSyncConnections();
+      await dependencies.closeSecurityAuditLogCleanupConnections?.();
       await dependencies.closePrisma();
       dependencies.stopRateLimitCleanupTimer();
 

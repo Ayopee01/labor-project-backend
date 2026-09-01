@@ -8,6 +8,7 @@ import { hashPassword } from "../src/utils/password";
 import { seedMasterMarkets } from "./master-market.seed";
 import { seedMasterProducts } from "./master-product.seed";
 import { seedMasterRates } from "./master-rate.seed";
+import { seedMasterWorkers } from "./master-worker.seed";
 import { seedTestLine } from "./test-line.seed";
 import { seedMobileAppVersion } from "./version.seed";
 
@@ -167,6 +168,9 @@ async function main(): Promise<void> {
 
   console.log("Seeding master rates...");
   await seedMasterRates(prisma);
+
+  console.log("Seeding master workers...");
+  await seedMasterWorkers(prisma);
 
   console.log("Seeding test LINE mapping...");
   await seedTestLine(prisma);

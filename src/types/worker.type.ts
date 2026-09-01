@@ -8,7 +8,7 @@ import type { WorkScheduleDto } from "./admin-workers.type";
 // Type payload ของ delayed job สำหรับ assignment timeout และ vendor auto-confirm
 export type AssignmentTimeoutJobData = {
   assignmentId?: number;
-  workerAccountId?: number;
+  workerId?: number;
   ticketId?: number;
   submissionId?: number;
   mobileAppVersionId?: number;
@@ -23,7 +23,7 @@ export type AssignmentTimeoutJobData = {
 
 // Type payload ของ delayed job สำหรับพักและจบกะ worker
 export type WorkerScheduleJobData = {
-  accountId: number;
+  workerId: number;
   scheduleId: number;
   shiftInstanceKey?: string;
   kind?: "break_return" | "shift_end";
@@ -41,19 +41,19 @@ export type AssignmentAcceptTimeoutResult = {
 // Type ผลลัพธ์เมื่อ worker จบงานและอาจกลับเข้าคิวได้
 export type CompletedWorkerQueueResult = {
   vehicle_job: Pick<VehicleJobDto, "ticket_number">;
-  completed_worker_account_ids: number[];
+  completed_worker_ids: number[];
 };
 
 // Type ผลลัพธ์เมื่องานรถจบครบทั้งคัน
 export type CompletedVehicleJobResult = {
   vehicle_job: VehicleJobDto;
   completed_assignment_ids: number[];
-  completed_worker_account_ids: number[];
+  completed_worker_ids: number[];
 };
 
-// Type WebSocket ของ worker พร้อมข้อมูล account ที่ผูกไว้
+// Type WebSocket ของ worker พร้อมข้อมูล worker ที่ผูกไว้
 export type WorkerSocket = WebSocket & {
-  accountId?: number;
+  workerId?: number;
   isAlive?: boolean;
 };
 
@@ -78,7 +78,7 @@ export type WorkerShiftCloseReason =
 
 // Type key หลักสำหรับหา attendance ของ worker ในหนึ่งกะ
 export type WorkerShiftAttendanceKeyInput = {
-  account_id: number;
+  worker_id: number;
   shift_instance_key: string;
 };
 
@@ -197,7 +197,7 @@ export interface WorkerProductPackageOptionsResponse {
 export interface TicketWorkerDto {
   id: number;
   market_job_id: number;
-  worker_account_id: number;
+  worker_id: number;
   status: string;
   final_earning_amount: string | null;
   joined_at: string;
@@ -211,7 +211,10 @@ export interface TicketWorkerDto {
 export interface TicketCompletionSubmissionDto {
   id: number;
   ticket_id: number;
-  submitted_by_account_id: number;
+  // Submitter คือ Admin หรือ Worker อย่างใดอย่างหนึ่งเท่านั้น (ดู submitted_by_role) — field ตรง
+  // role ที่ไม่ตรงกับ role จะเป็น null เสมอ
+  submitted_by_account_id: number | null;
+  submitted_by_worker_id: number | null;
   // Snapshot ตอนส่งยอดจริง ("worker" | "admin" จาก TICKET_SUBMITTER_ROLE) ห้าม derive จาก
   // Account.role ตอนอ่าน — ดู field comment ใน prisma/schema.prisma
   submitted_by_role: string;
@@ -233,7 +236,7 @@ export interface TicketCompletionSubmissionDto {
 // Type DTO สถานะคิวของ worker
 export interface WorkerQueueEntryDto {
   id: number;
-  account_id: number;
+  worker_id: number;
   status: WorkerWorkStatus;
   ready_at: string | null;
   break_until: string | null;
@@ -278,7 +281,7 @@ interface WorkerStatusRemainingBreakTime {
 export interface WorkerStatusResponse {
   full_name: string;
   worker_code: string | null;
-  image_url: string | null;
+  picture: string | null;
   status: WorkerWorkStatus;
   today_job_count: number;
   break_count_used: number;
@@ -306,7 +309,7 @@ export interface WorkerPresenceDto {
 export interface VehicleJobAssignmentDto {
   id: number;
   vehicle_job_id: number;
-  worker_account_id: number;
+  worker_id: number;
   status: string;
   accept_deadline_at: string | null;
   scan_deadline_at: string | null;
@@ -381,11 +384,11 @@ export interface WorkerAssignmentHistoryResponse {
 
 // Type สมาชิกทีมที่แสดงตอน worker รับงาน
 export interface WorkerAssignmentTeamMemberDto {
-  worker_account_id?: number;
+  worker_id?: number;
   full_name: string;
   worker_code: string | null;
-  shirt_number?: string | null;
-  image_url: string | null;
+  coat_no?: string | null;
+  picture: string | null;
   scan_status: string;
   accepted_at?: string | null;
   scanned_at?: string | null;
@@ -418,7 +421,7 @@ export interface WorkerCurrentJobMarketResponse {
 }
 
 export interface WorkerCurrentJobTeamMemberResponse {
-  shirt_number: string | null;
+  coat_no: string | null;
   full_name: string;
   scan_status: "scanned" | "not_scanned";
   scanned_at: string | null;
@@ -483,7 +486,7 @@ interface WorkerAssignmentMarketDto {
 export interface WorkerAssignmentAcceptResponse {
   ticket_number: string;
   worker_code: string | null;
-  shirt_number: string | null;
+  coat_no: string | null;
   accepted_at: string | null;
   license_plate: string;
   license_plate_province: string | null;

@@ -9,8 +9,6 @@ import type { AccountDto } from "../../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-const WORKER_ROLE = "worker";
-
 const ADMIN_ROLE = "admin";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -29,22 +27,6 @@ export async function findById(
   const account = await db.account.findUnique({
     where: {
       id: toId(id),
-    },
-  });
-
-  return mapAccount(account);
-}
-
-// Function ค้นหา user ตาม ID จาก DB
-export async function findUserById(
-  id: number | string,
-  connection?: DbConnection,
-): Promise<AccountDto | null> {
-  const db = client(connection);
-  const account = await db.account.findFirst({
-    where: {
-      id: toId(id),
-      role: WORKER_ROLE,
     },
   });
 
@@ -83,31 +65,6 @@ export async function listByIds(
       id: {
         in: uniqueIds,
       },
-    },
-  });
-
-  return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
-}
-
-// Function ดึง worker accounts ที่ active ตาม username (worker_code) หลายคนพร้อมกัน ใช้หา lang
-// ของแต่ละคนก่อน broadcast แจ้งเตือนแบบ localized (เช่น Mobile App Version update)
-export async function listActiveWorkersByUsernames(
-  usernames: string[],
-  connection?: DbConnection,
-): Promise<AccountDto[]> {
-  const uniqueUsernames = [...new Set(usernames.filter(Boolean))];
-
-  if (uniqueUsernames.length === 0) {
-    return [];
-  }
-
-  const accounts = await client(connection).account.findMany({
-    where: {
-      username: {
-        in: uniqueUsernames,
-      },
-      role: WORKER_ROLE,
-      status: "active",
     },
   });
 
@@ -202,23 +159,6 @@ export async function updateProfile(
   });
 
   return requireMapped(mapAccount(updatedAccount), "Account", "profile update");
-}
-
-// Function ดึงรายการ all users จาก DB
-export async function listAllUsers(
-  connection?: DbConnection,
-): Promise<AccountDto[]> {
-  const db = client(connection);
-  const accounts = await db.account.findMany({
-    where: {
-      role: WORKER_ROLE,
-    },
-    orderBy: {
-      id: "desc",
-    },
-  });
-
-  return accounts.map((account) => mapAccount(account)).filter(isAccountDto);
 }
 
 export { sanitizeAccount };

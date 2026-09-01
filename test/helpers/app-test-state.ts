@@ -1,11 +1,11 @@
-import type { AccountRecord, AdminActionLogRecord, AssignmentRecord, DriverSessionRecord, GateClientRecord, GateRequestLogRecord, GateTicketRecord, GateTicketWorkerExclusionRecord, GateTicketWorkerSnapshotRecord, LineActionTokenRecord, MarketJobRecord, MessageDeliveryLogRecord, MobileAppVersionRecord, MasterMarketRecord, MasterMemberStallRecord, MasterOwnerStallRecord, MasterProductRecord, MasterRateRecord, SubmissionWorkerSnapshotRecord, TicketCompletionSubmissionRecord, TicketProductFinancialRecord, TicketProductRecord, TicketRatingRecord, TicketWorkerPaymentRecord, TicketWorkerRecord, VehicleJobRecord, WorkerAssignmentEventRecord, WorkerNotificationRecord, WorkerShiftAttendanceRecord } from "./app-test-harness.records";
+import type { AccountRecord, AdminActionLogRecord, AssignmentRecord, DriverSessionRecord, GateClientRecord, GateRequestLogRecord, GateTicketRecord, GateTicketWorkerExclusionRecord, GateTicketWorkerSnapshotRecord, LineActionTokenRecord, MarketJobRecord, MasterWorkerRecord, MessageDeliveryLogRecord, MobileAppVersionRecord, MasterMarketRecord, MasterMemberStallRecord, MasterOwnerStallRecord, MasterProductRecord, MasterRateRecord, SecurityAuditLogRecord, SubmissionWorkerSnapshotRecord, TicketCompletionSubmissionRecord, TicketProductFinancialRecord, TicketProductRecord, TicketRatingRecord, TicketWorkerPaymentRecord, TicketWorkerRecord, VehicleJobRecord, WorkerAssignmentEventRecord, WorkerNotificationRecord, WorkerShiftAttendanceRecord } from "./app-test-harness.records";
 
 /* -------------------------------------- Shared Test State -------------------------------------- */
 
 export const state = {
   connectedWorkers: new Set<number>(),
   socketEvents: [] as Array<{
-    accountId: number;
+    workerId: number;
     event: string;
     payload: unknown;
   }>,
@@ -13,6 +13,7 @@ export const state = {
   realtimeEvents: [] as unknown[],
   lineMessages: [] as unknown[],
   workerPushTokens: [] as Array<{
+    worker_id: number;
     worker_code: string;
     session_id: number | null;
     device_id: string;
@@ -22,7 +23,9 @@ export const state = {
     is_active: boolean;
   }>,
   workerNotifications: [] as WorkerNotificationRecord[],
-  workers: new Map<number, AccountRecord>(),
+  workers: new Map<number, MasterWorkerRecord>(),
+  workersByLaborCode: new Map<string, MasterWorkerRecord>(),
+  workerSessions: new Map<number, Record<string, unknown>>(),
   schedules: new Map<number, unknown>(),
   vehicleJobs: [] as VehicleJobRecord[],
   marketJobs: [] as MarketJobRecord[],
@@ -40,6 +43,7 @@ export const state = {
   completionSubmissions: [] as TicketCompletionSubmissionRecord[],
 
   adminActionLogs: [] as AdminActionLogRecord[],
+  securityAuditLogs: [] as SecurityAuditLogRecord[],
   ticketRatings: [] as TicketRatingRecord[],
   lineActionTokens: [] as LineActionTokenRecord[],
   gateRequestLogs: [] as GateRequestLogRecord[],
@@ -72,6 +76,7 @@ export const state = {
   nextWorkerAssignmentEventId: 1,
   nextWorkerNotificationId: 1,
   nextSessionId: 1,
+  nextWorkerSessionId: 1,
   nextTicketWorkerId: 1,
   nextTicketProductFinancialId: 1,
   nextTicketWorkerPaymentId: 1,
@@ -84,6 +89,7 @@ export const state = {
   nextGateClientId: 1,
   nextShiftAttendanceId: 1,
   nextAdminActionLogId: 1,
+  nextSecurityAuditLogId: 1,
   nextMobileAppVersionId: 1,
   nextGateRequestLogId: 1,
   nextDriverSessionId: 1,

@@ -25,8 +25,8 @@ export async function findByWorkerAndShift(
 
   return db.workerShiftAttendance.findUnique({
     where: {
-      accountId_shiftInstanceKey: {
-        accountId: input.account_id,
+      workerId_shiftInstanceKey: {
+        workerId: input.worker_id,
         shiftInstanceKey: input.shift_instance_key,
       },
     },
@@ -43,13 +43,13 @@ export async function markWorkerShiftOnline(
 
   return db.workerShiftAttendance.upsert({
     where: {
-      accountId_shiftInstanceKey: {
-        accountId: input.account_id,
+      workerId_shiftInstanceKey: {
+        workerId: input.worker_id,
         shiftInstanceKey: input.shift_instance_key,
       },
     },
     create: {
-      accountId: input.account_id,
+      workerId: input.worker_id,
       shiftInstanceKey: input.shift_instance_key,
       ...shiftSnapshot,
       firstOnlineAt: now,
@@ -72,13 +72,13 @@ export async function incrementAcceptTimeoutStreak(
 
   return db.workerShiftAttendance.upsert({
     where: {
-      accountId_shiftInstanceKey: {
-        accountId: input.account_id,
+      workerId_shiftInstanceKey: {
+        workerId: input.worker_id,
         shiftInstanceKey: input.shift_instance_key,
       },
     },
     create: {
-      accountId: input.account_id,
+      workerId: input.worker_id,
       shiftInstanceKey: input.shift_instance_key,
       ...shiftSnapshot,
       firstOnlineAt: now,
@@ -106,13 +106,13 @@ export async function resetAcceptTimeoutStreak(
 
   return db.workerShiftAttendance.upsert({
     where: {
-      accountId_shiftInstanceKey: {
-        accountId: input.account_id,
+      workerId_shiftInstanceKey: {
+        workerId: input.worker_id,
         shiftInstanceKey: input.shift_instance_key,
       },
     },
     create: {
-      accountId: input.account_id,
+      workerId: input.worker_id,
       shiftInstanceKey: input.shift_instance_key,
       ...shiftSnapshot,
       firstOnlineAt: now,
@@ -160,7 +160,7 @@ export async function closeWorkerShift(
 
   return db.workerShiftAttendance.create({
     data: {
-      accountId: input.account_id,
+      workerId: input.worker_id,
       shiftInstanceKey: input.shift_instance_key,
       ...shiftSnapshot,
       closedAt: now,

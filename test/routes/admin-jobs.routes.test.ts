@@ -17,7 +17,7 @@ async function loginWorker(accountId: number): Promise<{ token: string; worker: 
   const worker = addWorker(accountId, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: `mobile-${accountId}`,
       device_name: "Worker Mobile",
@@ -149,7 +149,7 @@ function addAuditAssignment(input: {
   const assignment = {
     id: input.id,
     vehicle_job_id: input.vehicleJobId,
-    worker_account_id: input.workerId,
+    worker_id: input.workerId,
     status: input.status ?? "PENDING",
     accept_deadline_at: null,
     scan_deadline_at: null,
@@ -165,7 +165,7 @@ function addAuditAssignment(input: {
     state.workerAssignmentEvents.push({
       id: state.nextWorkerAssignmentEventId++,
       assignment_id: assignment.id,
-      worker_account_id: assignment.worker_account_id,
+      worker_id: assignment.worker_id,
       vehicle_job_id: assignment.vehicle_job_id,
       event_type: eventType,
       occurred_at: assignment.updated_at,
@@ -204,7 +204,7 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force rejects worker witho
 
   const response = await server.request(
     "POST",
-    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
     {
       token,
       body: {
@@ -228,7 +228,7 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force allows connected wor
 
   const response = await server.request(
     "POST",
-    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
     {
       token,
       body: {
@@ -248,7 +248,7 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force allows connected wor
   ]);
   assert.equal(response.body.message, "Worker status forced successfully.");
   assert.equal(response.body.full_name, worker.full_name);
-  assert.equal(response.body.worker_code, worker.username);
+  assert.equal(response.body.worker_code, worker.labor_code);
   assert.equal(response.body.status, "ready");
   assert.equal(queueEntry?.status, "ready");
 });
@@ -261,7 +261,7 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force rejects with 400 whe
 
   const response = await server.request(
     "POST",
-    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
     {
       token,
       body: {
@@ -282,7 +282,7 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force records a WORKER_STA
 
   const response = await server.request(
     "POST",
-    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
     {
       token,
       body: {
@@ -314,7 +314,7 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force accepts reason_text 
 
   const response = await server.request(
     "POST",
-    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
     {
       token,
       body: {
@@ -342,33 +342,39 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force rejects any status w
   state.connectedWorkers.add(worker.id);
   await workerQueue.recordWorkerHeartbeat(worker.id);
 
-  // เลื่อนกะไปในอนาคต 2-3 ชั่วโมง (ตามเวลา Bangkok) เพื่อให้ "ตอนนี้" อยู่นอกกะแน่นอน — forceAdminWorkerStatus
-  // อ่าน schedule ผ่าน admin-workers.repository ซึ่ง mock แยก state ไว้คนละ map (state.authSchedules)
-  // จาก state.schedules ที่ endpoint ฝั่ง worker ใช้ ต้องอัปเดตทั้งคู่ให้ตรงกัน
-  const schedule = state.schedules.get(worker.id);
-  assert.ok(schedule, "Worker fixture must seed a default work schedule.");
+  // เลื่อนกะไปในอนาคต 2-3 ชั่วโมง (ตามเวลา Bangkok) เพื่อให้ "ตอนนี้" อยู่นอกกะแน่นอน — schedule ทั้งฝั่ง
+  // Admin (forceAdminWorkerStatus) และฝั่ง Worker เอง อ่านจาก shift_no/shift_start_time/shift_end_time
+  // บน MasterWorker โดยตรงแล้ว (ไม่ใช่ entity แยกอีกต่อไป) แก้ที่ worker record เดียวพอ
   const bangkokFormatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Bangkok",
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
   });
-  const outsideShiftSchedule = {
-    ...(schedule as object),
-    shift_start_time: bangkokFormatter
-      .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
-      .replace(" ", ""),
-    shift_end_time: bangkokFormatter
-      .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
-      .replace(" ", ""),
-  };
 
-  state.schedules.set(worker.id, outsideShiftSchedule);
-  state.authSchedules.set(worker.id, outsideShiftSchedule);
+  worker.shift_start_time = bangkokFormatter
+    .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
+    .replace(" ", "");
+  worker.shift_end_time = bangkokFormatter
+    .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
+    .replace(" ", "");
+  state.schedules.set(worker.id, {
+    id: worker.id,
+    worker_id: worker.id,
+    shift_no: worker.shift_no,
+    work_date: worker.work_start_date,
+    shift_start_time: worker.shift_start_time,
+    shift_end_time: worker.shift_end_time,
+    is_current: true,
+    created_by: null,
+    updated_by: null,
+    created_at: worker.created_at,
+    updated_at: worker.updated_at,
+  });
 
   const readyResponse = await server.request(
     "POST",
-    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
     {
       token,
       body: {
@@ -383,7 +389,7 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force rejects any status w
 
   const breakResponse = await server.request(
     "POST",
-    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
     {
       token,
       body: {
@@ -398,7 +404,7 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force rejects any status w
 
   const openAppResponse = await server.request(
     "POST",
-    `/api/admin/jobs/workers/${worker.username}/status/force`,
+    `/api/admin/jobs/workers/${worker.labor_code}/status/force`,
     {
       token,
       body: {
@@ -428,7 +434,7 @@ test("GET /api/admin/jobs/workers/status shows queued worker when socket is disc
   assert.equal(response.status, 200);
   assert.equal(response.body.summary.total, 1);
   assert.equal(response.body.summary.ready, 1);
-  assert.equal(response.body.data[0].worker_code, worker.username);
+  assert.equal(response.body.data[0].worker_code, worker.labor_code);
   assert.equal(response.body.data[0].status, "ready");
   assert.equal(response.body.data[0].socket_connected, false);
 });
@@ -443,7 +449,7 @@ test("GET /api/admin/jobs/workers/status returns assignment null when worker has
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.data[0].worker_code, worker.username);
+  assert.equal(response.body.data[0].worker_code, worker.labor_code);
   assert.equal(response.body.data[0].assignment, null);
 });
 
@@ -460,7 +466,7 @@ test("GET /api/admin/jobs/workers/status includes assignment timestamps for a PE
   assert.equal(response.status, 200);
 
   const item = response.body.data.find(
-    (entry: { worker_code: string }) => entry.worker_code === worker.username
+    (entry: { worker_code: string }) => entry.worker_code === worker.labor_code
   );
 
   assert.ok(item);
@@ -495,7 +501,7 @@ test("GET /api/admin/jobs/workers/status includes assignment timestamps for an A
   assert.equal(response.status, 200);
 
   const item = response.body.data.find(
-    (entry: { worker_code: string }) => entry.worker_code === worker.username
+    (entry: { worker_code: string }) => entry.worker_code === worker.labor_code
   );
 
   assert.ok(item);
@@ -539,7 +545,7 @@ test("GET /api/admin/vehicle-jobs/:ticketNo/financials returns finalized persist
   const ticketWorker = {
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "COMPLETED",
     joined_at: finalizedAt,
     cancelled_at: null,
@@ -654,7 +660,7 @@ test("GET /api/admin/vehicle-jobs/:ticketNo/financials returns finalized persist
 
   assert.equal(
     booth.workers[0].worker_code,
-    worker.username
+    worker.labor_code
   );
 
   assert.equal(
@@ -1053,7 +1059,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   const firstTicketWorker = {
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: firstWorker.id,
+    worker_id: firstWorker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: scannedAt,
@@ -1064,7 +1070,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
   const cancelledTicketWorker = {
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: secondWorker.id,
+    worker_id: secondWorker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: scannedAt,
@@ -1085,7 +1091,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
       token: adminToken,
       body: {
         ticket_number: job.ticket_number,
-        worker_code: secondWorker.username,
+        worker_code: secondWorker.labor_code,
         reason_code: "replacement",
       },
     }
@@ -1123,7 +1129,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
       token: adminToken,
       body: {
         worker_codes: [
-          replacementWorker.username,
+          replacementWorker.labor_code,
         ],
         reason_code: "MANUAL_ASSIGNMENT",
       },
@@ -1136,7 +1142,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
     state.assignments.find(
       (assignment) =>
         assignment.vehicle_job_id === job.id &&
-        assignment.worker_account_id ===
+        assignment.worker_id ===
         replacementWorker.id &&
         assignment.status === "PENDING"
     );
@@ -1206,7 +1212,7 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
     state.ticketWorkers.find(
       (ticketWorker) =>
         ticketWorker.market_job_id === ticket.market_job_id &&
-        ticketWorker.worker_account_id ===
+        ticketWorker.worker_id ===
         replacementWorker.id
     );
 
@@ -1365,21 +1371,21 @@ test("admin cancel + replacement excludes cancelled worker from booth financiali
     booth.workers.find(
       (worker: { worker_code: string }) =>
         worker.worker_code ===
-        firstWorker.username
+        firstWorker.labor_code
     );
 
   const cancelledWorkerSummary =
     booth.workers.find(
       (worker: { worker_code: string }) =>
         worker.worker_code ===
-        secondWorker.username
+        secondWorker.labor_code
     );
 
   const replacementWorkerSummary =
     booth.workers.find(
       (worker: { worker_code: string }) =>
         worker.worker_code ===
-        replacementWorker.username
+        replacementWorker.labor_code
     );
 
   assert.ok(firstWorkerSummary);
@@ -1451,7 +1457,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a worker
     {
       token: adminToken,
       body: {
-        worker_codes: [worker.username],
+        worker_codes: [worker.labor_code],
         reason_code: "MANUAL_ASSIGNMENT",
       },
     }
@@ -1462,7 +1468,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a worker
 
   const assignment = state.assignments.find(
     (item) =>
-      item.vehicle_job_id === job.id && item.worker_account_id === worker.id
+      item.vehicle_job_id === job.id && item.worker_id === worker.id
   );
 
   assert.equal(assignment, undefined);
@@ -1482,7 +1488,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers records a MANUAL
     {
       token: adminToken,
       body: {
-        worker_codes: [worker.username],
+        worker_codes: [worker.labor_code],
         reason_code: "MANUAL_ASSIGNMENT",
         reason_text: "เติมแรงงานหลังมีคนถอนตัว",
       },
@@ -1493,7 +1499,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers records a MANUAL
 
   const assignment = state.assignments.find(
     (item) =>
-      item.vehicle_job_id === job.id && item.worker_account_id === worker.id
+      item.vehicle_job_id === job.id && item.worker_id === worker.id
   );
 
   assert.ok(assignment);
@@ -1509,8 +1515,8 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers records a MANUAL
   assert.equal(log.reason_text, "เติมแรงงานหลังมีคนถอนตัว");
   assert.equal(log.actor_account_id, adminAccountId);
   assert.deepEqual(log.metadata?.assignment_ids, [assignment?.id]);
-  assert.deepEqual(log.metadata?.worker_account_ids, [worker.id]);
-  assert.deepEqual(log.metadata?.worker_codes, [worker.username]);
+  assert.deepEqual(log.metadata?.worker_ids, [worker.id]);
+  assert.deepEqual(log.metadata?.worker_codes, [worker.labor_code]);
 });
 
 test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a request with no reason_code with 400 VALIDATION_ERROR", async () => {
@@ -1526,7 +1532,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a reques
     {
       token: adminToken,
       body: {
-        worker_codes: [worker.username],
+        worker_codes: [worker.labor_code],
       },
     }
   );
@@ -1536,7 +1542,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a reques
 
   const assignment = state.assignments.find(
     (item) =>
-      item.vehicle_job_id === job.id && item.worker_account_id === worker.id
+      item.vehicle_job_id === job.id && item.worker_id === worker.id
   );
 
   assert.equal(assignment, undefined);
@@ -1573,7 +1579,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/workers/:workerCode/assignment/
       token: adminToken,
       body: {
         ticket_number: job.ticket_number,
-        worker_code: worker.username,
+        worker_code: worker.labor_code,
         reason_code: "test",
       },
     }
@@ -1583,7 +1589,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/workers/:workerCode/assignment/
   assert.equal(assignment.status, "CANCELLED");
 
   const cancelledEvent = state.socketEvents.find(
-    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_CANCELLED"
+    (item) => item.workerId === worker.id && item.event === "ASSIGNMENT_CANCELLED"
   );
   const cancelledPayload = cancelledEvent?.payload as {
     ticketNumber?: string;
@@ -1617,7 +1623,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel rejects with 400 when reaso
       token: adminToken,
       body: {
         ticket_number: job.ticket_number,
-        worker_code: worker.username,
+        worker_code: worker.labor_code,
       },
     }
   );
@@ -1641,7 +1647,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + worker_cod
       token: adminToken,
       body: {
         ticket_number: otherJob.ticket_number,
-        worker_code: worker.username,
+        worker_code: worker.labor_code,
         reason_code: "test",
       },
     }
@@ -1670,7 +1676,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/scan-deadline/extend accepts re
       token: adminToken,
       body: {
         minutes: 10,
-        worker_codes: [worker.username],
+        worker_codes: [worker.labor_code],
         reason_code: "ADMIN_EXTEND_VEHICLE_ASSIGNMENT_SCAN_TIMER",
         reason_text: "ขยายเวลาสแกน QR",
       },
@@ -1680,7 +1686,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/scan-deadline/extend accepts re
   assert.equal(response.status, 200);
   assert.equal(response.body.ticket_number, job.ticket_number);
   assert.equal(response.body.assignments.length, 1);
-  assert.equal(response.body.assignments[0].worker_code, worker.username);
+  assert.equal(response.body.assignments[0].worker_code, worker.labor_code);
   assert.equal(response.body.assignments[0].status, "ACCEPTED");
   assert.equal(response.body.assignments[0].scan_deadline_at, assignment.scan_deadline_at);
   assert.ok(
@@ -1731,7 +1737,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/scan-deadline/extend accepts re
       token: adminToken,
       body: {
         minutes: 10,
-        worker_codes: [worker.username],
+        worker_codes: [worker.labor_code],
         reason_code: "ADMIN_EXTEND_VEHICLE_ASSIGNMENT_SCAN_TIMER",
       },
     }
@@ -1757,7 +1763,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/scan-deadline/extend rejects re
       token: adminToken,
       body: {
         minutes: 10,
-        worker_codes: [worker.username],
+        worker_codes: [worker.labor_code],
         reason_text: "ขยายเวลา",
       },
     }
@@ -1784,7 +1790,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/scan-deadline/extend rejects th
       token: adminToken,
       body: {
         minutes: 10,
-        worker_codes: [worker.username],
+        worker_codes: [worker.labor_code],
         reason: "legacy reason field",
       },
     }
@@ -2249,7 +2255,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number only) notifi
   // ต้องไม่มี ASSIGNMENT_CANCELLED ยิงแยกต่อคนอีกต่อไป (จุดที่เคยทำให้ push ซ้ำ)
   assert.equal(
     state.socketEvents.some(
-      (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_CANCELLED"
+      (item) => item.workerId === worker.id && item.event === "ASSIGNMENT_CANCELLED"
     ),
     false
   );
@@ -2257,10 +2263,10 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number only) notifi
   // ต้องมี VEHICLE_JOB_CANCELLED แค่ครั้งเดียว ครอบคลุม worker คนนี้อยู่แล้ว
   const cancelledRealtimeEvents = state.realtimeEvents.filter(
     (item) => (item as { type?: string }).type === "VEHICLE_JOB_CANCELLED"
-  ) as Array<{ worker_account_ids?: number[] }>;
+  ) as Array<{ worker_ids?: number[] }>;
 
   assert.equal(cancelledRealtimeEvents.length, 1);
-  assert.deepEqual(cancelledRealtimeEvents[0].worker_account_ids, [worker.id]);
+  assert.deepEqual(cancelledRealtimeEvents[0].worker_ids, [worker.id]);
 });
 
 test("GET /api/admin/vehicle-jobs/history Workers[].Cancellation falls back to the VEHICLE_JOB_CANCELLED log when the worker was cancelled indirectly via a whole-vehicle cancel, not a per-worker cancel", async () => {
@@ -2321,7 +2327,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income Cancellation falls
   state.ticketWorkers.push({
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -2373,7 +2379,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
   const ticketWorker = {
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -2389,7 +2395,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
       ticket_number: job.ticket_number,
       ticket_no: market.ticket_no,
       boothCode: ticket.boothCode,
-      worker_code: worker.username,
+      worker_code: worker.labor_code,
       reason_code: "test",
     },
   });
@@ -2398,7 +2404,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
   assert.equal(response.body.ticket_number, job.ticket_number);
   assert.equal(response.body.ticket_no, market.ticket_no);
   assert.equal(response.body.boothCode, ticket.boothCode);
-  assert.equal(response.body.worker_code, worker.username);
+  assert.equal(response.body.worker_code, worker.labor_code);
 
   // TicketWorker.status ต้องไม่ถูกแตะเลย — worker ยัง WORKING ระดับ Business Ticket ปกติ
   assert.equal(ticketWorker.status, "WORKING");
@@ -2428,7 +2434,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
   const ticketWorker = {
     id: state.nextTicketWorkerId++,
     market_job_id: firstTicket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -2448,7 +2454,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
         ticket_number: job.ticket_number,
         ticket_no: market.ticket_no,
         boothCode: firstTicket.boothCode,
-        worker_code: worker.username,
+        worker_code: worker.labor_code,
         reason_code: "test",
       },
     },
@@ -2552,7 +2558,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
       ticket_number: job.ticket_number,
       ticket_no: market.ticket_no,
       boothCode: ticket.boothCode,
-      worker_code: worker.username,
+      worker_code: worker.labor_code,
       reason_code: "test",
     },
   });
@@ -2572,7 +2578,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
   state.ticketWorkers.push({
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -2586,7 +2592,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
       ticket_number: job.ticket_number,
       ticket_no: market.ticket_no,
       boothCode: ticket.boothCode,
-      worker_code: worker.username,
+      worker_code: worker.labor_code,
       reason_code: "test",
     },
   });
@@ -2605,7 +2611,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
   const ticketWorker = {
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -2627,7 +2633,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
       ticket_number: job.ticket_number,
       ticket_no: market.ticket_no,
       boothCode: ticket.boothCode,
-      worker_code: worker.username,
+      worker_code: worker.labor_code,
       reason_code: "test",
     },
   });
@@ -2743,7 +2749,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income Cancellation falls
   state.ticketWorkers.push({
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -2871,7 +2877,7 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
   state.ticketWorkers.push({
     id: state.nextTicketWorkerId++,
     market_job_id: market.id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     joined_at: new Date().toISOString(),
     cancelled_at: null,
@@ -2977,7 +2983,7 @@ test("worker globally cancelled before Business Ticket roster locks still keeps 
   const sharedTicketWorker = state.ticketWorkers.find(
     (ticketWorker) =>
       ticketWorker.market_job_id === firstTicket.market_job_id &&
-      ticketWorker.worker_account_id === worker.id
+      ticketWorker.worker_id === worker.id
   );
 
   assert.ok(sharedTicketWorker);
@@ -2993,7 +2999,7 @@ test("worker globally cancelled before Business Ticket roster locks still keeps 
       token: adminToken,
       body: {
         ticket_number: job.ticket_number,
-        worker_code: worker.username,
+        worker_code: worker.labor_code,
         reason_code: "replace worker before ticket locks",
       },
     }
@@ -3017,7 +3023,7 @@ test("worker globally cancelled before Business Ticket roster locks still keeps 
     {
       token: adminToken,
       body: {
-        worker_codes: [replacementWorker.username],
+        worker_codes: [replacementWorker.labor_code],
         reason_code: "MANUAL_ASSIGNMENT",
       },
     }
@@ -3028,7 +3034,7 @@ test("worker globally cancelled before Business Ticket roster locks still keeps 
   const replacementAssignment = state.assignments.find(
     (item) =>
       item.vehicle_job_id === job.id &&
-      item.worker_account_id === replacementWorker.id &&
+      item.worker_id === replacementWorker.id &&
       item.status === "PENDING"
   );
 
@@ -3067,7 +3073,7 @@ test("worker globally cancelled before Business Ticket roster locks still keeps 
   const replacementTicketWorker = state.ticketWorkers.find(
     (ticketWorker) =>
       ticketWorker.market_job_id === firstTicket.market_job_id &&
-      ticketWorker.worker_account_id === replacementWorker.id
+      ticketWorker.worker_id === replacementWorker.id
   );
 
   assert.ok(replacementTicketWorker);
@@ -3142,16 +3148,16 @@ test("worker globally cancelled before Business Ticket roster locks still keeps 
   assert.ok(financialSecondBooth);
 
   const cancelledWorkerInFirstBooth = financialFirstBooth.workers.find(
-    (item: { worker_code: string }) => item.worker_code === worker.username
+    (item: { worker_code: string }) => item.worker_code === worker.labor_code
   );
   const replacementWorkerInFirstBooth = financialFirstBooth.workers.find(
-    (item: { worker_code: string }) => item.worker_code === replacementWorker.username
+    (item: { worker_code: string }) => item.worker_code === replacementWorker.labor_code
   );
   const cancelledWorkerInSecondBooth = financialSecondBooth.workers.find(
-    (item: { worker_code: string }) => item.worker_code === worker.username
+    (item: { worker_code: string }) => item.worker_code === worker.labor_code
   );
   const replacementWorkerInSecondBooth = financialSecondBooth.workers.find(
-    (item: { worker_code: string }) => item.worker_code === replacementWorker.username
+    (item: { worker_code: string }) => item.worker_code === replacementWorker.labor_code
   );
 
   // Booth 1 (Snapshot = worker เดิมเท่านั้น ตอนนั้น replacement ยังไม่เข้า roster) -> worker เดิมได้
@@ -3310,7 +3316,7 @@ test("financializes each booth of a multi-market TicketNumber against its own wo
         body: {
           ticket_number: job.ticket_number,
           ticket_no: market3.ticket_no,
-          worker_code: droppedWorker.username,
+          worker_code: droppedWorker.labor_code,
           reason_code: "reassigned to another Business Ticket of the same truck",
         },
       }
@@ -3371,7 +3377,7 @@ test("financializes each booth of a multi-market TicketNumber against its own wo
     const ticketWorker = state.ticketWorkers.find(
       (item) =>
         item.market_job_id === market3.id &&
-        item.worker_account_id === droppedWorker.id
+        item.worker_id === droppedWorker.id
     )!;
 
     assert.ok(ticketWorker);
@@ -3403,7 +3409,7 @@ test("financializes each booth of a multi-market TicketNumber against its own wo
     const ticketWorker = state.ticketWorkers.find(
       (item) =>
         item.market_job_id === market3.id &&
-        item.worker_account_id === remainingWorker.id
+        item.worker_id === remainingWorker.id
     )!;
 
     assert.ok(ticketWorker);
@@ -3440,10 +3446,10 @@ test("financializes each booth of a multi-market TicketNumber against its own wo
 
   for (const droppedWorker of droppedWorkers) {
     const rowInBoothOne = financialBoothOne.workers.find(
-      (item: { worker_code: string }) => item.worker_code === droppedWorker.username
+      (item: { worker_code: string }) => item.worker_code === droppedWorker.labor_code
     );
     const rowInBoothTwo = financialBoothTwo.workers.find(
-      (item: { worker_code: string }) => item.worker_code === droppedWorker.username
+      (item: { worker_code: string }) => item.worker_code === droppedWorker.labor_code
     );
 
     // แผง 1: เขายังทำงานอยู่ตอนนั้น -> ได้เงินจริง
@@ -3457,7 +3463,7 @@ test("financializes each booth of a multi-market TicketNumber against its own wo
 
   for (const remainingWorker of remainingWorkers) {
     const rowInBoothTwo = financialBoothTwo.workers.find(
-      (item: { worker_code: string }) => item.worker_code === remainingWorker.username
+      (item: { worker_code: string }) => item.worker_code === remainingWorker.labor_code
     );
 
     assert.ok(rowInBoothTwo);
@@ -4050,7 +4056,7 @@ test("ticket financialization rejects partial financial state without overwritin
     market_job_id:
       ticket.market_job_id,
 
-    worker_account_id:
+    worker_id:
       worker.id,
 
     status:
@@ -4335,7 +4341,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:work
     {
       id: state.nextTicketWorkerId++,
       market_job_id: firstTicket.market_job_id,
-      worker_account_id: worker.id,
+      worker_id: worker.id,
       status: "WORKING",
       joined_at: now,
       cancelled_at: null,
@@ -4344,7 +4350,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:work
     {
       id: state.nextTicketWorkerId++,
       market_job_id: secondTicket.market_job_id,
-      worker_account_id: worker.id,
+      worker_id: worker.id,
       status: "WORKING",
       joined_at: now,
       cancelled_at: null,
@@ -4360,7 +4366,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:work
       body: {
         ticket_number: job.ticket_number,
         ticket_no: firstMarket.ticket_no,
-        worker_code: worker.username,
+        worker_code: worker.labor_code,
         reason_code: "vendor requested a different worker for this ticket only",
       },
     }
@@ -4368,19 +4374,19 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:work
 
   assert.equal(response.status, 200);
   assert.equal(response.body.status, "CANCELLED");
-  assert.equal(response.body.worker_code, worker.username);
+  assert.equal(response.body.worker_code, worker.labor_code);
   assert.equal(response.body.ticket_number, job.ticket_number);
   assert.equal(response.body.ticket_no, firstMarket.ticket_no);
 
   const firstTicketWorker = state.ticketWorkers.find(
     (item) =>
       item.market_job_id === firstTicket.market_job_id &&
-      item.worker_account_id === worker.id
+      item.worker_id === worker.id
   );
   const secondTicketWorker = state.ticketWorkers.find(
     (item) =>
       item.market_job_id === secondTicket.market_job_id &&
-      item.worker_account_id === worker.id
+      item.worker_id === worker.id
   );
 
   assert.equal(firstTicketWorker?.status, "CANCELLED");
@@ -4432,7 +4438,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/workers/:work
       body: {
         ticket_number: job.ticket_number,
         ticket_no: market.ticket_no,
-        worker_code: worker.username,
+        worker_code: worker.labor_code,
         reason_code: "test",
       },
     }
@@ -4818,11 +4824,11 @@ test("POST /api/admin/vehicle-jobs/.../override-count: Admin submits on behalf, 
   // แม้ Admin เป็นคนกดส่งแทน ไม่ใช่ตัว Worker เอง
   const submittedEvent = state.realtimeEvents.find(
     (item) => (item as { type?: string }).type === "TICKET_COMPLETION_SUBMITTED",
-  ) as { worker_account_ids?: number[] } | undefined;
+  ) as { worker_ids?: number[] } | undefined;
 
   assert.ok(submittedEvent);
-  assert.ok(submittedEvent.worker_account_ids?.includes(worker1.id));
-  assert.ok(submittedEvent.worker_account_ids?.includes(worker2.id));
+  assert.ok(submittedEvent.worker_ids?.includes(worker1.id));
+  assert.ok(submittedEvent.worker_ids?.includes(worker2.id));
 
   // 3) Vendor ปฏิเสธยอดผ่าน LINE
   await rejectViaLine("Quantity mismatch");
@@ -4851,7 +4857,7 @@ test("POST /api/admin/vehicle-jobs/.../override-count: Admin submits on behalf, 
   submission = latestSubmission();
 
   assert.ok(submission);
-  assert.equal(submission.submitted_by_account_id, worker1.id);
+  assert.equal(submission.submitted_by_worker_id, worker1.id);
   assert.equal(submission.submitted_by_role, "worker");
 
   // 5) Vendor ปฏิเสธอีกครั้ง แล้ว Admin ส่งยอดแทนได้อีกเช่นกัน (ไม่ใช่แค่ครั้งแรก)
@@ -4937,7 +4943,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/wait Dispatch:false before the 
   assert.equal(response.body.reason_code, "R003");
   assert.deepEqual(
     [...response.body.requeued_worker_codes].sort(),
-    [worker1.username, worker2.username].sort(),
+    [worker1.labor_code, worker2.labor_code].sort(),
   );
   assert.equal(job.status, "WAIT");
   assert.equal(job.dispatch_now, false);
@@ -5000,7 +5006,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/wait Dispatch:true re-dispatche
   const newAssignment = state.assignments.find(
     (assignment) =>
       assignment.vehicle_job_id === job.id &&
-      assignment.worker_account_id === queuedWorker.id,
+      assignment.worker_id === queuedWorker.id,
   );
 
   assert.ok(newAssignment);
@@ -5175,7 +5181,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers releases worker
   );
 
   assert.equal(releaseResponse.status, 200);
-  assert.deepEqual(releaseResponse.body.released_worker_codes, [worker.username]);
+  assert.deepEqual(releaseResponse.body.released_worker_codes, [worker.labor_code]);
   assert.equal(assignment.status, "RELEASED");
   assert.ok(assignment.released_at);
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "ready");
@@ -5295,8 +5301,8 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/release-workers returns the tea
   // worker2 accept ก่อน (09:00:01) ต้องอยู่หน้า worker1 (09:00:05) ในคิว แม้ assignment ของ worker1
   // จะถูกสร้างก่อนก็ตาม — enqueueWorker ถูกเรียกตามลำดับนี้ ผลคือ worker2 มี score ต่ำกว่า (หน้ากว่า)
   assert.deepEqual(response.body.released_worker_codes, [
-    worker2.username,
-    worker1.username,
+    worker2.labor_code,
+    worker1.labor_code,
   ]);
   assert.equal(assignment1.status, "RELEASED");
   assert.equal(assignment2.status, "RELEASED");
@@ -5506,7 +5512,7 @@ test("release-workers followed by confirming both booths of a multi-booth Busine
   assert.ok(item);
   // Regression check: การเงินต้องไม่ใช่ 0 — บั๊กเดิมทำให้ finalize มองว่าไม่มี WORKING worker เลย
   assert.notEqual(item.finance.workers[0].total_amount, "0.00");
-  assert.equal(item.finance.workers[0].worker_code, worker.username);
+  assert.equal(item.finance.workers[0].worker_code, worker.labor_code);
 });
 
 test("Worker or Admin can still resubmit a booth rejected by Vendor after release-workers, even though the worker no longer has an active assignment on this vehicle job (regression: used to 404 ASSIGNMENT_NOT_FOUND)", async () => {
@@ -5671,7 +5677,7 @@ test("GET /api/admin/vehicle-jobs/operations shows operation_status=working (not
   // ของ check-in-barcode ที่ถูกอยู่แล้ว) — test harness เลย fallback เป็น camelCase "workerStatus"
   // สำหรับ field นี้เท่านั้น ส่วน wire จริงตอนส่งออกจาก server ยังเป็น PascalCase "WorkerStatus" ปกติ
   const workerRow = item.workers.find(
-    (w: { worker_code: string }) => w.worker_code === worker.username,
+    (w: { worker_code: string }) => w.worker_code === worker.labor_code,
   );
 
   assert.ok(workerRow);
@@ -5748,7 +5754,7 @@ test("GET /api/admin/vehicle-jobs/history returns Workers, Timeline, Finance and
   state.workerAssignmentEvents.push({
     id: state.nextWorkerAssignmentEventId++,
     assignment_id: assignment.id,
-    worker_account_id: assignment.worker_account_id,
+    worker_id: assignment.worker_id,
     vehicle_job_id: assignment.vehicle_job_id,
     event_type: "ASSIGNED",
     occurred_at: new Date().toISOString(),
@@ -5827,9 +5833,9 @@ test("GET /api/admin/vehicle-jobs/history returns Workers, Timeline, Finance and
 
   // Workers
   assert.equal(item.workers.length, 1);
-  assert.equal(item.workers[0].worker_account_id, worker.id);
+  assert.equal(item.workers[0].worker_id, worker.id);
   assert.equal(item.workers[0].assignment_id, assignment.id);
-  assert.equal(item.workers[0].worker_code, worker.username);
+  assert.equal(item.workers[0].worker_code, worker.labor_code);
   assert.ok(item.workers[0].accepted_at);
   assert.ok(item.workers[0].scanned_at);
   // started_at ต้องเท่ากับ accepted_at (Business Definition: เริ่มงานตั้งแต่กด Accept)
@@ -5862,11 +5868,11 @@ test("GET /api/admin/vehicle-jobs/history returns Workers, Timeline, Finance and
   assert.equal("financialized_at" in booth, false);
   assert.ok(booth.final_stall_amount);
   assert.equal(booth.submitted_by_codes.length, 1);
-  assert.equal(booth.submitted_by_codes[0], worker.username);
+  assert.equal(booth.submitted_by_codes[0], worker.labor_code);
   assert.equal(booth.submitted_by_role, "worker");
   assert.deepEqual(booth.submission_worker_snapshot, [
     {
-      worker_code: worker.username,
+      worker_code: worker.labor_code,
       full_name: worker.full_name,
     },
   ]);
@@ -5890,7 +5896,7 @@ test("GET /api/admin/vehicle-jobs/history returns Workers, Timeline, Finance and
   assert.equal(item.finance.total_worker_share, booth.summary.worker_payout_total);
   assert.equal(item.finance.stall_fee_total, booth.final_stall_amount);
   assert.equal(item.finance.workers.length, 1);
-  assert.equal(item.finance.workers[0].worker_code, worker.username);
+  assert.equal(item.finance.workers[0].worker_code, worker.labor_code);
 });
 
 test("GET /api/admin/vehicle-jobs/history reflects Admin actions (override count) in the Timeline", async () => {
@@ -6214,7 +6220,7 @@ test("POST .../assignment/cancel records exactly one ASSIGNMENT_CANCELLED AdminA
       token: adminToken,
       body: {
         ticket_number: job.ticket_number,
-        worker_code: worker.username,
+        worker_code: worker.labor_code,
         reason_code: "ADMIN_CANCEL_WORKER_ASSIGNMENT",
         reason_text: "ยกเลิกงานทดสอบ",
       },
@@ -6240,7 +6246,7 @@ test("POST .../assignment/cancel records exactly one ASSIGNMENT_CANCELLED AdminA
 
   const item = historyResponse.body.data[0];
   const workerEntry = item.workers.find(
-    (entry: { worker_code: string }) => entry.worker_code === worker.username,
+    (entry: { worker_code: string }) => entry.worker_code === worker.labor_code,
   );
 
   assert.ok(workerEntry.cancellation);
@@ -6276,7 +6282,7 @@ test("GET /api/admin/vehicle-jobs/history cancellation.cancelled_at is null when
 
   const item = historyResponse.body.data[0];
   const workerEntry = item.workers.find(
-    (entry: { worker_code: string }) => entry.worker_code === worker.username,
+    (entry: { worker_code: string }) => entry.worker_code === worker.labor_code,
   );
 
   assert.ok(workerEntry.cancellation);
@@ -6372,7 +6378,7 @@ test("GET /api/admin/vehicle-jobs/history job-level finance.workers shows distin
     {
       id: 599971,
       market_job_id: marketA.id,
-      worker_account_id: workerA.id,
+      worker_id: workerA.id,
       status: "COMPLETED",
       final_earning_amount: "100.00",
       joined_at: new Date().toISOString(),
@@ -6382,7 +6388,7 @@ test("GET /api/admin/vehicle-jobs/history job-level finance.workers shows distin
     {
       id: 599972,
       market_job_id: marketB.id,
-      worker_account_id: workerA.id,
+      worker_id: workerA.id,
       status: "COMPLETED",
       final_earning_amount: "120.00",
       joined_at: new Date().toISOString(),
@@ -6392,7 +6398,7 @@ test("GET /api/admin/vehicle-jobs/history job-level finance.workers shows distin
     {
       id: 599973,
       market_job_id: marketA.id,
-      worker_account_id: workerB.id,
+      worker_id: workerB.id,
       status: "COMPLETED",
       final_earning_amount: "45.00",
       joined_at: new Date().toISOString(),
@@ -6416,14 +6422,14 @@ test("GET /api/admin/vehicle-jobs/history job-level finance.workers shows distin
   );
 
   // Worker A ทำ 2 Business Ticket รวม 220 ไม่ใช่เฉลี่ย, Worker B ทำใบเดียว 45
-  assert.equal(earningsByCode.get(workerA.username), "220.00");
-  assert.equal(earningsByCode.get(workerB.username), "45.00");
+  assert.equal(earningsByCode.get(workerA.labor_code), "220.00");
+  assert.equal(earningsByCode.get(workerB.labor_code), "45.00");
 
   const workerAEntry = item.finance.workers.find(
-    (entry: { worker_code: string }) => entry.worker_code === workerA.username,
+    (entry: { worker_code: string }) => entry.worker_code === workerA.labor_code,
   );
 
-  assert.equal(workerAEntry.worker_account_id, workerA.id);
+  assert.equal(workerAEntry.worker_id, workerA.id);
 });
 
 test("GET /api/admin/vehicle-jobs/history rejection_history resolves correction_owner and rejected_by_type=owner across two reject/correct cycles", async () => {
@@ -6902,8 +6908,8 @@ test("GET /api/admin/vehicle-jobs/history booth.latest_submitted_by_code/name id
   const response = await requestHistory(adminToken, { search: job.ticket_number });
   const booth = response.body.data[0].markets[0].booths[0];
 
-  assert.deepEqual([...booth.submitted_by_codes].sort(), [workerA.username, workerB.username].sort());
-  assert.equal(booth.latest_submitted_by_code, workerB.username);
+  assert.deepEqual([...booth.submitted_by_codes].sort(), [workerA.labor_code, workerB.labor_code].sort());
+  assert.equal(booth.latest_submitted_by_code, workerB.labor_code);
   assert.equal(booth.latest_submitted_by_name, workerB.full_name);
 });
 
@@ -7026,7 +7032,7 @@ test("GET /api/admin/vehicle-jobs/history vehicle_job.history_flags WORKER_CHANG
     {
       id: state.nextWorkerAssignmentEventId++,
       assignment_id: acceptedAssignment.id,
-      worker_account_id: workerAccepted.id,
+      worker_id: workerAccepted.id,
       vehicle_job_id: job.id,
       event_type: "ADMIN_CANCELLED",
       occurred_at: new Date().toISOString(),
@@ -7036,7 +7042,7 @@ test("GET /api/admin/vehicle-jobs/history vehicle_job.history_flags WORKER_CHANG
     {
       id: state.nextWorkerAssignmentEventId++,
       assignment_id: neverAcceptedAssignment.id,
-      worker_account_id: workerNeverAccepted.id,
+      worker_id: workerNeverAccepted.id,
       vehicle_job_id: job.id,
       event_type: "ADMIN_CANCELLED",
       occurred_at: new Date().toISOString(),
@@ -7095,7 +7101,7 @@ test("GET /api/admin/vehicle-jobs/history company_share_rate is 0.00 when labor_
   state.ticketWorkers.push({
     id: 5990020,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "COMPLETED",
     final_earning_amount: "0.00",
     joined_at: new Date().toISOString(),
@@ -7193,7 +7199,7 @@ test("GET /api/admin/vehicle-jobs/history returns submitted_by_role and submissi
     {
       id: 6991111,
       market_job_id: ticket.market_job_id,
-      worker_account_id: workerA.id,
+      worker_id: workerA.id,
       status: "COMPLETED",
       final_earning_amount: null,
       joined_at: new Date().toISOString(),
@@ -7203,7 +7209,7 @@ test("GET /api/admin/vehicle-jobs/history returns submitted_by_role and submissi
     {
       id: 6991112,
       market_job_id: ticket.market_job_id,
-      worker_account_id: workerB.id,
+      worker_id: workerB.id,
       status: "COMPLETED",
       final_earning_amount: null,
       joined_at: new Date().toISOString(),
@@ -7251,11 +7257,11 @@ test("GET /api/admin/vehicle-jobs/history returns submitted_by_role and submissi
   assert.equal(booth.submitted_by_role, "worker");
   assert.deepEqual(booth.submission_worker_snapshot, [
     {
-      worker_code: workerA.username,
+      worker_code: workerA.labor_code,
       full_name: workerA.full_name,
     },
     {
-      worker_code: workerB.username,
+      worker_code: workerB.labor_code,
       full_name: workerB.full_name,
     },
   ]);
@@ -7287,7 +7293,7 @@ test("GET /api/admin/vehicle-jobs/history Booth worker_count ignores the current
     {
       id: 6991021,
       market_job_id: ticket.market_job_id,
-      worker_account_id: workerA.id,
+      worker_id: workerA.id,
       status: "WORKING",
       final_earning_amount: null,
       joined_at: new Date().toISOString(),
@@ -7297,7 +7303,7 @@ test("GET /api/admin/vehicle-jobs/history Booth worker_count ignores the current
     {
       id: 6991022,
       market_job_id: ticket.market_job_id,
-      worker_account_id: workerB.id,
+      worker_id: workerB.id,
       status: "WORKING",
       final_earning_amount: null,
       joined_at: new Date().toISOString(),
@@ -7307,7 +7313,7 @@ test("GET /api/admin/vehicle-jobs/history Booth worker_count ignores the current
     {
       id: 6991023,
       market_job_id: ticket.market_job_id,
-      worker_account_id: workerC.id,
+      worker_id: workerC.id,
       status: "WORKING",
       final_earning_amount: null,
       joined_at: new Date().toISOString(),
@@ -7317,7 +7323,7 @@ test("GET /api/admin/vehicle-jobs/history Booth worker_count ignores the current
     {
       id: 6991024,
       market_job_id: ticket.market_job_id,
-      worker_account_id: workerD.id,
+      worker_id: workerD.id,
       status: "WORKING",
       final_earning_amount: null,
       joined_at: new Date().toISOString(),
@@ -7378,7 +7384,7 @@ test("GET /api/admin/vehicle-jobs/history Booth worker_count is null for a legac
   state.ticketWorkers.push({
     id: 6991041,
     market_job_id: ticket.market_job_id,
-    worker_account_id: workerB.id,
+    worker_id: workerB.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -7476,7 +7482,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income lists one row per 
   assert.equal(row.id, undefined);
   assert.equal(row.ticket_no, marketJob.ticket_no);
   assert.equal(row.plate, job.license_plate);
-  assert.equal(row.worker.code, worker.username);
+  assert.equal(row.worker.code, worker.labor_code);
   assert.equal(row.payable, ticketWorker.final_earning_amount);
   assert.equal(row.payment_status, "success");
   assert.ok(row.accepted_at);
@@ -7498,7 +7504,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income payment_status = p
   state.ticketWorkers.push({
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "CANCELLED",
     final_earning_amount: "5.00",
     joined_at: new Date().toISOString(),
@@ -7528,7 +7534,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income excludes a row ent
   state.ticketWorkers.push({
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -7559,7 +7565,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income payment_status = w
   state.ticketWorkers.push({
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -7593,7 +7599,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income payment_status = a
   state.ticketWorkers.push({
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -7623,7 +7629,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income payment_status = c
   state.ticketWorkers.push({
     id: state.nextTicketWorkerId++,
     market_job_id: ticket.market_job_id,
-    worker_account_id: worker.id,
+    worker_id: worker.id,
     status: "WORKING",
     final_earning_amount: null,
     joined_at: new Date().toISOString(),
@@ -7688,7 +7694,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income supports workerCod
     {
       id: state.nextTicketWorkerId++,
       market_job_id: ticketA.market_job_id,
-      worker_account_id: workerA.id,
+      worker_id: workerA.id,
       status: "COMPLETED",
       final_earning_amount: "12.00",
       joined_at: now,
@@ -7698,7 +7704,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income supports workerCod
     {
       id: state.nextTicketWorkerId++,
       market_job_id: ticketB.market_job_id,
-      worker_account_id: workerB.id,
+      worker_id: workerB.id,
       status: "COMPLETED",
       final_earning_amount: "8.00",
       joined_at: now,
@@ -7709,13 +7715,13 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income supports workerCod
 
   const response = await server.request(
     "GET",
-    `/api/admin/vehicle-jobs/history/daily-worker-income?workerCode=${workerA.username}`,
+    `/api/admin/vehicle-jobs/history/daily-worker-income?workerCode=${workerA.labor_code}`,
     { token: adminToken },
   );
 
   assert.equal(response.status, 200);
   assert.equal(response.body.data.length, 1);
-  assert.equal(response.body.data[0].worker.code, workerA.username);
+  assert.equal(response.body.data[0].worker.code, workerA.labor_code);
   assert.equal(response.body.data[0].payable, "12.00");
 });
 
@@ -7744,7 +7750,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income available_worker_c
     {
       id: state.nextTicketWorkerId++,
       market_job_id: ticketA.market_job_id,
-      worker_account_id: workerA.id,
+      worker_id: workerA.id,
       status: "COMPLETED",
       final_earning_amount: "12.00",
       joined_at: now,
@@ -7754,7 +7760,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income available_worker_c
     {
       id: state.nextTicketWorkerId++,
       market_job_id: ticketB.market_job_id,
-      worker_account_id: workerB.id,
+      worker_id: workerB.id,
       status: "COMPLETED",
       final_earning_amount: "8.00",
       joined_at: now,
@@ -7766,7 +7772,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income available_worker_c
   // Filter ด้วย workerCode แล้ว data เหลือแค่ workerA แต่ available_shifts ต้องเห็นทั้ง shift 1 และ 2
   const byWorkerCodeResponse = await server.request(
     "GET",
-    `/api/admin/vehicle-jobs/history/daily-worker-income?workerCode=${workerA.username}`,
+    `/api/admin/vehicle-jobs/history/daily-worker-income?workerCode=${workerA.labor_code}`,
     { token: adminToken },
   );
 
@@ -7776,7 +7782,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income available_worker_c
   // available_worker_codes ก็ต้องเห็นทั้งคู่เช่นกัน (ไม่ใช่แค่ workerA ที่กำลังกรองอยู่)
   assert.deepEqual(
     [...byWorkerCodeResponse.body.available_worker_codes].sort(),
-    [workerA.username, workerB.username].sort(),
+    [workerA.labor_code, workerB.labor_code].sort(),
   );
 
   // Filter ด้วย shift แล้ว data เหลือแค่ workerA (shift 1) แต่ available_worker_codes ต้องเห็นทั้งคู่
@@ -7788,10 +7794,10 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income available_worker_c
 
   assert.equal(byShiftResponse.status, 200);
   assert.equal(byShiftResponse.body.data.length, 1);
-  assert.equal(byShiftResponse.body.data[0].worker.code, workerA.username);
+  assert.equal(byShiftResponse.body.data[0].worker.code, workerA.labor_code);
   assert.deepEqual(
     [...byShiftResponse.body.available_worker_codes].sort(),
-    [workerA.username, workerB.username].sort(),
+    [workerA.labor_code, workerB.labor_code].sort(),
   );
   assert.deepEqual([...byShiftResponse.body.available_shifts].sort(), [1, 2]);
 });
@@ -7820,7 +7826,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income treats an empty sh
     {
       id: state.nextTicketWorkerId++,
       market_job_id: ticketA.market_job_id,
-      worker_account_id: workerA.id,
+      worker_id: workerA.id,
       status: "COMPLETED",
       final_earning_amount: "12.00",
       joined_at: now,
@@ -7830,7 +7836,7 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income treats an empty sh
     {
       id: state.nextTicketWorkerId++,
       market_job_id: ticketB.market_job_id,
-      worker_account_id: workerB.id,
+      worker_id: workerB.id,
       status: "COMPLETED",
       final_earning_amount: "8.00",
       joined_at: now,

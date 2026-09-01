@@ -93,7 +93,7 @@ export async function applyVendorTicketCompletionResult(input: {
   ]);
   const completedWorkerCodes = completedVehicleJob
     ? await profileRepository.findWorkerCodesByAccountIds(
-        completedVehicleJob.completed_worker_account_ids,
+        completedVehicleJob.completed_worker_ids,
         input.connection,
       )
     : [];
@@ -381,7 +381,7 @@ export async function submitTicketCompletion(input: {
     // อาจถูก Cancel เฉพาะ Business Ticket นี้ แต่ยัง Check-in รถและทำ Ticket อื่นได้)
     const isTicketWorker = ticketWorkers.some(
       (worker) =>
-        worker.worker_account_id === submittedByAccountId &&
+        worker.worker_id === submittedByAccountId &&
         worker.status === TICKET_WORKER_STATUS.WORKING,
     );
 
@@ -571,7 +571,7 @@ export async function notifyTicketCompletionSubmitted(result: {
     message: `Ticket ${result.ticket.boothCode} is waiting for vendor confirmation.`,
     payload: realtimePayload,
     admin: true,
-    worker_account_ids: result.receiverAccountIds,
+    worker_ids: result.receiverAccountIds,
   });
 
   return { detail };

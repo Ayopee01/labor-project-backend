@@ -75,8 +75,8 @@ export async function revokeActiveByAccountIdExcept(
   accountId: number | string,
   exceptSessionId: number | string,
   connection?: DbConnection
-): Promise<void> {
-  await client(connection).userSession.updateMany({
+): Promise<number> {
+  const result = await client(connection).userSession.updateMany({
     where: {
       accountId: toId(accountId),
       id: {
@@ -86,4 +86,6 @@ export async function revokeActiveByAccountIdExcept(
     },
     data: buildRevokeData(),
   });
+
+  return result.count;
 }

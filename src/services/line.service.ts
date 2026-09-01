@@ -547,7 +547,7 @@ export async function handleLineWebhook(
       message: result.message,
       payload: realtimePayload,
       admin: true,
-      worker_account_ids: result.receiverAccountIds,
+      worker_ids: result.receiverAccountIds,
     });
 
     processed += 1;

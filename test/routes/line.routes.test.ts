@@ -17,7 +17,7 @@ async function loginWorker(accountId: number): Promise<{ token: string; worker: 
   const worker = addWorker(accountId, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: `mobile-${accountId}`,
       device_name: "Worker Mobile",
@@ -131,7 +131,7 @@ function addAuditAssignment(input: {
   const assignment = {
     id: input.id,
     vehicle_job_id: input.vehicleJobId,
-    worker_account_id: input.workerId,
+    worker_id: input.workerId,
     status: input.status ?? "PENDING",
     accept_deadline_at: null,
     scan_deadline_at: null,
@@ -147,7 +147,7 @@ function addAuditAssignment(input: {
     state.workerAssignmentEvents.push({
       id: state.nextWorkerAssignmentEventId++,
       assignment_id: assignment.id,
-      worker_account_id: assignment.worker_account_id,
+      worker_id: assignment.worker_id,
       vehicle_job_id: assignment.vehicle_job_id,
       event_type: eventType,
       occurred_at: assignment.updated_at,
@@ -599,7 +599,7 @@ test("POST /api/workers/me/assignments/tickets/complete snapshots worker_count_s
       token: adminToken,
       body: {
         ticket_number: job.ticket_number,
-        worker_code: workerC.username,
+        worker_code: workerC.labor_code,
         reason_code: "TEST_WORKER_LEFT",
         reason_text: "test",
       },

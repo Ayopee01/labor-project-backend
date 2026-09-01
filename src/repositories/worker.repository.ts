@@ -7,7 +7,7 @@ import type { WorkerAssignmentHistoryItemDto, WorkerEarningsSummaryResponse } fr
 /* -------------------------------------- Functions -------------------------------------- */
 
 export async function listWorkerAssignmentHistoryByDate(
-  workerAccountId: number,
+  workerId: number,
   startAt: Date,
   endAt: Date,
   connection?: DbConnection,
@@ -15,7 +15,7 @@ export async function listWorkerAssignmentHistoryByDate(
   const db = client(connection);
   const assignments = await db.vehicleJobAssignment.findMany({
     where: {
-      workerAccountId,
+      workerId,
       createdAt: {
         gte: startAt,
         lt: endAt,
@@ -94,7 +94,7 @@ export async function listWorkerAssignmentHistoryByDate(
 // Function ดึงสรุปรายได้ของ Worker ต่อ Business Ticket (ไม่ใช่ต่อ Booth เพราะ TicketWorker
 // เป็น Roster ระดับ Business Ticket แล้ว final_earning_amount จึงรวมทุก Booth ของ Ticket นั้น)
 export async function listWorkerEarningsSummaryRows(
-  workerAccountId: number,
+  workerId: number,
   startAt: Date,
   endAt: Date,
   connection?: DbConnection,
@@ -102,7 +102,7 @@ export async function listWorkerEarningsSummaryRows(
   const db = client(connection);
   const rows = await db.ticketWorker.findMany({
     where: {
-      workerAccountId,
+      workerId,
       finalEarningAmount: {
         not: null,
       },

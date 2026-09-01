@@ -13,14 +13,14 @@ let ticketFinancialService: typeof import("../../src/services/shared/ticket-fina
 /* -------------------------------------- Test Helpers -------------------------------------- */
 
 // Function เธเธฑเธ”เธเธฒเธฃ login worker เธชเธณเธซเธฃเธฑเธ test
-async function loginWorker(accountId: number): Promise<{ token: string; worker: ReturnType<typeof addWorker> }> {
+async function loginWorker(workerId: number): Promise<{ token: string; worker: ReturnType<typeof addWorker> }> {
   const passwordHash = await password.hashPassword("Worker@123456");
-  const worker = addWorker(accountId, passwordHash);
+  const worker = addWorker(workerId, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
-      device_id: `mobile-${accountId}`,
+      device_id: `mobile-${workerId}`,
       device_name: "Worker Mobile",
     },
   });
@@ -108,7 +108,7 @@ function addAuditAssignment(input: {
   const assignment = {
     id: input.id,
     vehicle_job_id: input.vehicleJobId,
-    worker_account_id: input.workerId,
+    worker_id: input.workerId,
     status: input.status ?? "PENDING",
     accept_deadline_at: null,
     scan_deadline_at: null,
@@ -124,7 +124,7 @@ function addAuditAssignment(input: {
     state.workerAssignmentEvents.push({
       id: state.nextWorkerAssignmentEventId++,
       assignment_id: assignment.id,
-      worker_account_id: assignment.worker_account_id,
+      worker_id: assignment.worker_id,
       vehicle_job_id: assignment.vehicle_job_id,
       event_type: eventType,
       occurred_at: assignment.updated_at,
@@ -279,7 +279,7 @@ test("POST /api/workers/me/online puts worker into queue", async () => {
   assert.equal(response.body.code, "WORKER_ONLINE_SUCCESS");
   assert.equal(response.body.message, "Worker entered queue successfully.");
   assert.equal(state.shiftAttendances.length, 1);
-  assert.equal(state.shiftAttendances[0].accountId, worker.id);
+  assert.equal(state.shiftAttendances[0].workerId, worker.id);
   assert.ok(state.shiftAttendances[0].firstOnlineAt);
   assert.equal(state.shiftAttendances[0].closedAt, null);
 });
@@ -300,11 +300,11 @@ test("POST /api/workers/me/online dispatches an existing ready job when queue wa
   assert.equal(response.body.message, "Worker entered queue successfully.");
   assert.equal(state.assignments.length, 1);
   assert.equal(state.assignments[0].vehicle_job_id, job.id);
-  assert.equal(state.assignments[0].worker_account_id, worker.id);
+  assert.equal(state.assignments[0].worker_id, worker.id);
   assert.equal(state.assignments[0].status, "PENDING");
 
   const assignedEvent = state.socketEvents.find(
-    (event) => event.event === "WORKER_ASSIGNED" && event.accountId === worker.id
+    (event) => event.event === "WORKER_ASSIGNED" && event.workerId === worker.id
   );
   assert.ok(assignedEvent);
   assert.equal(
@@ -625,7 +625,7 @@ test("GET /api/workers/me/notifications returns current worker notification hist
   state.workerNotifications.push(
     {
       id: state.nextWorkerNotificationId++,
-      worker_account_id: worker.id,
+      worker_id: worker.id,
       type: "WORKER_ASSIGNED",
       notification_key: "worker.assigned",
       lang: "TH",
@@ -640,7 +640,7 @@ test("GET /api/workers/me/notifications returns current worker notification hist
     },
     {
       id: state.nextWorkerNotificationId++,
-      worker_account_id: worker.id,
+      worker_id: worker.id,
       type: "TICKET_COMPLETION_RESULT",
       notification_key: "ticket.completion_confirmed",
       lang: "TH",
@@ -656,7 +656,7 @@ test("GET /api/workers/me/notifications returns current worker notification hist
     },
     {
       id: state.nextWorkerNotificationId++,
-      worker_account_id: otherWorker.id,
+      worker_id: otherWorker.id,
       type: "WORKER_ASSIGNED",
       notification_key: "worker.assigned",
       lang: "TH",
@@ -744,7 +744,7 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
     {
       id: state.nextTicketWorkerId++,
       market_job_id: firstTicket.market_job_id,
-      worker_account_id: worker.id,
+      worker_id: worker.id,
       status: "COMPLETED",
       final_earning_amount: "150.00",
       joined_at: now,
@@ -754,7 +754,7 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
     {
       id: state.nextTicketWorkerId++,
       market_job_id: secondTicket.market_job_id,
-      worker_account_id: worker.id,
+      worker_id: worker.id,
       status: "COMPLETED",
       final_earning_amount: "25.50",
       joined_at: now,
@@ -764,7 +764,7 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
     {
       id: state.nextTicketWorkerId++,
       market_job_id: firstTicket.market_job_id,
-      worker_account_id: otherWorker.id,
+      worker_id: otherWorker.id,
       status: "COMPLETED",
       final_earning_amount: "999.00",
       joined_at: now,
@@ -774,7 +774,7 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
     {
       id: state.nextTicketWorkerId++,
       market_job_id: todayTicket.market_job_id,
-      worker_account_id: worker.id,
+      worker_id: worker.id,
       status: "COMPLETED",
       final_earning_amount: "300.00",
       joined_at: now,
@@ -784,7 +784,7 @@ test("GET /api/workers/me/earnings/summary returns latest 15 completed days from
     {
       id: state.nextTicketWorkerId++,
       market_job_id: oldTicket.market_job_id,
-      worker_account_id: worker.id,
+      worker_id: worker.id,
       status: "COMPLETED",
       final_earning_amount: "400.00",
       joined_at: now,
@@ -1005,7 +1005,7 @@ test("worker-shift-end job reschedules itself instead of ejecting when the sched
   // Fixture กะเป็น 00:00-23:59 (ทั้งวัน) เวลาปัจจุบันจึงยังอยู่ในกะแน่นอนเมื่ออ่านสดจาก DB ตอนนี้
   await processor({
     data: {
-      accountId: worker.id,
+      workerId: worker.id,
       scheduleId: worker.id,
       shiftInstanceKey: (scheduledJob.data as { shiftInstanceKey?: string }).shiftInstanceKey,
       kind: "shift_end",
@@ -1017,7 +1017,7 @@ test("worker-shift-end job reschedules itself instead of ejecting when the sched
 
   // Attendance ของกะนี้ต้องยังไม่ถูกปิด
   const attendance = state.shiftAttendances.find(
-    (item) => item.accountId === worker.id
+    (item) => item.workerId === worker.id
   );
 
   assert.ok(attendance);
@@ -1066,7 +1066,7 @@ test("worker-shift-end job ejects to open_app and closes attendance when the shi
 
   await processor({
     data: {
-      accountId: worker.id,
+      workerId: worker.id,
       scheduleId: worker.id,
       shiftInstanceKey,
       kind: "shift_end",
@@ -1077,7 +1077,7 @@ test("worker-shift-end job ejects to open_app and closes attendance when the shi
   assert.equal((await workerQueue.getWorkerQueueStatus(worker.id))?.status, "open_app");
 
   const attendance = state.shiftAttendances.find(
-    (item) => item.accountId === worker.id
+    (item) => item.workerId === worker.id
   );
 
   assert.ok(attendance);
@@ -1098,9 +1098,9 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
     "break_count_used",
     "completed_job_count",
     "full_name",
-    "image_url",
     "nationality",
     "phone",
+    "picture",
     "shift",
     "shift_active",
     "status",
@@ -1110,14 +1110,14 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
   ]);
   assert.equal(response.body.full_name, worker.full_name);
   assert.equal(response.body.worker_code, `W${worker.id}`);
-  assert.equal(response.body.image_url, null);
+  assert.equal(response.body.picture, null);
   assert.equal(response.body.status, "ready");
   assert.equal(response.body.today_job_count, 0);
   assert.equal(response.body.break_count_used, 0);
   assert.equal(response.body.completed_job_count, 0);
   assert.equal(response.body.nationality, "Thai");
   assert.equal(response.body.work_start_date, "2026-01-01");
-  assert.equal(response.body.phone, worker.phone);
+  assert.equal(response.body.phone, worker.telephone);
   assert.equal(typeof response.body.shift.name, "string");
   assert.equal(response.body.shift.start_time, "00:00");
   assert.equal(response.body.shift.end_time, "23:59");
@@ -1177,8 +1177,8 @@ test("GET /api/workers/me/status returns shift_active false when the worker alre
 
   state.shiftAttendances.push({
     id: state.nextShiftAttendanceId++,
-    accountId: worker.id,
-    workerCode: worker.username,
+    workerId: worker.id,
+    workerCode: worker.labor_code,
     shiftInstanceKey,
     shiftNo: schedule.shift_no,
     shiftStartTime: schedule.shift_start_time,
@@ -1436,7 +1436,7 @@ test("worker queue keeps FIFO order when workers enter in the same millisecond",
   const popped = await workerQueue.popReadyWorkers(3);
 
   assert.deepEqual(
-    popped.map((worker) => worker.account_id),
+    popped.map((worker) => worker.worker_id),
     [2, 10, 1]
   );
 });
@@ -1449,7 +1449,7 @@ test("worker queue can return admin-cancelled workers to the front in priority o
   const popped = await workerQueue.popReadyWorkers(4);
 
   assert.deepEqual(
-    popped.map((worker) => worker.account_id),
+    popped.map((worker) => worker.worker_id),
     [21, 22, 11, 12]
   );
 });
@@ -1472,14 +1472,14 @@ test("dispatch assigns ready workers in FIFO order", async () => {
   await workerDispatch.dispatchReadyWorkers();
 
   assert.deepEqual(
-    state.assignments.map((assignment) => assignment.worker_account_id),
+    state.assignments.map((assignment) => assignment.worker_id),
     [11, 12]
   );
   assert.equal((await workerQueue.getWorkerQueueStatus(11))?.status, "assigned");
   assert.equal((await workerQueue.getWorkerQueueStatus(12))?.status, "assigned");
   assert.equal((await workerQueue.getWorkerQueueStatus(13))?.status, "ready");
   const assignedEvent = state.socketEvents.find(
-    (event) => event.event === "WORKER_ASSIGNED" && event.accountId === 11
+    (event) => event.event === "WORKER_ASSIGNED" && event.workerId === 11
   );
   const payload = assignedEvent?.payload as {
     ticketNumber: string;
@@ -1522,7 +1522,7 @@ test("dispatch assigns disconnected ready worker by FIFO order", async () => {
   assert.equal((await workerQueue.getWorkerQueueStatus(21))?.status, "assigned");
   assert.equal((await workerQueue.getWorkerQueueStatus(22))?.status, "ready");
   assert.deepEqual(
-    state.assignments.map((assignment) => assignment.worker_account_id),
+    state.assignments.map((assignment) => assignment.worker_id),
     [21]
   );
 });
@@ -1544,18 +1544,18 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
     "accepted_at",
+    "coat_no",
     "license_plate",
     "license_plate_province",
     "markets",
     "scan_deadline_at",
     "scan_deadline_unix_ms",
-    "shirt_number",
     "team",
     "ticket_number",
     "worker_code",
   ]);
   assert.equal(response.body.worker_code, `W${worker.id}`);
-  assert.equal(response.body.shirt_number, String(worker.id));
+  assert.equal(response.body.coat_no, String(worker.id));
   assert.equal(response.body.ticket_number, job.ticket_number);
   assert.ok(response.body.accepted_at);
   assert.equal(response.body.license_plate, job.license_plate);
@@ -1564,14 +1564,14 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
   assert.equal(response.body.scan_deadline_unix_ms, Date.parse(response.body.scan_deadline_at));
   assert.equal(response.body.team.length, 1);
   assert.deepEqual(Object.keys(response.body.team[0]).sort(), [
+    "coat_no",
     "full_name",
-    "image_url",
+    "picture",
     "scan_status",
-    "shirt_number",
     "worker_code",
   ]);
   assert.equal(response.body.team[0].full_name, worker.full_name);
-  assert.equal(response.body.team[0].shirt_number, String(worker.id));
+  assert.equal(response.body.team[0].coat_no, String(worker.id));
   assert.equal(response.body.team[0].scan_status, "accepted");
   assert.deepEqual(Object.keys(response.body.markets[0]).sort(), [
     "marketName",
@@ -1605,7 +1605,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
   assert.equal(response.body.markets[0].stalls[0].products[0].productName, "Apple");
 
   const acceptedEvent = state.socketEvents.find(
-    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_ACCEPTED"
+    (item) => item.workerId === worker.id && item.event === "ASSIGNMENT_ACCEPTED"
   );
   assert.ok(acceptedEvent);
   const acceptedPayload = acceptedEvent.payload as Record<string, unknown>;
@@ -1624,9 +1624,9 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
   assert.equal(acceptedPayload.scan_deadline_unix_ms, response.body.scan_deadline_unix_ms);
   assert.equal(acceptedPayload.id, undefined);
   assert.equal(acceptedPayload.vehicle_job_id, undefined);
-  assert.equal(acceptedPayload.worker_account_id, undefined);
+  assert.equal(acceptedPayload.worker_id, undefined);
   const acceptedTeamEvent = state.socketEvents.find(
-    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_TEAM_UPDATED"
+    (item) => item.workerId === worker.id && item.event === "ASSIGNMENT_TEAM_UPDATED"
   );
   assert.ok(acceptedTeamEvent);
   const acceptedTeamPayload = acceptedTeamEvent.payload as {
@@ -1640,7 +1640,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     };
     team?: Array<{
       worker_code?: string | null;
-      shirt_number?: string | null;
+      coat_no?: string | null;
       scan_status?: string;
       accepted_at?: string | null;
       scanned_at?: string | null;
@@ -1655,7 +1655,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     is_ready: false,
   });
   assert.equal(acceptedTeamPayload.team?.[0]?.worker_code, `W${worker.id}`);
-  assert.equal(acceptedTeamPayload.team?.[0]?.shirt_number, String(worker.id));
+  assert.equal(acceptedTeamPayload.team?.[0]?.coat_no, String(worker.id));
   assert.equal(acceptedTeamPayload.team?.[0]?.scan_status, "accepted");
   assert.equal(acceptedTeamPayload.team?.[0]?.accepted_at, response.body.accepted_at);
   assert.equal(acceptedTeamPayload.team?.[0]?.scanned_at, null);
@@ -1664,7 +1664,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     ?.get("assignment-scan-timeout-951");
   assert.deepEqual(scanTimeoutJob?.data, {
     assignmentId: 951,
-    workerAccountId: worker.id,
+    workerId: worker.id,
     kind: "scan",
   });
   const scanWarningJob = state.queueJobs
@@ -1672,7 +1672,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     ?.get("assignment-scan-warning-951");
   assert.deepEqual(scanWarningJob?.data, {
     assignmentId: 951,
-    workerAccountId: worker.id,
+    workerId: worker.id,
     kind: "scan_warning",
   });
 });
@@ -1694,7 +1694,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept times out late accep
   assert.equal(state.shiftAttendances[0].acceptTimeoutStreak, 1);
   assert.ok(state.shiftAttendances[0].lastAcceptTimeoutAt);
   const timeoutEvent = state.socketEvents.find(
-    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_TIMEOUT"
+    (item) => item.workerId === worker.id && item.event === "ASSIGNMENT_TIMEOUT"
   );
   assert.ok(timeoutEvent);
   const timeoutPayload = timeoutEvent.payload as Record<string, unknown>;
@@ -1817,7 +1817,7 @@ test("POST /api/workers/me/assignments/check-in-barcode scans correct barcode", 
     marketName: market.marketName,
   });
   const scannedTeamEvent = state.socketEvents.find(
-    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_TEAM_UPDATED"
+    (item) => item.workerId === worker.id && item.event === "ASSIGNMENT_TEAM_UPDATED"
   );
   assert.ok(scannedTeamEvent);
   const scannedTeamPayload = scannedTeamEvent.payload as {
@@ -1831,7 +1831,7 @@ test("POST /api/workers/me/assignments/check-in-barcode scans correct barcode", 
     };
     team?: Array<{
       worker_code?: string | null;
-      shirt_number?: string | null;
+      coat_no?: string | null;
       scan_status?: string;
       scanned_at?: string | null;
     }>;
@@ -1845,7 +1845,7 @@ test("POST /api/workers/me/assignments/check-in-barcode scans correct barcode", 
     is_ready: true,
   });
   assert.equal(scannedTeamPayload.team?.[0]?.worker_code, `W${worker.id}`);
-  assert.equal(scannedTeamPayload.team?.[0]?.shirt_number, String(worker.id));
+  assert.equal(scannedTeamPayload.team?.[0]?.coat_no, String(worker.id));
   assert.equal(scannedTeamPayload.team?.[0]?.scan_status, "scanned");
   assert.ok(scannedTeamPayload.team?.[0]?.scanned_at);
 });
@@ -1954,12 +1954,12 @@ test("POST /api/workers/me/assignments/check-in-barcode sends TEAM_READY to the 
   assert.equal(teamReadyEvents.length, 1);
 
   const teamReadyEvent = teamReadyEvents[0] as {
-    worker_account_ids?: number[];
+    worker_ids?: number[];
     worker_payload?: { ticketNumber?: string; ticketNos?: string[] };
   };
 
   assert.deepEqual(
-    (teamReadyEvent.worker_account_ids ?? []).sort(),
+    (teamReadyEvent.worker_ids ?? []).sort(),
     [first.id, second.id].sort()
   );
   assert.equal(teamReadyEvent.worker_payload?.ticketNumber, job.ticket_number);
@@ -2008,7 +2008,7 @@ test("POST /api/workers/me/assignments/check-in-barcode shortens remaining team 
     (item) => item.event === "ASSIGNMENT_TEAM_UPDATED"
   );
   assert.deepEqual(
-    teamUpdatedEvents.map((item) => item.accountId).sort(),
+    teamUpdatedEvents.map((item) => item.workerId).sort(),
     [worker.id, second.worker.id, third.worker.id].sort()
   );
   const teamUpdatedPayload = teamUpdatedEvents[0].payload as {
@@ -2022,7 +2022,7 @@ test("POST /api/workers/me/assignments/check-in-barcode shortens remaining team 
     };
     team?: Array<{
       worker_code?: string | null;
-      shirt_number?: string | null;
+      coat_no?: string | null;
       scan_status?: string;
       scanned_at?: string | null;
     }>;
@@ -2038,26 +2038,26 @@ test("POST /api/workers/me/assignments/check-in-barcode shortens remaining team 
   assert.deepEqual(
     teamUpdatedPayload.team?.map((member) => ({
       worker_code: member.worker_code,
-      shirt_number: member.shirt_number,
+      coat_no: member.coat_no,
       scan_status: member.scan_status,
       scanned: Boolean(member.scanned_at),
     })),
     [
       {
         worker_code: `W${worker.id}`,
-        shirt_number: String(worker.id),
+        coat_no: String(worker.id),
         scan_status: "scanned",
         scanned: true,
       },
       {
         worker_code: `W${second.worker.id}`,
-        shirt_number: String(second.worker.id),
+        coat_no: String(second.worker.id),
         scan_status: "accepted",
         scanned: false,
       },
       {
         worker_code: `W${third.worker.id}`,
-        shirt_number: String(third.worker.id),
+        coat_no: String(third.worker.id),
         scan_status: "accepted",
         scanned: false,
       },
@@ -2077,7 +2077,7 @@ test("POST /api/workers/me/assignments/check-in-barcode shortens remaining team 
         ?.get(`assignment-scan-timeout-${assignment.id}`)?.data,
       {
         assignmentId: assignment.id,
-        workerAccountId: assignment.worker_account_id,
+        workerId: assignment.worker_id,
         kind: "scan",
       }
     );
@@ -2087,7 +2087,7 @@ test("POST /api/workers/me/assignments/check-in-barcode shortens remaining team 
         ?.get(`assignment-scan-warning-${assignment.id}`)?.data,
       {
         assignmentId: assignment.id,
-        workerAccountId: assignment.worker_account_id,
+        workerId: assignment.worker_id,
         kind: "scan_warning",
       }
     );
@@ -2099,7 +2099,7 @@ test("POST /api/workers/me/assignments/check-in-barcode shortens remaining team 
   );
   assert.equal(shortenedEvents.length, 1);
   assert.deepEqual(
-    ((shortenedEvents[0] as { worker_account_ids?: number[] }).worker_account_ids ?? []).sort(),
+    ((shortenedEvents[0] as { worker_ids?: number[] }).worker_ids ?? []).sort(),
     [second.worker.id, third.worker.id].sort()
   );
   const shortenedWorkerPayload = (shortenedEvents[0] as {
@@ -2196,7 +2196,7 @@ test("POST /api/workers/me/assignments/check-in-barcode rejects expired scan win
   const replacementAssignment = state.assignments.find(
     (item) =>
       item.vehicle_job_id === job.id &&
-      item.worker_account_id === replacementWorker.id
+      item.worker_id === replacementWorker.id
   );
   assert.equal(replacementAssignment?.status, "PENDING");
   assert.ok(replacementAssignment?.accept_deadline_at);
@@ -2207,7 +2207,7 @@ test("POST /api/workers/me/assignments/check-in-barcode rejects expired scan win
   assert.equal(statusResponse.body.status, "open_app");
   assert.equal(job.status, "WORKING");
   const timeoutEvent = state.socketEvents.find(
-    (item) => item.accountId === worker.id && item.event === "ASSIGNMENT_TIMEOUT"
+    (item) => item.workerId === worker.id && item.event === "ASSIGNMENT_TIMEOUT"
   );
   assert.ok(timeoutEvent);
   assert.equal(
@@ -2233,7 +2233,7 @@ test("assignment scan timeout processor dispatches replacement worker from queue
   await processor({
     data: {
       assignmentId: assignment.id,
-      workerAccountId: worker.id,
+      workerId: worker.id,
       kind: "scan",
     },
   });
@@ -2244,7 +2244,7 @@ test("assignment scan timeout processor dispatches replacement worker from queue
   const replacementAssignment = state.assignments.find(
     (item) =>
       item.vehicle_job_id === job.id &&
-      item.worker_account_id === replacementWorker.id
+      item.worker_id === replacementWorker.id
   );
   assert.equal(replacementAssignment?.status, "PENDING");
   assert.ok(replacementAssignment?.accept_deadline_at);
@@ -2434,7 +2434,7 @@ test("POST /api/workers/me/assignments/tickets/complete submits quantities for v
   const completedTicketWorker = state.ticketWorkers.find(
     (ticketWorker) =>
       ticketWorker.market_job_id === ticket.market_job_id &&
-      ticketWorker.worker_account_id === worker.id
+      ticketWorker.worker_id === worker.id
   );
   assert.ok(ticketCompletedAt);
   assert.ok(completedTicketWorker?.completed_at);
@@ -2467,7 +2467,7 @@ test("POST /api/workers/me/assignments/tickets/complete submits quantities for v
     const payload = item.payload as { queue?: { status?: string } };
 
     return (
-      item.accountId === worker.id &&
+      item.workerId === worker.id &&
       item.event === "WORKER_STATUS_CHANGED" &&
       payload.queue?.status === "ready"
     );
@@ -2880,7 +2880,7 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
   const completedTicketWorker = state.ticketWorkers.find(
     (ticketWorker) =>
       ticketWorker.market_job_id === ticket.market_job_id &&
-      ticketWorker.worker_account_id === worker.id
+      ticketWorker.worker_id === worker.id
   );
   // Booth (ticket.completed_at) เธเธฑเธเธเธฒเธฃ Lock Roster (completedTicketWorker.completed_at) เนเธเนเธเธ Step เนเธขเธเธเธฑเธเนเธฅเนเธง
   // เนเธกเนเธ•เนเธญเธเนเธเน timestamp เธ•เธฃเธเธเธฑเธเธ—เธธเธเธเธดเธ• เนเธ•เนเธ•เนเธญเธเนเธกเนเธเนเธญเธเธเธงเนเธฒ Booth complete
@@ -2959,7 +2959,7 @@ test("vendor confirmation timeout auto-confirms ticket and financializes only on
   const boothEarning = state.ticketWorkers.find(
     (ticketWorker) =>
       ticketWorker.market_job_id === ticket.market_job_id &&
-      ticketWorker.worker_account_id === worker.id
+      ticketWorker.worker_id === worker.id
   );
 
   assert.equal(boothHistory.boothCode, ticket.boothCode);
@@ -3195,7 +3195,7 @@ test("break return moves worker to open_app when WebSocket is still disconnected
   assert.ok(assignmentTimeoutProcessor);
   await breakReturnProcessor({
     data: {
-      accountId: worker.id,
+      workerId: worker.id,
       scheduleId: worker.id,
     },
   });
@@ -3214,7 +3214,7 @@ test("break return moves worker to open_app when WebSocket is still disconnected
   await assignmentTimeoutProcessor({
     data: {
       assignmentId: assignment.id,
-      workerAccountId: worker.id,
+      workerId: worker.id,
       kind: "scan_warning",
     },
   });

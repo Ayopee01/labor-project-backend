@@ -616,6 +616,10 @@ const adminAuditEventsActorTypeValues = [
   "gate",
 ] as const;
 
+// Format severity ของ Audit Event สำหรับ quick filter การ์ด "ต้องตรวจสอบ" — ตอนนี้มีค่าเดียว
+// (critical) จับคู่กับ SEVERITY_CRITICAL_EVENT_TYPES ฝั่ง service (ดู admin-audit.service.ts)
+const adminAuditEventsSeverityValues = ["critical"] as const;
+
 export const adminAuditEventsQuerySchema = z
   .object({
     search: optionalTrimmedString,
@@ -626,6 +630,15 @@ export const adminAuditEventsQuerySchema = z
     event_type: optionalTrimmedString,
     date_from: optionalDateString,
     date_to: optionalDateString,
+    // has_vehicle = true กรองเฉพาะ event ที่มี vehicle_job_id (การ์ด "รถที่เกี่ยวข้อง")
+    has_vehicle: optionalBooleanQuery,
+    // has_reason = true กรองเฉพาะ event ที่มี reason_code หรือ reason_text จริง (การ์ด "มีเหตุผลประกอบ")
+    has_reason: optionalBooleanQuery,
+    // severity = critical กรองตามชุด event_type คงที่ที่ต้องตรวจสอบ (การ์ด "ต้องตรวจสอบ")
+    severity: z.preprocess(
+      emptyStringToUndefined,
+      z.enum(adminAuditEventsSeverityValues).optional()
+    ),
     page: z.preprocess(
       emptyStringToUndefined,
       z.coerce.number().int().min(1).default(1)
@@ -981,6 +994,7 @@ export const accessTokenPayloadSchema = z.object({
 
 export const refreshTokenPayloadSchema = z.object({
   account_id: z.number().int().positive(),
+  role: z.enum(ACCOUNT_ROLES),
   session_id: z.number().int().positive(),
   token_type: z.literal("refresh"),
   ...tokenTimestampsSchema,

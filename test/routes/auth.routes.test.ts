@@ -181,7 +181,7 @@ test("POST /api/auth/login requires device fields for worker login", async () =>
 
   const response = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
     },
   });
@@ -195,7 +195,7 @@ test("GET /api/auth/me returns current worker account from access token", async 
   const worker = addWorker(1002, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-1002",
       device_name: "Worker Mobile",
@@ -218,13 +218,12 @@ test("GET /api/auth/me returns current worker account from access token", async 
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
     "full_name",
+    "labor_color",
     "lang",
     "nationality",
     "phone",
     "role",
     "shift",
-    "shirt_number",
-    "shirt_type",
     "work_start_date",
     "worker_code",
   ]);
@@ -232,10 +231,9 @@ test("GET /api/auth/me returns current worker account from access token", async 
   assert.equal(response.body.role, "worker");
   assert.equal(response.body.worker_code, `W${worker.id}`);
   assert.equal(response.body.nationality, "Thai");
-  assert.equal(response.body.shirt_number, String(worker.id));
-  assert.equal(response.body.shirt_type, "standard");
+  assert.equal(response.body.labor_color, "standard");
   assert.equal(response.body.work_start_date, "2026-01-01");
-  assert.equal(response.body.phone, worker.phone);
+  assert.equal(response.body.phone, worker.telephone);
   assert.equal(response.body.lang, "TH");
   assert.equal(response.body.shift.start_time, "00:00");
   assert.equal(response.body.shift.end_time, "23:59");
@@ -246,7 +244,7 @@ test("PATCH /api/auth/me/lang updates current account language", async () => {
   const worker = addWorker(1008, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-1008",
       device_name: "Worker Mobile",
@@ -304,6 +302,16 @@ test("PATCH /api/auth/me updates the current admin's own full_name/email/phone a
   assert.equal(me.body.full_name, "Updated Admin Name");
   assert.equal(me.body.email, "updated@simmummuang.local");
   assert.equal(me.body.phone, "089-999-9999");
+
+  const profileUpdatedLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "admin_profile_updated" && log.actor_account_id === admin.id,
+  );
+
+  assert.ok(profileUpdatedLog);
+  assert.equal(
+    (profileUpdatedLog.metadata as { after?: { full_name?: string } } | null)?.after?.full_name,
+    "Updated Admin Name",
+  );
 });
 
 test("PATCH /api/auth/me clears email/phone when sent as null, and leaves them unchanged when omitted", async () => {
@@ -369,7 +377,7 @@ test("PATCH /api/auth/me is rejected for a worker token (admin-only self-service
   const worker = addWorker(1021, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-1021",
       device_name: "Worker Mobile",
@@ -482,7 +490,7 @@ test("worker auth flow stores, refreshes, and revokes FCM token by WorkerCode", 
   const worker = addWorker(1010, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-push-1010",
       device_name: "Worker Mobile",
@@ -493,7 +501,7 @@ test("worker auth flow stores, refreshes, and revokes FCM token by WorkerCode", 
 
   assert.equal(login.status, 200);
   assert.equal(state.workerPushTokens.length, 1);
-  assert.equal(state.workerPushTokens[0].worker_code, worker.username);
+  assert.equal(state.workerPushTokens[0].worker_code, worker.labor_code);
   assert.equal(state.workerPushTokens[0].device_id, "mobile-push-1010");
   assert.equal(state.workerPushTokens[0].platform, "android");
   assert.equal(state.workerPushTokens[0].fcm_token, "fcm-token-1010-a");
@@ -509,7 +517,7 @@ test("worker auth flow stores, refreshes, and revokes FCM token by WorkerCode", 
 
   assert.equal(refreshPushToken.status, 200);
   assert.equal(refreshPushToken.body.code, "WORKER_PUSH_TOKEN_REGISTERED");
-  assert.equal(refreshPushToken.body.worker_code, worker.username);
+  assert.equal(refreshPushToken.body.worker_code, worker.labor_code);
   assert.equal(refreshPushToken.body.device_id, "mobile-push-1010");
   assert.equal(refreshPushToken.body.platform, "android");
   assert.equal(state.workerPushTokens.length, 1);
@@ -528,7 +536,7 @@ test("worker can register FCM token after login when token was not available dur
   const worker = addWorker(1011, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-push-1011",
       device_name: "Worker Mobile",
@@ -548,11 +556,11 @@ test("worker can register FCM token after login when token was not available dur
 
   assert.equal(registerPushToken.status, 200);
   assert.equal(registerPushToken.body.code, "WORKER_PUSH_TOKEN_REGISTERED");
-  assert.equal(registerPushToken.body.worker_code, worker.username);
+  assert.equal(registerPushToken.body.worker_code, worker.labor_code);
   assert.equal(registerPushToken.body.device_id, "mobile-push-1011");
   assert.equal(registerPushToken.body.platform, "ios");
   assert.equal(state.workerPushTokens.length, 1);
-  assert.equal(state.workerPushTokens[0].worker_code, worker.username);
+  assert.equal(state.workerPushTokens[0].worker_code, worker.labor_code);
   assert.equal(state.workerPushTokens[0].fcm_token, "fcm-token-1011-late");
 });
 
@@ -595,6 +603,15 @@ test("PATCH /api/auth/me/password changes own password and keeps current session
   assert.equal(oldPasswordLogin.status, 401);
   assert.equal(oldPasswordLogin.body.code, "INVALID_CREDENTIALS");
   assert.equal(newPasswordLogin.status, 200);
+
+  const passwordChangedLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "account_password_changed" && log.actor_account_id === admin.id,
+  );
+
+  assert.ok(passwordChangedLog);
+  assert.equal(passwordChangedLog.outcome, "success");
+  assert.equal(passwordChangedLog.actor_type, "admin");
+  assert.equal(passwordChangedLog.actor_username, admin.username);
 });
 
 test("PATCH /api/auth/me/password rejects a new password shorter than 8 characters", async () => {
@@ -624,7 +641,7 @@ test("POST /api/auth/refresh rotates refresh token for active session", async ()
   const worker = addWorker(1003, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-1003",
       device_name: "Worker Mobile",
@@ -648,7 +665,7 @@ test("POST /api/auth/refresh rejects a refresh token once the session's hash has
   const worker = addWorker(1005, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-1005",
       device_name: "Worker Mobile",
@@ -662,7 +679,7 @@ test("POST /api/auth/refresh rejects a refresh token once the session's hash has
   // request จริงๆ ทำไม่ได้แม่นยำใน test harness นี้เพราะ mock เก็บ session เป็น object reference
   // เดียวที่ใช้ร่วมกัน ต่างจาก Postgres จริงที่แต่ละ transaction เห็น snapshot ของตัวเอง — ส่วนการ
   // รับประกันไม่ให้ race นี้เกิดจริงอยู่ที่ conditional update ใน updateRefreshTokenHash โดยตรง)
-  const session = Array.from(state.sessions.values()).find(
+  const session = Array.from(state.workerSessions.values()).find(
     (item) => item.account_id === worker.id,
   );
 
@@ -682,7 +699,7 @@ test("POST /api/auth/logout revokes current session and prevents /me reuse", asy
   const worker = addWorker(1004, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-1004",
       device_name: "Worker Mobile",
@@ -707,7 +724,7 @@ test("POST /api/auth/login returns force-login challenge when worker logs in fro
   const worker = addWorker(1005, passwordHash);
   await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-a",
       device_name: "Worker Mobile A",
@@ -716,7 +733,7 @@ test("POST /api/auth/login returns force-login challenge when worker logs in fro
 
   const response = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-b",
       device_name: "Worker Mobile B",
@@ -734,7 +751,7 @@ test("POST /api/auth/login/confirm-force replaces old worker session", async () 
   const worker = addWorker(1006, passwordHash);
   const firstLogin = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-a",
       device_name: "Worker Mobile A",
@@ -742,7 +759,7 @@ test("POST /api/auth/login/confirm-force replaces old worker session", async () 
   });
   const challenge = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-b",
       device_name: "Worker Mobile B",
@@ -772,7 +789,7 @@ test("worker token cannot access admin worker route", async () => {
   const worker = addWorker(1007, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
     body: {
-      username: worker.username,
+      username: worker.labor_code,
       password: "Worker@123456",
       device_id: "mobile-1007",
       device_name: "Worker Mobile",
@@ -785,4 +802,173 @@ test("worker token cannot access admin worker route", async () => {
 
   assert.equal(response.status, 403);
   assert.equal(response.body.code, "FORBIDDEN");
+});
+
+/* -------------------------------------- Security Audit Log Tests (27.12 phase 1) -------------------------------------- */
+
+test("POST /api/auth/login writes an auth_login_succeeded SecurityAuditLog for both admin and worker, capturing IP/User-Agent/session id", async () => {
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(9101, passwordHash);
+
+  const adminLogin = await server.request("POST", "/api/auth/login", {
+    body: { username: admin.username, password: "Admin@123456" },
+    headers: { "user-agent": "AdminWebTestAgent/1.0" },
+  });
+
+  assert.equal(adminLogin.status, 200);
+
+  const adminLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "auth_login_succeeded" && log.actor_account_id === admin.id,
+  );
+
+  assert.ok(adminLog);
+  assert.equal(adminLog.outcome, "success");
+  assert.equal(adminLog.actor_type, "admin");
+  assert.equal(adminLog.actor_username, admin.username);
+  assert.equal(adminLog.actor_full_name, admin.full_name);
+  assert.equal(adminLog.actor_worker_id, null);
+  assert.ok(adminLog.session_id);
+  assert.equal(adminLog.user_agent, "AdminWebTestAgent/1.0");
+  assert.ok(adminLog.ip_address);
+
+  const workerPasswordHash = await password.hashPassword("Worker@123456");
+  const worker = addWorker(9102, workerPasswordHash);
+
+  const workerLogin = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: worker.labor_code,
+      password: "Worker@123456",
+      device_id: "mobile-9102",
+      device_name: "Worker Mobile",
+    },
+  });
+
+  assert.equal(workerLogin.status, 200);
+
+  const workerLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "auth_login_succeeded" && log.actor_worker_id === worker.id,
+  );
+
+  assert.ok(workerLog);
+  assert.equal(workerLog.actor_type, "worker");
+  assert.equal(workerLog.actor_username, worker.labor_code);
+  assert.equal(workerLog.actor_account_id, null);
+});
+
+test("POST /api/auth/login writes an auth_login_failed SecurityAuditLog, distinguishing unknown username from wrong password without changing the response", async () => {
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(9111, passwordHash);
+
+  const unknownUsername = await server.request("POST", "/api/auth/login", {
+    body: { username: "no-such-admin-9111", password: "AnyPassword@123456" },
+  });
+
+  assert.equal(unknownUsername.status, 401);
+  assert.equal(unknownUsername.body.code, "INVALID_CREDENTIALS");
+
+  const unknownUsernameLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "auth_login_failed" && log.actor_username === "no-such-admin-9111",
+  );
+
+  assert.ok(unknownUsernameLog);
+  assert.equal(unknownUsernameLog.outcome, "failure");
+  assert.equal(unknownUsernameLog.actor_type, null);
+  assert.equal(unknownUsernameLog.actor_account_id, null);
+  assert.equal(unknownUsernameLog.failure_code, "unknown_username");
+
+  const wrongPassword = await server.request("POST", "/api/auth/login", {
+    body: { username: admin.username, password: "WrongPassword@123456" },
+  });
+
+  assert.equal(wrongPassword.status, 401);
+  assert.equal(wrongPassword.body.code, "INVALID_CREDENTIALS");
+
+  const wrongPasswordLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "auth_login_failed" && log.actor_account_id === admin.id,
+  );
+
+  assert.ok(wrongPasswordLog);
+  assert.equal(wrongPasswordLog.actor_type, "admin");
+  assert.equal(wrongPasswordLog.actor_username, admin.username);
+  assert.equal(wrongPasswordLog.failure_code, "invalid_password");
+});
+
+test("POST /api/auth/logout writes an auth_logout SecurityAuditLog with the revoked session id", async () => {
+  const passwordHash = await password.hashPassword("Worker@123456");
+  const worker = addWorker(9121, passwordHash);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: worker.labor_code,
+      password: "Worker@123456",
+      device_id: "mobile-9121",
+      device_name: "Worker Mobile",
+    },
+  });
+
+  const logout = await server.request("POST", "/api/auth/logout", {
+    token: login.body.access_token,
+  });
+
+  assert.equal(logout.status, 200);
+
+  const logoutLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "auth_logout" && log.actor_worker_id === worker.id,
+  );
+
+  assert.ok(logoutLog);
+  assert.equal(logoutLog.outcome, "success");
+  assert.equal(logoutLog.actor_type, "worker");
+  assert.equal(logoutLog.actor_username, worker.labor_code);
+  assert.ok(logoutLog.session_id);
+});
+
+test("POST /api/auth/login/confirm-force writes an auth_force_login SecurityAuditLog referencing the revoked old session", async () => {
+  const passwordHash = await password.hashPassword("Worker@123456");
+  const worker = addWorker(9131, passwordHash);
+  const firstLogin = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: worker.labor_code,
+      password: "Worker@123456",
+      device_id: "mobile-a",
+      device_name: "Worker Mobile A",
+    },
+  });
+  const challenge = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: worker.labor_code,
+      password: "Worker@123456",
+      device_id: "mobile-b",
+      device_name: "Worker Mobile B",
+    },
+  });
+
+  const firstLoginLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "auth_login_succeeded" && log.actor_worker_id === worker.id,
+  );
+
+  assert.ok(firstLoginLog, "the first login should have succeeded and been logged");
+  assert.ok(firstLogin.status === 200);
+
+  const confirmForce = await server.request("POST", "/api/auth/login/confirm-force", {
+    body: {
+      login_challenge_token: challenge.body.login_challenge_token,
+      device_id: "mobile-b",
+      device_name: "Worker Mobile B",
+    },
+  });
+
+  assert.equal(confirmForce.status, 200);
+
+  const forceLoginLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "auth_force_login" && log.actor_worker_id === worker.id,
+  );
+
+  assert.ok(forceLoginLog);
+  assert.equal(forceLoginLog.outcome, "success");
+  assert.notEqual(forceLoginLog.session_id, null);
+  assert.notEqual(forceLoginLog.session_id, firstLoginLog!.session_id);
+  assert.equal(
+    (forceLoginLog.metadata as { revoked_session_id?: number } | null)?.revoked_session_id,
+    firstLoginLog!.session_id,
+  );
 });

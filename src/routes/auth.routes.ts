@@ -9,14 +9,27 @@ import { uploadAdminImage } from "../middlewares/upload.middleware";
 import * as authService from "../services/auth.service";
 import ApiError from "../utils/api-error";
 
+import type { Request } from "express";
+import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
+
 const router = express.Router();
+
+// Function ดึง IP/User-Agent/RequestId จาก request ปัจจุบันสำหรับ Security Audit Log (27.12) — ไม่มี
+// middleware ใดแนบค่านี้ลง req.auth ให้อัตโนมัติ จึงต้อง extract ตรงนี้แล้วส่งต่อเข้า service เอง
+function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
+  return {
+    ip_address: req.ip ?? null,
+    user_agent: req.header("user-agent") ?? null,
+    request_id: req.requestId ?? null,
+  };
+}
 
 router.post(
   "/login",
   loginRateLimitMiddleware,
   async (req, res, next) => {
     try {
-      const result = await authService.login(req.body);
+      const result = await authService.login(req.body, buildSecurityAuditContext(req));
       res.json(result);
     } catch (error) {
       next(error);
@@ -29,7 +42,10 @@ router.post(
   loginRateLimitMiddleware,
   async (req, res, next) => {
     try {
-      const result = await authService.confirmForceLogin(req.body);
+      const result = await authService.confirmForceLogin(
+        req.body,
+        buildSecurityAuditContext(req)
+      );
       res.json(result);
     } catch (error) {
       next(error);
@@ -55,7 +71,7 @@ router.post(
   sessionMiddleware,
   async (req, res, next) => {
     try {
-      const result = await authService.logout(req.auth);
+      const result = await authService.logout(req.auth, buildSecurityAuditContext(req));
       res.json(result);
     } catch (error) {
       next(error);
@@ -98,13 +114,20 @@ router.get(
   }
 );
 
+// Route เปลี่ยน password ของ Admin ที่ login อยู่เอง — Worker ไม่มี password อิสระให้เปลี่ยน (password
+// มาจาก telephone เสมอ) จึงจำกัดเฉพาะ Admin
 router.patch(
   "/me/password",
   authMiddleware,
   sessionMiddleware,
+  roleMiddleware(["admin"]),
   async (req, res, next) => {
     try {
-      const result = await authService.changeOwnPassword(req.auth, req.body);
+      const result = await authService.changeOwnPassword(
+        req.auth,
+        req.body,
+        buildSecurityAuditContext(req)
+      );
       res.json(result);
     } catch (error) {
       next(error);
@@ -137,7 +160,8 @@ router.patch(
       const result = await authService.updateOwnProfile(
         req.auth,
         req.session,
-        req.body
+        req.body,
+        buildSecurityAuditContext(req)
       );
       res.json(result);
     } catch (error) {
@@ -160,7 +184,11 @@ router.post(
       }
 
       const imageUrl = `/uploads/admins/${req.file.filename}`;
-      const result = await authService.uploadOwnProfileImage(req.auth, imageUrl);
+      const result = await authService.uploadOwnProfileImage(
+        req.auth,
+        imageUrl,
+        buildSecurityAuditContext(req)
+      );
       res.json(result);
     } catch (error) {
       next(error);

@@ -130,6 +130,26 @@ paths:
         /api/admin/audit/workers/performance หรือ /api/admin/vehicle-jobs/history
         เพราะเป็น endpoint คนละก้อนกันโดยสิ้นเชิง (event รายตัว vs สรุปผลงานรายคน)
         Summary คำนวณจากชุดข้อมูลหลัง filter แต่ก่อน pagination เสมอ
+        ส่วนใหญ่ event ส่งเฉพาะ Metadata — Before/After เป็น field เสริมที่มีเฉพาะ event ที่ source เก็บ
+        สถานะก่อนหน้าไว้จริง (worker_force_status_changed และ mutation event กลุ่ม 27.12 ด้านล่างที่มี
+        field เปลี่ยนจริง) ห้ามถือว่า field หายไปคือ "ไม่มีการเปลี่ยนแปลง"
+
+        27.12: เพิ่ม auth/security/account/settings event จาก SecurityAuditLog เป็น source ที่ 9 —
+        event กลุ่มนี้เห็นได้เฉพาะ caller ที่มี permission `audit:read` เพิ่มจาก `jobs:read` เท่านั้น
+        (caller ที่ไม่มี audit:read ยังเรียก endpoint นี้ได้ปกติ แค่ไม่เห็น event กลุ่มนี้ปนมาใน
+        Data/Summary/Pagination ไม่ใช่ 403) เพราะเนื้อหามี IP/User-Agent และ username ที่พยายาม login
+        แต่ผิดพลาด ซึ่ง sensitive กว่า event operational เดิม EventType ที่มี ได้แก่
+        auth_login_succeeded, auth_login_failed, auth_logout, auth_force_login,
+        account_password_changed, account_password_reset, admin_account_created,
+        admin_account_updated, admin_permissions_changed, admin_status_changed,
+        worker_account_created, worker_account_updated, system_settings_updated,
+        gate_client_created, gate_client_updated, gate_client_secret_rotated,
+        mobile_app_version_created, mobile_app_version_updated, admin_profile_updated
+
+        `audit:read` เป็น owner-only permission (เหมือน mobile_app_versions:*) — owner ได้ default
+        มาจาก seed เท่านั้น manager/supervisor ไม่ได้ default และมีแต่ owner grant ให้คนอื่นต่อได้
+        SecurityAuditLog แถวเก่ากว่า SECURITY_AUDIT_LOG_RETENTION_DAYS วัน (default 180 วัน) ถูกลบทิ้ง
+        โดย cleanup job รายวัน ไม่ retain ตลอดไป
       security:
         - bearerAuth: []
       parameters:
@@ -137,7 +157,7 @@ paths:
           name: search
           schema:
             type: string
-          description: ค้น EventId, event type, TicketNumber/TicketNo/BoothCode/WorkerCode ใน Metadata, actor username/name, reason code/text
+          description: ค้น EventId, event type, TicketNumber/TicketNo/BoothCode/BoothName/WorkerCode ใน Metadata, actor username/name, reason code/text
         - in: query
           name: actor_type
           schema:
@@ -168,6 +188,33 @@ paths:
             format: date
             example: "2026-08-31"
           description: End Bangkok business date, inclusive. ห่างจาก DateFrom ได้ไม่เกิน 92 วัน
+        - in: query
+          name: has_vehicle
+          schema:
+            type: boolean
+          description: >
+            Quick filter สำหรับการ์ด "รถที่เกี่ยวข้อง" — true คืนเฉพาะ event ที่มี VehicleJobId
+            ไม่เป็น null คำนวณก่อน Summary และ Pagination ใช้ร่วมกับ filter อื่นได้ทั้งหมด
+        - in: query
+          name: has_reason
+          schema:
+            type: boolean
+          description: >
+            Quick filter สำหรับการ์ด "มีเหตุผลประกอบ" — true คืนเฉพาะ event ที่มี ReasonCode
+            หรือ ReasonText จริง คำนวณก่อน Summary และ Pagination ใช้ร่วมกับ filter อื่นได้ทั้งหมด
+        - in: query
+          name: severity
+          schema:
+            type: string
+            enum:
+              - critical
+          description: >
+            Quick filter สำหรับการ์ด "ต้องตรวจสอบ" — critical คืนเฉพาะ event ที่ EventType อยู่ใน
+            ชุดคงที่ (message_delivery_failed, worker_accept_timeout, worker_scan_timeout,
+            vendor_rejected, vehicle_cancelled, market_cancelled, ticket_cancelled,
+            worker_assignment_cancelled, ticket_worker_cancelled, booth_worker_cancelled) —
+            ชุดนี้ต้องตรงกับกฎ severity ที่ Frontend ใช้คำนวณการ์ดเดียวกัน คำนวณก่อน Summary
+            และ Pagination ใช้ร่วมกับ filter อื่นได้ทั้งหมด
         - in: query
           name: page
           schema:

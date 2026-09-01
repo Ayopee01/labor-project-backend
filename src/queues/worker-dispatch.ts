@@ -78,24 +78,24 @@ async function dispatchReadyWorkersForVehicleJob(
       break;
     }
     const workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
-      readyWorkers.map((worker) => worker.account_id),
+      readyWorkers.map((worker) => worker.worker_id),
       connection
     );
 
     for (const worker of readyWorkers) {
-      const workerCode = workerCodeMap.get(worker.account_id) ?? null;
+      const workerCode = workerCodeMap.get(worker.worker_id) ?? null;
 
       // Function ดีด Worker นอกกะออกจากคิวก่อน dispatch
       const workerSchedule = await workScheduleRepository.findCurrentByAccountId(
-        worker.account_id,
+        worker.worker_id,
         connection
       );
 
       if (!workerSchedule || !isTimeInWorkSchedule(workerSchedule)) {
         if (workerSchedule) {
-          await ejectWorkerForShiftEnd(worker.account_id, workerSchedule);
+          await ejectWorkerForShiftEnd(worker.worker_id, workerSchedule);
         } else {
-          await markWorkerOpenApp(worker.account_id);
+          await markWorkerOpenApp(worker.worker_id);
         }
 
         continue;
@@ -106,19 +106,19 @@ async function dispatchReadyWorkersForVehicleJob(
       try {
         assignment = await assignmentRepository.createAssignment(
           vehicleJob.id,
-          worker.account_id,
+          worker.worker_id,
           buildDeadline(acceptDeadlineMs),
           connection
         );
-        await markWorkerAssigned(worker.account_id);
+        await markWorkerAssigned(worker.worker_id);
         await scheduleAssignmentTimeout(
           assignment.id,
-          worker.account_id,
+          worker.worker_id,
           acceptDeadlineMs
         );
       } catch (error) {
         // Function คืน Worker เข้า FIFO เมื่อสร้าง assignment ล้มเหลว
-        await enqueueWorker(worker.account_id);
+        await enqueueWorker(worker.worker_id);
         continue;
       }
 
@@ -128,14 +128,14 @@ async function dispatchReadyWorkersForVehicleJob(
       );
 
       sendWorkerSocketEvent(
-        worker.account_id,
+        worker.worker_id,
         "WORKER_ASSIGNED",
         buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos)
       );
       publishNotification({
         type: "WORKER_ASSIGNED",
         title: "Worker assigned",
-        message: `Worker ${workerCode ?? worker.account_id} was assigned to vehicle job ${vehicleJob.ticket_number}.`,
+        message: `Worker ${workerCode ?? worker.worker_id} was assigned to vehicle job ${vehicleJob.ticket_number}.`,
         payload: {
           ticketNumber: vehicleJob.ticket_number,
           worker_code: workerCode,
@@ -156,7 +156,7 @@ async function dispatchReadyWorkersForVehicleJob(
 // Function จัดการ assignment accept timeout แบบกัน race
 export async function handleAssignmentAcceptTimeout(input: {
   assignment: VehicleJobAssignmentDto;
-  workerAccountId: number;
+  workerId: number;
   connection?: DbConnection;
 }): Promise<AssignmentAcceptTimeoutResult | null> {
   const timedOutAssignment = await assignmentRepository.timeoutAssignment(
@@ -171,7 +171,7 @@ export async function handleAssignmentAcceptTimeout(input: {
 
   const settings = await getRuntimeSettings();
   const currentSchedule = await workScheduleRepository.findCurrentByAccountId(
-    input.workerAccountId,
+    input.workerId,
     input.connection
   );
   const hasActiveSchedule =
@@ -184,13 +184,13 @@ export async function handleAssignmentAcceptTimeout(input: {
   if (hasActiveSchedule) {
     const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
     const workerCode = await profileRepository.findWorkerCodeByAccountId(
-      input.workerAccountId,
+      input.workerId,
       input.connection
     );
     const attendance = await workerShiftAttendanceRepository.incrementAcceptTimeoutStreak(
       {
-        account_id: input.workerAccountId,
-        worker_code: workerCode ?? String(input.workerAccountId),
+        worker_id: input.workerId,
+        worker_code: workerCode ?? String(input.workerId),
         schedule: currentSchedule,
         shift_instance_key: shiftInstanceKey,
       },
@@ -201,22 +201,22 @@ export async function handleAssignmentAcceptTimeout(input: {
     if (timeoutCount >= settings.worker_accept_timeout_limit) {
       await workerShiftAttendanceRepository.closeWorkerShift(
         {
-          account_id: input.workerAccountId,
-          worker_code: workerCode ?? String(input.workerAccountId),
+          worker_id: input.workerId,
+          worker_code: workerCode ?? String(input.workerId),
           schedule: currentSchedule,
           shift_instance_key: shiftInstanceKey,
           reason: "assignment_timeout_limit_reached",
         },
         input.connection
       );
-      queue = await markWorkerOpenApp(input.workerAccountId);
+      queue = await markWorkerOpenApp(input.workerId);
       reason = "assignment_timeout_limit_reached";
       closedShift = true;
     } else {
-      queue = await enqueueWorker(input.workerAccountId);
+      queue = await enqueueWorker(input.workerId);
     }
   } else {
-    queue = await markWorkerOpenApp(input.workerAccountId);
+    queue = await markWorkerOpenApp(input.workerId);
     reason = "assignment_timeout_shift_unavailable";
   }
 
@@ -234,7 +234,7 @@ export async function handleAssignmentAcceptTimeout(input: {
 // Function จัดการกรณี worker accept งานแล้วไม่ scan QR ภายในเวลา
 async function handleAssignmentScanTimeout(input: {
   assignment: VehicleJobAssignmentDto;
-  workerAccountId: number;
+  workerId: number;
   connection: DbConnection;
 }): Promise<void> {
   if (input.assignment.status !== ASSIGNMENT_STATUS.ACCEPTED) {
@@ -247,12 +247,12 @@ async function handleAssignmentScanTimeout(input: {
     await Promise.all([
       scheduleScanTimeout(
         input.assignment.id,
-        input.assignment.worker_account_id,
+        input.assignment.worker_id,
         remainingDelayMs
       ),
       scheduleScanWarning(
         input.assignment.id,
-        input.assignment.worker_account_id,
+        input.assignment.worker_id,
         input.assignment.scan_deadline_at
       ),
     ]);
@@ -275,7 +275,7 @@ async function handleAssignmentScanTimeout(input: {
     input.assignment.vehicle_job_id,
     input.connection
   );
-  const workerCode = await profileRepository.findWorkerCodeByAccountId(input.workerAccountId);
+  const workerCode = await profileRepository.findWorkerCodeByAccountId(input.workerId);
   const teamScan = await assignmentRepository.getVehicleJobTeamScanReadiness(
     input.assignment.vehicle_job_id,
     input.connection,
@@ -288,14 +288,14 @@ async function handleAssignmentScanTimeout(input: {
     );
   }
   await removeScanWarning(input.assignment.id);
-  const queue = await markWorkerOpenApp(input.workerAccountId);
+  const queue = await markWorkerOpenApp(input.workerId);
   await dispatchReadyWorkers(input.connection);
   const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
     input.assignment.vehicle_job_id,
     input.connection,
   );
 
-  sendWorkerSocketEvent(input.workerAccountId, "ASSIGNMENT_TIMEOUT", {
+  sendWorkerSocketEvent(input.workerId, "ASSIGNMENT_TIMEOUT", {
     ticketNumber: vehicleJob?.ticket_number ?? null,
     ticketNos,
     reason: "scan_timeout",
@@ -303,7 +303,7 @@ async function handleAssignmentScanTimeout(input: {
   });
   publishAdminWorkerStatusChanged({
     title: "Worker returned to open app",
-    message: `Worker ${workerCode ?? input.workerAccountId} missed QR check-in and returned to open app.`,
+    message: `Worker ${workerCode ?? input.workerId} missed QR check-in and returned to open app.`,
     workerCode,
     queue,
     reason: "scan_timeout_open_app",
@@ -311,7 +311,7 @@ async function handleAssignmentScanTimeout(input: {
   publishNotification({
     type: "ASSIGNMENT_TIMEOUT",
     title: "Assignment scan timed out",
-    message: `Worker ${workerCode ?? input.workerAccountId} did not scan QR for vehicle job ${vehicleJob?.ticket_number ?? "-"}.`,
+    message: `Worker ${workerCode ?? input.workerId} did not scan QR for vehicle job ${vehicleJob?.ticket_number ?? "-"}.`,
     payload: {
       ticketNumber: vehicleJob?.ticket_number ?? null,
       worker_code: workerCode,
@@ -327,7 +327,7 @@ async function handleAssignmentScanTimeout(input: {
 // Function แจ้ง Admin เมื่อ assignment ที่ accept แล้วใกล้หมดเวลา scan QR
 async function handleAssignmentScanWarning(input: {
   assignment: VehicleJobAssignmentDto;
-  workerAccountId: number;
+  workerId: number;
   connection: DbConnection;
 }): Promise<void> {
   if (input.assignment.status !== ASSIGNMENT_STATUS.ACCEPTED) {
@@ -345,7 +345,7 @@ async function handleAssignmentScanWarning(input: {
   if (remainingDelayMs > warningBeforeMs) {
     await scheduleScanWarning(
       input.assignment.id,
-      input.assignment.worker_account_id,
+      input.assignment.worker_id,
       input.assignment.scan_deadline_at
     );
     return;
@@ -356,14 +356,14 @@ async function handleAssignmentScanWarning(input: {
       input.assignment.vehicle_job_id,
       input.connection
     ),
-    profileRepository.findWorkerCodeByAccountId(input.workerAccountId),
+    profileRepository.findWorkerCodeByAccountId(input.workerId),
   ]);
   const remainingSeconds = Math.ceil(remainingDelayMs / 1000);
 
   publishNotification({
     type: "ASSIGNMENT_SCAN_DEADLINE_WARNING",
     title: "Worker has not checked in",
-    message: `Worker ${workerCode ?? input.workerAccountId} has not checked in and the scan deadline is near.`,
+    message: `Worker ${workerCode ?? input.workerId} has not checked in and the scan deadline is near.`,
     payload: {
       ticketNumber: vehicleJob?.ticket_number ?? null,
       worker_code: workerCode,
@@ -385,20 +385,20 @@ async function handleAssignmentScanWarning(input: {
 export async function returnCompletedWorkersToQueue(
   input: CompletedWorkerQueueResult | null
 ): Promise<Array<string | null>> {
-  if (!input || input.completed_worker_account_ids.length === 0) {
+  if (!input || input.completed_worker_ids.length === 0) {
     return [];
   }
 
   const requeuedWorkerCodes: Array<string | null> = [];
   const workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
-    input.completed_worker_account_ids
+    input.completed_worker_ids
   );
 
-  for (const workerAccountId of input.completed_worker_account_ids) {
-    const workerCode = workerCodeMap.get(workerAccountId) ?? null;
+  for (const workerId of input.completed_worker_ids) {
+    const workerCode = workerCodeMap.get(workerId) ?? null;
     const [currentSchedule, currentAssignment] = await Promise.all([
-      workScheduleRepository.findCurrentByAccountId(workerAccountId),
-      assignmentRepository.findCurrentAssignmentByWorker(workerAccountId),
+      workScheduleRepository.findCurrentByAccountId(workerId),
+      assignmentRepository.findCurrentAssignmentByWorker(workerId),
     ]);
 
     if (currentAssignment) {
@@ -410,14 +410,14 @@ export async function returnCompletedWorkersToQueue(
       isTimeInWorkSchedule(currentSchedule);
 
     if (canReturnToQueue) {
-      const queue = await enqueueWorker(workerAccountId);
+      const queue = await enqueueWorker(workerId);
       requeuedWorkerCodes.push(workerCode);
-      sendWorkerSocketEvent(workerAccountId, "WORKER_STATUS_CHANGED", {
+      sendWorkerSocketEvent(workerId, "WORKER_STATUS_CHANGED", {
         queue: buildWorkerQueueSocketPayload(queue, workerCode),
       });
       publishAdminWorkerStatusChanged({
         title: "Worker returned to queue",
-        message: `Worker ${workerCode ?? workerAccountId} returned to queue after vehicle job completion.`,
+        message: `Worker ${workerCode ?? workerId} returned to queue after vehicle job completion.`,
         workerCode,
         queue,
         reason: "vehicle_job_completed_requeue",
@@ -428,15 +428,15 @@ export async function returnCompletedWorkersToQueue(
       continue;
     }
 
-    const queue = await markWorkerOpenApp(workerAccountId);
-    if (isWorkerSocketConnected(workerAccountId)) {
-      sendWorkerSocketEvent(workerAccountId, "WORKER_STATUS_CHANGED", {
+    const queue = await markWorkerOpenApp(workerId);
+    if (isWorkerSocketConnected(workerId)) {
+      sendWorkerSocketEvent(workerId, "WORKER_STATUS_CHANGED", {
         queue: buildWorkerQueueSocketPayload(queue, workerCode),
       });
     }
     publishAdminWorkerStatusChanged({
       title: "Worker moved to open_app",
-      message: `Worker ${workerCode ?? workerAccountId} moved to open_app after vehicle job completion.`,
+      message: `Worker ${workerCode ?? workerId} moved to open_app after vehicle job completion.`,
       workerCode,
       queue,
       reason: "vehicle_job_completed_not_available",
@@ -542,7 +542,7 @@ async function handleVendorConfirmationTimeout(input: {
       ),
     },
     admin: true,
-    worker_account_ids: result.receiverAccountIds,
+    worker_ids: result.receiverAccountIds,
   });
   publishNotification({
     type: "TICKET_COMPLETION_RESULT",
@@ -564,20 +564,20 @@ async function handleVendorConfirmationTimeout(input: {
 
 // Function ปิดกะ worker เมื่อถึงเวลาสิ้นสุด และย้าย worker ที่ว่างกลับ open_app
 async function handleWorkerShiftEnd(input: {
-  accountId: number;
+  workerId: number;
   scheduleId: number;
   shiftInstanceKey?: string;
 }): Promise<void> {
   const schedule = await workScheduleRepository.findById(input.scheduleId);
 
-  if (!schedule || schedule.account_id !== input.accountId) {
+  if (!schedule || schedule.worker_id !== input.workerId) {
     return;
   }
 
   // Function อ่าน schedule สดก่อนปิดกะจาก delayed job
   if (isTimeInWorkSchedule(schedule)) {
     await scheduleWorkerShiftEnd(
-      input.accountId,
+      input.workerId,
       input.scheduleId,
       getWorkScheduleShiftEndDelayMs(schedule),
       input.shiftInstanceKey
@@ -586,23 +586,23 @@ async function handleWorkerShiftEnd(input: {
     return;
   }
 
-  await ejectWorkerForShiftEnd(input.accountId, schedule, input.shiftInstanceKey);
+  await ejectWorkerForShiftEnd(input.workerId, schedule, input.shiftInstanceKey);
 }
 
 // Function ปิด attendance ของกะที่จบแล้วและคืน Worker เป็น open_app
 async function ejectWorkerForShiftEnd(
-  accountId: number,
+  workerId: number,
   schedule: WorkScheduleDto,
   shiftInstanceKeyInput?: string
 ): Promise<void> {
   const shiftInstanceKey =
     shiftInstanceKeyInput ?? buildWorkScheduleShiftInstanceKey(schedule);
-  const workerCode = await profileRepository.findWorkerCodeByAccountId(accountId);
+  const workerCode = await profileRepository.findWorkerCodeByAccountId(workerId);
 
   await workerShiftAttendanceRepository.closeWorkerShift(
     {
-      account_id: accountId,
-      worker_code: workerCode ?? String(accountId),
+      worker_id: workerId,
+      worker_code: workerCode ?? String(workerId),
       schedule,
       shift_instance_key: shiftInstanceKey,
       reason: "shift_ended",
@@ -610,24 +610,24 @@ async function ejectWorkerForShiftEnd(
   );
 
   const currentAssignment = await assignmentRepository.findCurrentAssignmentByWorker(
-    accountId
+    workerId
   );
 
   if (currentAssignment) {
     return;
   }
 
-  const queue = await markWorkerOpenApp(accountId);
+  const queue = await markWorkerOpenApp(workerId);
 
-  if (isWorkerSocketConnected(accountId)) {
-    sendWorkerSocketEvent(accountId, "WORKER_STATUS_CHANGED", {
+  if (isWorkerSocketConnected(workerId)) {
+    sendWorkerSocketEvent(workerId, "WORKER_STATUS_CHANGED", {
       queue: buildWorkerQueueSocketPayload(queue, workerCode),
       reason: "shift_ended",
     });
   }
   publishAdminWorkerStatusChanged({
     title: "Worker shift closed",
-    message: `Worker ${workerCode ?? accountId} moved to open_app because the shift ended.`,
+    message: `Worker ${workerCode ?? workerId} moved to open_app because the shift ended.`,
     workerCode,
     queue,
     reason: "shift_ended",
@@ -636,18 +636,18 @@ async function ejectWorkerForShiftEnd(
 
 // Function พา worker กลับจาก break เข้าคิว หรือกลับ open_app ถ้า socket/กะ/assignment ไม่พร้อม
 async function handleWorkerBreakReturn(input: {
-  accountId: number;
+  workerId: number;
   scheduleId: number;
 }): Promise<void> {
-  const queueEntry = await getWorkerQueueStatus(input.accountId);
+  const queueEntry = await getWorkerQueueStatus(input.workerId);
 
   if (!queueEntry || queueEntry.status !== WORKER_WORK_STATUS.BREAK) {
     return;
   }
 
   const [currentSchedule, currentAssignment] = await Promise.all([
-    workScheduleRepository.findCurrentByAccountId(input.accountId),
-    assignmentRepository.findCurrentAssignmentByWorker(input.accountId),
+    workScheduleRepository.findCurrentByAccountId(input.workerId),
+    assignmentRepository.findCurrentAssignmentByWorker(input.workerId),
   ]);
 
   if (
@@ -655,13 +655,13 @@ async function handleWorkerBreakReturn(input: {
     currentSchedule.id === input.scheduleId &&
     isTimeInWorkSchedule(currentSchedule) &&
     !currentAssignment &&
-    isWorkerSocketConnected(input.accountId)
+    isWorkerSocketConnected(input.workerId)
   ) {
-    const queue = await enqueueWorker(input.accountId);
-    const workerCode = await profileRepository.findWorkerCodeByAccountId(input.accountId);
+    const queue = await enqueueWorker(input.workerId);
+    const workerCode = await profileRepository.findWorkerCodeByAccountId(input.workerId);
     publishAdminWorkerStatusChanged({
       title: "Worker break finished",
-      message: `Worker ${workerCode ?? input.accountId} returned to queue after break.`,
+      message: `Worker ${workerCode ?? input.workerId} returned to queue after break.`,
       workerCode,
       queue,
       reason: "break_finished_requeue",
@@ -670,11 +670,11 @@ async function handleWorkerBreakReturn(input: {
     return;
   }
 
-  const queue = await markWorkerOpenApp(input.accountId);
-  const workerCode = await profileRepository.findWorkerCodeByAccountId(input.accountId);
+  const queue = await markWorkerOpenApp(input.workerId);
+  const workerCode = await profileRepository.findWorkerCodeByAccountId(input.workerId);
   publishAdminWorkerStatusChanged({
     title: "Worker moved to open_app",
-    message: `Worker ${workerCode ?? input.accountId} moved to open_app after break.`,
+    message: `Worker ${workerCode ?? input.workerId} moved to open_app after break.`,
     workerCode,
     queue,
     reason: "break_finished_not_available",
@@ -683,7 +683,7 @@ async function handleWorkerBreakReturn(input: {
 
 // Function เริ่ม BullMQ worker กลางสำหรับงาน timeout, accept, scan, warning, vendor และกะงาน
 export function startAssignmentTimeoutProcessing(): void {
-  startAssignmentTimeoutWorker(async ({ assignmentId, workerAccountId, ticketId, submissionId, mobileAppVersionId, kind }) => {
+  startAssignmentTimeoutWorker(async ({ assignmentId, workerId, ticketId, submissionId, mobileAppVersionId, kind }) => {
     if (kind === "mobile_app_release_notification") {
       if (mobileAppVersionId) {
         await sendMobileAppReleaseNotification(mobileAppVersionId);
@@ -703,7 +703,7 @@ export function startAssignmentTimeoutProcessing(): void {
       return;
     }
 
-    if (!assignmentId || !workerAccountId) {
+    if (!assignmentId || !workerId) {
       return;
     }
 
@@ -720,7 +720,7 @@ export function startAssignmentTimeoutProcessing(): void {
       if (kind === "scan") {
         await handleAssignmentScanTimeout({
           assignment,
-          workerAccountId,
+          workerId,
           connection: transaction,
         });
         return;
@@ -729,7 +729,7 @@ export function startAssignmentTimeoutProcessing(): void {
       if (kind === "scan_warning") {
         await handleAssignmentScanWarning({
           assignment,
-          workerAccountId,
+          workerId,
           connection: transaction,
         });
         return;
@@ -743,10 +743,10 @@ export function startAssignmentTimeoutProcessing(): void {
         assignment.vehicle_job_id,
         transaction
       );
-      const workerCode = await profileRepository.findWorkerCodeByAccountId(workerAccountId);
+      const workerCode = await profileRepository.findWorkerCodeByAccountId(workerId);
       const timeoutResult = await handleAssignmentAcceptTimeout({
         assignment,
-        workerAccountId,
+        workerId,
         connection: transaction,
       });
 
@@ -760,7 +760,7 @@ export function startAssignmentTimeoutProcessing(): void {
         transaction,
       );
 
-      sendWorkerSocketEvent(workerAccountId, "ASSIGNMENT_TIMEOUT", {
+      sendWorkerSocketEvent(workerId, "ASSIGNMENT_TIMEOUT", {
         ticketNumber: vehicleJob?.ticket_number ?? null,
         ticketNos,
         reason: timeoutResult.reason,
@@ -774,10 +774,10 @@ export function startAssignmentTimeoutProcessing(): void {
             ? "Worker returned to queue"
             : "Worker moved to open_app",
         message: timeoutResult.closed_shift
-          ? `Worker ${workerCode ?? workerAccountId} moved to open_app after reaching the assignment timeout limit.`
+          ? `Worker ${workerCode ?? workerId} moved to open_app after reaching the assignment timeout limit.`
           : timeoutResult.reason === "assignment_timeout_requeue"
-            ? `Worker ${workerCode ?? workerAccountId} returned to queue after assignment timeout.`
-            : `Worker ${workerCode ?? workerAccountId} moved to open_app after assignment timeout.`,
+            ? `Worker ${workerCode ?? workerId} returned to queue after assignment timeout.`
+            : `Worker ${workerCode ?? workerId} moved to open_app after assignment timeout.`,
         workerCode,
         queue: timeoutResult.queue,
         reason: timeoutResult.reason,
@@ -789,7 +789,7 @@ export function startAssignmentTimeoutProcessing(): void {
       publishNotification({
         type: "ASSIGNMENT_TIMEOUT",
         title: "Assignment timed out",
-        message: `Worker ${workerCode ?? workerAccountId} did not accept vehicle job ${vehicleJob?.ticket_number ?? "-"}.`,
+        message: `Worker ${workerCode ?? workerId} did not accept vehicle job ${vehicleJob?.ticket_number ?? "-"}.`,
         payload: {
           ticketNumber: vehicleJob?.ticket_number ?? null,
           worker_code: workerCode,
@@ -805,12 +805,12 @@ export function startAssignmentTimeoutProcessing(): void {
     });
   });
 
-  startWorkerBreakReturnWorker(async ({ accountId, scheduleId, shiftInstanceKey, kind }) => {
+  startWorkerBreakReturnWorker(async ({ workerId, scheduleId, shiftInstanceKey, kind }) => {
     if (kind === "shift_end") {
-      await handleWorkerShiftEnd({ accountId, scheduleId, shiftInstanceKey });
+      await handleWorkerShiftEnd({ workerId, scheduleId, shiftInstanceKey });
       return;
     }
 
-    await handleWorkerBreakReturn({ accountId, scheduleId });
+    await handleWorkerBreakReturn({ workerId, scheduleId });
   });
 }

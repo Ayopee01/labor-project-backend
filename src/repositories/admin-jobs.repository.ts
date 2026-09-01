@@ -7,12 +7,12 @@ import { withTransaction } from "../db/prisma";
 import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
-import { mapAccount, mapGateTicket, mapMarketJob, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
+import { mapGateTicket, mapMarketJob, mapMasterWorker, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
 
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
-import type { AccountDto } from "../types/admin-workers.type";
+import type { MasterWorkerDto } from "../types/admin-workers.type";
 import type { GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 import type { AdminVehicleJobFinancialRecord, DailyWorkerIncomeFilters, DailyWorkerIncomeRecord, HistoryStatusFilter, VehicleJobHistoryListResult, VehicleJobListFilters, VehicleJobOperationFilters, VehicleJobOperationRecord } from "../types/admin-jobs.type";
 
@@ -335,6 +335,7 @@ export async function listVehicleJobs(
                 },
                 include: {
                   submittedByAccount: true,
+                  submittedByWorker: true,
                   workerSnapshots: {
                     orderBy: {
                       id: "asc",
@@ -562,16 +563,15 @@ export async function findVehicleJobFinancialByRef(
 export async function findWorkerByCode(
   workerCode: string,
   connection?: DbConnection,
-): Promise<AccountDto | null> {
+): Promise<MasterWorkerDto | null> {
   const db = client(connection);
-  const account = await db.account.findFirst({
+  const worker = await db.masterWorker.findUnique({
     where: {
-      role: "worker",
-      username: workerCode,
+      laborCode: workerCode,
     },
   });
 
-  return mapAccount(account);
+  return mapMasterWorker(worker);
 }
 
 // Function ค้นหา active assignment ตาม vehicle job ref และ WorkerCode จาก DB
@@ -587,7 +587,7 @@ export async function findActiveAssignmentByVehicleJobRefAndWorkerCode(
         ticketNumber,
       },
       worker: {
-        username: workerCode,
+        laborCode: workerCode,
       },
       status: {
         in: ACTIVE_ASSIGNMENT_STATUSES,
@@ -649,7 +649,7 @@ export async function cancelVehicleJob(
   await workerAssignmentEventRepository.createManyOnce(
     activeAssignments.map((assignment) => ({
       assignment_id: assignment.id,
-      worker_account_id: assignment.workerAccountId,
+      worker_id: assignment.workerId,
       vehicle_job_id: assignment.vehicleJobId,
       event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED,
       occurred_at: now,
@@ -746,7 +746,7 @@ export async function cancelActiveAssignmentsForVehicleJob(
   await workerAssignmentEventRepository.createManyOnce(
     activeAssignments.map((assignment) => ({
       assignment_id: assignment.id,
-      worker_account_id: assignment.workerAccountId,
+      worker_id: assignment.workerId,
       vehicle_job_id: assignment.vehicleJobId,
       event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED,
       occurred_at: now,
@@ -859,13 +859,12 @@ export async function listAcceptedAssignmentsByVehicleJob(
   connection?: DbConnection,
 ): Promise<VehicleJobAssignmentDto[]> {
   const db = client(connection);
-  const workerAccountIds =
+  const workerIds =
     workerCodes && workerCodes.length > 0
       ? (
-          await db.account.findMany({
+          await db.masterWorker.findMany({
             where: {
-              role: "worker",
-              username: {
+              laborCode: {
                 in: workerCodes,
               },
             },
@@ -873,10 +872,10 @@ export async function listAcceptedAssignmentsByVehicleJob(
               id: true,
             },
           })
-        ).map((account) => account.id)
+        ).map((worker) => worker.id)
       : undefined;
 
-  if (workerCodes && workerCodes.length > 0 && workerAccountIds?.length === 0) {
+  if (workerCodes && workerCodes.length > 0 && workerIds?.length === 0) {
     return [];
   }
 
@@ -884,10 +883,10 @@ export async function listAcceptedAssignmentsByVehicleJob(
     where: {
       vehicleJobId,
       status: ASSIGNMENT_STATUS.ACCEPTED,
-      ...(workerAccountIds &&
-        workerAccountIds.length > 0 && {
-          workerAccountId: {
-            in: workerAccountIds,
+      ...(workerIds &&
+        workerIds.length > 0 && {
+          workerId: {
+            in: workerIds,
           },
         }),
     },
@@ -945,7 +944,7 @@ export async function cancelAssignment(
   await workerAssignmentEventRepository.createOnce(
     {
       assignment_id: assignment.id,
-      worker_account_id: assignment.workerAccountId,
+      worker_id: assignment.workerId,
       vehicle_job_id: assignment.vehicleJobId,
       event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED,
       occurred_at: now,
@@ -960,7 +959,7 @@ export async function cancelAssignment(
   // เดียวกัน (Ticket ที่ Lock/Terminal แล้วต้องไม่ถูกแก้ Roster ย้อนหลัง)
   await db.ticketWorker.updateMany({
     where: {
-      workerAccountId: assignment.workerAccountId,
+      workerId: assignment.workerId,
 
       status: TICKET_WORKER_STATUS.WORKING,
 
@@ -985,14 +984,14 @@ export async function cancelAssignment(
 // และยังทำ Business Ticket อื่นได้) กระทบเฉพาะ Roster ของ Business Ticket ใบนี้ใบเดียว
 export async function cancelTicketWorkerForMarketJob(
   marketJobId: number,
-  workerAccountId: number,
+  workerId: number,
   connection?: DbConnection,
 ): Promise<boolean> {
   const db = client(connection);
   const result = await db.ticketWorker.updateMany({
     where: {
       marketJobId,
-      workerAccountId,
+      workerId,
       status: TICKET_WORKER_STATUS.WORKING,
     },
     data: cancelledTicketWorkerData(new Date()),
@@ -1068,9 +1067,9 @@ function buildDailyWorkerIncomeWhere(
         },
       ]
       : [];
-  const workerFilter: Prisma.AccountWhereInput = {
+  const workerFilter: Prisma.MasterWorkerWhereInput = {
     ...(options.includeWorkerCode && filters.workerCode && {
-      username: {
+      laborCode: {
         equals: filters.workerCode,
         mode: "insensitive",
       },
@@ -1094,7 +1093,7 @@ function buildDailyWorkerIncomeWhere(
       OR: [
         {
           worker: {
-            username: {
+            laborCode: {
               contains: filters.search,
               mode: "insensitive",
             },
@@ -1232,11 +1231,11 @@ export async function listDailyWorkerIncome(
         includeWorkerCode: false,
         includeShift: false,
       }),
-      distinct: ["workerAccountId"],
+      distinct: ["workerId"],
       select: {
         worker: {
           select: {
-            username: true,
+            laborCode: true,
           },
         },
       },
@@ -1246,7 +1245,7 @@ export async function listDailyWorkerIncome(
         includeWorkerCode: false,
         includeShift: false,
       }),
-      distinct: ["workerAccountId"],
+      distinct: ["workerId"],
       select: {
         worker: {
           select: {
@@ -1257,7 +1256,7 @@ export async function listDailyWorkerIncome(
     }),
   ]);
   const availableWorkerCodes = Array.from(
-    new Set(workerCodeRows.map((row) => row.worker.username)),
+    new Set(workerCodeRows.map((row) => row.worker.laborCode)),
   ).sort();
   const availableShifts = Array.from(
     new Set(
