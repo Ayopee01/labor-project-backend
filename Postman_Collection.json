@@ -168,6 +168,12 @@
       "description": "LINE User ID mapped in seed for manual LINE webhook tests. Real LINE webhooks send this as source.userId automatically."
     },
     {
+      "key": "lineDevSubmissionId",
+      "value": "",
+      "type": "string",
+      "description": "SubmissionId to confirm/reject from GET /api/line/dev/submissions when using the LINE dev tester fallback endpoints."
+    },
+    {
       "key": "driverQrToken",
       "value": "",
       "type": "string",
@@ -3072,6 +3078,135 @@
               "type": "noauth"
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/line/webhook\nAuth: No auth. LINE signature is required only when LINE_CHANNEL_SECRET is configured.\nBody: Manual mock LINE rating postback. source.userId should use {{lineUserId}} from the seed mapping. Score must be 1-5. In normal use, vendor taps one of the optional rating buttons after confirming completion. Backend stores one rating per Ticket and LINE user; if the same LINE user taps again, the latest score replaces the old one. After a valid rating, backend sends a thank-you Flex card and a temporary 0.00 baht service-charge summary card."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/line/dev",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/line/dev",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "dev"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/line/dev\nAuth: No auth.\nResponse: text/html standalone page listing submissions with Confirm/Reject buttons. This is a fallback tool to confirm or reject vendor ticket completions without going through LINE, used when the LINE messaging line is rate-limited. It never sends messages through the LINE Messaging API and is enabled in every environment including production, so open it directly in a browser rather than through Postman."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/line/dev/submissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/line/dev/submissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "dev",
+                "submissions"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/line/dev/submissions\nAuth: No auth.\nResponse: Data array of ticket completion submissions (SubmissionId, TicketId, statuses, booth/market info, submitted products, and Actionable flag). Actionable is true only for the current waiting submission that can still be confirmed or rejected. Copy a SubmissionId from here into {{lineDevSubmissionId}} to use the confirm/reject requests below. Part of the LINE dev tester fallback for when the LINE line is rate-limited; enabled in every environment including production."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/line/dev/submissions/:submissionId/confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/line/dev/submissions/{{lineDevSubmissionId}}/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "dev",
+                "submissions",
+                "{{lineDevSubmissionId}}",
+                "confirm"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/line/dev/submissions/{{lineDevSubmissionId}}/confirm\nAuth: No auth.\nBody: None required.\nConfirms the waiting ticket completion submission using the same completion flow as the real LINE vendor confirm button, but does not send any LINE message. Fails with 404 SUBMISSION_NOT_FOUND if the id does not exist, or 409 SUBMISSION_ALREADY_HANDLED if it was already confirmed, rejected, or superseded by a newer submission. Fallback tool for when the LINE line is rate-limited; enabled in every environment including production, so treat SubmissionId carefully — this mutates real ticket/vehicle job state."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/line/dev/submissions/:submissionId/reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reject_reason\": \"Quantity mismatch\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/line/dev/submissions/{{lineDevSubmissionId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "line",
+                "dev",
+                "submissions",
+                "{{lineDevSubmissionId}}",
+                "reject"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/line/dev/submissions/{{lineDevSubmissionId}}/reject\nAuth: No auth.\nBody: Optional RejectReason (max 1000 chars).\nRejects the waiting ticket completion submission using the same completion flow as the real LINE vendor reject button, but does not send any LINE message. Fails with 404 SUBMISSION_NOT_FOUND if the id does not exist, or 409 SUBMISSION_ALREADY_HANDLED if it was already confirmed, rejected, or superseded by a newer submission. Fallback tool for when the LINE line is rate-limited; enabled in every environment including production, so treat SubmissionId carefully — this mutates real ticket/vehicle job state."
           },
           "response": []
         }

@@ -2118,6 +2118,143 @@
         processed:
           type: integer
           example: 1
+    LineDevSubmissionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineDevSubmissionItem"
+    LineDevSubmissionItem:
+      type: object
+      properties:
+        submission_id:
+          type: integer
+          example: 501
+        ticket_id:
+          type: integer
+          example: 8801
+        submission_status:
+          type: string
+          example: DELIVERED
+        ticket_status:
+          type: string
+          example: DELIVERED
+        actionable:
+          type: boolean
+          description: True when this submission is the current waiting submission and can still be confirmed or rejected.
+          example: true
+        ticket_number:
+          type: string
+          example: TICKET-20260902-001
+        ticket_no:
+          type: string
+          example: "1"
+        license_plate:
+          type: string
+          example: 1กก1234
+        market_code:
+          type: string
+          example: MK01
+        market_name:
+          type: string
+          example: Central Market
+        boothCode:
+          type: string
+          example: A1
+        boothName:
+          type: string
+          nullable: true
+          example: Booth A1
+        submitted_by_code:
+          type: string
+          nullable: true
+          example: W001
+        submitted_by_name:
+          type: string
+          nullable: true
+          example: Worker Name
+        submitted_by_role:
+          type: string
+          example: worker
+        submitted_at:
+          type: string
+          example: "2026-09-02T08:00:00.000Z"
+        confirmed_at:
+          type: string
+          nullable: true
+          example: null
+        rejected_at:
+          type: string
+          nullable: true
+          example: null
+        reject_reason:
+          type: string
+          nullable: true
+          example: null
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              productCode:
+                type: string
+                example: PRODUCT-001
+              productName:
+                type: string
+                example: Cabbage
+              packageCode:
+                type: string
+                example: "22"
+              packageName:
+                type: string
+                example: Orange package
+              expected_quantity:
+                type: string
+                example: "10"
+              submitted_quantity:
+                type: string
+                nullable: true
+                example: "10"
+    LineDevRejectRequest:
+      type: object
+      properties:
+        reject_reason:
+          type: string
+          nullable: true
+          maxLength: 1000
+          example: Quantity mismatch
+    LineDevCompletionResult:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Confirmed from LINE dev tester without sending a LINE message.
+        submission_id:
+          type: integer
+          example: 501
+        ticket_id:
+          type: integer
+          example: 8801
+        boothCode:
+          type: string
+          example: A1
+        ticket_status:
+          type: string
+          example: COMPLETED
+        submission_status:
+          type: string
+          example: CONFIRMED
+        action:
+          type: string
+          enum:
+            - confirm
+            - reject
+          example: confirm
+        vehicle_job_status:
+          type: string
+          nullable: true
+          example: null
     TicketProduct:
       type: object
       properties:

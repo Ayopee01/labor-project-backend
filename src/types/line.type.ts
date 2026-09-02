@@ -108,6 +108,48 @@ export interface LineActionTokenDto {
 // Type action หลัง vendor ตรวจยอดส่งงาน
 export type VendorTicketCompletionAction = "confirm" | "reject";
 
+// Type รายการ Submission สำหรับหน้า LINE dev tester (ใช้เป็นทางสำรองกรณีเส้น LINE ติดลิมิต)
+export interface LineDevSubmissionItem {
+  submission_id: number;
+  ticket_id: number;
+  submission_status: string;
+  ticket_status: string;
+  actionable: boolean;
+  ticket_number: string;
+  ticket_no: string;
+  license_plate: string;
+  market_code: string;
+  market_name: string;
+  boothCode: string;
+  boothName: string | null;
+  submitted_by_code: string | null;
+  submitted_by_name: string | null;
+  submitted_by_role: string;
+  submitted_at: string;
+  confirmed_at: string | null;
+  rejected_at: string | null;
+  reject_reason: string | null;
+  products: Array<{
+    productCode: string;
+    productName: string;
+    packageCode: string;
+    packageName: string;
+    expected_quantity: string;
+    submitted_quantity: string | null;
+  }>;
+}
+
+export interface LineDevCompletionResult {
+  message: string;
+  submission_id: number;
+  ticket_id: number;
+  boothCode: string;
+  ticket_status: string;
+  submission_status: string;
+  action: VendorTicketCompletionAction;
+  vehicle_job_status: string | null;
+}
+
 // Type ผลลัพธ์กลางของ flow confirm/reject สำหรับส่งต่อ realtime และ LINE
 export interface VendorTicketCompletionFlowResult {
   ticket: import("./worker.type").GateTicketDto;

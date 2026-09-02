@@ -90,6 +90,10 @@ function sortSwaggerOperations(
     "post /api/workers/me/assignments/tickets/complete": 79,
     "get /api/admin/events": 85,
     "post /api/line/webhook": 90,
+    "get /api/line/dev": 91,
+    "get /api/line/dev/submissions": 92,
+    "post /api/line/dev/submissions/{submissionId}/confirm": 93,
+    "post /api/line/dev/submissions/{submissionId}/reject": 94,
   };
   const firstKey = `${firstOperation.get("method")} ${firstOperation.get("path")}`;
   const secondKey = `${secondOperation.get("method")} ${secondOperation.get("path")}`;
