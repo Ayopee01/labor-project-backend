@@ -1,0 +1,34 @@
+﻿paths:
+  /api/admin/events:
+    get:
+      tags:
+        - Admin Realtime
+      summary: เปิด SSE สำหรับ realtime event ของ Admin
+      description: |
+        Admin dashboard เปิด connection นี้ค้างไว้เพื่อรับ `text/event-stream`
+        Backend ส่ง event เมื่อสถานะ Worker, queue, assignment หรือ vehicle job เปลี่ยน เพื่อให้หน้าจอ refresh ได้ทันที
+      operationId: subscribeAdminEvents
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Server-Sent Events stream. This endpoint does not return a JSON list.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  event: TICKET_COMPLETION_RESULT
+                  data: {"Type":"TICKET_COMPLETION_RESULT","Title":"Ticket completion confirmed","Message":"Vendor confirmed ticket B-018.","Payload":{"TicketNo":"TKT-20260723-000125","BoothCode":"B-018","Status":"COMPLETED"},"OccurredAt":"2026-07-08T09:00:00.000Z"}
+        "401":
+          description: Missing or invalid access token/session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Authenticated account is not an admin or lacks jobs:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

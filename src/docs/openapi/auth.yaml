@@ -1,0 +1,347 @@
+paths:
+  /api/auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Login และ Create Session ผู้ใช้
+      description: |
+        Login Authenticates username/password แล้วออก Access Token และ Refresh Token พร้อมบันทึก Session ของอุปกรณ์
+        Worker Mobile ส่ง DeviceId/DeviceName และแนบ FCM Token ได้ทันทีถ้ามี เพื่อให้ Backend ใช้ส่ง Push Notification
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSuccessResponse"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Another active session exists on a different device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginConflictResponse"
+        "423":
+          description: Account is inactive or locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/login/confirm-force:
+    post:
+      tags:
+        - Auth
+      summary: Force login และแทนที่ session เดิม
+      description: |
+        ใช้ต่อจาก login ที่เจอ ACTIVE_SESSION_EXISTS เพื่อปิด session อุปกรณ์เดิมและสร้าง session ใหม่
+        แนบ FCM token ของอุปกรณ์ใหม่ได้ ถ้ายังไม่มีให้เรียก /api/auth/push-token ภายหลัง
+      operationId: confirmForceLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmForceLoginRequest"
+      responses:
+        "200":
+          description: Force login confirmed and new session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSuccessResponse"
+        "400":
+          description: Invalid request body or challenge data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Login challenge is invalid or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "423":
+          description: Account is inactive or locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/refresh:
+    post:
+      tags:
+        - Auth
+      summary: ต่ออายุ Token ด้วย Refresh Token
+      description: ใช้ refresh token ที่ยังไม่หมดอายุเพื่อออก access token และ refresh token ชุดใหม่ พร้อมยกเลิก refresh token เดิม
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Token refresh successful.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshSuccessResponse"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Refresh token is invalid, expired, or revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: Logout จากระบบ session ปัจจุบัน
+      description: ยกเลิก session จาก access token ที่ใช้อยู่ เพื่อไม่ให้ token ชุดนี้ใช้งานต่อได้
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logout successful.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutSuccessResponse"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/push-token:
+    post:
+      tags:
+        - Auth
+      summary: บันทึกหรืออัปเดต FCM token ของ Worker
+      description: |
+        ใช้เมื่อ Worker Mobile ได้ FCM token หลัง login หรือ token ถูก refresh จาก Firebase
+        Backend เก็บ token ตาม WorkerCode, DeviceId และ Platform เพื่อใช้ส่ง push notification และไม่ส่ง raw token กลับใน response
+      operationId: registerAuthPushToken
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerPushTokenRequest"
+      responses:
+        "200":
+          description: Worker push token registered successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerPushTokenResponse"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Only worker accounts can register worker push tokens.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/me:
+    get:
+      tags:
+        - Auth
+      summary: ดูข้อมูลผู้ใช้ที่ login อยู่
+      description: คืนข้อมูล account, role, profile, permission และข้อมูล session จาก access token ปัจจุบัน
+      operationId: getCurrentAccount
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current account data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticatedAccount"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - Auth
+      summary: แก้ไขข้อมูลส่วนตัวของ Admin ที่ login อยู่
+      description: ให้ Admin แก้ full_name, email และ phone ของตัวเอง แล้วคืนข้อมูล account ล่าสุด
+      operationId: updateOwnProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOwnProfileRequest"
+      responses:
+        "200":
+          description: Profile updated. Returns the same shape as GET /api/auth/me.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticatedAccount"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/me/upload-image:
+    post:
+      tags:
+        - Auth
+      summary: อัปโหลดรูปโปรไฟล์ของ Admin ที่ login อยู่
+      description: รับไฟล์รูปของ Admin ปัจจุบัน ตรวจชนิดไฟล์ แล้วบันทึก image_url กลับเข้า account
+      operationId: uploadOwnProfileImage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: jpg, png, or webp, max 5MB.
+      responses:
+        "200":
+          description: Image uploaded and image_url persisted on the account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadOwnProfileImageResponse"
+        "400":
+          description: Missing file, or invalid image type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/me/password:
+    patch:
+      tags:
+        - Auth
+      summary: เปลี่ยนรหัสผ่านของผู้ใช้ปัจจุบัน
+      description: ตรวจรหัสผ่านเดิมก่อนตั้งรหัสใหม่ และยกเลิก session อื่นของ account เดียวกัน
+      operationId: changeOwnPassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeOwnPasswordRequest"
+      responses:
+        "200":
+          description: Password changed. The current session stays active and other active sessions are revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangeOwnPasswordResponse"
+        "400":
+          description: Invalid request body or current password is incorrect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/me/lang:
+    patch:
+      tags:
+        - Auth
+      summary: เปลี่ยนภาษาที่ผู้ใช้เลือก
+      description: บันทึกค่า lang ของ account ปัจจุบันเพื่อให้ระบบเลือกข้อความตอบกลับหรือ notification ได้ตรงภาษา
+      operationId: updateOwnLang
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAccountLangRequest"
+      responses:
+        "200":
+          description: Language preference updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateAccountLangResponse"
+        "400":
+          description: Invalid language payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Access token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

@@ -1,0 +1,5748 @@
+﻿components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    gateBasicAuth:
+      type: http
+      scheme: basic
+      description: Gate Client Credentials. Username is client_id and password is client_secret.
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - statusCode
+        - code
+        - message
+      properties:
+        statusCode:
+          type: integer
+          example: 401
+        code:
+          type: string
+          example: INVALID_TOKEN
+        message:
+          type: string
+          example: Invalid or expired token.
+        request_id:
+          type: string
+          nullable: true
+          description: Correlation id for this request. Also echoed in the X-Request-Id response header — include it when reporting an issue so the team can find the matching log line.
+          example: 3fa4c1e2-9b7a-4e2f-8a5a-6f1a2b9c3d4e
+        shift:
+          type: object
+          nullable: true
+          description: Present on OUTSIDE_WORK_SHIFT errors.
+          properties:
+            name:
+              type: string
+              example: Morning shift
+            start_time:
+              type: string
+              example: "06:00"
+            end_time:
+              type: string
+              example: "18:00"
+        remaining_time:
+          type: string
+          nullable: true
+          description: Human-readable remaining time until the next shift start. Present on OUTSIDE_WORK_SHIFT errors.
+          example: 28 minutes
+    Account:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: user01
+        role:
+          type: string
+          enum:
+            - admin
+            - worker
+          example: worker
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: active
+        full_name:
+          type: string
+          example: Worker Name
+        position:
+          type: string
+          nullable: true
+          example: null
+        email:
+          type: string
+          nullable: true
+          example: admin@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0001
+        permission_level:
+          type: string
+          nullable: true
+          enum:
+            - owner
+            - manager
+            - supervisor
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+    ProfileCardShift:
+      type: object
+      nullable: true
+      properties:
+        name:
+          type: string
+          example: day
+        start_time:
+          type: string
+          example: "06:00"
+        end_time:
+          type: string
+          example: "18:00"
+    AdminProfileCard:
+      type: object
+      properties:
+        role:
+          type: string
+          example: admin
+        full_name:
+          type: string
+          example: Admin Sinummuang
+        position:
+          type: string
+          nullable: true
+          example: Administrator
+        employee_code:
+          type: string
+          example: ADM0001
+        admin_code:
+          type: string
+          example: ADM0001
+        status:
+          type: string
+          example: active
+        email:
+          type: string
+          nullable: true
+          example: admin@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0001
+        permission_level:
+          type: string
+          nullable: true
+          example: owner
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+        latest_active_at:
+          type: string
+          nullable: true
+          format: date-time
+          example: 2026-07-13T02:07:55.618Z
+    WorkerProfileCard:
+      type: object
+      properties:
+        role:
+          type: string
+          example: worker
+        full_name:
+          type: string
+          example: Worker Name
+        employee_code:
+          type: string
+          nullable: true
+          example: MN000142
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        shirt_number:
+          type: string
+          nullable: true
+          example: "51"
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000142.jpg
+        nationality:
+          type: string
+          nullable: true
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
+        work_start_date:
+          type: string
+          nullable: true
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          nullable: true
+          example: 081-234-5678
+        shift:
+          $ref: "#/components/schemas/ProfileCardShift"
+    AuthProfileCard:
+      oneOf:
+        - $ref: "#/components/schemas/AdminProfileCard"
+        - $ref: "#/components/schemas/WorkerProfileCard"
+    AdminMeResponse:
+      type: object
+      properties:
+        role:
+          type: string
+          example: admin
+        full_name:
+          type: string
+          example: System Admin
+        employee_code:
+          type: string
+          example: ADM0001
+        position:
+          type: string
+          nullable: true
+          example: Administrator
+        admin_code:
+          type: string
+          example: ADM0001
+        status:
+          type: string
+          example: active
+        email:
+          type: string
+          nullable: true
+          example: admin@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0001
+        image_url:
+          type: string
+          nullable: true
+          description: Set by POST /api/auth/me/upload-image. Null (never omitted) when the admin has no profile image, so clients can tell "no image" apart from an older response shape without this field.
+          example: /uploads/admins/12-1699999999.jpg
+        permission_level:
+          type: string
+          nullable: true
+          example: manager
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+        lang:
+          $ref: "#/components/schemas/AccountLang"
+        latest_active_at:
+          type: string
+          nullable: true
+          format: date-time
+          example: 2026-07-13T03:18:06.020Z
+    WorkerMeResponse:
+      type: object
+      properties:
+        role:
+          type: string
+          example: worker
+        full_name:
+          type: string
+          example: Worker Name
+        employee_code:
+          type: string
+          nullable: true
+          example: MN000142
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000142.jpg
+        status:
+          type: string
+          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, waiting_team, working, or break.
+          enum:
+            - open_app
+            - ready
+            - assigned
+            - waiting_team
+            - working
+            - break
+          example: ready
+        nationality:
+          type: string
+          nullable: true
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
+        shirt_type:
+          type: string
+          nullable: true
+          example: Navy
+        shirt_number:
+          type: string
+          nullable: true
+          example: "12"
+        work_start_date:
+          type: string
+          nullable: true
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          nullable: true
+          example: 081-234-5678
+        lang:
+          $ref: "#/components/schemas/AccountLang"
+        shift:
+          $ref: "#/components/schemas/ProfileCardShift"
+    WorkerProfile:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          example: MN000142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mno00142.jpg
+        nationality:
+          type: string
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
+        work_start_date:
+          type: string
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          example: 081-234-5678
+        shirt_type:
+          type: string
+          nullable: true
+          enum:
+            - Navy
+            - Blue
+            - Green
+          example: Navy
+        shirt_number:
+          type: string
+          nullable: true
+          example: "12"
+    WorkSchedule:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          example: MN000142
+        shift_no:
+          type: integer
+          enum:
+            - 1
+            - 2
+          description: Current shift order for the worker.
+          example: 1
+        work_date:
+          type: string
+          format: date
+          example: 2026-07-01
+        shift_start_time:
+          type: string
+          description: Time only in HH:mm. This is a daily recurring shift time.
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "08:00"
+        shift_end_time:
+          type: string
+          description: Time only in HH:mm. This is a daily recurring shift time.
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "17:00"
+        shift_name:
+          type: string
+          example: day
+        is_current:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+    AuthenticatedAccount:
+      oneOf:
+        - $ref: "#/components/schemas/AdminMeResponse"
+        - $ref: "#/components/schemas/WorkerMeResponse"
+    AccountLang:
+      type: string
+      enum:
+        - TH
+        - MN
+        - CN
+        - EN
+      example: TH
+    UpdateAccountLangRequest:
+      type: object
+      required:
+        - lang
+      properties:
+        lang:
+          $ref: "#/components/schemas/AccountLang"
+    UpdateAccountLangResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Language updated successfully.
+        lang:
+          $ref: "#/components/schemas/AccountLang"
+    UpdateOwnProfileRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          description: Must stay a non-empty string when sent — cannot be cleared. Omit to leave unchanged.
+        email:
+          type: string
+          nullable: true
+          description: Omit to leave unchanged. Send null to clear the stored email. An empty string is also treated as "leave unchanged" (not as clear) — send null explicitly to clear.
+        phone:
+          type: string
+          nullable: true
+          description: Omit to leave unchanged. Send null to clear the stored phone. An empty string is also treated as "leave unchanged" (not as clear) — send null explicitly to clear.
+      description: All fields optional. Only fields actually sent (present in the JSON body) are updated. Admin-only (role-gated).
+    UploadOwnProfileImageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Profile image uploaded successfully.
+        image_url:
+          type: string
+          example: /uploads/admins/1690000000000-a1b2c3d4.jpg
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: user01
+        password:
+          type: string
+          format: password
+          example: "123456"
+        device_id:
+          type: string
+          description: Required for worker login. Omit for admin login. PascalCase body key DeviceId is also accepted.
+          example: browser-device-id
+        device_name:
+          type: string
+          description: Required when the account role is worker. Omit for admin login. PascalCase body key DeviceName is also accepted.
+          example: Chrome on Windows
+        fcm_token:
+          type: string
+          description: Optional for worker login. Mobile FCM registration token from Firebase SDK, used for background push notifications. PascalCase body key FcmToken is also accepted. If unavailable during login, call POST /api/auth/push-token after login.
+          example: fcm-registration-token
+        platform:
+          type: string
+          description: Optional push token platform. PascalCase body key Platform is also accepted. Defaults to unknown when omitted.
+          enum:
+            - android
+            - ios
+            - web
+            - unknown
+          example: android
+    ConfirmForceLoginRequest:
+      type: object
+      required:
+        - login_challenge_token
+        - device_id
+        - device_name
+      properties:
+        login_challenge_token:
+          type: string
+          example: temporary-jwt-token
+        device_id:
+          type: string
+          example: browser-device-id
+        device_name:
+          type: string
+          example: Chrome on Windows
+        fcm_token:
+          type: string
+          description: Optional worker FCM registration token for the new forced-login session. PascalCase body key FcmToken is also accepted. If unavailable during force login, call POST /api/auth/push-token after this request succeeds.
+          example: fcm-registration-token
+        platform:
+          type: string
+          enum:
+            - android
+            - ios
+            - web
+            - unknown
+          example: android
+    RefreshRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          example: refresh-jwt-token
+    ChangeOwnPasswordRequest:
+      type: object
+      required:
+        - current_password
+        - new_password
+      properties:
+        current_password:
+          type: string
+          format: password
+          example: Admin@123456
+        new_password:
+          type: string
+          format: password
+          example: Admin@654321
+    ChangeOwnPasswordResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Password changed successfully.
+    AuthSuccessResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: access-jwt-token
+        refresh_token:
+          type: string
+          example: refresh-jwt-token
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 900
+    RefreshSuccessResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: access-jwt-token
+        refresh_token:
+          type: string
+          example: refresh-jwt-token
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 900
+    LoginConflictResponse:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            code:
+              type: string
+              example: ACTIVE_SESSION_EXISTS
+            login_challenge_token:
+              type: string
+              example: temporary-jwt-token
+            active_device:
+              type: object
+              properties:
+                device_id:
+                  type: string
+                  example: old-browser-device-id
+                device_name:
+                  type: string
+                  example: Safari on iPhone
+                last_active_at:
+                  type: string
+                  format: date-time
+                  example: 2026-07-01T09:00:00.000Z
+    LogoutSuccessResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Logged out successfully.
+    ActionMessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Action completed successfully.
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 125
+        total_pages:
+          type: integer
+          example: 7
+    WorkerProfileInput:
+      type: object
+      required:
+        - nationality
+        - work_start_date
+      properties:
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mno00142.jpg
+        nationality:
+          type: string
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
+        work_start_date:
+          type: string
+          format: date
+          example: 2024-07-15
+        shirt_type:
+          type: string
+          enum:
+            - Navy
+            - Blue
+            - Green
+          example: Navy
+        shirt_number:
+          type: string
+          example: "12"
+    UpdateWorkerProfileInput:
+      type: object
+      properties:
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mno00142-updated.jpg
+        nationality:
+          type: string
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
+        work_start_date:
+          type: string
+          format: date
+          example: 2024-07-15
+        shirt_type:
+          type: string
+          enum:
+            - Navy
+            - Blue
+            - Green
+          example: Navy
+        shirt_number:
+          type: string
+          example: "12"
+    CreateUserRequest:
+      type: object
+      required:
+        - full_name
+        - phone
+        - nationality
+        - shirt_type
+        - shirt_number
+        - shift_no
+      properties:
+        username:
+          type: string
+          description: Optional. If omitted, backend uses worker_code generated from nationality + shirt_type + shirt_number, for example MN000004.
+          example: MN000004
+        img:
+          type: string
+          description: Optional image URL from the UI. Stored as image_url.
+          example: https://example.com/uploads/workers/worker001.jpg
+        full_name:
+          type: string
+          example: Worker One
+        phone:
+          type: string
+          description: Saved to accounts.phone. The initial worker password is the hashed value of this phone.
+          example: "0812345678"
+        nationality:
+          type: string
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
+        shirt_type:
+          type: string
+          enum:
+            - Navy
+            - Blue
+            - Green
+          example: Navy
+        shirt_number:
+          type: string
+          description: Unique. Used with nationality and shirt_type to generate worker_code and default username.
+          example: "4"
+        work_start_date:
+          type: string
+          format: date
+          description: Optional first working date for the worker profile. If omitted, backend uses the current Bangkok date.
+          example: 2026-07-03
+        shift_no:
+          type: integer
+          enum:
+            - 1
+            - 2
+          description: Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00.
+          example: 1
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          default: active
+          example: active
+    CreateUserMultipartRequest:
+      type: object
+      required:
+        - full_name
+        - phone
+        - nationality
+        - shirt_type
+        - shirt_number
+        - shift_no
+      properties:
+        image:
+          type: string
+          format: binary
+          description: "Optional worker profile image. Allowed types: jpg, png, webp. Max size: 5 MB."
+        username:
+          type: string
+          description: Optional. If omitted, backend uses worker_code generated from nationality + shirt_type + shirt_number, for example MN000004.
+          example: MN000004
+        full_name:
+          type: string
+          example: Worker One
+        phone:
+          type: string
+          description: Saved to accounts.phone. The initial worker password is the hashed value of this phone.
+          example: "0812345678"
+        nationality:
+          type: string
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
+        shirt_type:
+          type: string
+          enum:
+            - Navy
+            - Blue
+            - Green
+          example: Navy
+        shirt_number:
+          type: string
+          description: Unique. Used with nationality and shirt_type to generate worker_code and default username.
+          example: "4"
+        work_start_date:
+          type: string
+          format: date
+          description: Optional first working date for the worker profile. If omitted, backend uses the current Bangkok date.
+          example: 2026-07-03
+        shift_no:
+          type: integer
+          enum:
+            - 1
+            - 2
+          description: Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00.
+          example: 1
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          default: active
+          example: active
+    UpdateUserRequest:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          description: Optional. If omitted and nationality, shirt_type, or shirt_number is sent, backend regenerates worker_code and username from nationality + shirt_type + shirt_number using existing profile values for fields omitted from the request.
+          example: MN000115
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000115.jpg
+        img:
+          type: string
+          nullable: true
+          description: Optional alias for image_url.
+          example: https://example.com/uploads/workers/mn000115.jpg
+        full_name:
+          type: string
+          example: Worker Name
+        phone:
+          type: string
+          example: "0811111111"
+        nationality:
+          type: string
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
+        position:
+          type: string
+          nullable: true
+          example: Worker
+        shirt_type:
+          type: string
+          nullable: true
+          enum:
+            - Navy
+            - Blue
+            - Green
+          example: Navy
+        shirt_number:
+          type: string
+          nullable: true
+          description: Unique. If worker_code is omitted, backend regenerates worker_code and username from nationality + shirt_type + shirt_number.
+          example: "115"
+        work_start_date:
+          type: string
+          format: date
+          description: Optional first working date for the worker profile.
+          example: 2026-07-03
+        shift_start_time:
+          type: string
+          description: Optional custom time for this worker. Must be sent together with shift_end_time. Time only in HH:mm. Backend derives ShiftNo and ShiftName from this start time.
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "18:00"
+        shift_end_time:
+          type: string
+          description: Optional custom time for this worker. Must be sent together with shift_start_time. Time only in HH:mm.
+          pattern: "^\\d{2}:\\d{2}$"
+          example: "08:00"
+        profile:
+          description: Backward compatible nested profile update.
+          $ref: "#/components/schemas/UpdateWorkerProfileInput"
+        status:
+          type: string
+          description: Optional. Updates the worker account status.
+          enum:
+            - active
+            - inactive
+          example: active
+    ResetPasswordRequest:
+      type: object
+      required:
+        - new_password
+      properties:
+        new_password:
+          type: string
+          format: password
+          example: NewPassword@123456
+    UserListItem:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000004
+        shirt_number:
+          type: string
+          nullable: true
+          example: "4"
+        full_name:
+          type: string
+          example: Worker Name
+        phone:
+          type: string
+          nullable: true
+          example: "0812345678"
+        work_start_date:
+          type: string
+          nullable: true
+          format: date
+          description: Optional first working date for the worker profile.
+          example: 2026-07-03
+        work_schedule:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/UserListSchedule"
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: active
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+    UserListSchedule:
+      type: object
+      properties:
+        shift_no:
+          type: integer
+          enum:
+            - 1
+            - 2
+          example: 1
+        shift_start_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          description: Time only in HH:mm. This is a daily recurring shift time.
+          example: "08:00"
+        shift_end_time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
+          description: Time only in HH:mm. This is a daily recurring shift time.
+          example: "17:00"
+        shift_name:
+          type: string
+          example: Morning shift
+    UserListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserListItem"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+    SessionInfo:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: integer
+          example: 5
+        device_id:
+          type: string
+          example: browser-device-id
+        device_name:
+          type: string
+          example: Chrome on Windows
+        last_active_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+    UserDetailResponse:
+      type: object
+      properties:
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000115.jpg
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        full_name:
+          type: string
+          example: MANY MANY
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: active
+        details:
+          type: object
+          properties:
+            phone:
+              type: string
+              nullable: true
+              example: "0811111111"
+            position:
+              type: string
+              nullable: true
+              example: Worker
+            nationality:
+              type: string
+              nullable: true
+              enum:
+                - Myanmar
+                - Cambodia
+              example: Myanmar
+            shirt_number:
+              type: string
+              nullable: true
+              example: "115"
+            shirt_type:
+              type: string
+              nullable: true
+              enum:
+                - Navy
+                - Blue
+                - Green
+              example: Navy
+            work_start_date:
+              type: string
+              nullable: true
+              format: date
+              description: Optional first working date for the worker profile.
+              example: 2026-07-03
+            shift_no:
+              type: integer
+              nullable: true
+              enum:
+                - 1
+                - 2
+              example: 1
+            shift_start_time:
+              type: string
+              nullable: true
+              description: Time only in HH:mm. This is a daily recurring shift time.
+              example: "08:00"
+            shift_end_time:
+              type: string
+              nullable: true
+              description: Time only in HH:mm. This is a daily recurring shift time.
+              example: "17:00"
+            shift_name:
+              type: string
+              nullable: true
+              example: Morning shift
+    RuntimeSettings:
+      type: object
+      properties:
+        driver_session_ttl_hours:
+          type: integer
+          example: 24
+        worker_accept_deadline_seconds:
+          type: integer
+          example: 60
+        worker_accept_timeout_limit:
+          type: integer
+          example: 3
+        worker_scan_deadline_minutes:
+          type: integer
+          example: 15
+        worker_scan_warning_before_minutes:
+          type: integer
+          example: 2
+        worker_scan_team_remaining_minutes:
+          type: integer
+          example: 5
+        worker_break_duration_minutes:
+          type: integer
+          example: 15
+        worker_break_limit:
+          type: integer
+          example: 4
+        worker_break_count_ttl_hours:
+          type: integer
+          example: 48
+        worker_presence_stale_seconds:
+          type: integer
+          example: 90
+        vendor_confirm_timeout_hours:
+          type: integer
+          example: 24
+        vendor_reconfirm_timeout_hours:
+          type: integer
+          example: 4
+    UpdateRuntimeSettingsRequest:
+      type: object
+      properties:
+        driver_session_ttl_hours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          example: 24
+        worker_accept_deadline_seconds:
+          type: integer
+          minimum: 1
+          maximum: 600
+          example: 60
+        worker_accept_timeout_limit:
+          type: integer
+          minimum: 1
+          maximum: 20
+          example: 3
+        worker_scan_deadline_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          example: 15
+        worker_scan_warning_before_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          example: 2
+        worker_scan_team_remaining_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          example: 5
+        worker_break_duration_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          example: 15
+        worker_break_limit:
+          type: integer
+          minimum: 0
+          maximum: 20
+          example: 4
+        worker_break_count_ttl_hours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          example: 48
+        worker_presence_stale_seconds:
+          type: integer
+          minimum: 1
+          maximum: 3600
+          example: 90
+        vendor_confirm_timeout_hours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          example: 24
+        vendor_reconfirm_timeout_hours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          example: 4
+    AdminPermission:
+      type: string
+      description: >-
+        mobile_app_versions:create and mobile_app_versions:update each require
+        mobile_app_versions:read to also be present in the same permission set
+        (PERMISSION_DEPENDENCY_NOT_SATISFIED otherwise). The whole
+        mobile_app_versions:* group can only be granted or revoked by an
+        owner-level admin, even by an actor who already holds
+        permissions:update (OWNER_ONLY_PERMISSIONS otherwise) — this only
+        blocks requests that actually change that group; resubmitting a
+        target's existing mobile_app_versions:* set unchanged is allowed.
+      enum:
+        - settings:read
+        - settings:update
+        - roles:read
+        - admins:create
+        - admins:update
+        - admins:reset_password
+        - gate_clients:read
+        - gate_clients:create
+        - gate_clients:update
+        - gate_clients:rotate_secret
+        - permissions:read
+        - permissions:update
+        - workers:read
+        - workers:create
+        - workers:update
+        - workers:reset_password
+        - workers:force_status
+        - jobs:read
+        - jobs:assign
+        - jobs:cancel
+        - jobs:extend_deadline
+        - jobs:override_count
+        - jobs:wait
+        - jobs:release_workers
+        - mobile_app_versions:read
+        - mobile_app_versions:create
+        - mobile_app_versions:update
+    AdminRole:
+      type: object
+      properties:
+        key:
+          type: string
+          enum:
+            - owner
+            - manager
+            - supervisor
+          example: supervisor
+        name:
+          type: string
+          example: Supervisor
+        order:
+          type: integer
+          description: Lower value means higher admin rank.
+          example: 2
+        admins:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminRoleAccountSummary"
+    AdminRoleAccountSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 12
+        username:
+          type: string
+          example: manager01
+        full_name:
+          type: string
+          example: Branch Manager
+        position:
+          type: string
+          nullable: true
+          example: Manager
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: active
+        email:
+          type: string
+          nullable: true
+          example: manager@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0002
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-07-01T09:00:00.000Z
+    AdminRoleListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminRole"
+    GateClientStatus:
+      type: string
+      enum:
+        - active
+        - inactive
+      example: active
+    GateClient:
+      type: object
+      description: Gate client metadata. secret_hash and client_secret are never returned by list/update APIs.
+      properties:
+        id:
+          type: integer
+          example: 1
+        client_id:
+          type: string
+          example: gate-north
+        name:
+          type: string
+          example: North Gate
+        status:
+          $ref: "#/components/schemas/GateClientStatus"
+        last_used_at:
+          type: string
+          nullable: true
+          format: date-time
+          example: 2026-07-22T10:30:00.000Z
+        created_by:
+          type: integer
+          nullable: true
+          example: 1
+        updated_by:
+          type: integer
+          nullable: true
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-07-22T09:00:00.000Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-07-22T09:00:00.000Z
+    GateClientListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateClient"
+    CreateGateClientRequest:
+      type: object
+      required:
+        - name
+      properties:
+        client_id:
+          type: string
+          description: Optional. If omitted, backend generates a unique client_id. Use only letters, numbers, underscore, or dash.
+          example: gate-north
+        name:
+          type: string
+          example: North Gate
+        status:
+          $ref: "#/components/schemas/GateClientStatus"
+    UpdateGateClientRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: North Gate Disabled
+        status:
+          $ref: "#/components/schemas/GateClientStatus"
+    GateClientMutationResponse:
+      allOf:
+        - $ref: "#/components/schemas/GateClient"
+        - type: object
+          properties:
+            message:
+              type: string
+              example: Gate client updated successfully.
+    GateClientSecretResponse:
+      allOf:
+        - $ref: "#/components/schemas/GateClientMutationResponse"
+        - type: object
+          properties:
+            client_secret:
+              type: string
+              description: Shown only once during create or rotate. Store it in the Gate project.
+              example: gate_live_RKs7bI2bUBW8n5UEkLEmguuECP5YrZkpaNcsmprnO5I
+    MobileAppVersionStatus:
+      type: string
+      enum: [current, scheduled, history]
+      description: Derived from BuildNumber + ForceUpdateAt compared against server time — not a persisted column.
+    MobileAppVersion:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 11
+        version:
+          type: string
+          example: "1.4.0"
+        build_number:
+          type: integer
+          example: 10400
+        release_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Metadata only (shown in UI/History) — not a trigger for anything. Distinct from release_notification_at and force_update_at.
+          example: 2026-08-19T10:00:00.000Z
+        android_download_url:
+          type: string
+          nullable: true
+          format: uri
+          example: https://play.google.com/store/apps/details?id=com.example.worker
+        ios_download_url:
+          type: string
+          nullable: true
+          format: uri
+          example: https://apps.apple.com/app/id0000000000
+        force_update_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: When set, this version becomes Effective and starts being required for workers on an older build at this time — the only value version activation ever depends on. Null means the version is never forced (there is no separate ForceUpdate flag).
+          example: 2026-08-25T15:00:00.000Z
+        release_notification_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: When the release FCM notice fires. Null means it is sent immediately (synchronously during POST/PATCH); a future value schedules it via a delayed BullMQ job instead. Sending this notification never activates the version.
+          example: 2026-08-20T02:00:00.000Z
+        release_notification_sent_at:
+          type: string
+          nullable: true
+          format: date-time
+          example: null
+        force_update_notification_sent_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Whether the separate, standard-pattern-only "update now required" FCM has already fired. This notification is scheduled automatically whenever force_update_at is set, and fires exactly at force_update_at — independent of release_notification_at/release_notification_sent_at.
+          example: null
+        release_message:
+          type: string
+          nullable: true
+          example: กรุณาอัปเดตแอปแรงงานตามเวลาที่กำหนด
+        release_notes:
+          type: string
+          nullable: true
+          example: ปรับปรุงระบบรับงานและการแจ้งเตือน
+        created_by:
+          type: integer
+          nullable: true
+          example: 1
+        updated_by:
+          type: integer
+          nullable: true
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminMobileAppVersionSummary:
+      allOf:
+        - $ref: "#/components/schemas/MobileAppVersion"
+        - type: object
+          properties:
+            status:
+              $ref: "#/components/schemas/MobileAppVersionStatus"
+    AdminMobileAppVersionOverviewResponse:
+      type: object
+      properties:
+        current:
+          allOf:
+            - $ref: "#/components/schemas/AdminMobileAppVersionSummary"
+          nullable: true
+        scheduled:
+          allOf:
+            - $ref: "#/components/schemas/AdminMobileAppVersionSummary"
+          nullable: true
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminMobileAppVersionSummary"
+    CreateMobileAppVersionRequest:
+      type: object
+      required:
+        - version
+        - build_number
+      properties:
+        version:
+          type: string
+          example: "1.4.0"
+        build_number:
+          type: integer
+          description: Primary comparison key. Must be unique across all versions.
+          example: 10400
+        release_at:
+          type: string
+          format: date-time
+          description: Optional. Metadata only (UI/History display) — does not trigger anything.
+          example: 2026-08-19T10:00:00.000Z
+        android_download_url:
+          type: string
+          format: uri
+          example: https://play.google.com/store/apps/details?id=com.example.worker
+        ios_download_url:
+          type: string
+          format: uri
+          example: https://apps.apple.com/app/id0000000000
+        release_message:
+          type: string
+          example: กรุณาอัปเดตแอปแรงงานตามเวลาที่กำหนด
+        release_notes:
+          type: string
+          example: ปรับปรุงระบบรับงานและการแจ้งเตือน
+        force_update_at:
+          type: string
+          format: date-time
+          description: Optional. Omit for a version that is never forced. When set (in the future), this version is Scheduled — Worker app checks keep returning the current version until server time reaches this value, at which point it also becomes required. This same value automatically schedules the separate force-update FCM notice for the same moment.
+          example: 2026-08-25T15:00:00.000Z
+        release_notification_at:
+          type: string
+          format: date-time
+          description: Optional. Omit (or send null) to send the release FCM notice synchronously during this request. Set a future time to schedule it via a delayed BullMQ job instead; must not be later than force_update_at. Neither option ever activates the version early.
+          example: 2026-08-20T02:00:00.000Z
+    UpdateMobileAppVersionRequest:
+      type: object
+      description: At least one field is required. version/build_number are only accepted while the version is still Scheduled.
+      properties:
+        version:
+          type: string
+          example: "1.4.1"
+        build_number:
+          type: integer
+          example: 10401
+        release_at:
+          type: string
+          format: date-time
+        android_download_url:
+          type: string
+          format: uri
+        ios_download_url:
+          type: string
+          format: uri
+        release_message:
+          type: string
+        release_notes:
+          type: string
+        force_update_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set a new time to reschedule the force-update notification and change when the version activates; set to null to remove the force entirely. Only takes effect for the notification while force_update_notification_sent_at is still null — once sent, further edits only update the stored value and never trigger another send.
+        release_notification_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Changing this reschedules/resends the release notification, but only while release_notification_sent_at is still null — once sent, further edits here only update the stored value and never trigger another send. Set to null to send immediately (removing any pending delayed job).
+    WorkerAppVersionCheckResultStatus:
+      type: string
+      enum: [UP_TO_DATE, UPDATE_AVAILABLE, UPDATE_REQUIRED, NO_VERSION_CONFIGURED]
+    WorkerAppVersionCheckResponse:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/WorkerAppVersionCheckResultStatus"
+        update_available:
+          type: boolean
+        force_update:
+          type: boolean
+        can_skip:
+          type: boolean
+        latest:
+          type: object
+          nullable: true
+          properties:
+            version:
+              type: string
+              example: "1.4.0"
+            build_number:
+              type: integer
+              example: 10400
+            download_url:
+              type: string
+              nullable: true
+              format: uri
+              description: Only the URL for the requested platform query param. Null if platform was not given or not configured for this version.
+        policy:
+          type: object
+          nullable: true
+          properties:
+            force_update_at:
+              type: string
+              format: date-time
+        release_message:
+          type: object
+          nullable: true
+          description: Admin-authored text only (release_message/release_notes as stored on the effective version). Does not include the standardized FCM notification title/wording — that pattern is composed server-side only when actually sending the push, localized per worker.
+          properties:
+            message:
+              type: string
+              nullable: true
+            release_notes:
+              type: string
+              nullable: true
+      example:
+        status: UPDATE_REQUIRED
+        update_available: true
+        force_update: true
+        can_skip: false
+        latest:
+          version: "1.4.0"
+          build_number: 10400
+          download_url: https://play.google.com/store/apps/details?id=com.example.worker
+        policy:
+          force_update_at: 2026-08-25T15:00:00.000Z
+        release_message:
+          message: กรุณาอัปเดตแอปแรงงาน
+          release_notes: ปรับปรุงระบบ...
+    AdminUserPermissionsResponse:
+      type: object
+      properties:
+        account_id:
+          type: integer
+          example: 1
+        role:
+          type: string
+          example: admin
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: active
+        permission_level:
+          type: string
+          nullable: true
+          enum:
+            - owner
+            - manager
+            - supervisor
+          example: supervisor
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+    CreateAdminAccountRequest:
+      type: object
+      required:
+        - username
+        - password
+        - full_name
+        - permission_level
+        - permissions
+      properties:
+        username:
+          type: string
+          example: manager01
+        password:
+          type: string
+          example: Manager@123456
+        full_name:
+          type: string
+          example: Branch Manager
+        position:
+          type: string
+          nullable: true
+          example: Manager
+        email:
+          type: string
+          nullable: true
+          example: manager@simmummuang.local
+        phone:
+          type: string
+          nullable: true
+          example: 081-000-0002
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          default: active
+          example: active
+        permission_level:
+          type: string
+          enum:
+            - owner
+            - manager
+            - supervisor
+          example: manager
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+    CreateAdminAccountResponse:
+      allOf:
+        - $ref: "#/components/schemas/AdminUserPermissionsResponse"
+        - type: object
+          properties:
+            message:
+              type: string
+              example: Admin account created successfully.
+            account:
+              $ref: "#/components/schemas/Account"
+    UpdateAdminAccountRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+        position:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+      description: All fields optional. Only fields sent are updated. permission_level/permissions are not editable here — use PATCH /api/admin/users/{id}/permissions instead.
+    UpdateAdminAccountResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Admin account updated successfully.
+        account:
+          $ref: "#/components/schemas/Account"
+    UpdateAdminUserPermissionsRequest:
+      type: object
+      required:
+        - permission_level
+        - permissions
+      properties:
+        permission_level:
+          type: string
+          enum:
+            - owner
+            - manager
+            - supervisor
+          example: supervisor
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+          example: active
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPermission"
+    UpdateAdminUserPermissionsResponse:
+      allOf:
+        - $ref: "#/components/schemas/AdminUserPermissionsResponse"
+        - type: object
+          properties:
+            message:
+              type: string
+              example: Admin permissions updated successfully. Active sessions were revoked.
+
+    GateTicketProductRequest:
+      type: object
+      required:
+        - ProductCode
+        - PackageCode
+        - Quantity
+      properties:
+        ProductCode:
+          type: string
+          example: "02020300"
+          description: Product code used with PackageCode to lookup master_product.
+        PackageCode:
+          type: string
+          example: "29"
+          description: Package code used with ProductCode to lookup master_product.
+        Quantity:
+          type: integer
+          minimum: 1
+          example: 180
+
+    GateTicketBoothRequest:
+      type: object
+      required:
+        - BoothCode
+        - Products
+      properties:
+        BoothCode:
+          type: string
+          example: OM3/40
+          description: Booth code used with MarketCode to lookup master_market.
+        Products:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/GateTicketProductRequest"
+
+    GateTicketRequest:
+      type: object
+      required:
+        - TicketNumber
+        - TicketNo
+        - TicketCreatedAt
+        - BoothCount
+        - MarketCode
+        - DropoffPoint
+        - LicensePlate
+        - LicensePlateProvince
+        - VehicleTypeCode
+        - VehicleTypeName
+        - Booths
+        - Dispatch
+      properties:
+        TicketNumber:
+          type: string
+          pattern: "^\\d{14}$"
+          example: "20260804000001"
+          description: >
+            Vehicle-level job reference. Must be exactly 14 digits, numbers only — no letters or
+            special characters. May be sent multiple times, each with a new TicketNo, as the same
+            vehicle generates more Business Tickets over time (one Gate request per Business
+            Ticket, all against exactly one market). An existing VehicleJob is reused; no
+            duplicate vehicle job is created.
+
+        TicketNo:
+          type: string
+          pattern: "^\\d{14}$"
+          example: "20260804000002"
+          description: >
+            Business Ticket reference, scoped to one market. Must be exactly 14 digits, numbers
+            only — no letters or special characters. One request = one market (all Booths in this
+            request must belong to MarketCode) = BoothCount booths for this request. Sending the
+            same TicketNo again under the same TicketNumber and the same MarketCode appends the
+            new Booths/Products into that existing Business Ticket instead of creating a new one;
+            the same TicketNo for a *different* MarketCode is always rejected with
+            GATE_TICKET_ALREADY_EXISTS. If an Admin cancels a Ticket, its TicketNo becomes free
+            again and can be reused here (for any MarketCode) to create a brand-new Business
+            Ticket.
+
+        TicketCreatedAt:
+          type: string
+          format: date-time
+          example: "2026-08-04T14:30:00+07:00"
+
+        BoothCount:
+          type: integer
+          minimum: 1
+          example: 2
+          description: Must equal the number of items in Booths. All Booths in this request share MarketCode.
+
+        MarketCode:
+          type: string
+          example: "1123"
+
+        DropoffPoint:
+          type: string
+          example: "Gate 1 - Zone A"
+          description: >
+            Where this Ticket's goods are unloaded. Required on every request, sent alongside
+            MarketCode — different Tickets of the same MarketCode may send the same DropoffPoint
+            again freely (no uniqueness is enforced). Stored per Ticket and returned back under
+            Market.DropoffPoint.
+
+        LicensePlate:
+          type: string
+          example: ABC-1234
+
+        LicensePlateProvince:
+          type: string
+          example: Bangkok
+
+        VehicleTypeCode:
+          type: string
+          example: PICKUP
+
+        VehicleTypeName:
+          type: string
+          example: Pickup truck
+
+        Booths:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/GateTicketBoothRequest"
+
+        Dispatch:
+          type: boolean
+          example: true
+    VehicleJob:
+      type: object
+      properties:
+        ticketNo:
+          type: string
+          example: TKT-20260723-000125
+        gate_transaction_ref:
+          type: string
+          example: GATE-REQ-001
+        license_plate:
+          type: string
+          example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
+        vehicle_type:
+          type: string
+          nullable: true
+          example: Six-wheel truck
+        ticket_created_at:
+          type: string
+          format: date-time
+          example: "2026-07-23T14:30:00+07:00"
+        booth_count:
+          type: integer
+          example: 2
+        workers_required:
+          type: integer
+          example: 1
+        dispatch_now:
+          type: boolean
+          example: true
+          description: True when Gate requested immediate dispatch for this vehicle job.
+        status:
+          type: string
+          example: WAIT
+        driver_qr_token:
+          type: string
+          description: Present only in admin/gate QR contexts.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminVehicleJobListItem:
+      type: object
+      properties:
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+          description: Vehicle-level reference issued by Gate for the whole truck.
+        plate_no:
+          type: string
+          example: ABC-1234
+        plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
+        vehicle_type:
+          type: string
+          nullable: true
+          example: Six-wheel truck
+        workers_required:
+          type: integer
+          example: 1
+        dispatch_now:
+          type: boolean
+          example: true
+          description: True when Gate requested immediate dispatch for this vehicle job.
+        status:
+          type: string
+          example: WAIT
+    MarketJob:
+      type: object
+      properties:
+        marketCode:
+          type: string
+          example: "1123"
+        marketName:
+          type: string
+          example: Market A
+        dropoff_point:
+          type: string
+          nullable: true
+          example: General dropoff point A1
+        status:
+          type: string
+          example: WAIT
+    GateTicket:
+      type: object
+      properties:
+        boothCode:
+          type: string
+          example: B-018
+        boothName:
+          type: string
+          nullable: true
+          example: Orange Booth
+        vendor_line_id:
+          type: string
+          nullable: true
+          example: Ubd9b17811181e01f8fca0372d2b37088
+        reject_reason:
+          type: string
+          nullable: true
+          example: Quantity does not match order.
+        status:
+          type: string
+          example: WAIT
+        confirmation_status:
+          type: string
+          example: PENDING
+    WorkerTicketCompleteRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          minItems: 1
+          description: Confirmed quantities counted by the worker. Every product in the ticket must be sent.
+          items:
+            type: object
+            required:
+              - productCode
+              - packageCode
+              - confirmed_quantity
+            properties:
+              productCode:
+                type: string
+                example: "02020300"
+              packageCode:
+                type: string
+                example: "29"
+                description: >
+                  PackageCode being submitted for this ProductCode. Normally the same
+                  PackageCode Gate originally declared. To switch to a different package for
+                  this product, set this to the new PackageCode (see
+                  GET /api/workers/me/products/{ProductCode}/packages for valid options) and
+                  also send original_package_code.
+              original_package_code:
+                type: string
+                example: "29"
+                description: >
+                  Set only when switching this product's package: the PackageCode Gate
+                  originally declared for this product line, used to identify which existing
+                  line item is being edited. Omit when packageCode is unchanged.
+              confirmed_quantity:
+                type: number
+                minimum: 0
+                example: 10
+                description: Actual quantity counted by the worker.
+    WorkerTicketCompleteWithBoothRequest:
+      allOf:
+        - $ref: "#/components/schemas/WorkerTicketCompleteRequest"
+        - type: object
+          required:
+            - ticket_no
+            - boothCode
+          properties:
+            ticket_no:
+              type: string
+              example: TKT-20260804-000001
+              description: >
+                Business Ticket this submission belongs to (from markets[].ticket_no in the
+                accept response). Required because two Business Tickets under the same
+                vehicle, against different markets, can legitimately share the same
+                BoothCode — ticket_no plus BoothCode together resolve the exact booth
+                unambiguously.
+            boothCode:
+              type: string
+              example: OM3/40
+              description: BoothCode from the accepted job payload. Send in body so values containing "/" do not need URL encoding.
+    WorkerProductPackageOptionsResponse:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        productName:
+          type: string
+          example: Rambutan
+        packages:
+          type: array
+          items:
+            type: object
+            properties:
+              packageCode:
+                type: string
+                example: "30"
+                description: Send this value back as packageCode when switching a product's package on submit.
+              packageName:
+                type: string
+                example: Crate 40
+                description: For UI display only.
+              packageWeight:
+                type: number
+                example: 40
+    TicketCompletionResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Ticket completion submitted and waiting for vendor confirmation.
+        ticketNo:
+          type: string
+          nullable: true
+          example: TKT-20260723-000125
+        ticket_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Vehicle job completion time when every booth under the TicketNo is terminal.
+          example: "2026-08-14T04:00:00.000Z"
+        marketCode:
+          type: string
+          nullable: true
+          example: "1123"
+        marketName:
+          type: string
+          nullable: true
+          example: Market A
+        boothCode:
+          type: string
+          example: B-018
+        boothName:
+          type: string
+          nullable: true
+          example: Orange Booth
+        status:
+          type: string
+          example: DELIVERED
+        confirmation_status:
+          type: string
+          example: DELIVERED
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Booth completion time after vendor confirmation or auto-confirm timeout.
+          example: "2026-08-14T03:15:42.000Z"
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when vendor confirmed this booth. Null while waiting or rejected.
+          example: "2026-08-14T03:15:42.000Z"
+        rejected_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when vendor rejected this booth. Null unless rejected.
+          example: "2026-08-14T03:10:00.000Z"
+        submission_status:
+          type: string
+          example: DELIVERED
+        assignment_status:
+          type: string
+          description: Vehicle assignment status for the worker/team. DELIVERED means submitted and waiting for vendor confirmation; REJECT means vendor rejected and worker must resubmit.
+          example: DELIVERED
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketProduct"
+    LineWebhookRequest:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                example: postback
+              source:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                    example: Ubd9b17811181e01f8fca0372d2b37088
+              postback:
+                type: object
+                properties:
+                  data:
+                    type: string
+                    description: Confirm/reject buttons send `token=<signed-token>`. Rating buttons send `token=<signed-token>&score=<1-5>`.
+                    example: token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...&score=5
+    LineWebhookResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: LINE webhook processed.
+        processed:
+          type: integer
+          example: 1
+    LineDevSubmissionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineDevSubmissionItem"
+    LineDevSubmissionItem:
+      type: object
+      properties:
+        submission_id:
+          type: integer
+          example: 501
+        ticket_id:
+          type: integer
+          example: 8801
+        submission_status:
+          type: string
+          example: DELIVERED
+        ticket_status:
+          type: string
+          example: DELIVERED
+        actionable:
+          type: boolean
+          description: True when this submission is the current waiting submission and can still be confirmed or rejected.
+          example: true
+        ticket_number:
+          type: string
+          example: TICKET-20260902-001
+        ticket_no:
+          type: string
+          example: "1"
+        license_plate:
+          type: string
+          example: 1กก1234
+        market_code:
+          type: string
+          example: MK01
+        market_name:
+          type: string
+          example: Central Market
+        boothCode:
+          type: string
+          example: A1
+        boothName:
+          type: string
+          nullable: true
+          example: Booth A1
+        submitted_by_code:
+          type: string
+          nullable: true
+          example: W001
+        submitted_by_name:
+          type: string
+          nullable: true
+          example: Worker Name
+        submitted_by_role:
+          type: string
+          example: worker
+        submitted_at:
+          type: string
+          example: "2026-09-02T08:00:00.000Z"
+        confirmed_at:
+          type: string
+          nullable: true
+          example: null
+        rejected_at:
+          type: string
+          nullable: true
+          example: null
+        reject_reason:
+          type: string
+          nullable: true
+          example: null
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              productCode:
+                type: string
+                example: PRODUCT-001
+              productName:
+                type: string
+                example: Cabbage
+              packageCode:
+                type: string
+                example: "22"
+              packageName:
+                type: string
+                example: Orange package
+              expected_quantity:
+                type: string
+                example: "10"
+              submitted_quantity:
+                type: string
+                nullable: true
+                example: "10"
+    LineDevRejectRequest:
+      type: object
+      properties:
+        reject_reason:
+          type: string
+          nullable: true
+          maxLength: 1000
+          example: Quantity mismatch
+    LineDevCompletionResult:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Confirmed from LINE dev tester without sending a LINE message.
+        submission_id:
+          type: integer
+          example: 501
+        ticket_id:
+          type: integer
+          example: 8801
+        boothCode:
+          type: string
+          example: A1
+        ticket_status:
+          type: string
+          example: COMPLETED
+        submission_status:
+          type: string
+          example: CONFIRMED
+        action:
+          type: string
+          enum:
+            - confirm
+            - reject
+          example: confirm
+        vehicle_job_status:
+          type: string
+          nullable: true
+          example: null
+    TicketProduct:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: PRODUCT-001
+        productName:
+          type: string
+          example: Cabbage
+        packageCode:
+          type: string
+          example: "22"
+        packageName:
+          type: string
+          example: Orange package
+        quantity:
+          type: string
+          example: "10"
+        confirmed_quantity:
+          type: string
+          nullable: true
+          example: "8"
+    VehicleJobDetailResponse:
+      type: object
+      properties:
+        vehicle_job:
+          $ref: "#/components/schemas/VehicleJob"
+        markets:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/MarketJob"
+              - type: object
+                properties:
+                  tickets:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/GateTicket"
+                        - type: object
+                          properties:
+                            products:
+                              type: array
+                              items:
+                                $ref: "#/components/schemas/TicketProduct"
+
+    GateOptionMarket:
+      type: object
+      required:
+        - MarketCode
+        - MarketName
+      properties:
+        MarketCode:
+          type: string
+          example: "1123"
+        MarketName:
+          type: string
+          example: Market A
+
+    GateOptionBooth:
+      type: object
+      required:
+        - BoothCode
+        - BoothName
+      properties:
+        BoothCode:
+          type: string
+          example: OM3/40
+        BoothName:
+          type: string
+          nullable: true
+          example: Vendor A
+
+    GateOptionPackage:
+      type: object
+      required:
+        - PackageCode
+        - PackageName
+        - PackageWeight
+      properties:
+        PackageCode:
+          type: string
+          example: "29"
+        PackageName:
+          type: string
+          example: Crate 20
+        PackageWeight:
+          type: number
+          example: 20
+
+    GateOptionProduct:
+      type: object
+      required:
+        - ProductCode
+        - ProductName
+        - Packages
+      properties:
+        ProductCode:
+          type: string
+          example: "02020300"
+        ProductName:
+          type: string
+          example: Rambutan
+        Packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateOptionPackage"
+
+    GateOptionsResponse:
+      type: object
+      required:
+        - Markets
+        - Booths
+        - Products
+      properties:
+        Markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateOptionMarket"
+        Booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateOptionBooth"
+        Products:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateOptionProduct"
+
+    GateTicketResponseProduct:
+      type: object
+      required:
+        - ProductCode
+        - ProductFullCode
+        - ProductName
+        - PackageCode
+        - PackageName
+        - Quantity
+        - WorkerCount
+      properties:
+        ProductCode:
+          type: string
+          example: "02020300"
+
+        ProductFullCode:
+          type: string
+          example: "02020300000000000000"
+
+        ProductName:
+          type: string
+          example: Rambutan
+
+        PackageCode:
+          type: string
+          example: "29"
+
+        PackageName:
+          type: string
+          example: Crate 20
+
+        Quantity:
+          type: integer
+          example: 180
+          description: Gate quantity used for operation and dispatch only.
+
+        WorkerCount:
+          type: integer
+          example: 3
+          description: Master worker requirement for this product. Not a financial worker divisor.
+
+    GateTicketResponseBooth:
+      type: object
+      required:
+        - BoothCode
+        - BoothName
+        - Products
+      properties:
+        BoothCode:
+          type: string
+          example: OM3/40
+
+        BoothName:
+          type: string
+          nullable: true
+          example: Vendor A
+
+        Products:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateTicketResponseProduct"
+
+    GateTicketResponse:
+      type: object
+      required:
+        - Result
+        - TicketNumber
+        - Ticket
+        - Market
+        - Booths
+        - WorkerCount
+        - Qr
+
+      properties:
+        Result:
+          type: string
+          enum:
+            - CREATED
+            - REPLAYED
+          example: CREATED
+
+        TicketNumber:
+          type: string
+          example: TRUCK-20260804-001
+          description: Vehicle-level job reference, echoed back from the request.
+
+        Ticket:
+          type: object
+          required:
+            - TicketNo
+            - TicketCreatedAt
+            - BoothCount
+            - LicensePlate
+            - LicensePlateProvince
+            - VehicleTypeCode
+            - VehicleTypeName
+            - Status
+          properties:
+            TicketNo:
+              type: string
+              example: TKT-20260804-000001
+
+            TicketCreatedAt:
+              type: string
+              format: date-time
+              example: "2026-08-04T07:30:00.000Z"
+
+            BoothCount:
+              type: integer
+              example: 2
+
+            LicensePlate:
+              type: string
+              example: ABC-1234
+
+            LicensePlateProvince:
+              type: string
+              nullable: true
+              example: Bangkok
+
+            VehicleTypeCode:
+              type: string
+              nullable: true
+              example: PICKUP
+
+            VehicleTypeName:
+              type: string
+              nullable: true
+              example: Pickup truck
+
+            Status:
+              type: string
+              enum:
+                - unload_now
+                - waiting_unload
+              example: unload_now
+
+        Market:
+          type: object
+          required:
+            - MarketCode
+            - MarketName
+            - DropoffPoint
+          properties:
+            MarketCode:
+              type: string
+              example: "1123"
+
+            MarketName:
+              type: string
+              example: Market A
+
+            DropoffPoint:
+              type: string
+              nullable: true
+              example: "Gate 1 - Zone A"
+              description: Echoed back from the request that created this Ticket.
+
+        Booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateTicketResponseBooth"
+
+        WorkerCount:
+          type: integer
+          example: 5
+          description: This Business Ticket's worker requirement used for dispatch — the MAX WorkerCount across every product in every booth of this Ticket, not a sum.
+
+        Qr:
+          type: object
+          required:
+            - DriverQrToken
+          properties:
+            DriverQrToken:
+              type: string
+              example: driver-qr-1
+              description: Shared across the whole vehicle (TicketNumber). Workers check in with each Business Ticket's own TicketNo (a barcode printed on the physical Gate paper ticket) instead — see POST /api/workers/me/assignments/check-in-barcode.
+
+    DriverSessionResponse:
+      type: object
+      properties:
+        driver_session_token:
+          type: string
+        expires_in:
+          type: integer
+          example: 86400
+        expires_at:
+          type: string
+          format: date-time
+        vehicle_job:
+          $ref: "#/components/schemas/VehicleJob"
+    DriverJobReadyResponse:
+      type: object
+      properties:
+        ticketNo:
+          type: string
+          example: TKT-20260723-000125
+        ticket_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when the whole TicketNo/vehicle job completed for this worker history item.
+          example: "2026-08-14T04:00:00.000Z"
+        license_plate:
+          type: string
+          example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
+        status:
+          type: string
+          example: WORKING
+    AdminVehicleJobAssignmentCancelRequest:
+      type: object
+      required:
+        - ticket_number
+        - reason_code
+      description: >-
+        Unified cancel request — scope is decided by which of ticket_no/boothCode/worker_code are
+        given (see AdminVehicleJobAssignmentCancelResponse for the full mapping table). Every
+        field except ticket_number and reason_code may be omitted or sent as null to mean "not
+        specified".
+      properties:
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        ticket_no:
+          type: string
+          nullable: true
+          example: TKT-20260723-000125
+        boothCode:
+          type: string
+          nullable: true
+          example: OM3/40
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        reason_code:
+          type: string
+          description: Required, never null — recorded to admin_action_logs as a string for every scope.
+          example: DUPLICATE_TICKET
+        reason_text:
+          type: string
+          nullable: true
+          example: Gate created this ticket twice.
+    AdminVehicleJobAssignmentCancelResponse:
+      description: >-
+        Shape depends on which scope was resolved from the request:
+        ticket_number alone -> AdminCancelVehicleJobRequeueResponse (whole vehicle job);
+        + ticket_no -> AdminCancelMarketJobResponse (one Business Ticket);
+        + ticket_no + boothCode -> AdminCancelStallJobResponse (one Booth);
+        + worker_code alone -> AdminCancelAssignmentResponse (one worker's assignment, whole
+        vehicle job); + ticket_no + worker_code -> AdminCancelTicketWorkerResponse (one worker
+        removed from one Business Ticket only); + ticket_no + boothCode + worker_code ->
+        AdminCancelTicketWorkerFromBoothResponse (one worker removed from just one Booth's payout
+        divisor, TicketWorker.status untouched).
+      oneOf:
+        - $ref: "#/components/schemas/AdminCancelVehicleJobRequeueResponse"
+        - $ref: "#/components/schemas/AdminCancelMarketJobResponse"
+        - $ref: "#/components/schemas/AdminCancelStallJobResponse"
+        - $ref: "#/components/schemas/AdminCancelAssignmentResponse"
+        - $ref: "#/components/schemas/AdminCancelTicketWorkerFromBoothResponse"
+        - $ref: "#/components/schemas/AdminCancelTicketWorkerResponse"
+    AdminVehicleOperationStatus:
+      type: string
+      description: >-
+        Mutually exclusive — every vehicle job falls into exactly one, decided in this
+        priority order (highest first): cancelled, completed, reject (any booth
+        currently REJECT, unresolved), wait_unload (dispatchNow=false, whether set by
+        Gate at creation or toggled off later by Admin), wait_worker (dispatchNow=true
+        but active workers < workers_required — FIFO auto-dispatch still filling the
+        team), ready_now (team full and dispatchNow=true, but work_started_at is still
+        null — nobody has scanned in yet), working (work_started_at is set — the whole
+        team has scanned in and is actively working; this also covers a vehicle job
+        released early via release-workers — VehicleJob.status=RELEASED — since the
+        work itself is not done yet, just waiting on Vendor confirmation/timeout; check
+        vehicle_job.status directly if you need to distinguish a released job from one
+        still being actively worked).
+      enum:
+        - cancelled
+        - completed
+        - reject
+        - wait_unload
+        - wait_worker
+        - ready_now
+        - working
+      example: ready_now
+    AdminVehicleJobOperationSummary:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 8
+        ready_now:
+          type: integer
+          example: 1
+        wait_unload:
+          type: integer
+          example: 1
+        wait_worker:
+          type: integer
+          example: 1
+        working:
+          type: integer
+          example: 2
+          description: >-
+            Includes vehicle jobs released early via release-workers
+            (VehicleJob.status=RELEASED) — see AdminVehicleOperationStatus.
+        completed:
+          type: integer
+          example: 1
+        cancelled:
+          type: integer
+          example: 0
+        reject:
+          type: integer
+          example: 1
+          description: Vehicle jobs with at least one currently-REJECT-status booth, unresolved.
+    AdminVehicleJobOperationWorkerSummary:
+      type: object
+      properties:
+        required:
+          type: integer
+          example: 2
+        assigned:
+          type: integer
+          example: 2
+        active:
+          type: integer
+          example: 2
+        accepted:
+          type: integer
+          example: 1
+        scanned:
+          type: integer
+          example: 2
+        working:
+          type: integer
+          example: 1
+        delivered:
+          type: integer
+          example: 0
+        rejected:
+          type: integer
+          example: 0
+        completed:
+          type: integer
+          example: 0
+        cancelled:
+          type: integer
+          example: 0
+        timeout:
+          type: integer
+          example: 0
+        missing:
+          type: integer
+          example: 0
+    AdminVehicleJobOperationMarketSummary:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 2
+        stalls:
+          type: integer
+          example: 5
+        products:
+          type: integer
+          example: 8
+        delivered:
+          type: integer
+          example: 1
+        confirmed:
+          type: integer
+          example: 1
+        rejected:
+          type: integer
+          example: 1
+    AdminVehicleJobOperationWorker:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        full_name:
+          type: string
+          example: MANY MANY
+        labor_color:
+          type: string
+          nullable: true
+          example: NAVY
+        shirt_number:
+          type: string
+          nullable: true
+          description: MasterWorker.coatNo, never derived from WorkerCode/workCode.
+          example: "115"
+        picture:
+          type: string
+          nullable: true
+          example: null
+        shift_name:
+          type: string
+          nullable: true
+          example: Morning shift
+        assignment_status:
+          type: string
+          example: SCANNED
+        worker_status:
+          type: string
+          enum:
+            - open_app
+            - assigned
+            - waiting_team
+            - working
+            - released
+          example: working
+          description: >-
+            released is specific to this board (derived from assignment_status=RELEASED,
+            set by release-workers) — not one of the general WorkerWorkStatus values used
+            elsewhere (Worker Board, worker queue), which do not have a "released" state.
+        accept_deadline_at:
+          type: string
+          nullable: true
+          format: date-time
+        accept_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as accept_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
+        scan_deadline_at:
+          type: string
+          nullable: true
+          format: date-time
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
+        accepted_at:
+          type: string
+          nullable: true
+          format: date-time
+        scanned_at:
+          type: string
+          nullable: true
+          format: date-time
+        completed_at:
+          type: string
+          nullable: true
+          format: date-time
+        released_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: >-
+            Set once, when Admin releases this worker back to the FIFO queue via
+            release-workers before the whole TicketNumber closes. null until then —
+            never falls back to updated_at/completed_at/now.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminVehicleJobOperationTicket:
+      allOf:
+        - $ref: "#/components/schemas/GateTicket"
+        - type: object
+          properties:
+            product_count:
+              type: integer
+              example: 2
+            products:
+              type: array
+              items:
+                $ref: "#/components/schemas/TicketProduct"
+    AdminVehicleJobOperationMarket:
+      allOf:
+        - $ref: "#/components/schemas/MarketJob"
+        - type: object
+          properties:
+            summary:
+              type: object
+              properties:
+                stalls:
+                  type: integer
+                  example: 4
+                products:
+                  type: integer
+                  example: 5
+                delivered:
+                  type: integer
+                  example: 1
+                confirmed:
+                  type: integer
+                  example: 1
+                rejected:
+                  type: integer
+                  example: 1
+            tickets:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdminVehicleJobOperationTicket"
+    AdminVehicleJobOperationItem:
+      type: object
+      properties:
+        operation_status:
+          $ref: "#/components/schemas/AdminVehicleOperationStatus"
+        vehicle_job:
+          allOf:
+            - $ref: "#/components/schemas/AdminVehicleJobListItem"
+            - type: object
+              properties:
+                dispatch_now:
+                  type: boolean
+                  example: true
+                created_at:
+                  type: string
+                  format: date-time
+                updated_at:
+                  type: string
+                  format: date-time
+        worker_summary:
+          $ref: "#/components/schemas/AdminVehicleJobOperationWorkerSummary"
+        market_summary:
+          $ref: "#/components/schemas/AdminVehicleJobOperationMarketSummary"
+        scan_summary:
+          type: object
+          properties:
+            required:
+              type: integer
+              example: 2
+            scanned:
+              type: integer
+              example: 2
+            remaining:
+              type: integer
+              example: 0
+        timing:
+          type: object
+          properties:
+            gate_elapsed_seconds:
+              type: integer
+              example: 2280
+            working_elapsed_seconds:
+              type: integer
+              nullable: true
+              example: 1800
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminVehicleJobOperationWorker"
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminVehicleJobOperationMarket"
+    AdminVehicleJobOperationListResponse:
+      type: object
+      properties:
+        server_time:
+          type: string
+          format: date-time
+          example: 2026-07-20T10:30:00.000Z
+        summary:
+          $ref: "#/components/schemas/AdminVehicleJobOperationSummary"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminVehicleJobOperationItem"
+        available_dropoff_points:
+          type: array
+          items:
+            type: string
+          example: ["Dock A1", "Dock B2"]
+          description: >-
+            Every distinct dropoff_point that exists under the current date_from/date_to
+            and search filters, excluding dropoff_point itself — always the full list
+            regardless of page/limit, so a dropdown can be built directly from this field
+            without a separate unpaginated call. Pick a value from here and pass it back
+            as the dropoff_point query param to filter.
+        pagination:
+          nullable: true
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            total_pages:
+              type: integer
+    AdminFinancialRateSnapshot:
+      type: object
+      properties:
+        package_weight_snapshot:
+          type: string
+          nullable: true
+          example: "20.00"
+        rate_id_snapshot:
+          type: integer
+          nullable: true
+          example: 1
+        source_rate_id_snapshot:
+          type: integer
+          nullable: true
+          example: 1
+        rate_market_code:
+          type: string
+          nullable: true
+          example: "0000"
+        rate_source:
+          type: string
+          nullable: true
+          example: CENTRAL
+        weight_range_name:
+          type: string
+          nullable: true
+          example: "1-25.0"
+        weight_min_snapshot:
+          type: string
+          nullable: true
+          example: "0.00"
+        weight_max_snapshot:
+          type: string
+          nullable: true
+          example: "25.00"
+        stall_rate_snapshot:
+          type: string
+          nullable: true
+          example: "1.50"
+        labor_rate_snapshot:
+          type: string
+          nullable: true
+          example: "0.90"
+        rate_snapshot_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    AdminFinancialWorkerPayment:
+      type: object
+      properties:
+        ticket_worker_id:
+          type: integer
+          example: 101
+        worker_code:
+          type: string
+          example: MN000115
+        full_name:
+          type: string
+          example: Worker Name
+        membership_status:
+          type: string
+          enum:
+            - WORKING
+            - CANCELLED
+            - COMPLETED
+          example: COMPLETED
+        raw_amount:
+          type: string
+          example: "3.60000000"
+        remainder_amount:
+          type: string
+          example: "0.60000000"
+        final_amount:
+          type: string
+          example: "3.00"
+
+    AdminProductFinancial:
+      type: object
+      properties:
+        stall_fee_raw:
+          type: string
+          example: "6.0000"
+        stall_fee_rounded:
+          type: string
+          example: "6.00"
+        labor_fee_raw:
+          type: string
+          example: "3.6000"
+        product_charge:
+          type: string
+          example: "10.00"
+        worker_count:
+          type: integer
+          example: 1
+          description: >
+            Worker divisor for this product's booth specifically — the count of TicketWorker rows
+            snapshotted as still WORKING at the moment this one booth was confirmed (vendor
+            confirm or auto-confirm timeout), not the Business Ticket's final roster count. Two
+            booths under the same Ticket can have different values here if the team changed
+            between when each booth confirmed.
+        worker_payout_total:
+          type: string
+          example: "3.00"
+        fund_amount:
+          type: string
+          example: "0.6000"
+        finalized_at:
+          type: string
+          format: date-time
+
+    AdminFinancialProduct:
+      type: object
+      properties:
+        ticket_product_id:
+          type: integer
+          example: 501
+        productCode:
+          type: string
+          example: "02020300"
+        productFullCode:
+          type: string
+          nullable: true
+          example: "02020300000000000000"
+        productName:
+          type: string
+          example: Rambutan
+        packageCode:
+          type: string
+          example: "29"
+        packageName:
+          type: string
+          example: Crate 20
+        quantity:
+          type: string
+          example: "10.00"
+          description: Original Gate operational quantity. Not the financial quantity.
+        confirmed_quantity:
+          type: string
+          nullable: true
+          example: "10.00"
+          description: Worker-confirmed quantity used for financial calculation after vendor confirmation.
+        rate_snapshot:
+          $ref: "#/components/schemas/AdminFinancialRateSnapshot"
+        financial:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/AdminProductFinancial"
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialWorkerPayment"
+
+    AdminFinancialBoothWorker:
+      type: object
+      properties:
+        ticket_worker_id:
+          type: integer
+          example: 101
+        worker_code:
+          type: string
+          example: MN000115
+        full_name:
+          type: string
+          example: Worker Name
+        membership_status:
+          type: string
+          enum:
+            - WORKING
+            - CANCELLED
+            - COMPLETED
+          example: COMPLETED
+        total_amount:
+          type: string
+          example: "12.00"
+          description: Sum of persisted TicketWorkerPayment.finalAmount for this booth.
+
+    AdminFinancialBooth:
+      type: object
+      properties:
+        ticket_id:
+          type: integer
+          example: 1001
+        marketCode:
+          type: string
+          example: "1123"
+        marketName:
+          type: string
+          example: Market A
+        boothCode:
+          type: string
+          example: OM3/40
+        boothName:
+          type: string
+          nullable: true
+          example: Vendor A
+        status:
+          type: string
+          example: COMPLETED
+        financialized:
+          type: boolean
+          example: true
+        final_stall_amount:
+          type: string
+          nullable: true
+          example: "34.00"
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        summary:
+          type: object
+          properties:
+            labor_fee_raw:
+              type: string
+              example: "12.6000"
+            worker_payout_total:
+              type: string
+              example: "12.00"
+            fund_amount:
+              type: string
+              example: "0.6000"
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialBoothWorker"
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialProduct"
+
+    AdminVehicleJobFinancialResponse:
+      type: object
+      properties:
+        vehicle_job:
+          type: object
+          properties:
+            ticketNo:
+              type: string
+              example: TKT-20260723-000125
+            gate_transaction_ref:
+              type: string
+              example: GATE-REQ-001
+            license_plate:
+              type: string
+              example: ABC-1234
+            license_plate_province:
+              type: string
+              nullable: true
+              example: Bangkok
+            vehicle_type:
+              type: string
+              nullable: true
+              example: Six-wheel truck
+            status:
+              type: string
+              example: COMPLETED
+        financial_status:
+          type: string
+          enum:
+            - PENDING
+            - PARTIAL
+            - FINALIZED
+          example: FINALIZED
+        summary:
+          type: object
+          properties:
+            booth_count:
+              type: integer
+              example: 1
+            financialized_booth_count:
+              type: integer
+              example: 1
+            final_stall_amount:
+              type: string
+              example: "34.00"
+            labor_fee_raw:
+              type: string
+              example: "12.6000"
+            worker_payout_total:
+              type: string
+              example: "12.00"
+            fund_amount:
+              type: string
+              example: "0.6000"
+        booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialBooth"
+
+    AdminVehicleJobListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminVehicleJobHistoryItemResponse"
+        available_dropoff_points:
+          type: array
+          items:
+            type: string
+          example: ["Dock A1", "Dock B2"]
+          description: >-
+            Every distinct dropoff_point that exists under the current date_from/date_to,
+            search and status filters, excluding dropoff_point itself — always the full
+            list regardless of page/limit, so a dropdown can be built directly from this
+            field without a separate unpaginated call. Pick a value from here and pass it
+            back as the dropoff_point query param to filter.
+        pagination:
+          nullable: true
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            total_pages:
+              type: integer
+
+    AdminHistoryRejection:
+      type: object
+      description: One resolved-or-pending rejection of a booth submission, derived from TicketCompletionSubmission rows in submitted order.
+      properties:
+        rejectedAt:
+          type: string
+          format: date-time
+        correction_owner:
+          type: string
+          nullable: true
+          description: Current Master Owner of the booth (MasterOwnerStall by marketCode+boothCode), not a historical snapshot at the time of this rejection.
+        correction_owner_type:
+          type: string
+          enum:
+            - worker
+            - admin
+          description: Who should be the one to correct this rejection, evaluated against the vehicle job's current status (not a historical snapshot at the time of this rejection, same as correction_owner) — "worker" while the vehicle job has not been released (the team is still on-site and can resubmit themselves), "admin" once the vehicle job has been released (the team is back in the queue, so an admin must handle it).
+        rejected_by_type:
+          type: string
+          nullable: true
+          enum:
+            - owner
+            - member
+          description: Resolved from TicketCompletionSubmission.resolved_by_line_user_id against MasterOwnerStall then MasterMemberStall. Null when the reject was an auto-confirm timeout (no LINE user) or could not be resolved.
+        rejected_by_name:
+          type: string
+          nullable: true
+
+    AdminHistoryProduct:
+      description: Same fields as AdminFinancialProduct except ticket_product_id (an internal PK the /financials override screen needs but Work History, which is read-only, does not).
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        productFullCode:
+          type: string
+          nullable: true
+          example: "02020300000000000000"
+        productName:
+          type: string
+          example: Rambutan
+        packageCode:
+          type: string
+          example: "29"
+        packageName:
+          type: string
+          example: Crate 20
+        quantity:
+          type: string
+          example: "10.00"
+        confirmed_quantity:
+          type: string
+          nullable: true
+          example: "10.00"
+        rate_snapshot:
+          $ref: "#/components/schemas/AdminFinancialRateSnapshot"
+        financial:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/AdminProductFinancial"
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialWorkerPayment"
+
+    AdminHistoryBooth:
+      description: Booth (GateTicket) inside a Work History Business Ticket. Reuses the same persisted financial fields as AdminFinancialBooth (not recalculated) plus submission/rejection tracking the /financials endpoint does not need — omits ticket_id/ticket_no/marketCode/marketName since those are already available one level up on AdminHistoryMarket.
+      type: object
+      properties:
+        boothCode:
+          type: string
+          example: OM3/40
+        boothName:
+          type: string
+          nullable: true
+          example: Vendor A
+        status:
+          type: string
+          example: COMPLETED
+        cancellation:
+          allOf:
+            - $ref: "#/components/schemas/AdminHistoryCancellation"
+          description: Set when this booth's status is CANCELLED. If this specific booth has no STALL_JOB_CANCELLED log of its own (it was cancelled indirectly by cancelling the whole market or vehicle job), this falls back to that market's or vehicle job's cancel log instead.
+        financialized:
+          type: boolean
+          example: true
+        final_stall_amount:
+          type: string
+          nullable: true
+          example: "34.00"
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        summary:
+          type: object
+          properties:
+            labor_fee_raw:
+              type: string
+              example: "12.6000"
+            worker_payout_total:
+              type: string
+              example: "12.00"
+            fund_amount:
+              type: string
+              example: "0.6000"
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFinancialBoothWorker"
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryProduct"
+        vendor_line_id:
+          type: string
+          nullable: true
+        submitted_by_codes:
+          type: array
+          items:
+            type: string
+          description: Distinct account codes (Worker or Admin submitting on behalf) that submitted counts for this booth.
+        submitted_by_role:
+          type: string
+          nullable: true
+          enum:
+            - worker
+            - admin
+          description: Role of the account that submitted the latest count for this booth.
+        latest_submitted_by_code:
+          type: string
+          nullable: true
+          description: Account code of whoever submitted the latest count for this booth — distinct from submitted_by_codes, which is a de-duped set of everyone who ever submitted and does not identify the latest submitter.
+        latest_submitted_by_name:
+          type: string
+          nullable: true
+        submission_worker_snapshot:
+          type: array
+          description: Worker roster that was still WORKING at the exact moment the latest submission was created (SubmissionWorkerSnapshot). Distinct from the booth's Confirm-time roster — if the team changed between the worker submitting the count and the vendor confirming it, the two will differ. Empty array when there is no submission yet.
+          items:
+            type: object
+            properties:
+              worker_code:
+                type: string
+                nullable: true
+                example: W000012
+              full_name:
+                type: string
+                example: Somchai Jaidee
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the latest submission.
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Vendor confirmation timestamp of the latest submission. Always set once resolved, whether the vendor confirmed manually or the BullMQ timeout auto-confirmed it.
+        confirmed_by_type:
+          type: string
+          nullable: true
+          enum:
+            - vendor
+            - timeout
+          description: How the latest submission was resolved — "vendor" when confirmed manually via LINE, "timeout" when auto-confirmed by the BullMQ timeout. Null when never confirmed.
+        rejection_history:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryRejection"
+        company_share_rate:
+          type: string
+          description: (fund_amount / labor_fee_raw) * 100 from the same finalized financial snapshot. "0.00" when labor_fee_raw is 0.
+          example: "4.76"
+        worker_count:
+          type: integer
+          nullable: true
+          description: Count of TicketWorker rows with status WORKING at the exact moment the latest submission was created (TicketCompletionSubmission.worker_count_snapshot). Distinct from the current roster, from GateTicketWorkerSnapshot (Confirm-time), and from Financial worker_count. Null when there is no submission yet, or the latest submission predates this feature (never falls back to counting the current roster).
+          example: 3
+
+    AdminHistoryMarket:
+      type: object
+      description: One Business Ticket (MarketJob) inside a Work History vehicle job, with its booths formatted as AdminHistoryBooth.
+      properties:
+        ticket_no:
+          type: string
+          example: TKT-20260723-000125
+        marketCode:
+          type: string
+          example: "1123"
+        marketName:
+          type: string
+          example: Market A
+        dropoff_point:
+          type: string
+          nullable: true
+        status:
+          type: string
+          example: COMPLETED
+        cancellation:
+          allOf:
+            - $ref: "#/components/schemas/AdminHistoryCancellation"
+          description: Set when this market's status is CANCELLED. If this specific market has no MARKET_JOB_CANCELLED log of its own (it was cancelled indirectly by cancelling the whole vehicle job), this falls back to the vehicle job's cancel log instead.
+        booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryBooth"
+
+    AdminHistoryCancellation:
+      type: object
+      nullable: true
+      description: Cancellation details, reused for VehicleJob-, MarketJob-, GateTicket/Booth-, and per-worker-level cancellation. Null when that level's status is not CANCELLED. When status is CANCELLED but no matching AdminActionLog can be found, the sub-fields are null rather than guessed.
+      properties:
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        reason_code:
+          type: string
+          nullable: true
+        reason_text:
+          type: string
+          nullable: true
+        cancelled_by_type:
+          type: string
+          nullable: true
+          description: Role of the admin actor who cancelled (AdminActionLog.actor_role).
+        cancelled_by_name:
+          type: string
+          nullable: true
+
+    AdminHistoryWorker:
+      type: object
+      description: One worker who actually accepted a dispatch (VehicleJobAssignment.accepted_at not null) for this vehicle job, deduplicated by worker_account_id — the assignment with the latest accepted_at is chosen when the same worker was dispatched/accepted more than once. Workers who were dispatched but never accepted are excluded here but still appear in the timeline.
+      properties:
+        worker_account_id:
+          type: integer
+          description: Stable identity for joining with finance.workers[] and other reports — never join by name or shirt number.
+        assignment_id:
+          type: integer
+          description: The accepted VehicleJobAssignment chosen to represent this worker's row.
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        full_name:
+          type: string
+          example: Worker Name
+        shirt_number:
+          type: string
+          nullable: true
+          example: "4"
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        scanned_at:
+          type: string
+          format: date-time
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: A worker is considered to have started work as soon as they accept the assignment; this mirrors accepted_at.
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the latest booth submission tied to the selected assignment (TicketCompletionSubmission.assignment_id), not any submission by this worker elsewhere in the job. Null when no submission could be reliably attributed to this work-cycle.
+        released_at:
+          type: string
+          format: date-time
+          nullable: true
+        final_status:
+          type: string
+          example: COMPLETED
+        cancellation:
+          $ref: "#/components/schemas/AdminHistoryCancellation"
+
+    AdminHistoryTimelineItem:
+      type: object
+      description: >
+        One event on the vehicle job's chronological timeline, merged from WorkerAssignmentEvent,
+        TicketCompletionSubmission, and AdminActionLog and sorted by occurred_at. COUNT_SUBMITTED
+        entries have actor_type "admin" (instead of "worker") when the submission came from
+        POST .../override-count instead of the worker's own submit-count flow.
+      properties:
+        type:
+          type: string
+          enum:
+            - GATE_ARRIVAL
+            - WORKER_ASSIGNED
+            - WORKER_ACCEPTED
+            - WORKER_SCANNED
+            - WORKER_ACCEPT_TIMEOUT
+            - WORKER_SCAN_TIMEOUT
+            - WORKER_COMPLETED
+            - WORKER_RELEASED
+            - COUNT_SUBMITTED
+            - TICKET_REJECTED
+            - TICKET_CONFIRMED
+            - ADMIN_ACTION
+            - JOB_COMPLETED
+        occurred_at:
+          type: string
+          format: date-time
+        actor_type:
+          type: string
+          enum:
+            - worker
+            - admin
+            - system
+        actor_name:
+          type: string
+          nullable: true
+        description:
+          type: string
+
+    AdminHistoryFinance:
+      type: object
+      description: Job-level finance totals for the whole vehicle job (all Business Tickets), summed from the same persisted TicketProductFinancial/TicketWorkerPayment values as AdminFinancialBooth. Never recalculated from a formula.
+      properties:
+        stall_fee_total:
+          type: string
+          example: "34.00"
+        labor_fee_total:
+          type: string
+          example: "12.6000"
+        total_worker_share:
+          type: string
+          example: "12.00"
+        fund_amount:
+          type: string
+          example: "0.6000"
+        worker_count:
+          type: integer
+          description: Count of distinct workers who actually accepted a dispatch — same set as workers[] below and as the vehicle_job history workers[] (AdminHistoryWorker).
+          example: 1
+        workers:
+          type: array
+          description: Real per-worker earnings across every Business Ticket of this vehicle job (sum of TicketWorker.final_earning_amount per worker). Never averaged. Same deduplicated accepted-worker set as vehicle_job history workers[] — a worker who accepted but has no earnings yet still gets one row with total_amount "0.00".
+          items:
+            type: object
+            properties:
+              worker_account_id:
+                type: integer
+                description: Join key with vehicle_job history workers[] — never join by name.
+              worker_code:
+                type: string
+                nullable: true
+              full_name:
+                type: string
+              total_amount:
+                type: string
+                example: "220.00"
+
+    AdminVehicleJobHistoryItemResponse:
+      type: object
+      properties:
+        vehicle_job:
+          allOf:
+            - $ref: "#/components/schemas/AdminVehicleJobListItem"
+            - type: object
+              properties:
+                ticket_created_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Earliest ticket_created_at across every Business Ticket (MarketJob) of this vehicle job. This is the time Gate created the first Ticket.
+                work_started_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: VehicleJob.work_started_at. Set once when the whole Worker team finishes scanning and the vehicle job starts WORKING.
+                submitted_complete_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Latest booth submission timestamp. Set only when every non-cancelled Business Ticket has at least one submission.
+                completed_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: VehicleJob.completed_at. Set once when the central lifecycle changes the vehicle job to COMPLETED.
+                duration_seconds:
+                  type: integer
+                  nullable: true
+                  description: CompletedAt minus WorkStartedAt, in seconds. Null unless both are known.
+                history_status:
+                  type: string
+                  nullable: true
+                  enum:
+                    - COMPLETED
+                    - CANCELLED
+                    - REJECT_PENDING
+                  description: >-
+                    The Work History business group this vehicle job belongs to (see the
+                    history_status query parameter). Priority is CANCELLED > COMPLETED >
+                    REJECT_PENDING. Null when the vehicle job matches none of the three groups
+                    (e.g. still WAIT/WORKING with no Booth currently in REJECT) — this can only
+                    happen when history_status was not sent, since sending it restricts results to
+                    the three groups already.
+                history_flags:
+                  type: array
+                  description: >-
+                    Notable past events for this vehicle job, distinct from history_status (the
+                    current business group) — a job can have any number of these at once, except
+                    VEHICLE_CANCELLED_AFTER_START and VEHICLE_CANCELLED_BEFORE_START which are
+                    mutually exclusive. Always an array (never null, empty array when nothing
+                    matched), never contains duplicates, and is ordered as listed in the enum below
+                    regardless of when each event actually occurred. Derived entirely from existing
+                    transactional data (TicketCompletionSubmission, VehicleJobAssignment,
+                    WorkerAssignmentEvent, GateTicket) — never parsed from Timeline[].description.
+                    Backend sends only these stable English codes; translating to Thai text/icons/
+                    colors is a Frontend concern.
+                  items:
+                    type: string
+                    enum:
+                      - FINANCE_CALCULATED
+                      - WORKERS_RELEASED
+                      - BOOTH_REJECTED
+                      - AUTO_CONFIRMED
+                      - WORKER_CHANGED_DURING_JOB
+                      - SUBMISSION_ROSTER_INCOMPLETE
+                      - ADMIN_SUBMITTED_ON_BEHALF
+                      - VEHICLE_CANCELLED_AFTER_START
+                      - VEHICLE_CANCELLED_BEFORE_START
+                  example:
+                    - FINANCE_CALCULATED
+                    - WORKERS_RELEASED
+                    - BOOTH_REJECTED
+                cancellation:
+                  allOf:
+                    - $ref: "#/components/schemas/AdminHistoryCancellation"
+                  description: Set when this vehicle job's status is CANCELLED (VEHICLE_JOB_CANCELLED). This is the top level, so there is no further fallback.
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryMarket"
+        workers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryWorker"
+        timeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminHistoryTimelineItem"
+        finance:
+          $ref: "#/components/schemas/AdminHistoryFinance"
+
+    AdminOverrideCountItemRequest:
+      type: object
+      required:
+        - productCode
+        - packageCode
+        - actual_quantity
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        packageCode:
+          type: string
+          example: "29"
+        actual_quantity:
+          type: number
+          minimum: 0
+          example: 7
+
+    AdminOverrideCountRequest:
+      type: object
+      required:
+        - reason_code
+        - counts
+      properties:
+        reason_code:
+          type: string
+          description: Required, must not be empty.
+          example: R001
+        reason_text:
+          type: string
+          nullable: true
+          description: Optional override reason text.
+          example: Worker entered the wrong count.
+        counts:
+          type: array
+          minItems: 1
+          description: Every product on this booth must be included.
+          items:
+            $ref: "#/components/schemas/AdminOverrideCountItemRequest"
+
+    AdminOverrideCountItemResponse:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        packageCode:
+          type: string
+          example: "29"
+        previous_quantity:
+          type: string
+          nullable: true
+          example: "10.00"
+        confirmed_quantity:
+          type: string
+          nullable: true
+          example: "7.00"
+
+    AdminOverrideCountResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        boothCode:
+          type: string
+          example: OM3/40
+        status:
+          type: string
+          description: DELIVERED on success.
+          example: DELIVERED
+        reason_code:
+          type: string
+          example: R001
+        reason_text:
+          type: string
+          nullable: true
+          example: Worker entered the wrong count.
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminOverrideCountItemResponse"
+
+    AdminVehicleWaitRequest:
+      type: object
+      required:
+        - dispatch
+        - reason_code
+      properties:
+        dispatch:
+          type: boolean
+          description: >
+            false puts the vehicle job back to wait (dispatchNow=false) and requeues its team to
+            the front of the FIFO queue. true dispatches it again (dispatchNow=true) and calls
+            workers from the queue for this vehicle job right away.
+          example: false
+        reason_code:
+          type: string
+          description: Required, must not be empty.
+          example: DRIVER_NOT_READY
+        reason_text:
+          type: string
+          nullable: true
+          description: Optional — may be omitted or sent as null.
+          example: Driver requested more time before unloading.
+
+    AdminVehicleWaitResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        status:
+          type: string
+          description: WAIT when dispatch was switched to false, WORKING when switched to true.
+          example: WAIT
+        dispatch_now:
+          type: boolean
+          example: false
+        requeued_worker_codes:
+          type: array
+          items:
+            type: string
+            nullable: true
+          description: Workers pulled off this vehicle job and put back at the front of the queue. Only populated when dispatch was switched to false; always empty when switched to true.
+          example: []
+        reason_code:
+          type: string
+          example: DRIVER_NOT_READY
+        reason_text:
+          type: string
+          nullable: true
+          example: Driver requested more time before unloading.
+
+    AdminReleaseWorkersRequest:
+      type: object
+      required:
+        - reason_code
+      properties:
+        reason_code:
+          type: string
+          example: ALL_BOOTHS_RESOLVED
+        reason_text:
+          type: string
+          nullable: true
+
+    AdminReleaseWorkersResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        released_worker_codes:
+          type: array
+          items:
+            type: string
+            nullable: true
+          description: Ordered by accepted_at (earliest accept first) — the same relative order the team joined the queue with, not the order their assignments were created/dispatched.
+          example:
+            - MN000115
+        reason_code:
+          type: string
+          example: ALL_BOOTHS_RESOLVED
+        reason_text:
+          type: string
+          nullable: true
+
+    DailyWorkerIncomeWorker:
+      type: object
+      properties:
+        code:
+          type: string
+          nullable: true
+          example: MN000115
+        name:
+          type: string
+          example: Worker Name
+        shirt:
+          type: string
+          nullable: true
+          example: "4"
+
+    DailyWorkerIncomeCancellation:
+      type: object
+      nullable: true
+      description: >-
+        Non-null only when payment_status = cancel (the whole ticket_no was cancelled by an
+        Admin). cancelled_by_type/cancelled_by_name come from the
+        admin_action_logs row written when the ticket_no was cancelled.
+      properties:
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        cancelled_by_type:
+          type: string
+          nullable: true
+          example: admin
+        cancelled_by_name:
+          type: string
+          nullable: true
+          example: Admin 9705
+
+    DailyWorkerIncomePaymentStatus:
+      type: string
+      description: >-
+        Mutually exclusive — decided in this priority order: cancel (ticket_no cancelled by
+        Admin) > success/partially_paid (ticket_no reached COMPLETED) > admin_reject/worker_reject
+        (a booth is currently REJECT, unresolved). A row that matches none of these five is
+        excluded from data entirely (e.g. ticket_no still WORKING with no reject and this worker
+        never cancelled) — not returned with a null/empty payment_status.
+      enum:
+        - success
+        - partially_paid
+        - cancel
+        - admin_reject
+        - worker_reject
+
+    DailyWorkerIncomeItem:
+      type: object
+      description: >-
+        One Worker's membership (TicketWorker) in one Business Ticket (ticket_no). payable is
+        TicketWorker.final_earning_amount taken as-is, never recomputed — already scoped to this
+        one ticket_no since TicketWorker is unique per (marketJobId, workerAccountId).
+      properties:
+        worker:
+          $ref: "#/components/schemas/DailyWorkerIncomeWorker"
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+        shift:
+          type: integer
+          nullable: true
+        ticket_no:
+          type: string
+          example: TKT-20260723-000125
+        plate:
+          type: string
+          example: ABC-1234
+        payable:
+          type: string
+          example: "12.00"
+        scanned_at:
+          type: string
+          format: date-time
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            VehicleJob.workStartedAt — the moment the whole team finished scanning in. Same value
+            for every worker on the same truck, not this worker's own scanned_at.
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            Latest submission time across every booth in this ticket_no, regardless of which
+            worker submitted — same value for every row of the same ticket_no, like confirmedAt.
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        released_at:
+          type: string
+          format: date-time
+          nullable: true
+        payment_status:
+          $ref: "#/components/schemas/DailyWorkerIncomePaymentStatus"
+        cancellation:
+          $ref: "#/components/schemas/DailyWorkerIncomeCancellation"
+        riskText:
+          type: string
+          description: >-
+            Derived display text for risk/exception events in this row. Multiple messages are
+            joined with ", ". Returns "-" when no event applies.
+          example: Admin ส่งยอดแทน, ระบบตัดยืนยัน
+
+    AdminDailyWorkerIncomeListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyWorkerIncomeItem"
+        available_worker_codes:
+          type: array
+          items:
+            type: string
+          example: ["MN000004", "MN000016"]
+          description: >-
+            Every distinct worker code that exists under the current date range, search
+            and status filters — independent of the workerCode and shift filters
+            themselves, so selecting one does not narrow the other's options. Always
+            the full list regardless of page/limit, so a dropdown can be built directly
+            from this field. Pick a value from here and pass it back as workerCode.
+        available_shifts:
+          type: array
+          items:
+            type: integer
+          example: [1, 2]
+          description: >-
+            Every distinct worker shift number under the current date range, search and
+            status filters — same independence from workerCode/shift as
+            available_worker_codes, for a shift dropdown.
+        pagination:
+          nullable: true
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            total_pages:
+              type: integer
+    AdminDailyStallFeeItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 9812
+          description: TicketProductFinancial.id — stable unique key of this row, never an array index.
+        business_date:
+          type: string
+          format: date
+          example: "2026-08-31"
+          description: DATE(TicketProductFinancial.finalizedAt) in Asia/Bangkok.
+        finalized_at:
+          type: string
+          format: date-time
+          example: "2026-08-31T08:42:10.125Z"
+        booth_code:
+          type: string
+          example: "IV4/19"
+        plate:
+          type: string
+          example: "กข 1234"
+        plate_province:
+          type: string
+          nullable: true
+          example: "กรุงเทพมหานคร"
+        ticket_no:
+          type: string
+          example: "20260831000142"
+        market_code:
+          type: string
+          example: "MKT-01"
+        market_name:
+          type: string
+          example: "ตลาดสี่มุมเมือง"
+        product_code:
+          type: string
+          example: "VEG-CAB"
+        product_full_code:
+          type: string
+          nullable: true
+          example: "VEG-CAB-BAG"
+        product_name:
+          type: string
+          example: "กะหล่ำปลี"
+        package_code:
+          type: string
+          example: "BAG"
+        package_name:
+          type: string
+          example: "กระสอบ"
+        confirmed_quantity:
+          type: string
+          example: "7.00"
+          description: Decimal string — TicketProductFinancial.confirmedQuantity as persisted at finalize, never recomputed.
+        stall_fee_rounded:
+          type: string
+          example: "28.00"
+          description: Decimal string — TicketProductFinancial.stallFeeRounded as persisted at finalize, never recomputed.
+    AdminDailyStallFeeProductOption:
+      type: object
+      properties:
+        product_code:
+          type: string
+          example: "VEG-CAB"
+        product_name:
+          type: string
+          example: "กะหล่ำปลี"
+    AdminDailyStallFeePackageOption:
+      type: object
+      properties:
+        package_code:
+          type: string
+          example: "BAG"
+        package_name:
+          type: string
+          example: "กระสอบ"
+    AdminDailyStallFeeListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminDailyStallFeeItem"
+        summary:
+          type: object
+          description: >-
+            Aggregated over the full date range + search + product_code + package_code filtered
+            set, independent of page/limit.
+          properties:
+            row_count:
+              type: integer
+              example: 18
+            stall_count:
+              type: integer
+              example: 12
+              description: COUNT(DISTINCT GateTicket.id) under the filtered set.
+            confirmed_quantity_total:
+              type: string
+              example: "146.50"
+            stall_fee_total:
+              type: string
+              example: "1160.00"
+        available_products:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminDailyStallFeeProductOption"
+          description: >-
+            Distinct products under the current date range + search + package_code filters —
+            never narrows by product_code itself (selecting a product does not shrink this
+            dropdown), independent of page/limit, for building a product filter dropdown.
+        available_packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminDailyStallFeePackageOption"
+          description: >-
+            Distinct packages under the current date range + search + product_code filters —
+            never narrows by package_code itself (selecting a package does not shrink this
+            dropdown), independent of page/limit, for building a package filter dropdown.
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+              example: 1
+            limit:
+              type: integer
+              example: 20
+            total:
+              type: integer
+              example: 18
+            total_pages:
+              type: integer
+              example: 1
+    AdminCancelVehicleJobRequeueResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticketNo:
+          type: string
+          example: TKT-20260723-000125
+        status:
+          type: string
+          example: CANCELLED
+        requeued_worker_codes:
+          type: array
+          items:
+            type: string
+          example:
+            - MN000115
+    AdminAssignWorkersRequest:
+      type: object
+      required:
+        - worker_codes
+        - reason_code
+      properties:
+        worker_codes:
+          type: array
+          minItems: 1
+          description: Worker codes to assign. Every worker must be active, have no active assignment, and currently be ready in the Redis queue.
+          items:
+            type: string
+          example:
+            - MN000115
+            - MN000116
+        reason_code:
+          type: string
+          description: Recorded as a MANUAL_ASSIGNMENT admin_action_logs entry, with the authenticated admin as actor.
+          example: MANUAL_ASSIGNMENT
+        reason_text:
+          type: string
+          nullable: true
+          example: เติมแรงงานหลังมีคนถอนตัว
+    AdminAssignWorkersResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticketNo:
+          type: string
+          example: TKT-20260723-000125
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleJobAssignment"
+    AdminCancelAssignmentResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticketNo:
+          type: string
+          nullable: true
+          example: TKT-20260723-000125
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        status:
+          type: string
+          example: CANCELLED
+    AdminExtendScanDeadlineRequest:
+      type: object
+      required:
+        - minutes
+        - reason_code
+      properties:
+        minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          example: 10
+        worker_codes:
+          type: array
+          minItems: 1
+          nullable: true
+          description: Optional. Use only when extending selected workers under a vehicle job.
+          items:
+            type: string
+          example:
+            - MN000115
+        reason_code:
+          type: string
+          example: ADMIN_EXTEND_VEHICLE_ASSIGNMENT_SCAN_TIMER
+        reason_text:
+          type: string
+          nullable: true
+          example: Worker needs more time to reach QR scan point.
+    AdminExtendScanDeadlineResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticketNo:
+          type: string
+          example: TKT-20260723-000125
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminScanDeadlineAssignment"
+    AdminScanDeadlineAssignment:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        status:
+          type: string
+          example: ACCEPTED
+        scan_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
+    AdminCancelMarketJobResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticketNo:
+          type: string
+          nullable: true
+          example: TKT-20260723-000125
+        marketCode:
+          type: string
+          example: "1123"
+        status:
+          type: string
+          example: CANCELLED
+    AdminCancelStallJobResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ticketNo:
+          type: string
+          nullable: true
+          example: TKT-20260723-000125
+        marketCode:
+          type: string
+          nullable: true
+          example: "1123"
+        boothCode:
+          type: string
+          example: B-018
+        status:
+          type: string
+          example: CANCELLED
+        confirmation_status:
+          type: string
+          example: CANCELLED
+    AdminCancelTicketWorkerResponse:
+      type: object
+      description: Cancelling one worker's membership of a single Business Ticket — the worker stays checked in on the truck and keeps working any other Business Ticket, only this ticket_no's roster is affected.
+      properties:
+        message:
+          type: string
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        ticket_no:
+          type: string
+          example: TKT-20260723-000125
+        worker_code:
+          type: string
+          example: MN000115
+        status:
+          type: string
+          example: CANCELLED
+    AdminCancelTicketWorkerFromBoothResponse:
+      type: object
+      description: >-
+        Removing one worker from just one Booth's payout divisor (GateTicketWorkerSnapshot at
+        confirm time) — does not touch TicketWorker.status, so the worker stays WORKING on the
+        rest of the Business Ticket and keeps working any other booth in it.
+      properties:
+        message:
+          type: string
+        ticket_number:
+          type: string
+          example: TRUCK-20260723-001
+        ticket_no:
+          type: string
+          example: TKT-20260723-000125
+        boothCode:
+          type: string
+          example: OM3/40
+        worker_code:
+          type: string
+          example: MN000115
+        status:
+          type: string
+          example: CANCELLED
+    WorkerQueueEntry:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        status:
+          type: string
+          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, waiting_team, working, or break.
+          enum:
+            - open_app
+            - ready
+            - assigned
+            - waiting_team
+            - working
+            - break
+          example: ready
+        ready_at:
+          type: string
+          nullable: true
+        break_until:
+          type: string
+          nullable: true
+        break_until_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same value as break_until, represented as Unix timestamp in milliseconds for countdown timers.
+        break_count_used:
+          type: integer
+          nullable: true
+        break_count_limit:
+          type: integer
+          nullable: true
+    WorkerOnlineResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 200
+        code:
+          type: string
+          enum:
+            - WORKER_ONLINE_SUCCESS
+            - WORKER_OFFLINE_SUCCESS
+          example: WORKER_ONLINE_SUCCESS
+        message:
+          type: string
+          example: Worker entered queue successfully.
+    WorkerPushTokenRequest:
+      type: object
+      required:
+        - fcm_token
+      properties:
+        fcm_token:
+          type: string
+          description: Firebase Cloud Messaging registration token from the worker mobile app. This endpoint registers a token that Mobile already received from Firebase SDK; the backend does not create FCM tokens. PascalCase body key FcmToken is also accepted.
+          example: fcm-registration-token
+        device_id:
+          type: string
+          description: Optional. Defaults to the authenticated session device_id. PascalCase body key DeviceId is also accepted.
+          example: worker-device-001
+        platform:
+          type: string
+          enum:
+            - android
+            - ios
+            - web
+            - unknown
+          example: android
+    WorkerPushTokenResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 200
+        code:
+          type: string
+          example: WORKER_PUSH_TOKEN_REGISTERED
+        message:
+          type: string
+          example: Worker push token registered successfully.
+        worker_code:
+          type: string
+          example: MN000012
+        device_id:
+          type: string
+          example: worker-device-001
+        platform:
+          type: string
+          example: android
+    WorkerNotificationItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 123
+        type:
+          type: string
+          example: TICKET_COMPLETION_RESULT
+        notification_key:
+          type: string
+          nullable: true
+          example: ticket.completion_confirmed
+        lang:
+          $ref: "#/components/schemas/AccountLang"
+        title:
+          type: string
+          example: แผงค้ายืนยันยอดแล้ว
+        message:
+          type: string
+          example: แผง A01 ยืนยันยอดเรียบร้อยแล้ว
+        notification:
+          type: object
+          properties:
+            key:
+              type: string
+              nullable: true
+              example: ticket.completion_confirmed
+            lang:
+              $ref: "#/components/schemas/AccountLang"
+            title:
+              type: string
+              example: แผงค้ายืนยันยอดแล้ว
+            message:
+              type: string
+              example: แผง A01 ยืนยันยอดเรียบร้อยแล้ว
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
+          example:
+            ticketNo: TKT-20260817-0001
+            boothCode: A01
+            status: COMPLETED
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-08-17T06:00:00.000Z
+    WorkerNotificationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerNotificationItem"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+    WorkerBreakResponse:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Worker Name
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        status:
+          type: string
+          enum:
+            - open_app
+            - ready
+            - assigned
+            - waiting_team
+            - working
+            - break
+          example: break
+        break_count_used:
+          type: integer
+          example: 1
+        break_count_limit:
+          type: integer
+          example: 4
+    WorkerPresence:
+      type: object
+      properties:
+        is_online:
+          type: boolean
+          example: true
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        stale_after_seconds:
+          type: integer
+          example: 90
+    VehicleJobAssignment:
+      type: object
+      properties:
+        ticketNo:
+          type: string
+          example: TKT-20260723-000125
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        status:
+          type: string
+          example: PENDING
+        accept_deadline_at:
+          type: string
+          nullable: true
+        accept_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as accept_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
+        scan_deadline_at:
+          type: string
+          nullable: true
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
+        accepted_at:
+          type: string
+          nullable: true
+        scanned_at:
+          type: string
+          nullable: true
+        completed_at:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    WorkerAssignmentTeamMember:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Worker 51
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        image_url:
+          type: string
+          nullable: true
+        scan_status:
+          type: string
+          enum:
+            - pending
+            - accepted
+            - scanned
+            - completed
+          example: accepted
+    WorkerAssignmentProduct:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: PRODUCT-001
+        productName:
+          type: string
+          example: Apple
+        quantity:
+          type: string
+          example: "10"
+        packageName:
+          type: string
+          example: kg
+    WorkerAssignmentStall:
+      type: object
+      properties:
+        boothCode:
+          type: string
+          example: B-018
+        boothName:
+          type: string
+          nullable: true
+          example: Vendor A
+        status:
+          type: string
+          description: Booth status in English. WAIT means waiting for goods, DELIVERED means waiting for vendor confirmation, REJECT means rejected, COMPLETED means confirmed or auto-confirmed.
+          enum:
+            - WAIT
+            - WORKING
+            - DELIVERED
+            - REJECT
+            - COMPLETED
+            - CANCELLED
+          example: WORKING
+        confirmation_status:
+          type: string
+          example: WORKING
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        product_count:
+          type: integer
+          example: 2
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentProduct"
+    WorkerAssignmentMarket:
+      type: object
+      properties:
+        ticket_no:
+          type: string
+          example: TKT-20260804-000001
+          description: >
+            Business Ticket id this market entry belongs to. This is the value printed as a
+            barcode on the physical Gate paper ticket — send it as ticket_no to
+            POST /api/workers/me/assignments/check-in-barcode. Scanning any
+            one of the vehicle's Business Tickets checks in the whole team.
+        marketName:
+          type: string
+          example: Market A
+        stall_count:
+          type: integer
+          example: 1
+        stalls:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentStall"
+    WorkerAssignmentAcceptResponse:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          nullable: true
+          description: Worker code of the worker who accepted this assignment.
+          example: MN000142
+        shirt_number:
+          type: string
+          nullable: true
+          description: Shirt number of the worker who accepted this assignment.
+          example: "51"
+        accepted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when this worker accepted the assignment.
+          example: "2026-08-14T04:15:00.000Z"
+        license_plate:
+          type: string
+          example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
+        scan_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Persisted Worker assignment QR scan deadline in ISO 8601 UTC. Frontend can calculate its own countdown from this value.
+          example: "2026-08-14T04:30:00.000Z"
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
+          example: 1786681800000
+        team:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentTeamMember"
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentMarket"
+    WorkerCheckInBarcodeRequest:
+      type: object
+      required:
+        - ticket_no
+      properties:
+        ticket_no:
+          type: string
+          example: TKT-20260804-000001
+          description: >
+            One Business Ticket's ticket_no, scanned from the barcode on the physical Gate
+            paper ticket. Also readable from markets[].ticket_no in the accept response
+            (POST .../accept) or from current_job.markets[].ticket_no in GET
+            /api/workers/me/status. Any one Business Ticket under the same
+            TicketNumber may be scanned to check in the whole team.
+    WorkerAssignmentCheckInResponse:
+      type: object
+      required:
+        - status
+        - worker_status
+        - worker_code
+        - ticket_number
+        - ticket_no
+        - team_scan
+      properties:
+        status:
+          type: string
+          example: SCANNED
+        worker_status:
+          type: string
+          enum:
+            - waiting_team
+            - working
+          example: waiting_team
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        ticket_number:
+          type: string
+          example: TRUCK-20260804-001
+          description: Vehicle-level job reference (TicketNumber), not the Business Ticket used to check in.
+        ticket_no:
+          type: string
+          example: TKT-20260804-000001
+          description: Echoes back the exact Business Ticket this request scanned — never any other ticket_no under the same TicketNumber, even when the vehicle has several.
+        team_scan:
+          $ref: "#/components/schemas/WorkerTeamScan"
+    WorkerAssignmentHistoryProduct:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        productName:
+          type: string
+          example: Product A
+        packageCode:
+          type: string
+          example: "29"
+        packageName:
+          type: string
+          example: Box
+        confirmed_quantity:
+          type: string
+          nullable: true
+          example: "10.00"
+    WorkerAssignmentHistoryBooth:
+      type: object
+      properties:
+        boothCode:
+          type: string
+          example: LX01
+        boothName:
+          type: string
+          nullable: true
+          example: Booth A
+        status:
+          type: string
+          description: Booth status in English.
+          enum:
+            - WAIT
+            - WORKING
+            - DELIVERED
+            - REJECT
+            - COMPLETED
+            - CANCELLED
+          example: COMPLETED
+        confirmation_status:
+          type: string
+          example: COMPLETED
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Actual time when this GateTicket/booth case was completed. Incomplete cases return null.
+          example: "2026-08-14T03:15:42.000Z"
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Vendor confirmation time for this booth. Null before confirmation or when rejected.
+          example: "2026-08-14T03:15:42.000Z"
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentHistoryProduct"
+        rating:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          example: 5
+    WorkerAssignmentHistoryMarket:
+      type: object
+      properties:
+        marketCode:
+          type: string
+          example: "1110"
+        marketName:
+          type: string
+          example: Market A
+        booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentHistoryBooth"
+
+    WorkerAssignmentHistoryItem:
+      type: object
+      properties:
+        ticketNo:
+          type: string
+          example: TKT-20260723-000125
+        ticket_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when the whole TicketNo/vehicle job completed for this worker history item.
+          example: "2026-08-14T04:00:00.000Z"
+        license_plate:
+          type: string
+          example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
+        status:
+          type: string
+          example: COMPLETED
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentHistoryMarket"
+    WorkerAssignmentHistoryResponse:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          example: "2026-08-07"
+        summary:
+          type: object
+          properties:
+            job_count:
+              type: integer
+              example: 5
+            accept_timeout_job_count:
+              type: integer
+              example: 1
+            completed_job_count:
+              type: integer
+              example: 3
+        pagination:
+          allOf:
+            - $ref: "#/components/schemas/PaginationMeta"
+          description: Included only when page or limit is sent in the query.
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerAssignmentHistoryItem"
+    WorkerCurrentJobProduct:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "02020300"
+        productName:
+          type: string
+          example: Product A
+        packageCode:
+          type: string
+          example: "29"
+        packageName:
+          type: string
+          example: Box
+        quantity:
+          type: string
+          description: Gate operational quantity, not ConfirmedQuantity.
+          example: "180.00"
+    WorkerCurrentJobBooth:
+      type: object
+      properties:
+        boothCode:
+          type: string
+          example: LX01
+        boothName:
+          type: string
+          nullable: true
+          example: Booth A
+        status:
+          type: string
+          enum:
+            - WAIT
+            - WORKING
+            - DELIVERED
+            - REJECT
+            - COMPLETED
+            - CANCELLED
+          example: DELIVERED
+        confirmation_status:
+          type: string
+          example: DELIVERED
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerCurrentJobProduct"
+    WorkerCurrentJobMarket:
+      type: object
+      properties:
+        ticket_no:
+          type: string
+          example: TKT-20260804-000001
+          description: >
+            Business Ticket id this market entry belongs to. This is the value printed as a
+            barcode on the physical Gate paper ticket — send it as ticket_no to
+            POST /api/workers/me/assignments/check-in-barcode. Scanning any
+            one of the vehicle's Business Tickets checks in the whole team.
+        marketCode:
+          type: string
+          example: "1110"
+        marketName:
+          type: string
+          example: Market A
+        booths:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerCurrentJobBooth"
+    WorkerCurrentJobTeamMember:
+      type: object
+      properties:
+        shirt_number:
+          type: string
+          nullable: true
+          example: "001"
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000142.jpg
+        full_name:
+          type: string
+          example: Worker A
+        scan_status:
+          type: string
+          enum:
+            - scanned
+            - not_scanned
+          example: scanned
+        scanned_at:
+          type: string
+          format: date-time
+          nullable: true
+    WorkerTeamScan:
+      type: object
+      properties:
+        workers_required:
+          type: integer
+          example: 3
+        checked_in_count:
+          type: integer
+          example: 1
+        remaining_count:
+          type: integer
+          example: 2
+        is_ready:
+          type: boolean
+          example: false
+    WorkerCurrentJob:
+      type: object
+      properties:
+        scanned_ticket_no:
+          type: string
+          nullable: true
+          example: TKT-20260804-000001
+          description: The Business Ticket this worker personally scanned to check in. Null until this worker has scanned. Unlike markets[] (every Business Ticket under the vehicle), this is always exactly the one ticket_no this worker's own barcode scan resolved to, even when the vehicle has several — survives app close/reopen since it is read back from the persisted SCANNED WorkerAssignmentEvent, not a one-time push payload.
+        ticket_number:
+          type: string
+          example: TRUCK-20260810-001
+          description: Vehicle-level job reference (TicketNumber).
+        license_plate:
+          type: string
+          example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          example: Bangkok
+        accept_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Persisted accept deadline. Non-null only while the assignment is still PENDING (worker has not pressed accept yet); null once accepted.
+          example: "2026-08-14T04:16:00.000Z"
+        accept_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as accept_deadline_at, represented as Unix timestamp in milliseconds for countdown timers. Returns null when accept_deadline_at is null.
+          example: 1786681560000
+        scan_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Persisted scan deadline. Non-null only while the assignment is ACCEPTED (worker is waiting to scan check-in); null before accept and after scanning (waiting_team/working).
+          example: "2026-08-14T04:30:00.000Z"
+        scan_deadline_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers. Returns null when scan_deadline_at is null.
+          example: 1786681800000
+        work_started_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set once the whole team has scanned in and the vehicle job's status becomes WORKING. Null until then, and never changes again once set.
+          example: "2026-08-14T04:32:00.000Z"
+        work_started_at_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same timestamp as work_started_at, represented as Unix timestamp in milliseconds. Returns null when work_started_at is null.
+          example: 1786681920000
+        vehicle_type:
+          type: string
+          nullable: true
+          example: Truck
+        team_scan:
+          $ref: "#/components/schemas/WorkerTeamScan"
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerCurrentJobMarket"
+        team:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerCurrentJobTeamMember"
+    WorkerEarningsSummaryResponse:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            from_date:
+              type: string
+              example: 27/07/2026
+            to_date:
+              type: string
+              example: 10/08/2026
+            day_count:
+              type: integer
+              example: 15
+        total_earnings:
+          type: string
+          example: "4850.00"
+        daily:
+          type: array
+          description: Always 15 records, oldest to latest, with zero-filled days.
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                example: 27/07/2026
+              earnings:
+                type: string
+                example: "250.00"
+        details:
+          type: array
+          description: One record per Worker x Booth finalized earning, newest CompletedAt first.
+          items:
+            type: object
+            properties:
+              completed_at:
+                type: string
+                example: 10/08/2026 18:42:15
+              ticketNo:
+                type: string
+                example: TKT-20260810-001
+              license_plate:
+                type: string
+                example: ABC-1234
+              license_plate_province:
+                type: string
+                nullable: true
+                example: Bangkok
+              booth_count:
+                type: integer
+                example: 2
+              marketCode:
+                type: string
+                example: "1110"
+              marketName:
+                type: string
+                example: Market A
+              boothCode:
+                type: string
+                example: LX01
+              boothName:
+                type: string
+                nullable: true
+                example: Booth A
+              earnings:
+                type: string
+                description: Persisted TicketWorker.finalEarningAmount.
+                example: "150.00"
+    AdminAuditWorkerPerformancePeriod:
+      type: object
+      properties:
+        date_from:
+          type: string
+          format: date
+          example: "2026-08-11"
+        date_to:
+          type: string
+          format: date
+          example: "2026-08-11"
+        timezone:
+          type: string
+          example: Asia/Bangkok
+    AdminAuditWorkerPerformancePagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: Number of workers matching the selected period/filter after aggregation.
+          example: 2
+        total_pages:
+          type: integer
+          example: 1
+    AdminAuditWorkerPerformanceItem:
+      type: object
+      properties:
+        worker_code:
+          type: string
+          example: "001"
+        full_name:
+          type: string
+          example: Worker A
+        total_assigned_job_count:
+          type: integer
+          description: Count of assignments created for the worker in the selected Bangkok business-date period.
+          example: 12
+        accepted_job_count:
+          type: integer
+          description: Count of assignments accepted by the worker. Later scan timeout, completion, or admin cancel still count as accepted.
+          example: 10
+        accept_timeout_job_count:
+          type: integer
+          description: Count of assignments where the worker missed the accept deadline.
+          example: 2
+        scan_timeout_job_count:
+          type: integer
+          description: Count of accepted assignments where the worker missed the QR scan deadline.
+          example: 1
+        completed_job_count:
+          type: integer
+          description: Count of assignments that ended as COMPLETED.
+          example: 8
+        admin_cancelled_job_count:
+          type: integer
+          description: Count of assignments cancelled by Admin operations.
+          example: 1
+        accept_rate:
+          type: string
+          nullable: true
+          description: AcceptedJobCount / (AcceptedJobCount + AcceptTimeoutJobCount) * 100. Null when there is no decided accept opportunity.
+          example: "83.33"
+    AdminAuditWorkerPerformanceResponse:
+      type: object
+      properties:
+        period:
+          $ref: "#/components/schemas/AdminAuditWorkerPerformancePeriod"
+        pagination:
+          $ref: "#/components/schemas/AdminAuditWorkerPerformancePagination"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAuditWorkerPerformanceItem"
+    AdminAuditEventItem:
+      type: object
+      description: >
+        Unified audit event projected from existing transactional sources (VehicleJob,
+        GateRequestLog, DriverSession, WorkerAssignmentEvent, TicketCompletionSubmission,
+        TicketRating, MessageDeliveryLog, AdminActionLog, SecurityAuditLog — see 27.12). No
+        central audit_events table exists — this is a merged read view.
+      properties:
+        event_id:
+          type: string
+          description: Stable id composed from source + primary key (+ sub-event suffix). Not a DB UUID.
+          example: "admin_action:982"
+        event_type:
+          type: string
+          example: scan_timer_extended
+        actor_type:
+          type: string
+          enum:
+            - system
+            - admin
+            - worker
+            - driver
+            - vendor
+            - gate
+          example: admin
+        actor_id:
+          type: string
+          nullable: true
+          description: Internal id of the actor (Account id for admin/worker, LINE user id for vendor). Null when the source has no actor identity (system/gate/driver).
+          example: "15"
+        vehicle_job_id:
+          type: string
+          nullable: true
+          example: "120"
+        market_job_id:
+          type: string
+          nullable: true
+        ticket_id:
+          type: string
+          nullable: true
+        assignment_id:
+          type: string
+          nullable: true
+          example: "455"
+        worker_id:
+          type: string
+          nullable: true
+          description: Internal Account id of the worker involved, when the event concerns exactly one worker. Null for multi-worker events (see metadata for worker_account_ids/worker_codes instead).
+        reason_code:
+          type: string
+          nullable: true
+        reason_text:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: >
+            Free-form context, including business codes for search/display — ticketNumber
+            (VehicleJob), ticketNo/marketCode/marketName (MarketJob), boothCode/boothName
+            (GateTicket, on completion submission and ticket rating events where actor_type may
+            be vendor), workerCode (Account.username of the worker involved), and
+            actorCode/actorName (Account.username/full_name of the admin actor, when actor_type
+            is admin). Frontend uses these to build a human-readable business reference instead
+            of showing raw internal ids — for a vendor actor, prefer boothName · boothCode over
+            the LINE user id in actor_id. On SecurityAuditLog events (27.12, requires audit:read
+            — see the endpoint description) additionally carries outcome (success/failure),
+            sessionId, ipAddress, userAgent, failureCode
+            (unknown_username/invalid_password/account_inactive, on auth_login_failed only),
+            attemptedUsername (the raw username typed at login, only when the identity could not
+            be resolved to any admin or worker account — never conflated with actorCode/workerCode
+            of a resolved actor), and — on the account/settings/gate-client/mobile-version mutation
+            events — targetType/targetAccountId/targetWorkerId/targetClientId/targetVersionId
+            identifying what was changed. auth_session_revoked (27.14.1, written in the same
+            transaction as auth_force_login) additionally carries revoke_source ("force_login")
+            and new_session_id, referencing the session created by that same auth_force_login —
+            trace the pair back to each other via the shared requestId instead. Never contains
+            passwords, full tokens, session secrets, or gate client secrets/hashes.
+          example:
+            minutes: 15
+            assignment_ids: [455]
+            ticketNumber: "20261234567890"
+            marketCode: "MKT-001"
+            marketName: "ตลาดไท"
+            boothName: "ร้านผักสด A"
+            boothCode: "GV3/98"
+            actorCode: "admin01"
+            actorName: "สมชาย ใจดี"
+        before:
+          type: object
+          additionalProperties: true
+          description: >
+            State of the changed field(s) immediately before this event, captured at the moment
+            of the operation — never derived after the fact from current state or updated_at.
+            Only present when the source actually recorded a prior value; omitted (not present,
+            not null) for event types that don't track before/after, and omitted for this one
+            occurrence when there was no prior value to record (e.g. the worker's very first
+            forced status change, which has no earlier queue status, or a *_created event, which
+            has nothing before it). Populated for worker_force_status_changed
+            ({ "status": "..." }) and — only on the *_updated Security Audit mutation events, and
+            only for the field(s) that actually changed — system_settings_updated,
+            gate_client_updated, admin_account_updated, admin_permissions_changed,
+            admin_status_changed, worker_account_updated, admin_profile_updated, and
+            mobile_app_version_updated.
+          example:
+            status: ready
+        after:
+          type: object
+          additionalProperties: true
+          description: >
+            State of the changed field(s) immediately after this event succeeded. Same presence
+            rules as before, plus the *_created Security Audit mutation events
+            (gate_client_created, admin_account_created, worker_account_created,
+            mobile_app_version_created), which populate after with no matching before since
+            nothing existed prior to the create.
+          example:
+            status: open_app
+        occurred_at:
+          type: string
+          format: date-time
+    AdminAuditEventsSummary:
+      type: object
+      properties:
+        unique_vehicle_count:
+          type: integer
+          example: 18
+        with_reason_count:
+          type: integer
+          example: 12
+        actor_type_counts:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            system: 70
+            admin: 20
+            worker: 45
+            driver: 4
+            vendor: 5
+            gate: 1
+        event_type_counts:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            worker_assigned: 30
+            worker_accepted: 25
+            worker_accept_timeout: 5
+    AdminAuditEventsPagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 145
+        total_pages:
+          type: integer
+          example: 8
+    AdminAuditEventsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAuditEventItem"
+        pagination:
+          $ref: "#/components/schemas/AdminAuditEventsPagination"
+        summary:
+          $ref: "#/components/schemas/AdminAuditEventsSummary"
+    WorkerStatusResponse:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Worker Name
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000142
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000142.jpg
+        status:
+          type: string
+          description: Worker UI status. Internal queue values are mapped to open_app, ready, assigned, waiting_team, working, or break.
+          enum:
+            - open_app
+            - ready
+            - assigned
+            - waiting_team
+            - working
+            - break
+          example: break
+        today_job_count:
+          type: integer
+          example: 3
+        break_count_used:
+          type: integer
+          example: 1
+        completed_job_count:
+          type: integer
+          example: 2
+        nationality:
+          type: string
+          nullable: true
+          enum:
+            - Myanmar
+            - Cambodia
+          example: Myanmar
+        work_start_date:
+          type: string
+          nullable: true
+          format: date
+          example: 2024-07-15
+        phone:
+          type: string
+          nullable: true
+          example: 081-234-5678
+        shift:
+          $ref: "#/components/schemas/ProfileCardShift"
+        shift_active:
+          type: boolean
+          description: >
+            True only when BOTH conditions hold: (1) the worker is currently inside their
+            assigned shift time window — the same condition POST /api/workers/me/online checks
+            before throwing 403 OUTSIDE_WORK_SHIFT — and (2) the worker still has eligibility for
+            this shift instance per their WorkerShiftAttendance record (has not already ended/
+            closed this shift). Being inside the shift time alone is not enough — a worker who
+            already ended their shift shows false immediately, without waiting for the shift time
+            window itself to end. Lets the app enable/disable the Online button without
+            recomputing either check itself.
+          example: true
+        current_job:
+          allOf:
+            - $ref: "#/components/schemas/WorkerCurrentJob"
+          nullable: true
+          description: Present for assigned, waiting_team, and working statuses. Not included for open_app, ready, or break.
+        break_until:
+          type: string
+          format: date-time
+          description: Present only when status is break.
+          example: 2026-07-14T05:30:00.000Z
+        break_until_unix_ms:
+          type: integer
+          format: int64
+          nullable: true
+          description: Same value as break_until, represented as Unix timestamp in milliseconds for countdown timers. Present only when status is break.
+          example: 1784007000000
+        remaining_break_time:
+          type: object
+          description: Present only when status is break.
+          properties:
+            total_seconds:
+              type: integer
+              example: 420
+            minutes:
+              type: integer
+              example: 7
+            seconds:
+              type: integer
+              example: 0
+            text:
+              type: string
+              example: 7 minutes
+    AdminWorkerStatusResponse:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: MANY MANY
+        worker_code:
+          type: string
+          nullable: true
+          example: MN000115
+        shirt_number:
+          type: string
+          nullable: true
+          example: "115"
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000115.jpg
+        shift_name:
+          type: string
+          nullable: true
+          example: Morning shift
+        latest_activity_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Latest timestamp from the current worker flow step, such as app heartbeat, queue ready time, assignment accepted/scanned time, or latest status update.
+          example: 2026-07-12T14:40:07.759Z
+        status_entered_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Timestamp used to sort workers inside the current status column. open_app uses status update or heartbeat time, ready uses ready time, assigned uses accepted/assignment time, working uses scanned/work time, and break uses break start time.
+          example: 2026-07-12T14:35:00.000Z
+        queue_position:
+          type: integer
+          nullable: true
+          description: One-based Redis ready queue position. Only set for ready workers.
+          example: 1
+        socket_connected:
+          type: boolean
+          description: True when the worker currently has an open Worker WebSocket connection. Ready or assigned workers can remain visible with false after a network disconnect.
+          example: false
+        status:
+          type: string
+          description: The only board status returned by this API. UI maps this value to a column.
+          enum:
+            - open_app
+            - ready
+            - assigned
+            - waiting_team
+            - working
+            - break
+          example: ready
+        assignment:
+          type: object
+          nullable: true
+          description: The worker's current vehicle job assignment, or null when the worker has no active assignment.
+          properties:
+            ticket_number:
+              type: string
+              nullable: true
+              description: TicketNumber (14-digit) of the vehicle job this assignment belongs to.
+              example: "12345678901234"
+            status:
+              type: string
+              description: Raw assignment status as stored by the backend, not normalized.
+              enum:
+                - PENDING
+                - ACCEPTED
+                - SCANNED
+                - WORKING
+                - DELIVERED
+                - REJECT
+                - COMPLETED
+                - RELEASED
+                - CANCELLED
+                - TIMEOUT
+              example: PENDING
+            created_at:
+              type: string
+              format: date-time
+              example: 2026-07-12T14:30:00.000Z
+            accepted_at:
+              type: string
+              nullable: true
+              format: date-time
+              description: Actual timestamp when the worker pressed accept (transitioned PENDING to ACCEPTED). Null when not yet accepted.
+              example: null
+            accept_deadline_at:
+              type: string
+              nullable: true
+              format: date-time
+              description: Deadline by which the worker must accept before the assignment times out. Null when the assignment is not PENDING.
+              example: 2026-07-12T14:32:00.000Z
+            accept_deadline_unix_ms:
+              type: integer
+              nullable: true
+              description: Same deadline as accept_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
+              example: 1752330720000
+            scan_deadline_at:
+              type: string
+              nullable: true
+              format: date-time
+              example: null
+    AdminWorkerStatusListResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            total:
+              type: integer
+            open_app:
+              type: integer
+            ready:
+              type: integer
+            assigned:
+              type: integer
+            waiting_team:
+              type: integer
+            working:
+              type: integer
+            break:
+              type: integer
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminWorkerStatusResponse"
+    AdminForceWorkerStatusRequest:
+      type: object
+      required:
+        - status
+        - reason_code
+      properties:
+        status:
+          type: string
+          enum:
+            - open_app
+            - ready
+            - break
+          example: open_app
+        reason_code:
+          type: string
+          example: IDLE_TOO_LONG
+        reason_text:
+          type: string
+          nullable: true
+          example: Worker contacted admin for status correction.
+    AdminForceWorkerStatusResponse:
+      type: object
+      properties:
+        Message:
+          type: string
+          example: Worker status forced successfully.
+        FullName:
+          type: string
+          example: MANY MANY
+        WorkerCode:
+          type: string
+          nullable: true
+          example: MN000115
+        Status:
+          type: string
+          enum:
+            - open_app
+            - ready
+            - assigned
+            - waiting_team
+            - working
+            - break
+          example: open_app

@@ -1,0 +1,344 @@
+// Import Library
+import { Prisma } from "@prisma/client";
+
+// Import Dependencies
+import { TERMINAL_TICKET_STATUSES, VEHICLE_JOB_STATUS } from "../../constants/job-status";
+import { countScannedAssignments } from "./vehicle-job-assignment.repository";
+import { mapGateTicket, mapMarketJob, mapTicketProduct, mapVehicleJob } from "./mappers";
+import { client, requireDto } from "./repository-utils";
+
+// Import Types
+import type { DbConnection } from "../../types/shared/common.type";
+import type { CurrentTicketProgressDto, VehicleJobDetailResponse, VehicleJobDto, VehicleWorkReadinessDto } from "../../types/worker.type";
+
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function แปลง vehicle job detail จาก DB
+export function mapVehicleJobDetail(
+  record: Prisma.VehicleJobGetPayload<{
+    include: {
+      marketJobs: {
+        include: {
+          tickets: {
+            include: {
+              products: true;
+            };
+          };
+        };
+      };
+    };
+  }>,
+): VehicleJobDetailResponse {
+  return {
+    vehicle_job: requireDto(mapVehicleJob(record), "vehicle job"),
+    markets: record.marketJobs.map((market) => ({
+      ...requireDto(mapMarketJob(market), "market job"),
+      booths: market.tickets.map((ticket) => ({
+        ...requireDto(mapGateTicket(ticket), "gate ticket"),
+        products: ticket.products.map((product) =>
+          requireDto(mapTicketProduct(product), "ticket product"),
+        ),
+      })),
+    })),
+  };
+}
+
+// Function ค้นหา vehicle job ตาม ID จาก DB
+export async function findVehicleJobById(
+  id: number,
+  connection?: DbConnection,
+): Promise<VehicleJobDto | null> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      id,
+    },
+  });
+
+  return mapVehicleJob(vehicleJob);
+}
+
+// Function ค้นหา vehicle job (TicketNumber) ตาม ref จาก DB
+export async function findVehicleJobByRef(
+  ticketNumber: string,
+  connection?: DbConnection,
+): Promise<VehicleJobDto | null> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      ticketNumber,
+    },
+  });
+
+  return mapVehicleJob(vehicleJob);
+}
+
+// Function ดึง vehicle job detail จาก DB
+export async function getVehicleJobDetail(
+  id: number,
+  connection?: DbConnection,
+): Promise<VehicleJobDetailResponse | null> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      id,
+    },
+    include: {
+      marketJobs: {
+        orderBy: {
+          id: "asc",
+        },
+        include: {
+          tickets: {
+            orderBy: {
+              id: "asc",
+            },
+            include: {
+              products: {
+                orderBy: {
+                  id: "asc",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return vehicleJob ? mapVehicleJobDetail(vehicleJob) : null;
+}
+
+export async function markVehicleJobInProgress(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<VehicleJobDto> {
+  const db = client(connection);
+
+  // Function ตั้ง workStartedAt ครั้งแรกที่รถเริ่มทำงานจริง
+  await db.vehicleJob.updateMany({
+    where: {
+      id: vehicleJobId,
+      workStartedAt: null,
+    },
+    data: {
+      workStartedAt: new Date(),
+    },
+  });
+
+  const vehicleJob = await db.vehicleJob.update({
+    where: {
+      id: vehicleJobId,
+    },
+    data: {
+      status: VEHICLE_JOB_STATUS.WORKING,
+    },
+  });
+
+  return requireDto(mapVehicleJob(vehicleJob), "vehicle job progress");
+}
+
+export async function updateMarketJobStatus(
+  marketJobId: number,
+  status: string,
+  connection?: DbConnection,
+): Promise<void> {
+  const db = client(connection);
+
+  await db.marketJob.update({
+    where: {
+      id: marketJobId,
+    },
+    data: {
+      status,
+    },
+  });
+}
+
+export async function updateGateTicketStatus(
+  ticketId: number,
+  status: string,
+  connection?: DbConnection,
+): Promise<CurrentTicketProgressDto["ticket"]> {
+  const db = client(connection);
+  const ticket = await db.gateTicket.update({
+    where: {
+      id: ticketId,
+    },
+    data: {
+      status,
+    },
+  });
+
+  return requireDto(mapGateTicket(ticket), "gate ticket status update");
+}
+
+export async function findCurrentOpenTicketByVehicleJob(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<CurrentTicketProgressDto | null> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      id: vehicleJobId,
+    },
+    include: {
+      marketJobs: {
+        orderBy: {
+          id: "asc",
+        },
+        include: {
+          tickets: {
+            orderBy: {
+              id: "asc",
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!vehicleJob) {
+    return null;
+  }
+
+  for (const market of vehicleJob.marketJobs) {
+    const ticket = market.tickets.find(
+      (candidate) => !TERMINAL_TICKET_STATUSES.includes(candidate.status),
+    );
+
+    if (!ticket) {
+      continue;
+    }
+
+    return {
+      ticket: requireDto(mapGateTicket(ticket), "current gate ticket"),
+      marketCode: market.marketCode,
+      marketName: market.marketName,
+    };
+  }
+
+  return null;
+}
+
+export async function getVehicleWorkReadiness(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<VehicleWorkReadinessDto> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.findUnique({
+    where: {
+      id: vehicleJobId,
+    },
+    select: {
+      workersRequired: true,
+    },
+  });
+  const workersRequired = vehicleJob?.workersRequired ?? 0;
+  const checkedInCount = await countScannedAssignments(
+    vehicleJobId,
+    connection,
+  );
+  const remainingCount = Math.max(0, workersRequired - checkedInCount);
+
+  return {
+    workers_required: workersRequired,
+    checked_in_count: checkedInCount,
+    remaining_count: remainingCount,
+    is_ready: workersRequired > 0 && checkedInCount >= workersRequired,
+  };
+}
+
+export async function listDispatchableVehicleJobs(
+  connection?: DbConnection,
+): Promise<VehicleJobDto[]> {
+  const db = client(connection);
+  const vehicleJobs = await db.vehicleJob.findMany({
+    where: {
+      // status: WORKING เท่านั้น (ไม่รวม RELEASED) — งานที่ release-workers ปล่อยทีมกลับคิวไปแล้ว
+      // จะไม่ถูกดึง worker ใหม่กลับเข้ามาซ้ำ จนกว่า Gate จะเพิ่ม booth ใหม่ (เปิด dispatch คืนให้เอง)
+      // หรือ Admin เปิด Dispatch กลับเองผ่าน /wait
+      status: VEHICLE_JOB_STATUS.WORKING,
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+
+  return vehicleJobs
+    .map((vehicleJob) => mapVehicleJob(vehicleJob))
+    .filter((vehicleJob): vehicleJob is VehicleJobDto => vehicleJob !== null);
+}
+
+export async function findVehicleJobLifecycleState(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<Prisma.VehicleJobGetPayload<{
+  include: {
+    marketJobs: {
+      include: {
+        tickets: true;
+      };
+    };
+    assignments: true;
+  };
+}> | null> {
+  const db = client(connection);
+
+  return db.vehicleJob.findUnique({
+    where: {
+      id: vehicleJobId,
+    },
+    include: {
+      marketJobs: {
+        include: {
+          tickets: true,
+        },
+      },
+      assignments: true,
+    },
+  });
+}
+
+export async function updateVehicleJobStatus(
+  vehicleJobId: number,
+  status: string,
+  connection?: DbConnection,
+): Promise<VehicleJobDto> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.update({
+    where: {
+      id: vehicleJobId,
+    },
+    data: {
+      status,
+      // Function ตั้ง completedAt จากจุด lifecycle กลางเท่านั้น
+      ...(status === VEHICLE_JOB_STATUS.COMPLETED && {
+        completedAt: new Date(),
+      }),
+    },
+  });
+
+  return requireDto(mapVehicleJob(vehicleJob), "vehicle job status update");
+}
+
+// Function สลับ dispatchNow และ status ของ VehicleJob จากฝั่ง Admin
+export async function setVehicleJobDispatch(
+  vehicleJobId: number,
+  dispatchNow: boolean,
+  status: string,
+  connection?: DbConnection,
+): Promise<VehicleJobDto> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.update({
+    where: {
+      id: vehicleJobId,
+    },
+    data: {
+      dispatchNow,
+      status,
+    },
+  });
+
+  return requireDto(mapVehicleJob(vehicleJob), "vehicle job dispatch update");
+}

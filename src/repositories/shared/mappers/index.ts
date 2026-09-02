@@ -1,0 +1,436 @@
+// Import Library
+import type { Account, AdminActionLog, DriverSession, GateTicket, MarketJob, MasterWorker, TicketCompletionSubmission, TicketProduct, TicketWorker, UserSession, VehicleJob, VehicleJobAssignment, WorkerSession } from "@prisma/client";
+
+// Import Types
+import type { SessionDto } from "../../../types/auth.type";
+import type { DriverSessionDto } from "../../../types/driver.type";
+import type { GateTicketDto, MarketJobDto, TicketCompletionSubmissionDto, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto } from "../../../types/worker.type";
+import type { AdminActionLogDto, AdminActionType } from "../../../types/shared/admin-action-log.type";
+import { ACCOUNT_ROLES, type AccountDto, type AccountRole, type MasterWorkerDto, type MasterWorkerSource, type SafeAccountDto, type SafeMasterWorkerDto, type WorkScheduleDto } from "../../../types/admin-workers.type";
+
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function แปลงวันที่จาก DB เป็น ISO string สำหรับ DTO
+function toIsoString(value: Date): string;
+function toIsoString(value: string): string;
+function toIsoString(value: Date | null): string | null;
+function toIsoString(value: Date | string | null): string | null {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return value;
+}
+
+// Function จัดการ เป็น date string จาก DB
+function toDateString(value: Date | string): string {
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  return value.trim().slice(0, 10);
+}
+
+// Function ตัดข้อมูล sensitive ออกจาก account response
+export function sanitizeAccount(account: AccountDto): SafeAccountDto;
+export function sanitizeAccount(account: null): null;
+export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | null {
+  if (!account) {
+    return null;
+  }
+
+  const { password_hash: _passwordHash, ...safeAccount } = account;
+
+  return safeAccount;
+}
+
+// Function ตัดข้อมูล sensitive ออกจาก master worker response
+export function sanitizeMasterWorker(worker: MasterWorkerDto): SafeMasterWorkerDto;
+export function sanitizeMasterWorker(worker: null): null;
+export function sanitizeMasterWorker(
+  worker: MasterWorkerDto | null
+): SafeMasterWorkerDto | null {
+  if (!worker) {
+    return null;
+  }
+
+  const { password_hash: _passwordHash, ...safeWorker } = worker;
+
+  return safeWorker;
+}
+
+// Function จัดการ เป็น account role จาก DB
+function toAccountRole(role: string): AccountRole {
+  if ((ACCOUNT_ROLES as readonly string[]).includes(role)) {
+    return role as AccountRole;
+  }
+
+  throw new Error(`Unsupported account role: ${role}`);
+}
+
+// Function จัดการ เป็น master worker source จาก DB
+function toMasterWorkerSource(source: string): MasterWorkerSource {
+  if (source === "admin_created") {
+    return "admin_created";
+  }
+
+  return "master_sync";
+}
+
+// Function แปลง account (Admin) จาก DB
+export function mapAccount(record: Account | null): AccountDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    username: record.username,
+    password_hash: record.passwordHash,
+    role: toAccountRole(record.role),
+    status: record.status,
+    full_name: record.fullName,
+    position: record.position,
+    email: record.email,
+    phone: record.phone,
+    image_url: record.imageUrl,
+    lang: record.lang,
+    permission_level: record.permissionLevel,
+    created_by: record.createdBy,
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง Picture (Bytes) เป็น base64 string สำหรับ response — ห้ามส่ง Node Buffer object
+// ดิบออกไปตรงๆ ตามข้อ 29 ของ worker.md, Frontend เป็นคนประกอบ data URL เอง
+function toBase64Picture(value: Uint8Array | null): string | null {
+  return value ? Buffer.from(value).toString("base64") : null;
+}
+
+// Function แปลง master worker จาก DB
+export function mapMasterWorker(record: MasterWorker | null): MasterWorkerDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    labor_id: record.laborId,
+    labor_code: record.laborCode,
+    prefix: record.prefix,
+    name: record.name,
+    full_name: record.fullName,
+    labor_status: record.laborStatus,
+    status: record.status,
+    work_code: record.workCode,
+    nationality: record.nationality,
+    telephone: record.telephone,
+    work_start_date: record.workStartDate ? toDateString(record.workStartDate) : null,
+    labor_color: record.laborColor,
+    labor_coat: record.laborCoat,
+    coat_no: record.coatNo,
+    time_work: record.timeWork,
+    time_in: record.timeIn,
+    time_out: record.timeOut,
+    picture: toBase64Picture(record.picture),
+    image_url: record.imageUrl,
+    update_date: toIsoString(record.updateDate),
+    shift_no: record.shiftNo,
+    shift_start_time: record.shiftStartTime,
+    shift_end_time: record.shiftEndTime,
+    lang: record.lang,
+    source: toMasterWorkerSource(record.source),
+    password_hash: record.passwordHash,
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง shift assignment ปัจจุบันบน master_workers เป็น schedule DTO เดิม (schedule ไม่ใช่
+// entity แยก เก็บเป็น field บน MasterWorker เอง เหมือนที่เคยเป็น Account มาก่อน)
+export function mapWorkerSchedule(record: MasterWorker | null): WorkScheduleDto | null {
+  if (
+    !record ||
+    record.shiftNo === null ||
+    record.shiftStartTime === null ||
+    record.shiftEndTime === null
+  ) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    worker_id: record.id,
+    shift_no: record.shiftNo,
+    work_date: record.workStartDate ? toDateString(record.workStartDate) : toDateString(record.createdAt),
+    shift_start_time: record.shiftStartTime,
+    shift_end_time: record.shiftEndTime,
+    is_current: true,
+    created_by: null,
+    updated_by: null,
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง session (Admin) จาก DB
+export function mapSession(record: UserSession | null): SessionDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    account_id: record.accountId,
+    refresh_token_hash: record.refreshTokenHash,
+    device_id: record.deviceId,
+    device_name: record.deviceName,
+    ip_address: record.ipAddress,
+    user_agent: record.userAgent,
+    is_active: record.isActive,
+    last_active_at: toIsoString(record.lastActiveAt),
+    expires_at: toIsoString(record.expiresAt),
+    revoked_at: toIsoString(record.revokedAt),
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง session (Worker) จาก DB — คืน SessionDto shape เดียวกับ mapSession เพื่อให้ทุกจุดที่
+// อ่าน req.session (worker-push.service, controllers ฯลฯ) ใช้โค้ดเดียวกันได้ไม่ว่า session จะมาจาก
+// user_sessions (Admin) หรือ worker_sessions (Worker) — account_id ในที่นี้คือ MasterWorker.id
+export function mapWorkerSession(record: WorkerSession | null): SessionDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    account_id: record.workerId,
+    refresh_token_hash: record.refreshTokenHash,
+    device_id: record.deviceId,
+    device_name: record.deviceName,
+    ip_address: record.ipAddress,
+    user_agent: record.userAgent,
+    is_active: record.isActive,
+    last_active_at: toIsoString(record.lastActiveAt),
+    expires_at: toIsoString(record.expiresAt),
+    revoked_at: toIsoString(record.revokedAt),
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง vehicle job (TicketNumber) จาก DB
+export function mapVehicleJob(record: VehicleJob | null): VehicleJobDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    ticket_number: record.ticketNumber,
+    license_plate: record.licensePlate,
+    license_plate_province: record.licensePlateProvince,
+    vehicle_type: record.vehicleType,
+    workers_required: record.workersRequired,
+    dispatch_now: record.dispatchNow,
+    status: record.status,
+    work_started_at: record.workStartedAt ? toIsoString(record.workStartedAt) : null,
+    driver_qr_token: record.driverQrToken,
+    expected_ticket_count: record.expectedTicketCount,
+    tickets_closed_at: record.ticketsClosedAt ? toIsoString(record.ticketsClosedAt) : null,
+    completed_at: record.completedAt ? toIsoString(record.completedAt) : null,
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง market job (Business Ticket) จาก DB
+export function mapMarketJob(record: MarketJob | null): MarketJobDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    vehicle_job_id: record.vehicleJobId,
+    ticket_no: record.ticketNo,
+    ticket_created_at: toIsoString(record.ticketCreatedAt),
+    booth_count: record.boothCount,
+    gate_transaction_ref: record.gateTransactionRef,
+    workers_required: record.workersRequired,
+    marketCode: record.marketCode,
+    marketName: record.marketName,
+    dropoff_point: record.dropoffPoint,
+    status: record.status,
+    worker_roster_locked_at: record.workerRosterLockedAt ? toIsoString(record.workerRosterLockedAt) : null,
+    final_stall_amount: record.finalStallAmount?.toFixed(2) ?? null,
+    financialized_at: record.financializedAt ? toIsoString(record.financializedAt) : null,
+    completed_at: record.completedAt ? toIsoString(record.completedAt) : null,
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง Gate ticket จาก DB
+export function mapGateTicket(record: GateTicket | null): GateTicketDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    vehicle_job_id: record.vehicleJobId,
+    market_job_id: record.marketJobId,
+    boothCode: record.boothCode,
+    boothName: record.boothName,
+    vendor_line_id: record.vendorLineId,
+    reject_reason: record.rejectReason,
+    status: record.status,
+    confirmation_status: record.status,
+    final_stall_amount: record.finalStallAmount?.toFixed(2) ?? null,
+    completed_at: record.completedAt ? toIsoString(record.completedAt) : null,
+    financialized_at: record.financializedAt ? toIsoString(record.financializedAt) : null,
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง ticket product จาก DB
+export function mapTicketProduct(record: TicketProduct | null): TicketProductDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    ticket_id: record.ticketId,
+    productCode: record.productCode,
+    productName: record.productName,
+    packageCode: record.packageCode,
+    packageName: record.packageName,
+    quantity: record.quantity.toString(),
+    confirmed_quantity: record.confirmedQuantity?.toString() ?? null,
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง ticket worker (roster membership บน Business Ticket) จาก DB
+export function mapTicketWorker(record: TicketWorker | null): TicketWorkerDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    market_job_id: record.marketJobId,
+    worker_id: record.workerId,
+    status: record.status,
+    final_earning_amount: record.finalEarningAmount?.toFixed(2) ?? null,
+    joined_at: toIsoString(record.joinedAt),
+    cancelled_at: record.cancelledAt
+      ? toIsoString(record.cancelledAt)
+      : null,
+    completed_at: record.completedAt
+      ? toIsoString(record.completedAt)
+      : null,
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง ticket completion submission จาก DB
+export function mapTicketCompletionSubmission(
+  record: TicketCompletionSubmission | null
+): TicketCompletionSubmissionDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    ticket_id: record.ticketId,
+    submitted_by_account_id: record.submittedByAccountId,
+    submitted_by_worker_id: record.submittedByWorkerId,
+    submitted_by_role: record.submittedByRole,
+    status: record.status,
+    confirmed_at: toIsoString(record.confirmedAt),
+    rejected_at: toIsoString(record.rejectedAt),
+    reject_reason: record.rejectReason,
+    resolved_by_line_user_id: record.resolvedByLineUserId,
+    worker_count_snapshot: record.workerCountSnapshot,
+    assignment_id: record.assignmentId,
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+
+// Function แปลง driver session จาก DB
+export function mapDriverSession(record: DriverSession | null): DriverSessionDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    vehicle_job_id: record.vehicleJobId,
+    session_token: record.sessionToken,
+    expires_at: toIsoString(record.expiresAt),
+    revoked_at: toIsoString(record.revokedAt),
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง vehicle job assignment จาก DB
+export function mapVehicleJobAssignment(
+  record: VehicleJobAssignment | null
+): VehicleJobAssignmentDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    vehicle_job_id: record.vehicleJobId,
+    worker_id: record.workerId,
+    status: record.status,
+    accept_deadline_at: toIsoString(record.acceptDeadlineAt),
+    scan_deadline_at: toIsoString(record.scanDeadlineAt),
+    accepted_at: toIsoString(record.acceptedAt),
+    scanned_at: toIsoString(record.scannedAt),
+    completed_at: toIsoString(record.completedAt),
+    released_at: toIsoString(record.releasedAt),
+    created_at: toIsoString(record.createdAt),
+    updated_at: toIsoString(record.updatedAt),
+  };
+}
+
+// Function แปลง admin action log จาก DB
+export function mapAdminActionLog(
+  record: (AdminActionLog & { actor?: Account | null }) | null
+): AdminActionLogDto | null {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    vehicle_job_id: record.vehicleJobId,
+    gate_ticket_id: record.gateTicketId,
+    market_job_id: record.marketJobId,
+    action_type: record.actionType as AdminActionType,
+    reason_code: record.reasonCode,
+    reason_text: record.reasonText,
+    actor_account_id: record.actorAccountId,
+    actor_worker_code: record.actor?.username ?? null,
+    actor_full_name: record.actor?.fullName ?? null,
+    actor_role: record.actor?.role ?? null,
+    metadata: (record.metadata as Record<string, unknown> | null) ?? null,
+    created_at: toIsoString(record.createdAt),
+  };
+}

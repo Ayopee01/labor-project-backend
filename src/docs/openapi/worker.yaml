@@ -1,0 +1,407 @@
+﻿paths:
+  /ws/workers:
+    get:
+      tags:
+        - Worker Application
+      summary: เชื่อมต่อ WebSocket ของ Worker Mobile
+      description: >
+        Worker Mobile เปิด WebSocket เพื่อรับงานและ event แบบ realtime เช่น งานใหม่ timeout การ check-in และผลยืนยันจาก Vendor โดย action หลักยังเรียกผ่าน REST API
+      operationId: connectWorkerWebSocket
+      security:
+        - bearerAuth: []
+      responses:
+        "101":
+          description: WebSocket connection upgraded successfully.
+        "401":
+          description: Missing or invalid access token/session.
+        "404":
+          description: WebSocket path not found.
+  /api/workers/app-version/check:
+    get:
+      tags:
+        - Worker Application
+      summary: ตรวจ version ที่ Worker Mobile ต้องใช้
+      description: >
+        Public API สำหรับให้ app เช็กก่อน login ว่า build ปัจจุบันยังใช้ได้หรือควรอัปเดต ระบบเทียบ BuildNumber กับ version ที่มีผลตามเวลา server
+      operationId: checkWorkerAppVersion
+      parameters:
+        - in: query
+          name: platform
+          schema:
+            type: string
+            enum: [android, ios]
+          description: Only the DownloadUrl for this platform is returned in Latest.DownloadUrl.
+        - in: query
+          name: version
+          schema:
+            type: string
+            example: "1.3.0"
+          description: Informational only — not used for comparison.
+        - in: query
+          name: build_number
+          schema:
+            type: integer
+            example: 10300
+          description: The worker app's own build number. This is the value actually compared against the effective version's BuildNumber.
+      responses:
+        "200":
+          description: Effective version check result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerAppVersionCheckResponse"
+  /api/workers/me/online:
+    post:
+      tags:
+        - Worker Application
+      summary: นำ Worker เข้าคิวพร้อมรับงาน
+      description: >
+        Worker ที่อยู่ในกะและเปิด WebSocket แล้วเรียกเพื่อเข้า Redis FIFO queue ถ้าออกจากกะหรือ offline แล้วจะกลับเข้าไม่ได้จนกะถัดไป
+      operationId: workerOnline
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker enters queue successfully. Response Code is WORKER_ONLINE_SUCCESS.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerOnlineResponse"
+        "403":
+          description: Worker is inactive, has no current schedule, or is outside the assigned shift time. OUTSIDE_WORK_SHIFT includes shift and remaining time details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Worker WebSocket is not connected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/offline:
+    post:
+      tags:
+        - Worker Application
+      summary: นำ Worker ออกจากคิวรับงาน
+      description: >
+        ปิดสถานะพร้อมรับงานของ Worker ในกะปัจจุบันและไม่ให้กลับเข้า queue เดิมอีกจนกะใหม่
+      operationId: workerOffline
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker leaves dispatch queue successfully. Response Code is WORKER_OFFLINE_SUCCESS.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerOnlineResponse"
+  /api/workers/me/break:
+    post:
+      tags:
+        - Worker Application
+      summary: ให้ Worker พักตามเวลาที่กำหนด
+      description: >
+        Worker ที่ยังไม่ถูก assign งานสามารถพักได้ตามจำนวนครั้งและเวลาที่ runtime settings กำหนด เมื่อครบเวลาจึงกลับเข้าคิวได้
+      operationId: workerBreak
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker break summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerBreakResponse"
+        "403":
+          description: Worker is inactive, has no current schedule, or is outside the assigned shift time. OUTSIDE_WORK_SHIFT includes shift and remaining time details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Worker is not ready, already assigned/working, or reached the break limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/status:
+    get:
+      tags:
+        - Worker Application
+      summary: ดูสถานะปัจจุบันของ Worker
+      description: >
+        คืน profile, กะทำงาน, สถานะ queue/assignment และงานปัจจุบันจากข้อมูลที่ persist ไว้ เพื่อให้ mobile restore หน้าจอได้หลังเปิด app ใหม่
+      operationId: getWorkerStatus
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker profile, current shift, current status, and daily counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerStatusResponse"
+  /api/workers/me/assignments/history:
+    get:
+      tags:
+        - Worker Application
+      summary: ดูประวัติงานของ Worker
+      description: >
+        คืนประวัติ assignment ของ Worker ที่ login อยู่ตามวันที่หรือช่วงวันที่ Asia/Bangkok พร้อม pagination เมื่อส่ง page หรือ limit
+      operationId: getWorkerAssignmentHistory
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date
+          required: false
+          schema:
+            type: string
+            format: date
+            example: "2026-08-14"
+          description: Single assignment-created date in YYYY-MM-DD format, interpreted in Asia/Bangkok time. Defaults to today's Bangkok date when date/date_from/date_to are omitted.
+        - in: query
+          name: date_from
+          required: false
+          schema:
+            type: string
+            format: date
+            example: "2026-08-01"
+          description: Inclusive start date for date range. Must be used together with date_to.
+        - in: query
+          name: date_to
+          required: false
+          schema:
+            type: string
+            format: date
+            example: "2026-08-14"
+          description: Inclusive end date for date range. Must be used together with date_from.
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+          description: Optional page number. If page or limit is sent, the response includes pagination metadata.
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+          description: Optional page size. Defaults to 20 when page or limit is sent.
+      responses:
+        "200":
+          description: Worker assignment history for the selected date or date range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerAssignmentHistoryResponse"
+        "400":
+          description: Invalid or missing date/date range query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/earnings/summary:
+    get:
+      tags:
+        - Worker Application
+      summary: ดูสรุปรายได้ Worker 15 วันล่าสุด
+      description: >
+        คืนรายได้ที่ finalize แล้วของ Worker จาก TicketWorker.finalEarningAmount โดยไม่นับวันปัจจุบัน
+      operationId: getWorkerEarningsSummary
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Worker earnings summary for the latest 15 completed calendar days.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerEarningsSummaryResponse"
+        "400":
+          description: Query parameters are not supported.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/notifications:
+    get:
+      tags:
+        - Worker Application
+      summary: ดูประวัติ notification ของ Worker
+      description: >
+        คืนรายการ notification ที่ backend เคยบันทึกไว้สำหรับ inbox ใน Worker Mobile
+      operationId: listWorkerNotifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        "200":
+          description: Worker notification history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerNotificationListResponse"
+        "401":
+          description: Worker token is invalid, expired, or session was revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/assignments/{ticketNumber}/accept:
+    post:
+      tags:
+        - Worker Application
+      summary: รับงานที่ถูก assign ให้ Worker
+      description: >
+        Worker กดยอมรับงานภายใน accept deadline ระบบบันทึกเวลา accept และคืนรายละเอียดงานพร้อม scan deadline สำหรับขั้นตอน check-in
+      operationId: acceptWorkerAssignment
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: ticketNumber
+          description: ticketNumber from the WORKER_ASSIGNED push/socket payload.
+          required: true
+          schema:
+            type: string
+            example: TRUCK-20260804-001
+      responses:
+        "200":
+          description: Accepted assignment and job detail for the worker job screen.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerAssignmentAcceptResponse"
+  /api/workers/me/assignments/check-in-barcode:
+    post:
+      tags:
+        - Worker Application
+      summary: check-in งานด้วย barcode TicketNo
+      description: >
+        Worker สแกน TicketNo ของ Business Ticket เพื่อยืนยันถึงหน้างาน ระบบผูกกับ assignment ปัจจุบันและเปลี่ยนสถานะเป็น waiting_team หรือ working เมื่อทั้งทีมพร้อม
+      operationId: checkInWorkerAssignmentBarcode
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerCheckInBarcodeRequest"
+      responses:
+        "200":
+          description: Checked-in assignment status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerAssignmentCheckInResponse"
+        "404":
+          description: Assignment not found, or ticket_no does not match any Business Ticket under this worker's vehicle.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Assignment is not accepted or scan window expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/products/{productCode}/packages:
+    get:
+      tags:
+        - Worker Application
+      summary: ดู package ที่เปลี่ยนได้ของสินค้า
+      description: >
+        ใช้ตอน Worker พบว่าสินค้าเป็น package อื่นจากที่ Gate ส่งมา ระบบคืน PackageCode ที่ active สำหรับ ProductCode นั้น
+      operationId: getWorkerProductPackageOptions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: productCode
+          required: true
+          schema:
+            type: string
+            example: "02020300"
+          description: ProductCode of the product line being edited, from the ticket's existing products.
+      responses:
+        "200":
+          description: Active package options for this ProductCode.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerProductPackageOptionsResponse"
+        "404":
+          description: No active product matches this ProductCode.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/workers/me/assignments/tickets/complete:
+    post:
+      tags:
+        - Worker Application
+      summary: ส่งยอดนับสินค้าของ Booth
+      description: >
+        Worker ส่งจำนวนสินค้าที่นับจริงตาม TicketNo และ BoothCode ระบบตรวจทุก product แล้วส่งให้ Vendor ยืนยันก่อน finalize ยอดเงิน
+      operationId: completeWorkerAssignmentTicketWithBodyBoothCode
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerTicketCompleteWithBoothRequest"
+      responses:
+        "200":
+          description: Ticket completion submitted and waiting for vendor confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketCompletionResponse"
+        "403":
+          description: Worker is not assigned to this ticket.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Worker has no active assignment, or ticket_no/boothCode does not match any Business Ticket under this worker's current vehicle.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Ticket is already waiting for vendor confirmation, closed, or not ready for completion; or, when switching a product's package, the new PackageCode has no active/unambiguous master data or no rate is configured for it (PRODUCT_PACKAGE_NOT_FOUND, AMBIGUOUS_PRODUCT_PACKAGE, RATE_NOT_FOUND).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
