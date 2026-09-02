@@ -44,6 +44,10 @@ export const state = {
 
   adminActionLogs: [] as AdminActionLogRecord[],
   securityAuditLogs: [] as SecurityAuditLogRecord[],
+  // 27.14.2 — toggle เพื่อจำลอง audit write ล้มเหลว (เช่น DB error จริง) สำหรับ test ที่ verify ว่า
+  // mutation ที่เขียนคู่กับ audit ใน transaction เดียวกันต้อง fail ไปด้วย ไม่ใช่แค่ audit พังแต่
+  // mutation สำเร็จค้างไว้
+  forceSecurityAuditLogWriteFailure: false,
   ticketRatings: [] as TicketRatingRecord[],
   lineActionTokens: [] as LineActionTokenRecord[],
   gateRequestLogs: [] as GateRequestLogRecord[],

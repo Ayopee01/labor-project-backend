@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 
 import { buildWorkScheduleShiftInstanceKey } from "../../src/utils/shift";
-import { addAdmin, addDispatchableJob, addMobileAppVersion, addPendingAssignment, addTicketForVehicleJob, addWorker, getPassword, getTicketCompletionService, getTicketFinancialService, getWorkerDispatch, getWorkerQueue, resetRouteTestState, restoreRouteTestLoader, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
+import { addAdmin, addDispatchableJob, addMobileAppVersion, addPendingAssignment, addTicketForVehicleJob, addWorker, getPassword, getTicketCompletionService, getTicketFinancialService, getWorkerDispatch, getWorkerQueue, resetRouteTestState, restoreRouteTestLoader, signLineWebhookBody, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
 
 let server: TestServer;
 let password: typeof import("../../src/utils/password");
@@ -2408,20 +2408,22 @@ test("POST /api/workers/me/assignments/tickets/complete submits quantities for v
   assert.equal(lineMessage.data?.to, ticket.vendor_line_id);
   assert.ok(confirmToken);
 
-  const lineResponse = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: {
-            userId: ticket.vendor_line_id,
-          },
-          postback: {
-            data: confirmButtonPostback,
-          },
+  const lineBody = {
+    events: [
+      {
+        type: "postback",
+        source: {
+          userId: ticket.vendor_line_id,
         },
-      ],
-    },
+        postback: {
+          data: confirmButtonPostback,
+        },
+      },
+    ],
+  };
+  const lineResponse = await server.request("POST", "/api/line/webhook", {
+    headers: { "x-line-signature": signLineWebhookBody(lineBody) },
+    body: lineBody,
   });
 
   assert.equal(lineResponse.status, 200);
@@ -2532,20 +2534,22 @@ test("POST /api/workers/me/assignments/tickets/complete submits quantities for v
   assert.match(ratingFlexContents, /"displayText":"5"/);
   assert.ok((ratingPostback ?? "").length <= 300);
 
-  const ratingResponse = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: {
-            userId: ticket.vendor_line_id,
-          },
-          postback: {
-            data: ratingPostback,
-          },
+  const ratingBody = {
+    events: [
+      {
+        type: "postback",
+        source: {
+          userId: ticket.vendor_line_id,
         },
-      ],
-    },
+        postback: {
+          data: ratingPostback,
+        },
+      },
+    ],
+  };
+  const ratingResponse = await server.request("POST", "/api/line/webhook", {
+    headers: { "x-line-signature": signLineWebhookBody(ratingBody) },
+    body: ratingBody,
   });
 
   assert.equal(ratingResponse.status, 200);
@@ -2574,20 +2578,22 @@ test("POST /api/workers/me/assignments/tickets/complete submits quantities for v
     state.completionSubmissions[0].resolved_by_line_user_id,
     ticket.vendor_line_id
   );
-  const duplicateOwnerResponse = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: {
-            userId: ticket.vendor_line_id,
-          },
-          postback: {
-            data: confirmButtonPostback,
-          },
+  const duplicateOwnerBody = {
+    events: [
+      {
+        type: "postback",
+        source: {
+          userId: ticket.vendor_line_id,
         },
-      ],
-    },
+        postback: {
+          data: confirmButtonPostback,
+        },
+      },
+    ],
+  };
+  const duplicateOwnerResponse = await server.request("POST", "/api/line/webhook", {
+    headers: { "x-line-signature": signLineWebhookBody(duplicateOwnerBody) },
+    body: duplicateOwnerBody,
   });
   assert.equal(duplicateOwnerResponse.status, 200);
   assert.equal(duplicateOwnerResponse.body.processed, 1);
@@ -2603,20 +2609,22 @@ test("POST /api/workers/me/assignments/tickets/complete submits quantities for v
     /รายการนี้ได้รับการดำเนินการเรียบร้อยแล้ว/
   );
 
-  const duplicateMemberResponse = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: {
-            userId: `${ticket.vendor_line_id}-member`,
-          },
-          postback: {
-            data: confirmButtonPostback,
-          },
+  const duplicateMemberBody = {
+    events: [
+      {
+        type: "postback",
+        source: {
+          userId: `${ticket.vendor_line_id}-member`,
         },
-      ],
-    },
+        postback: {
+          data: confirmButtonPostback,
+        },
+      },
+    ],
+  };
+  const duplicateMemberResponse = await server.request("POST", "/api/line/webhook", {
+    headers: { "x-line-signature": signLineWebhookBody(duplicateMemberBody) },
+    body: duplicateMemberBody,
   });
   assert.equal(duplicateMemberResponse.status, 200);
   assert.equal(duplicateMemberResponse.body.processed, 1);

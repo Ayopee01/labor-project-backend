@@ -2,7 +2,8 @@
 import * as mobileAppVersionRepository from "../../repositories/shared/mobile-app-version.repository";
 import { sendWorkerPushNotificationToAllActive } from "./worker-push.service";
 import { removeMobileAppForceUpdateNotification, removeMobileAppReleaseNotification, scheduleMobileAppForceUpdateNotification, scheduleMobileAppReleaseNotification } from "../../queues/worker-queue";
-import { diffChangedFields, writeSecurityAuditLogBestEffort } from "./security-audit-log.service";
+import { diffChangedFields, writeSecurityAuditLog } from "./security-audit-log.service";
+import { withTransaction } from "../../db/prisma";
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../../types/shared/security-audit-log.type";
 
 // Import Types
@@ -420,30 +421,41 @@ export async function createMobileAppVersion(
     created_by: actorId,
     updated_by: actorId,
   };
-  const created = await mobileAppVersionRepository.createMobileAppVersion(createInput);
+  // 27.14.2 — create + audit write ต้องอยู่ใน transaction เดียวกัน ถ้า audit write ล้มเหลว
+  // (writeSecurityAuditLog ไม่ catch error เอง) ทั้ง transaction ต้อง rollback ไปด้วย ไม่ให้เกิด
+  // version ที่ถูกสร้างจริงแต่ไม่มีหลักฐานใน audit log — sync notification ด้านล่างยังคงอยู่นอก
+  // transaction ตามเดิม เพราะเป็น I/O ภายนอก (BullMQ/FCM) ไม่ใช่ DB write ที่ต้อง atomic ร่วมด้วย
+  const created = await withTransaction(async (transaction) => {
+    const record = await mobileAppVersionRepository.createMobileAppVersion(
+      createInput,
+      transaction
+    );
 
-  // Best-effort เหมือน sync notification ด้านล่าง — flow นี้ไม่มี transaction ห่ออยู่แล้วแต่เดิม
-  // (create + sync notification เป็นคนละ statement กันมาตั้งแต่แรก) จึงไม่ยกระดับความเข้มงวดของ
-  // audit write ให้เกินกว่า mutation เดิมที่มันกำกับอยู่
-  void writeSecurityAuditLogBestEffort({
-    event_type: SECURITY_AUDIT_EVENT_TYPE.MOBILE_APP_VERSION_CREATED,
-    outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-    actor_type: "admin",
-    actor_account_id: actorSnapshot.actor_account_id,
-    actor_username: actorSnapshot.username,
-    actor_full_name: actorSnapshot.full_name,
-    ip_address: context.ip_address,
-    user_agent: context.user_agent,
-    request_id: context.request_id,
-    metadata: {
-      targetType: "mobile_app_version",
-      targetVersionId: created.id,
-      after: {
-        version: created.version,
-        build_number: created.build_number,
-        force_update_at: created.force_update_at,
+    await writeSecurityAuditLog(
+      {
+        event_type: SECURITY_AUDIT_EVENT_TYPE.MOBILE_APP_VERSION_CREATED,
+        outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+        actor_type: "admin",
+        actor_account_id: actorSnapshot.actor_account_id,
+        actor_username: actorSnapshot.username,
+        actor_full_name: actorSnapshot.full_name,
+        ip_address: context.ip_address,
+        user_agent: context.user_agent,
+        request_id: context.request_id,
+        metadata: {
+          targetType: "mobile_app_version",
+          targetVersionId: record.id,
+          after: {
+            version: record.version,
+            build_number: record.build_number,
+            force_update_at: record.force_update_at,
+          },
+        },
       },
-    },
+      transaction
+    );
+
+    return record;
   });
 
   await syncReleaseNotification(created);
@@ -540,7 +552,53 @@ export async function updateMobileAppVersion(
     updated_by: actorId,
   };
 
-  const updated = await mobileAppVersionRepository.updateMobileAppVersion(id, updateInput);
+  // 27.14.2 — update + diff + audit write ต้องอยู่ใน transaction เดียวกัน (เหตุผลเดียวกับ
+  // createMobileAppVersion ด้านบน) diff คำนวณจาก `updated` ตรงๆ ได้เลยไม่ต้องรอ notification sync
+  // ก่อน เพราะ field ที่ diff ตรวจ (version/build_number/../release_notes) ไม่มีตัวไหนถูก
+  // notification sync แตะเลย (sync แก้แค่ releaseNotificationSentAt/forceUpdateNotificationSentAt)
+  const updated = await withTransaction(async (transaction) => {
+    const updatedRecord = await mobileAppVersionRepository.updateMobileAppVersion(
+      id,
+      updateInput,
+      transaction
+    );
+    const changeDiff = diffChangedFields(existingBeforeUpdate, updatedRecord, [
+      "version",
+      "build_number",
+      "release_at",
+      "android_download_url",
+      "ios_download_url",
+      "force_update_at",
+      "release_notification_at",
+      "release_message",
+      "release_notes",
+    ]);
+
+    if (changeDiff) {
+      await writeSecurityAuditLog(
+        {
+          event_type: SECURITY_AUDIT_EVENT_TYPE.MOBILE_APP_VERSION_UPDATED,
+          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+          actor_type: "admin",
+          actor_account_id: actorSnapshot.actor_account_id,
+          actor_username: actorSnapshot.username,
+          actor_full_name: actorSnapshot.full_name,
+          ip_address: context.ip_address,
+          user_agent: context.user_agent,
+          request_id: context.request_id,
+          metadata: {
+            targetType: "mobile_app_version",
+            targetVersionId: id,
+            before: changeDiff.before,
+            after: changeDiff.after,
+          },
+        },
+        transaction
+      );
+    }
+
+    return updatedRecord;
+  });
 
   // ReleaseNotificationAt เปลี่ยน: sync ใหม่ถ้ายังไม่เคยส่ง, หรือแค่เคลียร์ job ค้างถ้าส่งไปแล้ว
   // (ห้ามส่งซ้ำอัตโนมัติ)
@@ -568,37 +626,6 @@ export async function updateMobileAppVersion(
     (await mobileAppVersionRepository.findMobileAppVersionById(id)) ?? updated;
   const versionsAfterUpdate = await mobileAppVersionRepository.listMobileAppVersions();
   const classifiedAfterUpdate = classifyMobileAppVersions(versionsAfterUpdate, new Date());
-  const diff = diffChangedFields(existingBeforeUpdate, finalVersion, [
-    "version",
-    "build_number",
-    "release_at",
-    "android_download_url",
-    "ios_download_url",
-    "force_update_at",
-    "release_notification_at",
-    "release_message",
-    "release_notes",
-  ]);
-
-  if (diff) {
-    void writeSecurityAuditLogBestEffort({
-      event_type: SECURITY_AUDIT_EVENT_TYPE.MOBILE_APP_VERSION_UPDATED,
-      outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-      actor_type: "admin",
-      actor_account_id: actorSnapshot.actor_account_id,
-      actor_username: actorSnapshot.username,
-      actor_full_name: actorSnapshot.full_name,
-      ip_address: context.ip_address,
-      user_agent: context.user_agent,
-      request_id: context.request_id,
-      metadata: {
-        targetType: "mobile_app_version",
-        targetVersionId: id,
-        before: diff.before,
-        after: diff.after,
-      },
-    });
-  }
 
   return toAdminSummary(finalVersion, resolveMobileAppVersionStatus(id, classifiedAfterUpdate));
 }

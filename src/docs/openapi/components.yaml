@@ -5024,8 +5024,8 @@
       description: >
         Unified audit event projected from existing transactional sources (VehicleJob,
         GateRequestLog, DriverSession, WorkerAssignmentEvent, TicketCompletionSubmission,
-        TicketRating, MessageDeliveryLog, AdminActionLog). No central audit_events table exists —
-        this is a merged read view.
+        TicketRating, MessageDeliveryLog, AdminActionLog, SecurityAuditLog — see 27.12). No
+        central audit_events table exists — this is a merged read view.
       properties:
         event_id:
           type: string
@@ -5093,8 +5093,11 @@
             be resolved to any admin or worker account — never conflated with actorCode/workerCode
             of a resolved actor), and — on the account/settings/gate-client/mobile-version mutation
             events — targetType/targetAccountId/targetWorkerId/targetClientId/targetVersionId
-            identifying what was changed. Never contains passwords, full tokens, session secrets,
-            or gate client secrets/hashes.
+            identifying what was changed. auth_session_revoked (27.14.1, written in the same
+            transaction as auth_force_login) additionally carries revoke_source ("force_login")
+            and new_session_id, referencing the session created by that same auth_force_login —
+            trace the pair back to each other via the shared requestId instead. Never contains
+            passwords, full tokens, session secrets, or gate client secrets/hashes.
           example:
             minutes: 15
             assignment_ids: [455]
@@ -5114,8 +5117,13 @@
             Only present when the source actually recorded a prior value; omitted (not present,
             not null) for event types that don't track before/after, and omitted for this one
             occurrence when there was no prior value to record (e.g. the worker's very first
-            forced status change, which has no earlier queue status). Currently populated only
-            for worker_force_status_changed ({ "status": "..." }).
+            forced status change, which has no earlier queue status, or a *_created event, which
+            has nothing before it). Populated for worker_force_status_changed
+            ({ "status": "..." }) and — only on the *_updated Security Audit mutation events, and
+            only for the field(s) that actually changed — system_settings_updated,
+            gate_client_updated, admin_account_updated, admin_permissions_changed,
+            admin_status_changed, worker_account_updated, admin_profile_updated, and
+            mobile_app_version_updated.
           example:
             status: ready
         after:
@@ -5123,8 +5131,10 @@
           additionalProperties: true
           description: >
             State of the changed field(s) immediately after this event succeeded. Same presence
-            rules as before. Currently populated only for worker_force_status_changed
-            ({ "status": "..." }).
+            rules as before, plus the *_created Security Audit mutation events
+            (gate_client_created, admin_account_created, worker_account_created,
+            mobile_app_version_created), which populate after with no matching before since
+            nothing existed prior to the create.
           example:
             status: open_app
         occurred_at:

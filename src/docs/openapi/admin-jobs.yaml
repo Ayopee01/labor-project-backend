@@ -106,6 +106,18 @@
             example: "2026-07-07"
           description: Optional created date range end in YYYY-MM-DD format, inclusive and interpreted in Asia/Bangkok.
         - in: query
+          name: time_from
+          schema:
+            type: string
+            example: "08:00"
+          description: Optional HH:mm time to narrow the range start beyond date/date_from's default of 00:00. Requires date or date_from to also be sent. Interpreted in Asia/Bangkok.
+        - in: query
+          name: time_to
+          schema:
+            type: string
+            example: "18:00"
+          description: Optional HH:mm time to narrow the range end beyond date/date_to's default of end-of-day. Requires date or date_to to also be sent. Inclusive of the given minute, interpreted in Asia/Bangkok.
+        - in: query
           name: page
           schema:
             type: integer

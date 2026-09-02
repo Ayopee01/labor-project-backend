@@ -5,6 +5,8 @@ export const SECURITY_AUDIT_EVENT_TYPE = {
   AUTH_LOGIN_FAILED: "auth_login_failed",
   AUTH_LOGOUT: "auth_logout",
   AUTH_FORCE_LOGIN: "auth_force_login",
+  // 27.14.1 — เขียนคู่กับ AUTH_FORCE_LOGIN เสมอในธุรกรรมเดียวกัน ไม่มีทางเกิดแยกจากกัน
+  AUTH_SESSION_REVOKED: "auth_session_revoked",
   ACCOUNT_PASSWORD_CHANGED: "account_password_changed",
   ACCOUNT_PASSWORD_RESET: "account_password_reset",
   ADMIN_ACCOUNT_CREATED: "admin_account_created",

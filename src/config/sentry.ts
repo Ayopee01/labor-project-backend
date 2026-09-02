@@ -9,7 +9,7 @@ const dsn = process.env.SENTRY_DSN;
 if (dsn) {
   Sentry.init({
     dsn,
-    environment: process.env.NODE_ENV || "development",
+    environment: "production",
     // Error tracking อย่างเดียว ไม่เก็บ performance trace เพื่อลด overhead/cost โดยไม่จำเป็น
     tracesSampleRate: 0,
   });

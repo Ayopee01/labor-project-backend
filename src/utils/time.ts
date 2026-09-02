@@ -67,18 +67,29 @@ export function buildLatestCompletedBangkokDateRange(
 }
 
 // Function สร้าง bangkok date span range สำหรับ helper กลาง
+// timeFrom/timeTo เป็น "HH:mm" optional — ไม่ส่งมาพฤติกรรมเดิมทุกประการ (ทั้งวันของ dateFrom/dateTo)
+// ส่งมา startAt จะขยับไปที่เวลานั้นตรงๆ (gte รวมเวลานั้นพอดี) ส่วน endAt จะปัดขึ้นไปสิ้นนาทีนั้น (+1
+// นาทีแล้วใช้ lt) เพื่อให้ "ถึงเวลา X" รวมนาที X ทั้งนาที ไม่ตัดทิ้งตอน 00 วินาที
 export function buildBangkokDateSpanRange(
   dateFrom?: string,
-  dateTo?: string
+  dateTo?: string,
+  timeFrom?: string,
+  timeTo?: string
 ): { startAt?: Date; endAt?: Date } {
+  const MINUTE_MS = 60 * 1000;
+
   return {
     ...(dateFrom && {
-      startAt: new Date(`${dateFrom}T00:00:00.000+07:00`),
+      startAt: new Date(`${dateFrom}T${timeFrom ?? "00:00"}:00.000+07:00`),
     }),
     ...(dateTo && {
-      endAt: new Date(
-        new Date(`${dateTo}T00:00:00.000+07:00`).getTime() + DAY_MS
-      ),
+      endAt: timeTo
+        ? new Date(
+            new Date(`${dateTo}T${timeTo}:00.000+07:00`).getTime() + MINUTE_MS
+          )
+        : new Date(
+            new Date(`${dateTo}T00:00:00.000+07:00`).getTime() + DAY_MS
+          ),
     }),
   };
 }

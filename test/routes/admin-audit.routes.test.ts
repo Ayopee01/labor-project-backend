@@ -1008,7 +1008,7 @@ test("GET /api/admin/audit/events projects GateRequestLog, TicketRating, and Mes
   assert.ok(eventTypes.includes("message_delivery_failed"));
 });
 
-test("GET /api/admin/audit/events quick filters (has_vehicle, has_reason, severity) narrow Data, Pagination, and Summary consistently, and combine with other filters", async () => {
+test("GET /api/admin/audit/events quick_filter (has_vehicle/has_reason/critical) narrows Data and Pagination, combines with search-bar filters, rejects invalid values, and — critically — never changes Summary versus not sending quick_filter at all (27.15.1)", async () => {
   const { token } = await loginJobAdmin(14001);
   const today = bangkokDateKey();
   const job = addDispatchableJob(140010, 1);
@@ -1056,15 +1056,23 @@ test("GET /api/admin/audit/events quick filters (has_vehicle, has_reason, severi
 
   const base = `/api/admin/audit/events?date_from=${today}&date_to=${today}`;
 
-  const hasVehicle = await server.request("GET", `${base}&has_vehicle=true`, { token });
-  const hasReason = await server.request("GET", `${base}&has_reason=true`, { token });
-  const critical = await server.request("GET", `${base}&severity=critical`, { token });
-  const combined = await server.request(
+  const noQuickFilter = await server.request("GET", base, { token });
+  const hasVehicle = await server.request("GET", `${base}&quick_filter=has_vehicle`, { token });
+  const hasReason = await server.request("GET", `${base}&quick_filter=has_reason`, { token });
+  const critical = await server.request("GET", `${base}&quick_filter=critical`, { token });
+  const criticalWithSearchBarFilter = await server.request(
     "GET",
-    `${base}&has_vehicle=true&severity=critical`,
+    `${base}&event_type=vehicle_cancelled&quick_filter=has_vehicle`,
     { token }
   );
-  const invalidSeverity = await server.request("GET", `${base}&severity=invalid`, { token });
+  const invalidQuickFilter = await server.request(
+    "GET",
+    `${base}&quick_filter=invalid`,
+    { token }
+  );
+
+  assert.equal(noQuickFilter.status, 200, JSON.stringify(noQuickFilter.body));
+  assert.equal(noQuickFilter.body.pagination.total, 3);
 
   assert.equal(hasVehicle.status, 200);
   assert.equal(hasVehicle.body.pagination.total, 2);
@@ -1088,18 +1096,187 @@ test("GET /api/admin/audit/events quick filters (has_vehicle, has_reason, severi
   assert.equal(critical.status, 200);
   assert.equal(critical.body.pagination.total, 1);
   assert.equal(critical.body.data[0].event_type, "vehicle_cancelled");
-  // event_type_counts เป็น dynamic key (ตรงกับ event_type จริง) ที่ผ่าน pascalCaseApiResponse ไปด้วย
-  // จึง sum ค่าทั้งหมดแทนการ assert ตรงชื่อ key แบบเจาะจง (ดู test Summary ด้านบน)
-  const sumCounts = (counts: Record<string, number>) =>
-    Object.values(counts).reduce((total, value) => total + value, 0);
-  assert.equal(sumCounts(critical.body.summary.event_type_counts), 1);
 
-  assert.equal(combined.status, 200);
-  assert.equal(combined.body.pagination.total, 1);
-  assert.equal(combined.body.data[0].event_type, "vehicle_cancelled");
+  // quick_filter ใช้ร่วมกับ filter จากแถบค้นหา (event_type) ได้ตามปกติ — ทั้งคู่แคบ Data ร่วมกันได้
+  assert.equal(criticalWithSearchBarFilter.status, 200);
+  assert.equal(criticalWithSearchBarFilter.body.pagination.total, 1);
+  assert.equal(criticalWithSearchBarFilter.body.data[0].event_type, "vehicle_cancelled");
 
-  assert.equal(invalidSeverity.status, 400);
-  assert.equal(invalidSeverity.body.code, "VALIDATION_ERROR");
+  assert.equal(invalidQuickFilter.status, 400);
+  assert.equal(invalidQuickFilter.body.code, "VALIDATION_ERROR");
+
+  // ข้อ 27.15.1 ข้อ 4 — สาระสำคัญที่สุด: Summary ต้องเหมือนกันทุก field ไม่ว่า quick_filter จะเป็น
+  // ค่าไหน ตราบใดที่ filter จากแถบค้นหา (search/actor_type/event_type/date) เหมือนเดิม แม้ Data จะ
+  // แคบลงไปตาม quick_filter ก็ตาม
+  assert.deepEqual(hasVehicle.body.summary, noQuickFilter.body.summary);
+  assert.deepEqual(hasReason.body.summary, noQuickFilter.body.summary);
+  assert.deepEqual(critical.body.summary, noQuickFilter.body.summary);
+});
+
+test("GET /api/admin/audit/events quick_filter=system|admin narrows by resolved actor_type without touching Summary, unlike the actor_type search-bar filter which does (27.15.1 item 3)", async () => {
+  const today = bangkokDateKey();
+
+  state.securityAuditLogs.push({
+    id: state.nextSecurityAuditLogId++,
+    event_type: "auth_login_failed",
+    outcome: "failure",
+    actor_type: null,
+    actor_account_id: null,
+    actor_worker_id: null,
+    actor_username: "unresolved-user",
+    actor_full_name: null,
+    session_id: null,
+    request_id: null,
+    ip_address: null,
+    user_agent: null,
+    failure_code: "unknown_username",
+    metadata: null,
+    created_at: bangkokDateToUtcIso(today, 1),
+  });
+
+  state.securityAuditLogs.push({
+    id: state.nextSecurityAuditLogId++,
+    event_type: "auth_login_succeeded",
+    outcome: "success",
+    actor_type: "admin",
+    actor_account_id: 14201,
+    actor_worker_id: null,
+    actor_username: "admin-14201",
+    actor_full_name: "Admin 14201",
+    session_id: 5001,
+    request_id: null,
+    ip_address: null,
+    user_agent: null,
+    failure_code: null,
+    metadata: null,
+    created_at: bangkokDateToUtcIso(today, 2),
+  });
+
+  const { token: auditReadToken } = await loginAuditAdmin(14202);
+  const base = `/api/admin/audit/events?date_from=${today}&date_to=${today}`;
+
+  const noQuickFilter = await server.request("GET", base, { token: auditReadToken });
+  const systemOnly = await server.request(
+    "GET",
+    `${base}&quick_filter=system`,
+    { token: auditReadToken }
+  );
+  const adminOnly = await server.request(
+    "GET",
+    `${base}&quick_filter=admin`,
+    { token: auditReadToken }
+  );
+  // เทียบกับ actor_type=admin (search-bar filter) ซึ่งต้องมีผลกับ Summary ต่างจาก quick_filter=admin
+  const actorTypeAdmin = await server.request(
+    "GET",
+    `${base}&actor_type=admin`,
+    { token: auditReadToken }
+  );
+
+  assert.equal(systemOnly.status, 200, JSON.stringify(systemOnly.body));
+  assert.equal(systemOnly.body.data.length, 1);
+  assert.equal(systemOnly.body.data[0].actor_type, "system");
+
+  // adminOnly นับได้มากกว่า 1 ได้ เพราะ loginAuditAdmin() เองก็ยิง POST /api/auth/login จริง ซึ่งเขียน
+  // auth_login_succeeded (actor_type=admin) ปนเข้ามาด้วย — เช็คแค่ว่าทุกแถวเป็น admin จริง และมีแถวที่
+  // seed ไว้เองอยู่ในนั้น แทนการเช็ค count ตายตัว
+  assert.equal(adminOnly.status, 200);
+  assert.equal(
+    adminOnly.body.data.every((item: { actor_type: string }) => item.actor_type === "admin"),
+    true
+  );
+  assert.ok(
+    adminOnly.body.data.some(
+      (item: { metadata: { actorCode?: string } }) => item.metadata.actorCode === "admin-14201"
+    )
+  );
+
+  // quick_filter=system/admin ต้องไม่แตะ Summary เลย เหมือน quick_filter อื่น
+  assert.deepEqual(systemOnly.body.summary, noQuickFilter.body.summary);
+  assert.deepEqual(adminOnly.body.summary, noQuickFilter.body.summary);
+
+  // ตรงกันข้าม: actor_type=admin (filter จากแถบค้นหา) ต้องแคบ Summary ลงจริง ไม่เท่ากับ baseline
+  assert.notDeepEqual(actorTypeAdmin.body.summary, noQuickFilter.body.summary);
+});
+
+test("GET /api/admin/audit/events quick_filter=has_reason and Summary.with_reason_count both use ReasonCode OR ReasonText, counting a code+text event once, not twice (27.15.2)", async () => {
+  const { token } = await loginJobAdmin(14301);
+  const today = bangkokDateKey();
+
+  const codeOnly = state.nextAdminActionLogId++;
+  const textOnly = state.nextAdminActionLogId++;
+  const both = state.nextAdminActionLogId++;
+  const neither = state.nextAdminActionLogId++;
+
+  state.adminActionLogs.push(
+    {
+      id: codeOnly,
+      vehicle_job_id: null,
+      gate_ticket_id: null,
+      market_job_id: null,
+      action_type: "WORKERS_RELEASED",
+      reason_code: "CODE_A",
+      reason_text: null,
+      actor_account_id: 14301,
+      metadata: null,
+      created_at: bangkokDateToUtcIso(today, 1),
+    },
+    {
+      id: textOnly,
+      vehicle_job_id: null,
+      gate_ticket_id: null,
+      market_job_id: null,
+      action_type: "WORKERS_RELEASED",
+      reason_code: null,
+      reason_text: "ข้อความเหตุผล B",
+      actor_account_id: 14301,
+      metadata: null,
+      created_at: bangkokDateToUtcIso(today, 2),
+    },
+    {
+      id: both,
+      vehicle_job_id: null,
+      gate_ticket_id: null,
+      market_job_id: null,
+      action_type: "WORKERS_RELEASED",
+      reason_code: "CODE_C",
+      reason_text: "ข้อความเหตุผล C",
+      actor_account_id: 14301,
+      metadata: null,
+      created_at: bangkokDateToUtcIso(today, 3),
+    },
+    {
+      id: neither,
+      vehicle_job_id: null,
+      gate_ticket_id: null,
+      market_job_id: null,
+      action_type: "WORKERS_RELEASED",
+      reason_code: null,
+      reason_text: null,
+      actor_account_id: 14301,
+      metadata: null,
+      created_at: bangkokDateToUtcIso(today, 4),
+    },
+  );
+
+  const base = `/api/admin/audit/events?date_from=${today}&date_to=${today}`;
+  const noQuickFilter = await server.request("GET", base, { token });
+  const hasReason = await server.request("GET", `${base}&quick_filter=has_reason`, { token });
+
+  assert.equal(noQuickFilter.status, 200, JSON.stringify(noQuickFilter.body));
+  // Summary.with_reason_count นับ code-only + text-only + both = 3 ครั้ง (both นับครั้งเดียว ไม่ใช่ 2)
+  assert.equal(noQuickFilter.body.summary.with_reason_count, 3);
+
+  assert.equal(hasReason.status, 200);
+  const hasReasonIds = hasReason.body.data.map(
+    (item: { event_id: string }) => item.event_id
+  );
+
+  assert.equal(hasReason.body.pagination.total, 3);
+  assert.ok(hasReasonIds.includes(`admin_action:${codeOnly}`));
+  assert.ok(hasReasonIds.includes(`admin_action:${textOnly}`));
+  assert.ok(hasReasonIds.includes(`admin_action:${both}`));
+  assert.ok(!hasReasonIds.includes(`admin_action:${neither}`));
 });
 
 test("GET /api/admin/audit/events includes Metadata.boothName from GateTicket.boothName for vendor-facing completion submission and ticket rating events", async () => {
@@ -1403,6 +1580,230 @@ test("GET /api/admin/audit/events paginates SecurityAuditLog events correctly (t
   assert.equal(withoutAuditRead.status, 200);
   assert.equal(withoutAuditRead.body.pagination.total, 0);
   assert.deepEqual(withoutAuditRead.body.data, []);
+});
+
+test("GET /api/admin/audit/events SecurityAuditLog response-shape contract covers all 4 presence patterns generically — Metadata-only, After-only (create), Before+After (update), and Before/After alongside extra Metadata — since the mapper (mapSecurityAuditLogEvents) is event-type-agnostic and applies the same extraction rules to every stable event code (27.14.3 items 3-4)", async () => {
+  const today = bangkokDateKey();
+
+  // 1) Metadata-only — no before/after at all (e.g. auth_login_failed)
+  const metadataOnlyId = state.nextSecurityAuditLogId++;
+  state.securityAuditLogs.push({
+    id: metadataOnlyId,
+    event_type: "auth_login_failed",
+    outcome: "failure",
+    actor_type: null,
+    actor_account_id: null,
+    actor_worker_id: null,
+    actor_username: "someone",
+    actor_full_name: null,
+    session_id: null,
+    request_id: "req-metadata-only",
+    ip_address: "203.0.113.9",
+    user_agent: "TestAgent/2.0",
+    failure_code: "invalid_password",
+    metadata: null,
+    created_at: bangkokDateToUtcIso(today, 5),
+  });
+
+  // 2) After-only — a *_created event, nothing existed before it
+  const afterOnlyId = state.nextSecurityAuditLogId++;
+  state.securityAuditLogs.push({
+    id: afterOnlyId,
+    event_type: "mobile_app_version_created",
+    outcome: "success",
+    actor_type: "admin",
+    actor_account_id: 15301,
+    actor_worker_id: null,
+    actor_username: "admin-15301",
+    actor_full_name: "Admin 15301",
+    session_id: null,
+    request_id: "req-after-only",
+    ip_address: null,
+    user_agent: null,
+    failure_code: null,
+    metadata: {
+      targetType: "mobile_app_version",
+      targetVersionId: 999,
+      after: { version: "9.9.9", build_number: 99900 },
+    },
+    created_at: bangkokDateToUtcIso(today, 6),
+  });
+
+  // 3) Before+After — a *_updated event with only targetType alongside
+  const beforeAfterId = state.nextSecurityAuditLogId++;
+  state.securityAuditLogs.push({
+    id: beforeAfterId,
+    event_type: "system_settings_updated",
+    outcome: "success",
+    actor_type: "admin",
+    actor_account_id: 15302,
+    actor_worker_id: null,
+    actor_username: "admin-15302",
+    actor_full_name: "Admin 15302",
+    session_id: null,
+    request_id: "req-before-after",
+    ip_address: null,
+    user_agent: null,
+    failure_code: null,
+    metadata: {
+      targetType: "system_settings",
+      before: { worker_break_limit: 3 },
+      after: { worker_break_limit: 5 },
+    },
+    created_at: bangkokDateToUtcIso(today, 7),
+  });
+
+  // 4) Before/After alongside richer extra Metadata beyond targetType (e.g. admin_permissions_changed)
+  const beforeAfterWithMetadataId = state.nextSecurityAuditLogId++;
+  state.securityAuditLogs.push({
+    id: beforeAfterWithMetadataId,
+    event_type: "admin_permissions_changed",
+    outcome: "success",
+    actor_type: "admin",
+    actor_account_id: 15303,
+    actor_worker_id: null,
+    actor_username: "admin-15303",
+    actor_full_name: "Admin 15303",
+    session_id: null,
+    request_id: "req-before-after-meta",
+    ip_address: null,
+    user_agent: null,
+    failure_code: null,
+    metadata: {
+      targetType: "admin_account",
+      targetAccountId: 20001,
+      targetUsername: "target-admin",
+      before: { permission_level: "supervisor", permissions: ["workers:read"] },
+      after: { permission_level: "manager", permissions: ["workers:read", "workers:update"] },
+    },
+    created_at: bangkokDateToUtcIso(today, 8),
+  });
+
+  const { token } = await loginAuditAdmin(15304);
+  const response = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}`,
+    { token }
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+
+  const byId = (id: number) =>
+    response.body.data.find(
+      (item: { event_id: string }) => item.event_id === `security_audit:${id}`
+    );
+
+  const metadataOnly = byId(metadataOnlyId);
+  assert.ok(metadataOnly);
+  assert.equal(metadataOnly.metadata.outcome, "failure");
+  assert.equal(metadataOnly.metadata.requestId, "req-metadata-only");
+  assert.equal("before" in metadataOnly, false);
+  assert.equal("after" in metadataOnly, false);
+
+  const afterOnly = byId(afterOnlyId);
+  assert.ok(afterOnly);
+  assert.equal("before" in afterOnly, false);
+  assert.deepEqual(afterOnly.after, { version: "9.9.9", build_number: 99900 });
+  assert.equal(afterOnly.metadata.targetVersionId, 999);
+  // ต้องไม่ซ้ำอยู่ใน metadata ด้วย — before/after ต้อง extract ออกมาเป็น top-level เท่านั้น
+  assert.equal("before" in afterOnly.metadata, false);
+  assert.equal("after" in afterOnly.metadata, false);
+
+  const beforeAfter = byId(beforeAfterId);
+  assert.ok(beforeAfter);
+  assert.deepEqual(beforeAfter.before, { worker_break_limit: 3 });
+  assert.deepEqual(beforeAfter.after, { worker_break_limit: 5 });
+
+  const beforeAfterWithMetadata = byId(beforeAfterWithMetadataId);
+  assert.ok(beforeAfterWithMetadata);
+  assert.deepEqual(beforeAfterWithMetadata.before, {
+    permission_level: "supervisor",
+    permissions: ["workers:read"],
+  });
+  assert.deepEqual(beforeAfterWithMetadata.after, {
+    permission_level: "manager",
+    permissions: ["workers:read", "workers:update"],
+  });
+  assert.equal(beforeAfterWithMetadata.metadata.targetAccountId, 20001);
+  assert.equal(beforeAfterWithMetadata.metadata.targetUsername, "target-admin");
+  assert.equal("before" in beforeAfterWithMetadata.metadata, false);
+  assert.equal("after" in beforeAfterWithMetadata.metadata, false);
+
+  // Redaction contract: ต้องไม่มี token/password/secret หลุดมาใน response ของทั้ง 4 แบบ — เช็คเฉพาะ
+  // field name ที่บ่งบอก credential จริง ไม่ใช่ blanket substring เพราะ "invalid_password" เป็น
+  // failureCode ที่ตั้งใจให้แสดงอยู่แล้ว (ไม่ใช่ค่า password จริง) และจะ false-positive ถ้าเช็คแบบ
+  // substring เดา ๆ
+  const forbiddenValueSubstrings = [
+    "password_hash",
+    "passwordhash",
+    "access_token",
+    "accesstoken",
+    "refresh_token",
+    "refreshtoken",
+    "secret_hash",
+    "secrethash",
+    "client_secret",
+    "clientsecret",
+  ];
+
+  for (const item of [metadataOnly, afterOnly, beforeAfter, beforeAfterWithMetadata]) {
+    const serialized = JSON.stringify(item).toLowerCase();
+
+    for (const forbidden of forbiddenValueSubstrings) {
+      assert.equal(serialized.includes(forbidden), false, `must not leak ${forbidden}`);
+    }
+  }
+});
+
+test("GET /api/admin/audit/events excludes SecurityAuditLog events from Summary counts entirely for a caller without audit:read (27.14.3 item 5)", async () => {
+  const today = bangkokDateKey();
+
+  for (let i = 0; i < 3; i += 1) {
+    state.securityAuditLogs.push({
+      id: state.nextSecurityAuditLogId++,
+      event_type: "auth_logout",
+      outcome: "success",
+      actor_type: "worker",
+      actor_account_id: null,
+      actor_worker_id: 15201,
+      actor_username: "W15201",
+      actor_full_name: "Worker 15201",
+      session_id: 2000 + i,
+      request_id: null,
+      ip_address: null,
+      user_agent: null,
+      failure_code: null,
+      metadata: null,
+      created_at: bangkokDateToUtcIso(today, i + 1),
+    });
+  }
+
+  const { token: auditReadToken } = await loginAuditAdmin(15202);
+  const { token: jobsOnlyToken } = await loginJobAdmin(15203);
+
+  const withAuditRead = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&event_type=auth_logout`,
+    { token: auditReadToken }
+  );
+  const withoutAuditRead = await server.request(
+    "GET",
+    `/api/admin/audit/events?date_from=${today}&date_to=${today}&event_type=auth_logout`,
+    { token: jobsOnlyToken }
+  );
+
+  assert.equal(withAuditRead.status, 200, JSON.stringify(withAuditRead.body));
+  assert.equal(withAuditRead.body.summary.actor_type_counts.worker, 3);
+  // Dynamic key จาก event_type ดิบ ("auth_logout") ผ่าน response case-conversion กลายเป็น
+  // camelCase บน wire ("authLogout") — ต่างจาก field name คงที่ (เช่น EventTypeCounts) ที่มี
+  // requestKeyMap แปลงกลับให้เป็น snake_case เพราะ dynamic key ไม่ได้อยู่ใน map นั้น
+  assert.equal(withAuditRead.body.summary.event_type_counts.authLogout, 3);
+
+  assert.equal(withoutAuditRead.status, 200, JSON.stringify(withoutAuditRead.body));
+  // ต้องไม่นับปนใน Summary เลย ไม่ใช่แค่ Data/Pagination — ทั้ง 3 field ต้องไม่เห็น auth_logout/worker
+  // ที่มาจาก SecurityAuditLog เลย
+  assert.equal(withoutAuditRead.body.summary.actor_type_counts.worker, undefined);
+  assert.equal(withoutAuditRead.body.summary.event_type_counts.authLogout, undefined);
 });
 
 test("GET /api/admin/audit/events requires admin jobs:read permission", async () => {

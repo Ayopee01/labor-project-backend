@@ -2524,6 +2524,10 @@ export const securityAuditLogRepositoryMock = {
     failure_code?: string | null;
     metadata?: Record<string, unknown> | null;
   }) => {
+    if (state.forceSecurityAuditLogWriteFailure) {
+      throw new Error("Simulated security audit log write failure (test only).");
+    }
+
     const record = {
       id: state.nextSecurityAuditLogId++,
       event_type: input.event_type,

@@ -112,11 +112,18 @@ test("rate limiter targets auth/admin routes but not ready or LINE webhook", asy
   });
   const firstReady = await server.request("GET", "/ready");
   const secondReady = await server.request("GET", "/ready");
+  const lineBody = { events: [] };
+  const lineSignature = crypto
+    .createHmac("sha256", process.env.LINE_CHANNEL_SECRET!)
+    .update(JSON.stringify(lineBody))
+    .digest("base64");
   const firstLine = await server.request("POST", "/api/line/webhook", {
-    body: { events: [] },
+    headers: { "x-line-signature": lineSignature },
+    body: lineBody,
   });
   const secondLine = await server.request("POST", "/api/line/webhook", {
-    body: { events: [] },
+    headers: { "x-line-signature": lineSignature },
+    body: lineBody,
   });
 
   delete process.env.RATE_LIMIT_MAX_REQUESTS;
@@ -131,22 +138,15 @@ test("rate limiter targets auth/admin routes but not ready or LINE webhook", asy
   assert.equal(secondLine.status, 200);
 });
 
-test("LINE webhook fails closed in production when channel secret is missing", async () => {
-  const previousNodeEnv = process.env.NODE_ENV;
-
-  process.env.NODE_ENV = "production";
+test("LINE webhook fails closed when channel secret is missing", async () => {
   delete process.env.LINE_CHANNEL_SECRET;
 
-  try {
-    const response = await server.request("POST", "/api/line/webhook", {
-      body: { events: [] },
-    });
+  const response = await server.request("POST", "/api/line/webhook", {
+    body: { events: [] },
+  });
 
-    assert.equal(response.status, 503);
-    assert.equal(response.body.code, "LINE_WEBHOOK_NOT_CONFIGURED");
-  } finally {
-    process.env.NODE_ENV = previousNodeEnv;
-  }
+  assert.equal(response.status, 503);
+  assert.equal(response.body.code, "LINE_WEBHOOK_NOT_CONFIGURED");
 });
 
 test("LINE webhook rejects invalid signatures when channel secret is configured", async () => {

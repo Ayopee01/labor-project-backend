@@ -57,7 +57,14 @@ export const ADMIN_AUDIT_ACTOR_TYPE_VALUES = [
 
 export type AdminAuditActorType = (typeof ADMIN_AUDIT_ACTOR_TYPE_VALUES)[number];
 
-export type AdminAuditEventsSeverity = "critical";
+// 27.15.1 — quick filter การ์ด ต้องมาทีหลัง Summary เสมอ (ไม่ปนกับ search/date/actor_type/event_type
+// ที่เป็น filter จากแถบค้นหาและต้องมีผลต่อ Summary) เลือกได้ทีละ 1 การ์ดเท่านั้น ไม่ส่งหมายถึงไม่ใช้
+export type AdminAuditQuickFilter =
+  | "has_vehicle"
+  | "system"
+  | "critical"
+  | "admin"
+  | "has_reason";
 
 export interface AdminAuditEventsQuery {
   search?: string;
@@ -65,9 +72,7 @@ export interface AdminAuditEventsQuery {
   event_type?: string;
   date_from?: string;
   date_to?: string;
-  has_vehicle?: boolean;
-  has_reason?: boolean;
-  severity?: AdminAuditEventsSeverity;
+  quick_filter?: AdminAuditQuickFilter;
   page: number;
   limit: number;
 }

@@ -4,14 +4,8 @@ import { stopRateLimitCleanupTimer } from "../middlewares/security.middleware";
 import { markReadinessShuttingDown } from "./readiness-state";
 import { logger } from "../utils/logger";
 
-const DEFAULT_SHUTDOWN_TIMEOUT_MS = 20_000;
-
 function readShutdownTimeoutMs(): number {
-  const value = Number(process.env.SHUTDOWN_TIMEOUT_MS);
-
-  return Number.isFinite(value) && value > 0
-    ? value
-    : DEFAULT_SHUTDOWN_TIMEOUT_MS;
+  return Number(process.env.SHUTDOWN_TIMEOUT_MS);
 }
 
 type ShutdownDependencies = {

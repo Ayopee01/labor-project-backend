@@ -238,65 +238,6 @@ export const lineRepositoryMock = {
       record.sent_at = record.updated_at;
     }
   },
-  listLineDevSubmissions: async () =>
-    [...state.completionSubmissions]
-      .sort(
-        (left, right) =>
-          (right.created_at ?? "").localeCompare(left.created_at ?? "") ||
-          right.id - left.id,
-      )
-      .map((submission) => {
-        const ticket = state.gateTickets.find(
-          (item) => item.id === submission.ticket_id,
-        )!;
-        const market = state.marketJobs.find(
-          (item) => item.id === ticket.market_job_id,
-        )!;
-        const vehicle = state.vehicleJobs.find(
-          (item) => item.id === ticket.vehicle_job_id,
-        )!;
-        const submitterAccount = submission.submitted_by_account_id
-          ? state.authAccountsById.get(submission.submitted_by_account_id)
-          : undefined;
-        const submitterWorker = submission.submitted_by_worker_id
-          ? state.workers.get(submission.submitted_by_worker_id)
-          : undefined;
-        const submitterCode = submitterAccount?.username ?? submitterWorker?.labor_code ?? null;
-        const submitterName = submitterAccount?.full_name ?? submitterWorker?.full_name ?? null;
-
-        return {
-          submission_id: submission.id,
-          ticket_id: ticket.id,
-          submission_status: submission.status,
-          ticket_status: ticket.status,
-          actionable:
-            submission.status === "DELIVERED" && ticket.status === "DELIVERED",
-          ticket_number: vehicle.ticket_number,
-          ticket_no: market.ticket_no,
-          license_plate: vehicle.license_plate,
-          market_code: market.marketCode,
-          market_name: market.marketName,
-          boothCode: ticket.boothCode,
-          boothName: ticket.boothName,
-          submitted_by_code: submitterCode,
-          submitted_by_name: submitterName,
-          submitted_by_role: submission.submitted_by_role ?? "worker",
-          submitted_at: submission.created_at ?? new Date().toISOString(),
-          confirmed_at: submission.confirmed_at,
-          rejected_at: submission.rejected_at,
-          reject_reason: submission.reject_reason ?? null,
-          products: state.ticketProducts
-            .filter((product) => product.ticket_id === ticket.id)
-            .map((product) => ({
-              productCode: product.productCode,
-              productName: product.productName,
-              packageCode: product.packageCode,
-              packageName: product.packageName,
-              expected_quantity: product.quantity,
-              submitted_quantity: product.confirmed_quantity,
-            })),
-        };
-      }),
   createLineActionToken: async (input: {
     action: string;
     ticket_id: number;

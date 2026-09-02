@@ -866,8 +866,11 @@ export async function listAuditEvents(
     ...mapSecurityAuditLogEvents(securityAuditLogRows),
   ];
 
+  // 27.15.1 — filter จากแถบค้นหา (actor_type/event_type/search, บวก date range ที่กรองมาตั้งแต่ระดับ
+  // DB query แล้ว) เท่านั้นที่มีผลต่อ Summary ต้องคำนวณ Summary จากชุดนี้ก่อนเสมอ ก่อนจะเอา
+  // quick_filter มากรองต่อสำหรับ Data/Pagination — quick_filter ต้องไม่ไปแตะ Summary เด็ดขาด
   const searchTerm = filters.search?.toLowerCase();
-  const filteredEvents = allEvents.filter((event) => {
+  const searchFilteredEvents = allEvents.filter((event) => {
     if (filters.actor_type && event.actor_type !== filters.actor_type) {
       return false;
     }
@@ -880,33 +883,10 @@ export async function listAuditEvents(
       return false;
     }
 
-    if (filters.has_vehicle !== undefined) {
-      const hasVehicle = event.vehicle_job_id !== null;
-
-      if (hasVehicle !== filters.has_vehicle) {
-        return false;
-      }
-    }
-
-    if (filters.has_reason !== undefined) {
-      const hasReason = Boolean(event.reason_code || event.reason_text);
-
-      if (hasReason !== filters.has_reason) {
-        return false;
-      }
-    }
-
-    if (
-      filters.severity === "critical" &&
-      !SEVERITY_CRITICAL_EVENT_TYPES.has(event.event_type)
-    ) {
-      return false;
-    }
-
     return true;
   });
 
-  filteredEvents.sort((left, right) => {
+  searchFilteredEvents.sort((left, right) => {
     const timeDiff =
       new Date(right.occurred_at).getTime() -
       new Date(left.occurred_at).getTime();
@@ -923,12 +903,14 @@ export async function listAuditEvents(
   const actorTypeCounts: Record<string, number> = {};
   const eventTypeCounts: Record<string, number> = {};
 
-  for (const event of filteredEvents) {
+  for (const event of searchFilteredEvents) {
     if (event.vehicle_job_id) {
       uniqueVehicleIds.add(event.vehicle_job_id);
     }
 
-    if (event.reason_code) {
+    // 27.15.2 — ReasonCode OR ReasonText ต้องนับเป็น "มีเหตุผลประกอบ" เหมือนกับที่ quick_filter=
+    // has_reason ใช้เช็คด้านล่าง ห้ามนับแค่ reason_code ฝั่งเดียว (เดิมนับแค่ reason_code จริงๆ)
+    if (event.reason_code || event.reason_text) {
       withReasonCount += 1;
     }
 
@@ -938,9 +920,28 @@ export async function listAuditEvents(
       (eventTypeCounts[event.event_type] ?? 0) + 1;
   }
 
-  const total = filteredEvents.length;
+  const quickFilteredEvents = searchFilteredEvents.filter((event) => {
+    switch (filters.quick_filter) {
+      case undefined:
+        return true;
+      case "has_vehicle":
+        return event.vehicle_job_id !== null;
+      case "has_reason":
+        return Boolean(event.reason_code || event.reason_text);
+      case "critical":
+        return SEVERITY_CRITICAL_EVENT_TYPES.has(event.event_type);
+      case "system":
+        return event.actor_type === "system";
+      case "admin":
+        return event.actor_type === "admin";
+      default:
+        return true;
+    }
+  });
+
+  const total = quickFilteredEvents.length;
   const startIndex = (filters.page - 1) * filters.limit;
-  const pageEvents = filteredEvents
+  const pageEvents = quickFilteredEvents
     .slice(startIndex, startIndex + filters.limit)
     .map(({ search_text: _searchText, ...event }) => event);
 

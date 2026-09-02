@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "0f55f6b6-4a4f-4f5f-8b75-9f5d37a07f38",
     "name": "Labor Project Backend",
-    "description": "Postman collection for Labor Project Backend. baseUrl defaults to the Render dev server (https://labor-project-backend-dev.onrender.com) — change the baseUrl variable if you want to test against a local server instead.\nEvery request shows its contract explicitly in that request: method, URL, required headers, query params, and body.\nProtected requests use Header: Authorization: Bearer {{accessToken}}.\nRun Auth > POST /api/auth/login first to get AccessToken and RefreshToken.",
+    "description": "Postman collection for Labor Project Backend. baseUrl defaults to http://localhost:8080 for local development — change the baseUrl/wsBaseUrl variables to the shared droplet's domain (see README > Deploying to DigitalOcean) to test against the shared dev/test deployment instead.\nEvery request shows its contract explicitly in that request: method, URL, required headers, query params, and body.\nProtected requests use Header: Authorization: Bearer {{accessToken}}.\nRun Auth > POST /api/auth/login first to get AccessToken and RefreshToken.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -27,15 +27,15 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "https://labor-project-backend-dev.onrender.com",
+      "value": "http://localhost:8080",
       "type": "string",
-      "description": "Backend base URL for testing."
+      "description": "Backend base URL for testing. Set to https://<your-domain> to test against the shared droplet dev/test deployment instead — see README > Deploying to DigitalOcean."
     },
     {
       "key": "wsBaseUrl",
-      "value": "wss://labor-project-backend-dev.onrender.com",
+      "value": "ws://localhost:8080",
       "type": "string",
-      "description": "Backend WebSocket base URL for Worker Mobile realtime connection."
+      "description": "Backend WebSocket base URL for Worker Mobile realtime connection. Set to wss://<your-domain> for the shared droplet deployment."
     },
     {
       "key": "accessToken",

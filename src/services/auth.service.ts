@@ -6,6 +6,7 @@ import { getAccountPermissions } from "./shared/account-permission.service";
 import { registerWorkerPushToken as registerWorkerPushTokenForSession, registerWorkerPushTokenForAccount, revokeWorkerPushTokensBySession, sendWorkerPushNotificationToSession } from "./shared/worker-push.service";
 import { diffChangedFields, writeSecurityAuditLog, writeSecurityAuditLogBestEffort } from "./shared/security-audit-log.service";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
+import { deleteAdminProfileImageByUrl } from "../config/spaces";
 import { withTransaction } from "../db/prisma";
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto, UpdateLangResponse } from "../types/auth.type";
@@ -16,6 +17,7 @@ import { parseWithSchema } from "../validation/parser";
 import { changeOwnPasswordBodySchema, confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema, updateOwnLangBodySchema, updateOwnProfileBodySchema } from "../validation/schemas";
 import ApiError from "../utils/api-error";
 import { signAccessToken, signLoginChallengeToken, signRefreshToken, verifyLoginChallengeToken, verifyRefreshToken } from "../utils/jwt";
+import { logger } from "../utils/logger";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { hashRefreshToken, refreshTokenHashesMatch } from "../utils/refresh-token-hash";
 import { formatScheduleWithShift } from "../utils/shift";
@@ -592,6 +594,26 @@ export async function confirmForceLogin(
         transaction
       );
 
+      // auth_session_revoked แยกจาก auth_force_login (27.14.1) — session_id คือ target session ที่
+      // ถูก revoke (ต่างจาก auth_force_login ที่ session_id คือ session ใหม่ที่สร้างขึ้น) ใช้
+      // request_id เดียวกันเพื่อ trace 2 event นี้กลับมาหากันได้จาก operation เดียวกัน
+      await writeSecurityAuditLog(
+        {
+          event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_SESSION_REVOKED,
+          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+          actor_type: "worker",
+          actor_worker_id: worker.id,
+          actor_username: worker.labor_code,
+          actor_full_name: worker.full_name,
+          session_id: oldSession.id,
+          ip_address: context.ip_address,
+          user_agent: context.user_agent,
+          request_id: context.request_id,
+          metadata: { revoke_source: "force_login", new_session_id: tokens.session.id },
+        },
+        transaction
+      );
+
       await writeSecurityAuditLog(
         {
           event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_FORCE_LOGIN,
@@ -634,6 +656,26 @@ export async function confirmForceLogin(
     await sessionRepository.revoke(oldSession.id, transaction);
 
     const tokens = await createAdminSession(account, deviceId, deviceName, transaction);
+
+    // auth_session_revoked แยกจาก auth_force_login (27.14.1) — session_id คือ target session ที่ถูก
+    // revoke (ต่างจาก auth_force_login ที่ session_id คือ session ใหม่ที่สร้างขึ้น) ใช้ request_id
+    // เดียวกันเพื่อ trace 2 event นี้กลับมาหากันได้จาก operation เดียวกัน
+    await writeSecurityAuditLog(
+      {
+        event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_SESSION_REVOKED,
+        outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
+        actor_type: "admin",
+        actor_account_id: account.id,
+        actor_username: account.username,
+        actor_full_name: account.full_name,
+        session_id: oldSession.id,
+        ip_address: context.ip_address,
+        user_agent: context.user_agent,
+        request_id: context.request_id,
+        metadata: { revoke_source: "force_login", new_session_id: tokens.session.id },
+      },
+      transaction
+    );
 
     await writeSecurityAuditLog(
       {
@@ -1063,8 +1105,9 @@ export async function uploadOwnProfileImage(
     "INVALID_TOKEN",
     "Invalid or expired token."
   );
+  const previousImageUrl = account.image_url;
 
-  return withTransaction(async (transaction) => {
+  const result = await withTransaction(async (transaction) => {
     const updatedAccount = await accountRepository.updateProfile(
       account.id,
       { image_url: imageUrl },
@@ -1097,4 +1140,14 @@ export async function uploadOwnProfileImage(
       image_url: updatedAccount.image_url ?? imageUrl,
     };
   });
+
+  // ลบรูปเก่าออกจาก Spaces แบบ best-effort หลัง commit สำเร็จแล้วเท่านั้น (ไม่ทำให้ request หลักล้มเหลว
+  // ถ้าลบไม่สำเร็จ) — no-op เงียบๆ ถ้า previousImageUrl เป็น path local เก่าก่อน migrate ไป Spaces
+  if (previousImageUrl && previousImageUrl !== imageUrl) {
+    await deleteAdminProfileImageByUrl(previousImageUrl).catch((error) => {
+      logger.error("Failed to delete previous admin profile image from storage.", { error });
+    });
+  }
+
+  return result;
 }

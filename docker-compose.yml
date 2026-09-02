@@ -47,7 +47,6 @@ services:
       - "8080:8080"
     volumes:
       - .:/app
-      - ./uploads:/app/uploads
       - api_node_modules:/app/node_modules
     command: sh -c "npm run db:generate && npm run dev"
     depends_on:
@@ -80,8 +79,6 @@ services:
       DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:password@postgres:5432/labor_project}
     ports:
       - "8080:8080"
-    volumes:
-      - ./uploads:/app/uploads
     depends_on:
       redis:
         condition: service_healthy

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 
-import { addAdmin, addWorker, getPassword, resetRouteTestState, restoreRouteTestLoader, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
+import { addAdmin, addWorker, getPassword, resetRouteTestState, resetSpacesMockState, restoreRouteTestLoader, spacesMockState, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
 
 // ตั้ง UPLOAD_DIR ให้ชี้ไปที่โฟลเดอร์ย่อยใต้ uploads/ (gitignored อยู่แล้ว) ก่อน src/app.ts และ
 // upload.middleware.ts ถูก import จริงใน startRouteTestServer() — ป้องกันไม่ให้ test เขียนไฟล์รูป
@@ -20,6 +20,7 @@ before(async () => {
 
 beforeEach(() => {
   resetRouteTestState();
+  resetSpacesMockState();
 });
 
 after(async () => {
@@ -394,7 +395,7 @@ test("PATCH /api/auth/me is rejected for a worker token (admin-only self-service
   assert.equal(update.status, 403);
 });
 
-test("POST /api/auth/me/upload-image stores the file under uploads/admins and persists image_url", async () => {
+test("POST /api/auth/me/upload-image uploads the file to object storage (Spaces) and persists image_url", async () => {
   const passwordHash = await password.hashPassword("Admin@123456");
   const admin = addAdmin(1022, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
@@ -417,8 +418,9 @@ test("POST /api/auth/me/upload-image stores the file under uploads/admins and pe
   });
 
   assert.equal(response.status, 200);
-  assert.ok(response.body.image_url.startsWith("/uploads/admins/"));
+  assert.ok(response.body.image_url.startsWith("https://test-admin-uploads.sgp1.digitaloceanspaces.com/admins/"));
   assert.ok(response.body.image_url.endsWith(".jpg"));
+  assert.deepEqual(spacesMockState.uploadedUrls, [response.body.image_url]);
 
   const me = await server.request("GET", "/api/auth/me", {
     token: login.body.access_token,
@@ -428,6 +430,43 @@ test("POST /api/auth/me/upload-image stores the file under uploads/admins and pe
   // ต้องโหลดรูปกลับมาได้จาก GET /api/auth/me เสมอ ไม่พึ่ง cache ฝั่ง Frontend (เช่น หลัง logout/login
   // หรือเปิดจาก device ใหม่)
   assert.equal(me.body.image_url, response.body.image_url);
+});
+
+test("POST /api/auth/me/upload-image deletes the previous image from object storage when replaced", async () => {
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(1025, passwordHash);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: {
+      username: admin.username,
+      password: "Admin@123456",
+    },
+  });
+
+  const firstUpload = new FormData();
+  firstUpload.append(
+    "file",
+    new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: "image/jpeg" }),
+    "first.jpg",
+  );
+  const first = await server.request("POST", "/api/auth/me/upload-image", {
+    token: login.body.access_token,
+    body: firstUpload,
+  });
+
+  const secondUpload = new FormData();
+  secondUpload.append(
+    "file",
+    new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: "image/png" }),
+    "second.png",
+  );
+  const second = await server.request("POST", "/api/auth/me/upload-image", {
+    token: login.body.access_token,
+    body: secondUpload,
+  });
+
+  assert.equal(second.status, 200);
+  assert.notEqual(second.body.image_url, first.body.image_url);
+  assert.deepEqual(spacesMockState.deletedUrls, [first.body.image_url]);
 });
 
 test("POST /api/auth/me/upload-image rejects a non-image file", async () => {
@@ -971,4 +1010,25 @@ test("POST /api/auth/login/confirm-force writes an auth_force_login SecurityAudi
     (forceLoginLog.metadata as { revoked_session_id?: number } | null)?.revoked_session_id,
     firstLoginLog!.session_id,
   );
+
+  // 27.14.1 — auth_session_revoked ต้องเขียนคู่กันเสมอ session_id ต้องชี้ไปที่ session เดิมที่ถูก
+  // revoke (ตรงข้ามกับ auth_force_login ที่ session_id คือ session ใหม่) และเชื่อมกลับไปหา
+  // auth_force_login ได้ด้วย request_id เดียวกัน
+  const sessionRevokedLog = state.securityAuditLogs.find(
+    (log) => log.event_type === "auth_session_revoked" && log.actor_worker_id === worker.id,
+  );
+
+  assert.ok(sessionRevokedLog);
+  assert.equal(sessionRevokedLog.outcome, "success");
+  assert.equal(sessionRevokedLog.session_id, firstLoginLog!.session_id);
+  assert.equal(
+    (sessionRevokedLog.metadata as { revoke_source?: string } | null)?.revoke_source,
+    "force_login",
+  );
+  assert.equal(
+    (sessionRevokedLog.metadata as { new_session_id?: number } | null)?.new_session_id,
+    forceLoginLog!.session_id,
+  );
+  assert.ok(sessionRevokedLog.request_id);
+  assert.equal(sessionRevokedLog.request_id, forceLoginLog!.request_id);
 });

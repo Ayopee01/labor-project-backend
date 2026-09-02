@@ -65,12 +65,11 @@ COPY --from=production-deps /app/prisma.config.js ./
 COPY --from=production-deps /app/prisma ./prisma
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/src/docs/openapi ./src/docs/openapi
-RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
 EXPOSE 8080
 USER node
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD node -e "const port=process.env.PORT||8080; fetch('http://127.0.0.1:'+port+'/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # exec แทนที่ shell process ด้วย node โดยตรงหลัง migrate deploy เสร็จ (ไม่ผ่าน npm) เพื่อให้ node เป็น
-# PID 1 รับ SIGTERM ตรงๆ สำหรับ graceful shutdown (SHUTDOWN_TIMEOUT_MS) — ต่างจากการรันผ่าน
-# "npm run start:render" ตรงๆ ที่ npm จะเป็น PID 1 แทนและอาจส่ง signal ไปถึง node ช้า/ไม่ครบ
+# PID 1 รับ SIGTERM ตรงๆ สำหรับ graceful shutdown (SHUTDOWN_TIMEOUT_MS) — ต่างจากการรันผ่าน npm script
+# ตรงๆ (เช่น "npm run start") ที่ npm จะเป็น PID 1 แทนและอาจส่ง signal ไปถึง node ช้า/ไม่ครบ
 CMD ["sh", "-c", "npm run db:deploy && exec node dist/index.js"]

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 
-import { addAdmin, addDispatchableJob, addGateClient, addMarketJobForVehicle, addPendingAssignment, addTicketForVehicleJob, addWorker, getPassword, getTicketFinancialService, getWorkerDispatch, getWorkerQueue, resetRouteTestState, restoreRouteTestLoader, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
+import { addAdmin, addDispatchableJob, addGateClient, addMarketJobForVehicle, addPendingAssignment, addTicketForVehicleJob, addWorker, getPassword, getTicketFinancialService, getWorkerDispatch, getWorkerQueue, resetRouteTestState, restoreRouteTestLoader, signLineWebhookBody, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
 
 let server: TestServer;
 let password: typeof import("../../src/utils/password");
@@ -1940,6 +1940,82 @@ test("GET /api/admin/vehicle-jobs/operations?dropoff_point filters to vehicles w
   );
 
   assert.ok(lowercaseTicketNumbers.includes(dockBJob.ticket_number));
+});
+
+test("GET /api/admin/vehicle-jobs/operations?date_from&time_from narrows the range start to that time on date_from, excluding jobs created earlier that day", async () => {
+  const { token } = await loginJobAdmin(9950);
+
+  const beforeJob = addDispatchableJob(9951, 1);
+  beforeJob.created_at = "2026-07-01T07:00:00.000+07:00";
+
+  const afterJob = addDispatchableJob(9952, 1);
+  afterJob.created_at = "2026-07-01T09:00:00.000+07:00";
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/operations?date_from=2026-07-01&date_to=2026-07-01&time_from=08:00",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const ticketNumbers = response.body.data.map(
+    (item: { vehicle_job: { ticket_number: string } }) =>
+      item.vehicle_job.ticket_number,
+  );
+
+  assert.ok(ticketNumbers.includes(afterJob.ticket_number));
+  assert.ok(!ticketNumbers.includes(beforeJob.ticket_number));
+});
+
+test("GET /api/admin/vehicle-jobs/operations?date_to&time_to narrows the range end to that time on date_to, inclusive of the given minute", async () => {
+  const { token } = await loginJobAdmin(9953);
+
+  const withinMinuteJob = addDispatchableJob(9954, 1);
+  withinMinuteJob.created_at = "2026-07-01T18:00:30.000+07:00";
+
+  const afterMinuteJob = addDispatchableJob(9955, 1);
+  afterMinuteJob.created_at = "2026-07-01T18:01:00.000+07:00";
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/operations?date_from=2026-07-01&date_to=2026-07-01&time_to=18:00",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const ticketNumbers = response.body.data.map(
+    (item: { vehicle_job: { ticket_number: string } }) =>
+      item.vehicle_job.ticket_number,
+  );
+
+  assert.ok(ticketNumbers.includes(withinMinuteJob.ticket_number));
+  assert.ok(!ticketNumbers.includes(afterMinuteJob.ticket_number));
+});
+
+test("GET /api/admin/vehicle-jobs/operations?time_from without date or date_from rejects with 400 VALIDATION_ERROR", async () => {
+  const { token } = await loginJobAdmin(9956);
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/operations?time_from=08:00",
+    { token },
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.code, "VALIDATION_ERROR");
+});
+
+test("GET /api/admin/vehicle-jobs/operations?date&time_from&time_to rejects same-day time_to before time_from with 400 VALIDATION_ERROR", async () => {
+  const { token } = await loginJobAdmin(9957);
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/operations?date=2026-07-01&time_from=18:00&time_to=08:00",
+    { token },
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.code, "VALIDATION_ERROR");
 });
 
 test("POST /api/admin/vehicle-jobs/:ticketNumber/tickets/:ticketNo/cancel includes the cancelled Business Ticket's own TicketNo in the worker push payload", async () => {
@@ -4767,20 +4843,22 @@ test("POST /api/admin/vehicle-jobs/.../override-count: Admin submits on behalf, 
 
   async function rejectViaLine(reason: string): Promise<void> {
     const rejectPostback = findLatestRejectPostback();
-    const rejectResponse = await server.request("POST", "/api/line/webhook", {
-      body: {
-        events: [
-          {
-            type: "postback",
-            source: {
-              userId: ticket.vendor_line_id,
-            },
-            postback: {
-              data: `${rejectPostback}&reject_reason=${reason}`,
-            },
+    const rejectBody = {
+      events: [
+        {
+          type: "postback",
+          source: {
+            userId: ticket.vendor_line_id,
           },
-        ],
-      },
+          postback: {
+            data: `${rejectPostback}&reject_reason=${reason}`,
+          },
+        },
+      ],
+    };
+    const rejectResponse = await server.request("POST", "/api/line/webhook", {
+      headers: { "x-line-signature": signLineWebhookBody(rejectBody) },
+      body: rejectBody,
     });
 
     assert.equal(rejectResponse.status, 200);
@@ -5462,16 +5540,18 @@ test("release-workers followed by confirming both booths of a multi-booth Busine
   // Vendor ยืนยันแผง 1 ก่อน — market ยังไม่ terminal (แผง 2 ยังไม่ยืนยัน) จึงยัง sync roster ของ market
   // นี้อีกรอบ (activateNextTicketIfReady) — worker ที่ RELEASED แล้วต้องไม่ถูก sync ตัดออกจากทีม
   const confirmPostback1 = findLinePostbackByBoothCode(ticket1.boothCode, "ถูกต้อง");
+  const confirmBody1 = {
+    events: [
+      {
+        type: "postback",
+        source: { userId: ticket1.vendor_line_id },
+        postback: { data: confirmPostback1 },
+      },
+    ],
+  };
   const confirm1 = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: { userId: ticket1.vendor_line_id },
-          postback: { data: confirmPostback1 },
-        },
-      ],
-    },
+    headers: { "x-line-signature": signLineWebhookBody(confirmBody1) },
+    body: confirmBody1,
   });
   assert.equal(confirm1.status, 200);
 
@@ -5485,16 +5565,18 @@ test("release-workers followed by confirming both booths of a multi-booth Busine
   assert.equal(ticketWorkerAfterFirstConfirm.status, "WORKING");
 
   const confirmPostback2 = findLinePostbackByBoothCode(ticket2.boothCode, "ถูกต้อง");
+  const confirmBody2 = {
+    events: [
+      {
+        type: "postback",
+        source: { userId: ticket2.vendor_line_id },
+        postback: { data: confirmPostback2 },
+      },
+    ],
+  };
   const confirm2 = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: { userId: ticket2.vendor_line_id },
-          postback: { data: confirmPostback2 },
-        },
-      ],
-    },
+    headers: { "x-line-signature": signLineWebhookBody(confirmBody2) },
+    body: confirmBody2,
   });
   assert.equal(confirm2.status, 200);
 
@@ -5571,16 +5653,18 @@ test("Worker or Admin can still resubmit a booth rejected by Vendor after releas
   assert.equal(assignment.status, "RELEASED");
 
   const rejectPostback = findLinePostbackByBoothCode(ticket1.boothCode, "ไม่ถูกต้อง");
+  const rejectBody = {
+    events: [
+      {
+        type: "postback",
+        source: { userId: ticket1.vendor_line_id },
+        postback: { data: `${rejectPostback}&reject_reason=wrong_amount` },
+      },
+    ],
+  };
   const rejectResponse = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: { userId: ticket1.vendor_line_id },
-          postback: { data: `${rejectPostback}&reject_reason=wrong_amount` },
-        },
-      ],
-    },
+    headers: { "x-line-signature": signLineWebhookBody(rejectBody) },
+    body: rejectBody,
   });
   assert.equal(rejectResponse.status, 200);
   assert.equal(ticket1.status, "REJECT");
@@ -6155,20 +6239,22 @@ test("GET /api/admin/vehicle-jobs/history reflects a manually LINE-confirmed boo
 
   assert.match(confirmPostback ?? "", /^token=/);
 
-  const confirmResponse = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: {
-            userId: ticket.vendor_line_id,
-          },
-          postback: {
-            data: confirmPostback,
-          },
+  const confirmBody = {
+    events: [
+      {
+        type: "postback",
+        source: {
+          userId: ticket.vendor_line_id,
         },
-      ],
-    },
+        postback: {
+          data: confirmPostback,
+        },
+      },
+    ],
+  };
+  const confirmResponse = await server.request("POST", "/api/line/webhook", {
+    headers: { "x-line-signature": signLineWebhookBody(confirmBody) },
+    body: confirmBody,
   });
 
   assert.equal(confirmResponse.status, 200);

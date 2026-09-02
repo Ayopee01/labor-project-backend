@@ -86,7 +86,7 @@ function buildErrorResponse(error: ApiError, requestId?: string): ErrorResponse 
 }
 
 function shouldIncludeErrorDetails(error: ApiError): boolean {
-  return process.env.NODE_ENV !== "production" || error.statusCode < 500;
+  return error.statusCode < 500;
 }
 
 // Function จัดการ error handler สำหรับ Express middleware

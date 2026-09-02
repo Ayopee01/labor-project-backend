@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 
-import { addAdmin, addDispatchableJob, addGateClient, addPendingAssignment, addTicketForVehicleJob, addWorker, getPassword, getTicketFinancialService, getWorkerDispatch, getWorkerQueue, resetRouteTestState, restoreRouteTestLoader, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
+import { addAdmin, addDispatchableJob, addGateClient, addPendingAssignment, addTicketForVehicleJob, addWorker, getPassword, getTicketFinancialService, getWorkerDispatch, getWorkerQueue, resetRouteTestState, restoreRouteTestLoader, signLineWebhookBody, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
 
 let server: TestServer;
 let password: typeof import("../../src/utils/password");
@@ -178,148 +178,7 @@ after(async () => {
   restoreRouteTestLoader();
 });
 
-// Function สร้าง Submission ที่ยังรอ vendor สำหรับทดสอบหน้า LINE dev
-async function createLineDevWaitingSubmission(
-  workerId: number,
-  vehicleJobId: number,
-) {
-  const { token, worker } = await loginWorker(workerId);
-  const job = addDispatchableJob(vehicleJobId, 1);
-  const ticket = addTicketForVehicleJob(job.id, vehicleJobId * 10 + 1);
-  const assignment = addPendingAssignment(
-    vehicleJobId * 10 + 2,
-    job.id,
-    worker.id,
-  );
-  assignment.status = "SCANNED";
-  assignment.scanned_at = new Date().toISOString();
-  const products = state.ticketProducts.filter(
-    (product) => product.ticket_id === ticket.id,
-  );
-  const market = state.marketJobs.find(
-    (item) => item.id === ticket.market_job_id,
-  )!;
-
-  const response = await server.request(
-    "POST",
-    "/api/workers/me/assignments/tickets/complete",
-    {
-      token,
-      body: {
-        ticket_no: market.ticket_no,
-        boothCode: ticket.boothCode,
-        items: products.map((product) => ({
-          productCode: product.productCode,
-          packageCode: product.packageCode,
-          confirmed_quantity: Number(product.quantity),
-        })),
-      },
-    },
-  );
-
-  assert.equal(response.status, 200);
-  const submission = state.completionSubmissions.at(-1)!;
-  return { assignment, job, submission, ticket };
-}
-
 /* -------------------------------------- Gate Route Tests -------------------------------------- */
-
-test("GET /api/line/dev/submissions lists submitted totals without calling LINE", async () => {
-  const created = await createLineDevWaitingSubmission(170, 970);
-  const lineMessageCountBeforeList = state.lineMessages.length;
-
-  const response = await server.request(
-    "GET",
-    "/api/line/dev/submissions",
-    { external: true },
-  );
-
-  assert.equal(response.status, 200);
-  assert.equal(response.body.Data.length, 1);
-  assert.equal(response.body.Data[0].SubmissionId, created.submission.id);
-  assert.equal(response.body.Data[0].TicketId, created.ticket.id);
-  assert.equal(response.body.Data[0].Actionable, true);
-  assert.equal(response.body.Data[0].SubmissionStatus, "DELIVERED");
-  assert.ok(response.body.Data[0].Products.length > 0);
-  assert.ok(
-    response.body.Data[0].Products.every(
-      (product: { SubmittedQuantity: string; ExpectedQuantity: string }) =>
-        product.SubmittedQuantity === product.ExpectedQuantity,
-    ),
-  );
-  assert.equal(state.lineMessages.length, lineMessageCountBeforeList);
-});
-
-test("LINE dev routes are unavailable in production", async () => {
-  const previousNodeEnv = process.env.NODE_ENV;
-  process.env.NODE_ENV = "production";
-
-  try {
-    const response = await server.request(
-      "GET",
-      "/api/line/dev/submissions",
-      { external: true },
-    );
-    assert.equal(response.status, 404);
-    assert.equal(response.body.Code, "NOT_FOUND");
-  } finally {
-    process.env.NODE_ENV = previousNodeEnv;
-  }
-});
-
-test("POST /api/line/dev/submissions/:id/reject reuses vendor rejection flow without sending LINE", async () => {
-  const created = await createLineDevWaitingSubmission(171, 971);
-  const lineMessageCountBeforeAction = state.lineMessages.length;
-
-  const response = await server.request(
-    "POST",
-    `/api/line/dev/submissions/${created.submission.id}/reject`,
-    {
-      external: true,
-      body: {},
-    },
-  );
-
-  assert.equal(response.status, 200);
-  assert.equal(response.body.Action, "reject");
-  assert.equal(response.body.TicketStatus, "REJECT");
-  assert.equal(created.ticket.status, "REJECT");
-  assert.equal(created.assignment.status, "REJECT");
-  assert.equal(created.submission.resolved_by_line_user_id, "line-dev-tester");
-  assert.equal(state.lineMessages.length, lineMessageCountBeforeAction);
-});
-
-test("POST /api/line/dev/submissions/:id/confirm reuses vendor confirmation flow and prevents duplicate actions", async () => {
-  const created = await createLineDevWaitingSubmission(172, 972);
-  const lineMessageCountBeforeAction = state.lineMessages.length;
-
-  const response = await server.request(
-    "POST",
-    `/api/line/dev/submissions/${created.submission.id}/confirm`,
-    {
-      external: true,
-      body: {},
-    },
-  );
-
-  assert.equal(response.status, 200);
-  assert.equal(response.body.Action, "confirm");
-  assert.equal(response.body.TicketStatus, "COMPLETED");
-  assert.equal(created.ticket.status, "COMPLETED");
-  assert.equal(created.submission.resolved_by_line_user_id, "line-dev-tester");
-  assert.equal(state.lineMessages.length, lineMessageCountBeforeAction);
-
-  const duplicate = await server.request(
-    "POST",
-    `/api/line/dev/submissions/${created.submission.id}/confirm`,
-    {
-      external: true,
-      body: {},
-    },
-  );
-  assert.equal(duplicate.status, 409);
-  assert.equal(duplicate.body.Code, "SUBMISSION_ALREADY_HANDLED");
-});
 
 test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows resubmit", async () => {
   const { token, worker } = await loginWorker(75);
@@ -367,20 +226,22 @@ test("POST /api/line/webhook vendor reject marks assignment as REJECT and allows
   assert.match(rejectPostback ?? "", /^token=/);
   assert.ok((rejectPostback ?? "").length <= 300);
 
-  const rejectResponse = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: {
-            userId: ticket.vendor_line_id,
-          },
-          postback: {
-            data: `${rejectPostback}&reject_reason=Quantity mismatch`,
-          },
+  const rejectBody = {
+    events: [
+      {
+        type: "postback",
+        source: {
+          userId: ticket.vendor_line_id,
         },
-      ],
-    },
+        postback: {
+          data: `${rejectPostback}&reject_reason=Quantity mismatch`,
+        },
+      },
+    ],
+  };
+  const rejectResponse = await server.request("POST", "/api/line/webhook", {
+    headers: { "x-line-signature": signLineWebhookBody(rejectBody) },
+    body: rejectBody,
   });
 
   assert.equal(rejectResponse.status, 200);
@@ -485,21 +346,23 @@ test("POST /api/line/webhook replies already-handled to the vendor when an earli
   // vendor แทนที่จะเงียบ พร้อมยังประมวลผล event ถัดไปในชุดเดียวกันต่อไปได้ตามปกติ
   first.ticket.status = "WAIT";
 
+  const raceBody = {
+    events: [
+      {
+        type: "postback",
+        source: { userId: first.ticket.vendor_line_id },
+        postback: { data: `${first.rejectPostback}&reject_reason=Race` },
+      },
+      {
+        type: "postback",
+        source: { userId: second.ticket.vendor_line_id },
+        postback: { data: `${second.rejectPostback}&reject_reason=Quantity mismatch` },
+      },
+    ],
+  };
   const response = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: { userId: first.ticket.vendor_line_id },
-          postback: { data: `${first.rejectPostback}&reject_reason=Race` },
-        },
-        {
-          type: "postback",
-          source: { userId: second.ticket.vendor_line_id },
-          postback: { data: `${second.rejectPostback}&reject_reason=Quantity mismatch` },
-        },
-      ],
-    },
+    headers: { "x-line-signature": signLineWebhookBody(raceBody) },
+    body: raceBody,
   });
 
   assert.equal(response.status, 200);
@@ -577,16 +440,18 @@ test("POST /api/workers/me/assignments/tickets/complete snapshots worker_count_s
 
   assert.match(rejectPostback ?? "", /^token=/);
 
+  const rejectBody = {
+    events: [
+      {
+        type: "postback",
+        source: { userId: ticket.vendor_line_id },
+        postback: { data: `${rejectPostback}&reject_reason=Quantity mismatch` },
+      },
+    ],
+  };
   const rejectResponse = await server.request("POST", "/api/line/webhook", {
-    body: {
-      events: [
-        {
-          type: "postback",
-          source: { userId: ticket.vendor_line_id },
-          postback: { data: `${rejectPostback}&reject_reason=Quantity mismatch` },
-        },
-      ],
-    },
+    headers: { "x-line-signature": signLineWebhookBody(rejectBody) },
+    body: rejectBody,
   });
 
   assert.equal(rejectResponse.status, 200);

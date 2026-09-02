@@ -263,6 +263,7 @@ export function resetRouteTestState(): void {
   state.messageDeliveryLogs.length = 0;
   state.adminActionLogs.length = 0;
   state.securityAuditLogs.length = 0;
+  state.forceSecurityAuditLogWriteFailure = false;
   state.masterMarkets.length = 0;
   state.masterProducts.length = 0;
   state.masterRates.length = 0;

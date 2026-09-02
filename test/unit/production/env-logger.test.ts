@@ -18,6 +18,10 @@ const PRODUCTION_ENV_KEYS = [
   "BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE",
   "BULLMQ_WORKER_BREAK_RETURN_QUEUE",
   "BULLMQ_LINE_MESSAGE_QUEUE",
+  "SHUTDOWN_TIMEOUT_MS",
+  "RATE_LIMIT_WINDOW_MS",
+  "RATE_LIMIT_MAX_REQUESTS",
+  "RATE_LIMIT_CLEANUP_INTERVAL_MS",
   "JWT_ACCESS_SECRET",
   "JWT_REFRESH_SECRET",
   "JWT_LOGIN_CHALLENGE_SECRET",
@@ -26,6 +30,11 @@ const PRODUCTION_ENV_KEYS = [
   "CORS_ORIGIN",
   "LINE_CHANNEL_SECRET",
   "LINE_CHANNEL_ACCESS_TOKEN",
+  "SPACES_ENDPOINT",
+  "SPACES_REGION",
+  "SPACES_ACCESS_KEY",
+  "SPACES_SECRET_KEY",
+  "SPACES_ADMIN_BUCKET",
   "FIREBASE_PROJECT_ID",
   "FIREBASE_CLIENT_EMAIL",
   "FIREBASE_PRIVATE_KEY",
@@ -51,6 +60,10 @@ function withValidProductionEnv(
     BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE: "assignment-timeouts",
     BULLMQ_WORKER_BREAK_RETURN_QUEUE: "worker-break-returns",
     BULLMQ_LINE_MESSAGE_QUEUE: "line-messages",
+    SHUTDOWN_TIMEOUT_MS: "20000",
+    RATE_LIMIT_WINDOW_MS: "60000",
+    RATE_LIMIT_MAX_REQUESTS: "300",
+    RATE_LIMIT_CLEANUP_INTERVAL_MS: "60000",
     JWT_ACCESS_SECRET: "x".repeat(32),
     JWT_REFRESH_SECRET: "x".repeat(32),
     JWT_LOGIN_CHALLENGE_SECRET: "y".repeat(32),
@@ -59,6 +72,11 @@ function withValidProductionEnv(
     CORS_ORIGIN: "https://example.com",
     LINE_CHANNEL_SECRET: "line-channel-secret",
     LINE_CHANNEL_ACCESS_TOKEN: "line-channel-access-token",
+    SPACES_ENDPOINT: "https://sgp1.digitaloceanspaces.com",
+    SPACES_REGION: "sgp1",
+    SPACES_ACCESS_KEY: "spaces-access-key",
+    SPACES_SECRET_KEY: "spaces-secret-key",
+    SPACES_ADMIN_BUCKET: "labor-admin-uploads",
     FIREBASE_PROJECT_ID: "labor-test-project",
     FIREBASE_CLIENT_EMAIL: "firebase-admin@example.iam.gserviceaccount.com",
     FIREBASE_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\\nfake\\n-----END PRIVATE KEY-----\\n",
@@ -177,15 +195,12 @@ test("env validation rejects missing production CORS origin and LINE config", ()
   }
 });
 
-// test ทดสอบ
-test("env validation allows wildcard CORS when explicitly enabled", () => {
+test("env validation allows wildcard CORS origin", () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousCorsOrigin = process.env.CORS_ORIGIN;
-  const previousAllowWildcard = process.env.ALLOW_CORS_WILDCARD;
 
   process.env.NODE_ENV = "production";
   process.env.CORS_ORIGIN = "*";
-  process.env.ALLOW_CORS_WILDCARD = "true";
 
   process.env.DATABASE_URL =
     "postgresql://user:pass@localhost:5432/app";
@@ -199,6 +214,10 @@ test("env validation allows wildcard CORS when explicitly enabled", () => {
   process.env.BULLMQ_WORKER_BREAK_RETURN_QUEUE =
     "worker-break-returns";
   process.env.BULLMQ_LINE_MESSAGE_QUEUE = "line-messages";
+  process.env.SHUTDOWN_TIMEOUT_MS = "20000";
+  process.env.RATE_LIMIT_WINDOW_MS = "60000";
+  process.env.RATE_LIMIT_MAX_REQUESTS = "300";
+  process.env.RATE_LIMIT_CLEANUP_INTERVAL_MS = "60000";
 
   process.env.JWT_ACCESS_SECRET = "x".repeat(32);
   process.env.JWT_REFRESH_SECRET = "x".repeat(32);
@@ -209,6 +228,12 @@ test("env validation allows wildcard CORS when explicitly enabled", () => {
   process.env.LINE_CHANNEL_SECRET = "line-channel-secret";
   process.env.LINE_CHANNEL_ACCESS_TOKEN =
     "line-channel-access-token";
+
+  process.env.SPACES_ENDPOINT = "https://sgp1.digitaloceanspaces.com";
+  process.env.SPACES_REGION = "sgp1";
+  process.env.SPACES_ACCESS_KEY = "spaces-access-key";
+  process.env.SPACES_SECRET_KEY = "spaces-secret-key";
+  process.env.SPACES_ADMIN_BUCKET = "labor-admin-uploads";
 
   process.env.FIREBASE_PROJECT_ID = "firebase-project";
   process.env.FIREBASE_CLIENT_EMAIL =
@@ -223,51 +248,6 @@ test("env validation allows wildcard CORS when explicitly enabled", () => {
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
 
-    if (previousCorsOrigin === undefined) {
-      delete process.env.CORS_ORIGIN;
-    } else {
-      process.env.CORS_ORIGIN = previousCorsOrigin;
-    }
-
-    if (previousAllowWildcard === undefined) {
-      delete process.env.ALLOW_CORS_WILDCARD;
-    } else {
-      process.env.ALLOW_CORS_WILDCARD = previousAllowWildcard;
-    }
-  }
-});
-
-test("env validation rejects wildcard production CORS origin", () => {
-  const previousNodeEnv = process.env.NODE_ENV;
-  const previousCorsOrigin = process.env.CORS_ORIGIN;
-
-  process.env.NODE_ENV = "production";
-  process.env.CORS_ORIGIN = "*";
-  process.env.DATABASE_URL = "postgresql://user:pass@localhost:5432/app";
-  process.env.REDIS_URL = "redis://localhost:6379";
-  process.env.REDIS_WORKER_QUEUE_KEY = "worker:queue";
-  process.env.REDIS_WORKER_STATUS_KEY_PREFIX = "worker:status:";
-  process.env.REDIS_WORKER_PRESENCE_KEY_PREFIX = "worker:presence:";
-  process.env.WORKER_PRESENCE_STALE_SECONDS = "90";
-  process.env.REDIS_WORKER_BREAK_COUNT_KEY_PREFIX = "worker:break:";
-  process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE = "assignment-timeouts";
-  process.env.BULLMQ_WORKER_BREAK_RETURN_QUEUE = "worker-break-returns";
-  process.env.BULLMQ_LINE_MESSAGE_QUEUE = "line-messages";
-  process.env.JWT_ACCESS_SECRET = "x".repeat(32);
-  process.env.JWT_REFRESH_SECRET = "x".repeat(32);
-  process.env.JWT_LOGIN_CHALLENGE_SECRET = "y".repeat(32);
-  process.env.REFRESH_TOKEN_HASH_SECRET = "z".repeat(32);
-  process.env.VENDOR_ACTION_TOKEN_SECRET = "w".repeat(32);
-  process.env.LINE_CHANNEL_SECRET = "line-channel-secret";
-  process.env.LINE_CHANNEL_ACCESS_TOKEN = "line-channel-access-token";
-
-  try {
-    const result = validateRuntimeEnv();
-
-    assert.equal(result.ok, false);
-    assert.match(result.errors.join(" "), /CORS_ORIGIN must not be '\*'/);
-  } finally {
-    process.env.NODE_ENV = previousNodeEnv;
     if (previousCorsOrigin === undefined) {
       delete process.env.CORS_ORIGIN;
     } else {
@@ -318,44 +298,6 @@ test("env validation accepts valid production Firebase config", () => {
 
     assert.equal(result.ok, true);
   });
-});
-
-test("env validation does not require Firebase credentials outside production", () => {
-  const previousNodeEnv = process.env.NODE_ENV;
-  const previousFirebaseProjectId = process.env.FIREBASE_PROJECT_ID;
-  const previousFirebaseClientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const previousFirebasePrivateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-  process.env.NODE_ENV = "test";
-  delete process.env.FIREBASE_PROJECT_ID;
-  delete process.env.FIREBASE_CLIENT_EMAIL;
-  delete process.env.FIREBASE_PRIVATE_KEY;
-
-  try {
-    const result = validateRuntimeEnv();
-
-    assert.equal(
-      result.errors.some((error) => error.includes("FIREBASE_")),
-      false,
-    );
-  } finally {
-    process.env.NODE_ENV = previousNodeEnv;
-    if (previousFirebaseProjectId === undefined) {
-      delete process.env.FIREBASE_PROJECT_ID;
-    } else {
-      process.env.FIREBASE_PROJECT_ID = previousFirebaseProjectId;
-    }
-    if (previousFirebaseClientEmail === undefined) {
-      delete process.env.FIREBASE_CLIENT_EMAIL;
-    } else {
-      process.env.FIREBASE_CLIENT_EMAIL = previousFirebaseClientEmail;
-    }
-    if (previousFirebasePrivateKey === undefined) {
-      delete process.env.FIREBASE_PRIVATE_KEY;
-    } else {
-      process.env.FIREBASE_PRIVATE_KEY = previousFirebasePrivateKey;
-    }
-  }
 });
 
 test("logger redacts nested secret-shaped keys", () => {

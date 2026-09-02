@@ -6,9 +6,6 @@ type RateLimitBucket = {
 };
 
 const buckets = new Map<string, RateLimitBucket>();
-const DEFAULT_WINDOW_MS = 60_000;
-const DEFAULT_MAX_REQUESTS = 300;
-const DEFAULT_CLEANUP_INTERVAL_MS = 60_000;
 const RATE_LIMITED_ROUTE_PATTERNS = [
   /^\/api\/auth\//,
   /^\/api\/admin\//,
@@ -38,10 +35,7 @@ function ensureRateLimitCleanupTimer(): void {
     return;
   }
 
-  const cleanupIntervalMs = readPositiveNumberEnv(
-    "RATE_LIMIT_CLEANUP_INTERVAL_MS",
-    DEFAULT_CLEANUP_INTERVAL_MS,
-  );
+  const cleanupIntervalMs = Number(process.env.RATE_LIMIT_CLEANUP_INTERVAL_MS);
 
   cleanupTimer = setInterval(() => cleanupExpiredBuckets(), cleanupIntervalMs);
   cleanupTimer.unref();
@@ -72,11 +66,8 @@ export function rateLimitMiddleware(
 
   ensureRateLimitCleanupTimer();
 
-  const windowMs = readPositiveNumberEnv("RATE_LIMIT_WINDOW_MS", DEFAULT_WINDOW_MS);
-  const maxRequests = readPositiveNumberEnv(
-    "RATE_LIMIT_MAX_REQUESTS",
-    DEFAULT_MAX_REQUESTS,
-  );
+  const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS);
+  const maxRequests = Number(process.env.RATE_LIMIT_MAX_REQUESTS);
   const now = Date.now();
   const key = getClientKey(req);
   const current = buckets.get(key);
@@ -145,10 +136,7 @@ function ensureLoginRateLimitCleanupTimer(): void {
     return;
   }
 
-  const cleanupIntervalMs = readPositiveNumberEnv(
-    "RATE_LIMIT_CLEANUP_INTERVAL_MS",
-    DEFAULT_CLEANUP_INTERVAL_MS,
-  );
+  const cleanupIntervalMs = Number(process.env.RATE_LIMIT_CLEANUP_INTERVAL_MS);
 
   loginCleanupTimer = setInterval(() => cleanupExpiredLoginBuckets(), cleanupIntervalMs);
   loginCleanupTimer.unref();

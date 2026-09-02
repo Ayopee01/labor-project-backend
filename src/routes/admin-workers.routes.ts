@@ -6,7 +6,6 @@ import authMiddleware from "../middlewares/auth.middleware";
 import permissionMiddleware from "../middlewares/permission.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
-import { normalizeCreateUserMultipartBody, uploadWorkerImage } from "../middlewares/upload.middleware";
 
 // Import Services
 import * as adminWorkersService from "../services/admin-workers.service";
@@ -30,11 +29,6 @@ function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
 router.post(
   "/",
   permissionMiddleware(["workers:create"]),
-  uploadWorkerImage.fields([
-    { name: "Image", maxCount: 1 },
-    { name: "image", maxCount: 1 },
-  ]),
-  normalizeCreateUserMultipartBody,
   async (req, res, next) => {
     try {
       const result = await adminWorkersService.createUser(

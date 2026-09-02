@@ -5,9 +5,11 @@ Backend Express API for labor/user management.
 The project supports two development modes:
 
 - Local development on a developer machine
-- Shared development/test deployment on Render
+- Shared development/test deployment on a self-managed DigitalOcean Droplet — the same droplet
+  also runs production; see **Deploying to DigitalOcean** below. There is no separate hosted
+  environment for dev/test.
 
-The shared Render environment provides a single public Backend Base URL for:
+The shared droplet deployment provides a single public Backend Base URL for:
 
 - Frontend integration
 - Postman testing
@@ -19,9 +21,11 @@ Prisma owns the PostgreSQL schema, migrations, seed, and database client.
 
 ## API Documentation
 
-Full API reference (Swagger UI) for the shared Render dev deployment:
+Full API reference (Swagger UI) for the shared droplet dev deployment:
 
-https://labor-project-backend-dev.onrender.com/api-docs/
+https://\<your-domain\>/api-docs/
+
+(nginx/TLS termination is configured directly on the droplet, outside this repo — see **Deploying to DigitalOcean** below.)
 
 ## Stack
 
@@ -34,7 +38,7 @@ https://labor-project-backend-dev.onrender.com/api-docs/
 - TypeScript compiled to CommonJS
 - Docker
 - GitHub Actions CI
-- Render for shared development/test deployment
+- DigitalOcean Droplet (self-managed, Docker Compose) for both production and shared dev/test deployment — nginx/TLS is configured directly on the host, outside Docker Compose
 
 ## Local Development Setup
 
@@ -118,7 +122,7 @@ Runs unit tests and route tests (`test:unit` + `test:routes`). `npm run test:int
 
 ## Logging & Error Tracking
 
-Every request is logged once it completes, as a single structured JSON line to stdout (via [pino](https://getpino.io)) — never to a local file, since Render's filesystem is ephemeral. Fields logged per request:
+Every request is logged once it completes, as a single structured JSON line to stdout (via [pino](https://getpino.io)) — never to a local file, so Promtail can ship it straight off the Docker log driver (see the self-hosted log stack section below) with no app-side log file to manage. Fields logged per request:
 
 - `requestId` — from the inbound `X-Request-Id` header, or a generated UUID if not sent. Always echoed back in the `X-Request-Id` response header, and included in every error response body so a user can report an issue and the team can find the matching log line fast.
 - `method`, `path`, `statusCode`, `durationMs`
@@ -133,7 +137,7 @@ Log level follows the response status code: `>=500` → `error`, `>=400` → `wa
 
 **5xx errors** additionally log full context (`requestId`, `path`, `userId`, `clientType`, the redacted request body, stack trace) and are reported to [Sentry](https://sentry.io) with the same `requestId`/`clientType`/`userId` attached as tags/user context (`src/middlewares/error.middleware.ts`). Sentry is a no-op until `SENTRY_DSN` is set.
 
-**Viewing logs on Render**: open the service in the Render dashboard → **Logs** tab. Every line is a JSON object; filter/search by any field above (e.g. `requestId` from an error response, or `clientType`).
+**Viewing logs**: `docker compose logs -f api-prod` on the droplet shows raw JSON lines directly; every line is a JSON object, filter/search by any field above (e.g. `requestId` from an error response, or `clientType`). For a searchable UI across history instead of tailing raw output, use Grafana + Loki — see **Self-Hosted Log Stack** below.
 
 **Configuring Sentry**: set `SENTRY_DSN` in `.env` (see `.env.example`) — a no-op until set.
 
@@ -176,3 +180,113 @@ sudo ufw status verbose                                         # confirm SSH (2
 **Retention**: Loki is configured for 14 days (`monitoring/loki-config.yaml`'s `retention_period`) — set conservatively because the droplet's disk size wasn't known at setup time. Once real disk usage is confirmed comfortable (check with `docker exec labor-loki du -sh /loki` after the stack has been running a while), this can be raised to 30 days by editing that one value and restarting the `loki` container — no data migration needed. Consider also enabling DigitalOcean's built-in Droplet disk-usage monitoring/alerts as a safety net independent of Loki's own retention.
 
 **Backup**: this is a self-managed VM — there is no automatic backup of the `loki_data` volume the way a managed logging service would provide. Back it up periodically (e.g. `docker run --rm -v labor-project-backend_loki_data:/loki -v $(pwd):/backup alpine tar czf /backup/loki-backup-$(date +%F).tar.gz /loki`) if historical logs need to survive a lost/corrupted droplet, or treat log history as disposable if it doesn't.
+
+## Deploying to DigitalOcean (self-managed droplet)
+
+This is the only deployment target for the project — the same droplet serves both production and the shared dev/test environment described at the top of this README (a second droplet, if the team wants environments physically separated, would just repeat these same steps). It runs the `api-prod` and (optionally) `postgres`/log-stack services from `docker-compose.yml` via Docker Compose, on a DigitalOcean Droplet (Ubuntu 24.04 LTS). nginx and TLS (Let's Encrypt or otherwise) are set up directly on the host, outside this repo — `api-prod` just listens on port 8080 for whatever reverse proxy you put in front of it.
+
+### 1. Provision the droplet and install Docker
+
+- Create the droplet (2 vCPU/4GB is the tested baseline), SSH in.
+- Install Docker Engine + the Compose plugin (see Docker's official install docs for Ubuntu).
+- `git clone` this repo onto the droplet.
+
+### 2. Configure `.env`
+
+```bash
+cp .env.example .env
+```
+
+Fill in every `CHANGE_ME*` placeholder — see the **Pre-deploy secret checklist** below.
+
+### 3. Start the stack
+
+```bash
+docker compose --profile production up -d redis api-prod
+```
+
+To also run PostgreSQL in Docker on this droplet instead of an external managed database, add `postgres` to the service list and the `local-db` profile, e.g. `docker compose --profile production --profile local-db up -d redis postgres api-prod`.
+
+For the optional log stack (Grafana + Loki + Promtail), see the **Self-Hosted Log Stack** section above — it's the same `--profile production --profile logging` pattern.
+
+### 4. Set up nginx + HTTPS on the host
+
+nginx and TLS are managed directly on the droplet (outside Docker Compose) — set up nginx as a reverse proxy to `127.0.0.1:8080` (where `api-prod` listens) and obtain a certificate (e.g. via `certbot --nginx`) however fits your setup.
+
+### 5. Verify
+
+- `curl https://<your-domain>/ready` should return healthy.
+- `docker compose ps` — all expected services `Up`/healthy.
+
+### 6. Set up CI/CD auto-deploy (optional)
+
+Once the droplet is up and steps 1–5 above have been done manually at least once, `.github/workflows/ci.yml` can deploy every subsequent push to `main` automatically: after the existing build/test job passes, a `deploy` job SSHes into the droplet, fast-forwards the existing git checkout to `origin/main`, and restarts the production containers with a fresh build (`docker compose --profile production up -d --build redis api-prod`). It only runs on `push` to `main` (not on pull requests, and not on `develop`), and only after `build-test` succeeds.
+
+Set these **GitHub repository secrets** (Settings → Secrets and variables → Actions) for it to work:
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_HOST` | The droplet's IP address (or domain) |
+| `DEPLOY_USER` | SSH user on the droplet (a dedicated deploy user is preferable to a personal login) |
+| `DEPLOY_SSH_KEY` | The **private** key for a dedicated deploy key pair — generate one just for this (`ssh-keygen -t ed25519 -f deploy_key -N ""`), add `deploy_key.pub` to that user's `~/.ssh/authorized_keys` on the droplet, and paste the contents of `deploy_key` (the private half) into this secret. Never reuse a personal SSH key here. |
+| `DEPLOY_PATH` | Absolute path to this repo's git clone on the droplet (e.g. `/home/deploy/labor-project-backend`) |
+| `DEPLOY_PORT` | Optional — only needed if SSH runs on a non-default port |
+
+`git reset --hard origin/main` runs as part of the deploy step — safe because `.env` is gitignored (never touched by it) and the deploy path is expected to only ever be updated by this job, not edited by hand on the droplet.
+
+Without these secrets set, the `deploy` job simply fails on every push to `main` (the rest of CI — typecheck/build/tests — is unaffected); leave them unset if auto-deploy isn't wanted yet and keep deploying manually via steps 1–5.
+
+### UFW firewall
+
+Same manual, one-command-at-a-time caution as the Grafana section above — **always allow SSH before enabling UFW**, or you can be locked out with no way back in except the provider's web console:
+
+```bash
+sudo ufw allow 22/tcp     # SSH — do this first, always
+sudo ufw allow 80/tcp     # host nginx: HTTP (redirects to HTTPS, also serves the ACME challenge)
+sudo ufw allow 443/tcp    # host nginx: HTTPS
+sudo ufw enable           # only enable after the rules above
+sudo ufw status verbose   # confirm SSH (22) is allowed before disconnecting
+```
+
+Port 3000 (Grafana) is deliberately **not** opened here — see the UFW rule in the log-stack section above, which restricts it to your team's IP(s) only. Postgres/Redis ports are not exposed publicly at all in `docker-compose.yml`'s production services.
+
+### Database backups
+
+`scripts/backup-postgres.sh` dumps the database with `pg_dump`, gzips it, uploads it to a DigitalOcean Spaces bucket (S3-compatible), and prunes backups older than `BACKUP_RETENTION_DAYS` from that bucket. Configure it entirely through the `SPACES_*` variables in `.env` (see `.env.example`) — no credentials are ever hardcoded in the script.
+
+Install its dependencies once on the droplet:
+
+```bash
+sudo apt install -y postgresql-client s3cmd
+```
+
+Run it manually to test:
+
+```bash
+./scripts/backup-postgres.sh
+```
+
+**Cron** (every 6 hours, logging to a file so failures are visible):
+
+```bash
+crontab -e
+# add:
+0 */6 * * * cd /path/to/labor-project-backend && ./scripts/backup-postgres.sh >> /var/log/labor-backup.log 2>&1
+```
+
+**`loki_data` and whole-droplet safety net**: rather than a separate cron job, enable DigitalOcean's built-in **automatic daily Droplet snapshots** (Droplet → Backups, in the DigitalOcean control panel) — this covers `loki_data` and every other volume/file on the droplet as a single daily point-in-time image, independent of anything in this repo.
+
+### Pre-deploy secret checklist
+
+Before starting the stack in production, replace every one of these in `.env` (all currently `CHANGE_ME*` placeholders in `.env.example`):
+
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_LOGIN_CHALLENGE_SECRET`, `VENDOR_ACTION_TOKEN_SECRET`, `REFRESH_TOKEN_HASH_SECRET` — generate each separately: `openssl rand -base64 32`
+- `DOCKER_DATABASE_URL` (and `DATABASE_URL` if used directly) — replace the `password` placeholder with a real generated password
+- `CORS_ORIGIN` — the real frontend origin(s), not `*`
+- `GRAFANA_ADMIN_PASSWORD` — required before exposing port 3000, even behind the UFW team-IP rule above
+- `SPACES_ENDPOINT`, `SPACES_REGION`, `SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY` — from the DigitalOcean control panel (API → Spaces Keys); required for the app to start at all (admin profile image uploads)
+- `SPACES_ADMIN_BUCKET` — a public-read Spaces bucket for admin profile images (separate from the private backup bucket below)
+- `SPACES_BUCKET` — a private Spaces bucket for `scripts/backup-postgres.sh` database backups
+- `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET` — from the LINE Developers console
+- `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` — from the Firebase service account JSON
+- `SENTRY_DSN` — optional; leave empty to keep Sentry disabled

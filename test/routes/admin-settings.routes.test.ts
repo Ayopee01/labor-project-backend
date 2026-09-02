@@ -1390,6 +1390,59 @@ test("Mobile app version create/update write mobile_app_version_* SecurityAuditL
   );
 });
 
+test("POST /api/admin/mobile-app-versions does not report success when the paired SecurityAuditLog write fails (27.14.2)", async () => {
+  const { token } = await loginAdmin(9642, "owner");
+
+  state.forceSecurityAuditLogWriteFailure = true;
+
+  try {
+    const response = await server.request("POST", "/api/admin/mobile-app-versions", {
+      token,
+      body: { version: "9.6.42", build_number: 96420 },
+    });
+
+    // create + audit เขียนคู่กันใน transaction เดียว (ดู mobile-app-version.service.ts) — ถ้า audit
+    // write พัง ทั้งคู่ต้อง fail ไปด้วย ไม่ใช่ report 201 สำเร็จทั้งที่ไม่มีหลักฐานใน audit log จริง
+    // (route test harness นี้ไม่ได้จำลอง DB rollback จริง — ดู
+    // test/integration/database/mobile-app-version-audit.integration.test.ts สำหรับ proof ว่าแถวใน
+    // DB จริงถูก rollback ด้วย)
+    assert.equal(response.status, 500, JSON.stringify(response.body));
+
+    const createdLog = state.securityAuditLogs.find(
+      (item) => item.event_type === "mobile_app_version_created",
+    );
+
+    assert.equal(createdLog, undefined);
+  } finally {
+    state.forceSecurityAuditLogWriteFailure = false;
+  }
+});
+
+test("PATCH /api/admin/mobile-app-versions/:id does not report success when the paired SecurityAuditLog write fails (27.14.2)", async () => {
+  const { token } = await loginAdmin(9643, "owner");
+  const scheduled = addMobileAppVersion({ version: "9.6.43", build_number: 96430 });
+
+  state.forceSecurityAuditLogWriteFailure = true;
+
+  try {
+    const response = await server.request(
+      "PATCH",
+      `/api/admin/mobile-app-versions/${scheduled.id}`,
+      { token, body: { release_message: "Should not persist" } },
+    );
+
+    assert.equal(response.status, 500, JSON.stringify(response.body));
+
+    const updatedLog = state.securityAuditLogs.find(
+      (item) => item.event_type === "mobile_app_version_updated",
+    );
+
+    assert.equal(updatedLog, undefined);
+  } finally {
+    state.forceSecurityAuditLogWriteFailure = false;
+  }
+});
+
 test("Redaction sweep: no SecurityAuditLog event ever stores the plaintext password/secret involved in the flow that produced it, across login failure, password change, password reset, and secret rotation (27.12 item 4 + item 9)", async () => {
   const { token: ownerToken, admin: owner } = await loginAdmin(9651, "owner");
   const target = addAdmin(9652, await password.hashPassword("Original@Password999999"));

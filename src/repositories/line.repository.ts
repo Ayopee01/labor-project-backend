@@ -7,7 +7,7 @@ import { client } from "./shared/repository-utils";
 
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
-import type { LineActionTokenDto, LineDevSubmissionItem, TicketRatingDto, VendorTicketAction } from "../types/line.type";
+import type { LineActionTokenDto, TicketRatingDto, VendorTicketAction } from "../types/line.type";
 import { TICKET_STATUS } from "../constants/job-status";
 
 export const MESSAGE_DELIVERY_STATUS = {
@@ -139,76 +139,6 @@ export async function findLineActionToken(
   });
 
   return record ? toLineActionTokenDto(record) : null;
-}
-
-// Function ดึง Submission สำหรับหน้า LINE dev tester
-export async function listLineDevSubmissions(
-  connection?: DbConnection
-): Promise<LineDevSubmissionItem[]> {
-  const db = client(connection);
-  const submissions = await db.ticketCompletionSubmission.findMany({
-    include: {
-      submittedByAccount: {
-        select: {
-          username: true,
-          fullName: true,
-        },
-      },
-      submittedByWorker: {
-        select: {
-          laborCode: true,
-          fullName: true,
-        },
-      },
-      ticket: {
-        include: {
-          vehicleJob: true,
-          marketJob: true,
-          products: {
-            orderBy: {
-              id: "asc",
-            },
-          },
-        },
-      },
-    },
-    orderBy: [
-      { createdAt: "desc" },
-      { id: "desc" },
-    ],
-  });
-
-  return submissions.map((submission) => ({
-    submission_id: submission.id,
-    ticket_id: submission.ticketId,
-    submission_status: submission.status,
-    ticket_status: submission.ticket.status,
-    actionable:
-      submission.status === TICKET_STATUS.DELIVERED &&
-      submission.ticket.status === TICKET_STATUS.DELIVERED,
-    ticket_number: submission.ticket.vehicleJob.ticketNumber,
-    ticket_no: submission.ticket.marketJob.ticketNo,
-    license_plate: submission.ticket.vehicleJob.licensePlate,
-    market_code: submission.ticket.marketJob.marketCode,
-    market_name: submission.ticket.marketJob.marketName,
-    boothCode: submission.ticket.boothCode,
-    boothName: submission.ticket.boothName,
-    submitted_by_code: submission.submittedByAccount?.username ?? submission.submittedByWorker?.laborCode ?? null,
-    submitted_by_name: submission.submittedByAccount?.fullName ?? submission.submittedByWorker?.fullName ?? null,
-    submitted_by_role: submission.submittedByRole,
-    submitted_at: submission.createdAt.toISOString(),
-    confirmed_at: submission.confirmedAt?.toISOString() ?? null,
-    rejected_at: submission.rejectedAt?.toISOString() ?? null,
-    reject_reason: submission.rejectReason,
-    products: submission.ticket.products.map((product) => ({
-      productCode: product.productCode,
-      productName: product.productName,
-      packageCode: product.packageCode,
-      packageName: product.packageName,
-      expected_quantity: product.quantity.toString(),
-      submitted_quantity: product.confirmedQuantity?.toString() ?? null,
-    })),
-  }));
 }
 
 // Function สร้าง message delivery log จาก DB

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { Server } from "node:http";
 import Module = require("node:module");
 import { normalizeApiRequestPayload } from "../../src/middlewares/api-case.middleware";
@@ -5,6 +6,9 @@ import { applyIsolatedTestEnv } from "../setup/test-env";
 import { FakeQueue, FakeRedis, FakeWorker } from "./app-test-infra-mocks";
 import type { AccountRecord } from "./app-test-harness.records";
 import { lineRepositoryMock, notificationQueueMock, notificationServiceMock, realtimeNotificationServiceMock, workerSocketMock } from "./app-test-notification-mocks";
+import { spacesMock } from "./app-test-spaces-mock";
+
+export { resetSpacesMockState, spacesMockState } from "./app-test-spaces-mock";
 import { accountRepositoryMock, adminActionLogRepositoryMock, adminAuditRepositoryMock, adminJobsRepositoryMock, adminSettingsRepositoryMock, adminWorkersRepositoryMock, authRepositoryMock, driverRepositoryMock, gateClientRepositoryMock, gateTicketRepositoryMock, gateRepositoryMock, masterWorkerRepositoryMock, mobileAppVersionRepositoryMock, marketJobRepositoryMock, masterDataRepositoryMock, securityAuditLogRepositoryMock, systemSettingRepositoryMock, ticketFinancialRepositoryMock, ticketWorkerRepositoryMock, vehicleJobAssignmentRepositoryMock, vehicleJobRepositoryMock, profileRepositoryMock, workerShiftAttendanceRepositoryMock, workerNotificationRepositoryMock, workerPushTokenRepositoryMock, workerRepositoryMock, workerSessionRepositoryMock, workScheduleRepositoryMock } from "./app-test-repository-mocks";
 import { state } from "./app-test-state";
 
@@ -424,6 +428,13 @@ function patchModuleLoader(): void {
       return lineRepositoryMock;
     }
 
+    if (
+      request === "../config/spaces" ||
+      request === "../../config/spaces"
+    ) {
+      return spacesMock;
+    }
+
     return originalLoad.apply(this, [request, parent, isMain]);
   };
 }
@@ -465,6 +476,20 @@ export async function getTicketCompletionService() {
   ticketCompletionModule ??=
     await import("../../src/services/shared/ticket-completion.service");
   return ticketCompletionModule;
+}
+
+/* -------------------------------------- LINE Webhook Signing -------------------------------------- */
+
+// Function เซ็น body สำหรับยิง /api/line/webhook เหมือน LINE ส่งจริง (server.request JSON.stringify
+// body ก่อนส่งเสมอ ต้อง stringify แบบเดียวกันตรงนี้เพื่อให้ signature ตรงกับ raw body ที่ฝั่ง server เห็น)
+export function signLineWebhookBody(
+  body: unknown,
+  secret = process.env.LINE_CHANNEL_SECRET!,
+): string {
+  return crypto
+    .createHmac("sha256", secret)
+    .update(JSON.stringify(body))
+    .digest("base64");
 }
 
 /* -------------------------------------- Test Server -------------------------------------- */

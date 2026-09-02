@@ -14,6 +14,18 @@ const REQUIRED_RUNTIME_ENV = [
   "BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE",
   "BULLMQ_WORKER_BREAK_RETURN_QUEUE",
   "BULLMQ_LINE_MESSAGE_QUEUE",
+  "SHUTDOWN_TIMEOUT_MS",
+  "RATE_LIMIT_WINDOW_MS",
+  "RATE_LIMIT_MAX_REQUESTS",
+  "RATE_LIMIT_CLEANUP_INTERVAL_MS",
+] as const;
+
+const REQUIRED_POSITIVE_NUMBER_ENV = [
+  "WORKER_PRESENCE_STALE_SECONDS",
+  "SHUTDOWN_TIMEOUT_MS",
+  "RATE_LIMIT_WINDOW_MS",
+  "RATE_LIMIT_MAX_REQUESTS",
+  "RATE_LIMIT_CLEANUP_INTERVAL_MS",
 ] as const;
 
 const REQUIRED_SECRET_ENV = [
@@ -24,12 +36,22 @@ const REQUIRED_SECRET_ENV = [
   "VENDOR_ACTION_TOKEN_SECRET",
 ] as const;
 
-const REQUIRED_PRODUCTION_LINE_ENV = [
+const REQUIRED_LINE_ENV = [
   "LINE_CHANNEL_SECRET",
   "LINE_CHANNEL_ACCESS_TOKEN",
 ] as const;
 
-const REQUIRED_PRODUCTION_FIREBASE_ENV = [
+// SPACES_BUCKET (backups) ไม่รวมอยู่ในนี้ตั้งใจ — ใช้เฉพาะ scripts/backup-postgres.sh ซึ่งมี guard
+// ของตัวเองอยู่แล้ว (bash `${VAR:?...}`) ไม่ใช่ runtime ของแอป
+const REQUIRED_SPACES_ENV = [
+  "SPACES_ENDPOINT",
+  "SPACES_REGION",
+  "SPACES_ACCESS_KEY",
+  "SPACES_SECRET_KEY",
+  "SPACES_ADMIN_BUCKET",
+] as const;
+
+const REQUIRED_FIREBASE_ENV = [
   "FIREBASE_PROJECT_ID",
   "FIREBASE_CLIENT_EMAIL",
   "FIREBASE_PRIVATE_KEY",
@@ -44,14 +66,17 @@ const WEAK_SECRET_VALUES = new Set([
   "change-this-login-challenge-secret",
   "change-this-refresh-token-hash-secret",
   "change-this-vendor-action-token-secret",
+  // .env.example placeholders — kept here too so an unedited copy still fails production
+  // validation even though the text itself is long enough to pass the length check.
+  "CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_BASE64_32_ACCESS",
+  "CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_BASE64_32_REFRESH",
+  "CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_BASE64_32_LOGIN_CHALLENGE",
+  "CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_BASE64_32_VENDOR_ACTION",
+  "CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_BASE64_32_REFRESH_HASH",
 ]);
 
 function hasValue(name: string): boolean {
   return typeof process.env[name] === "string" && process.env[name]!.trim() !== "";
-}
-
-function isProduction(): boolean {
-  return process.env.NODE_ENV === "production";
 }
 
 export function validateRuntimeEnv(): EnvValidationResult {
@@ -71,47 +96,44 @@ export function validateRuntimeEnv(): EnvValidationResult {
 
     const value = process.env[name]!.trim();
 
-    if (isProduction() && (value.length < 32 || WEAK_SECRET_VALUES.has(value))) {
+    if (value.length < 32 || WEAK_SECRET_VALUES.has(value)) {
       errors.push(`${name} must be a strong production secret.`);
     }
   }
 
-  if (isProduction()) {
-    for (const name of REQUIRED_PRODUCTION_LINE_ENV) {
-      if (!hasValue(name)) {
-        errors.push(`${name} is required in production.`);
-      }
-    }
-
-    for (const name of REQUIRED_PRODUCTION_FIREBASE_ENV) {
-      if (!hasValue(name)) {
-        errors.push(`Missing required environment variable: ${name}`);
-      }
+  for (const name of REQUIRED_LINE_ENV) {
+    if (!hasValue(name)) {
+      errors.push(`${name} is required.`);
     }
   }
 
-  if (process.env.WORKER_PRESENCE_STALE_SECONDS) {
-    const staleSeconds = Number(process.env.WORKER_PRESENCE_STALE_SECONDS);
-
-    if (!Number.isFinite(staleSeconds) || staleSeconds <= 0) {
-      errors.push("WORKER_PRESENCE_STALE_SECONDS must be a positive number.");
+  for (const name of REQUIRED_SPACES_ENV) {
+    if (!hasValue(name)) {
+      errors.push(`${name} is required.`);
     }
   }
 
-  // Validate CORS_ORIGIN in production
-  if (isProduction()) {
-    if (!hasValue("CORS_ORIGIN")) {
-      errors.push("CORS_ORIGIN is required in production.");
-    } else if (
-      process.env.CORS_ORIGIN!.trim() === "*" &&
-      process.env.ALLOW_CORS_WILDCARD !== "true"
-    ) {
-      errors.push(
-        "CORS_ORIGIN must not be '*' in production unless ALLOW_CORS_WILDCARD=true."
-      );
+  for (const name of REQUIRED_FIREBASE_ENV) {
+    if (!hasValue(name)) {
+      errors.push(`Missing required environment variable: ${name}`);
     }
   }
 
+  for (const name of REQUIRED_POSITIVE_NUMBER_ENV) {
+    if (!hasValue(name)) {
+      continue;
+    }
+
+    const value = Number(process.env[name]);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      errors.push(`${name} must be a positive number.`);
+    }
+  }
+
+  if (!hasValue("CORS_ORIGIN")) {
+    errors.push("CORS_ORIGIN is required.");
+  }
 
   return {
     ok: errors.length === 0,

@@ -32,10 +32,7 @@ function redact(value: unknown): unknown {
     return {
       name: value.name,
       message: sanitizeString(value.message),
-      stack:
-        process.env.NODE_ENV === "production" || !value.stack
-          ? undefined
-          : sanitizeString(value.stack),
+      stack: undefined,
     };
   }
 

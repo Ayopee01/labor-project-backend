@@ -22,7 +22,6 @@ let laborJobPricing: typeof import("../../../src/utils/labor-job-pricing");
 let authConfig: typeof import("../../../src/config/auth.config");
 let schemas: typeof import("../../../src/validation/schemas");
 let apiCase: typeof import("../../../src/middlewares/api-case.middleware");
-let uploadMiddleware: typeof import("../../../src/middlewares/upload.middleware");
 
 before(async () => {
   const apiErrorModule = await import("../../../src/utils/api-error");
@@ -36,7 +35,6 @@ before(async () => {
   authConfig = await import("../../../src/config/auth.config");
   schemas = await import("../../../src/validation/schemas");
   apiCase = await import("../../../src/middlewares/api-case.middleware");
-  uploadMiddleware = await import("../../../src/middlewares/upload.middleware");
 });
 
 /* -------------------------------------- JWT Tests -------------------------------------- */
@@ -394,35 +392,6 @@ test("API case utilities transform response payloads to PascalCase", () => {
   });
 });
 
-test("multipart worker body normalizes PascalCase shift number", () => {
-  let nextCalled = false;
-  const req: any = {
-    is: (contentType: string) => contentType === "multipart/form-data",
-    body: {
-      FullName: "Worker One",
-      Phone: "0812345678",
-      Nationality: "Myanmar",
-      ShirtType: "Navy",
-      ShirtNumber: "12",
-      WorkStartDate: "2026-07-03",
-      ShiftNo: "1",
-      Status: "active",
-    },
-  };
-
-  uploadMiddleware.normalizeCreateUserMultipartBody(
-    req as never,
-    {} as never,
-    () => {
-      nextCalled = true;
-    }
-  );
-
-  assert.equal(nextCalled, true);
-  const parsed = schemas.createUserBodySchema.parse(req.body);
-  assert.equal(parsed.shift_no, 1);
-});
-
 test("worker schemas accept shift number on create and time-only shifts on update", () => {
   const createBody = schemas.createUserBodySchema.parse({
     full_name: "Worker One",
@@ -525,14 +494,11 @@ test("shift utility builds a stable break counter key for one shift instance", (
 test("update user schema allows partial profile updates", () => {
   const updateBody = schemas.updateUserBodySchema.parse({
     profile: {
-      image_url: "https://example.com/new-worker-image.jpg",
+      shirt_number: "12",
     },
   });
 
-  assert.equal(
-    updateBody.profile?.image_url,
-    "https://example.com/new-worker-image.jpg"
-  );
+  assert.equal(updateBody.profile?.shirt_number, "12");
   assert.equal("worker_code" in (updateBody.profile ?? {}), false);
 });
 

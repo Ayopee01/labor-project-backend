@@ -1497,7 +1497,12 @@ export async function listVehicleJobOperations(
   const filters = parseWithSchema(adminVehicleJobOperationsQuerySchema, query);
   const dateFrom = filters.date ?? filters.date_from;
   const dateTo = filters.date ?? filters.date_to;
-  const dateRange = buildBangkokDateSpanRange(dateFrom, dateTo);
+  const dateRange = buildBangkokDateSpanRange(
+    dateFrom,
+    dateTo,
+    filters.time_from,
+    filters.time_to
+  );
   const { records, available_dropoff_points } = await adminJobsRepository.listVehicleJobOperations({
     search: filters.search,
     operation_status: filters.operation_status,

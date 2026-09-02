@@ -56,6 +56,13 @@ const optionalDateString = z.preprocess(
   dateString.optional()
 );
 
+// Format เวลา HH:mm optional สำหรับ narrow ช่วง date_from/date_to ของ query ที่กรองแบบ createdAt range
+// (เช่น admin vehicle-jobs operations) ใช้ timeString เดียวกับกะประจำวันของ worker
+const optionalTimeString = z.preprocess(
+  emptyStringToUndefined,
+  timeString.optional()
+);
+
 // Format วันเวลาแบบ ISO 8601 พร้อม timezone แบบ optional สำหรับ ForceUpdateAt/NotificationAt
 const optionalDateTimeString = z.preprocess(
   emptyStringToUndefined,
@@ -97,6 +104,53 @@ function checkDateRangeOrder(
       code: "custom",
       path: ["date_to"],
       message: "date_to must be greater than or equal to date_from.",
+    });
+  }
+}
+
+// Function ตรวจว่า time_from/time_to ต้องมี date คู่กันเสมอ (date หรือ date_from/date_to แล้วแต่กรณี)
+// และถ้าเป็นวันเดียวกัน time_to ต้องไม่น้อยกว่า time_from
+function checkTimeRequiresDate(
+  input: {
+    date?: string;
+    date_from?: string;
+    date_to?: string;
+    time_from?: string;
+    time_to?: string;
+  },
+  context: z.RefinementCtx,
+): void {
+  const effectiveDateFrom = input.date ?? input.date_from;
+  const effectiveDateTo = input.date ?? input.date_to;
+
+  if (input.time_from && !effectiveDateFrom) {
+    context.addIssue({
+      code: "custom",
+      path: ["time_from"],
+      message: "time_from requires date or date_from.",
+    });
+  }
+
+  if (input.time_to && !effectiveDateTo) {
+    context.addIssue({
+      code: "custom",
+      path: ["time_to"],
+      message: "time_to requires date or date_to.",
+    });
+  }
+
+  if (
+    input.time_from &&
+    input.time_to &&
+    effectiveDateFrom &&
+    effectiveDateTo &&
+    effectiveDateFrom === effectiveDateTo &&
+    input.time_from > input.time_to
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["time_to"],
+      message: "time_to must be greater than or equal to time_from on the same date.",
     });
   }
 }
@@ -283,7 +337,6 @@ export const updateOwnProfileBodySchema = z.object({
 /* -------------------------------------- User Schemas -------------------------------------- */
 
 const updateProfileInputSchema = z.object({
-  image_url: optionalTrimmedString,
   nationality: optionalWorkerNationalitySchema,
   work_start_date: optionalDateString,
   shirt_type: optionalWorkerShirtTypeSchema,
@@ -293,8 +346,6 @@ const updateProfileInputSchema = z.object({
 export const createUserBodySchema = z
   .object({
     username: optionalTrimmedString,
-    img: optionalTrimmedString,
-    image_url: optionalTrimmedString,
     full_name: trimmedString,
     phone: trimmedString,
     nationality: workerNationalitySchema,
@@ -307,8 +358,6 @@ export const createUserBodySchema = z
 
 export const updateUserBodySchema = z.object({
   worker_code: optionalTrimmedString,
-  image_url: optionalTrimmedString,
-  img: optionalTrimmedString,
   full_name: optionalTrimmedString,
   phone: optionalTrimmedString,
   nationality: optionalWorkerNationalitySchema,
@@ -531,6 +580,11 @@ export const adminVehicleJobOperationsQuerySchema = z
     date: optionalDateString,
     date_from: optionalDateString,
     date_to: optionalDateString,
+    // Format เวลาเริ่มต้น/สิ้นสุด HH:mm optional ผูกกับ date/date_from และ date/date_to ตามลำดับ —
+    // narrow ช่วง createdAt ที่กรองอยู่แล้วให้เป็นเวลาที่ต้องการแทนเต็มวัน (ดู
+    // buildBangkokDateSpanRange ใน utils/time.ts)
+    time_from: optionalTimeString,
+    time_to: optionalTimeString,
     page: optionalPageNumber,
     limit: optionalLimitNumber,
     search: optionalLowercaseString,
@@ -545,7 +599,10 @@ export const adminVehicleJobOperationsQuerySchema = z
     // Format dropoff_point ต้องคำนวณก่อน summary และ pagination
     dropoff_point: optionalTrimmedString,
   })
-  .superRefine(checkDateRangeOrder);
+  .superRefine((input, context) => {
+    checkDateRangeOrder(input, context);
+    checkTimeRequiresDate(input, context);
+  });
 
 const adminAuditWorkerPerformanceSortByValues = [
   "accept_rate",
@@ -616,9 +673,19 @@ const adminAuditEventsActorTypeValues = [
   "gate",
 ] as const;
 
-// Format severity ของ Audit Event สำหรับ quick filter การ์ด "ต้องตรวจสอบ" — ตอนนี้มีค่าเดียว
-// (critical) จับคู่กับ SEVERITY_CRITICAL_EVENT_TYPES ฝั่ง service (ดู admin-audit.service.ts)
-const adminAuditEventsSeverityValues = ["critical"] as const;
+// 27.15.1 — quick_filter การ์ดด่วนเดียวที่แทน has_vehicle/has_reason/severity เดิมทั้งหมด ตั้งใจแยก
+// จาก actor_type/event_type/search/date_from/date_to (filter จากแถบค้นหา) โดยเด็ดขาด: quick_filter
+// ต้องไม่มีผลต่อ Summary เลย มีผลแค่ Data/Pagination เท่านั้น (ดู listAuditEvents ฝั่ง service — คำนวณ
+// Summary จาก filter แถบค้นหาก่อน แล้วค่อยใช้ quick_filter กรองต่อ) เลือกได้ทีละ 1 ค่า ไม่ส่งหมายถึง
+// ไม่ใช้ตัวกรองด่วนเลย — system/admin ต้องใช้ผ่านนี้ ห้ามใช้ actor_type แทนเพราะ actor_type มีผลต่อ
+// Summary ตามที่ออกแบบไว้
+const adminAuditQuickFilterValues = [
+  "has_vehicle",
+  "system",
+  "critical",
+  "admin",
+  "has_reason",
+] as const;
 
 export const adminAuditEventsQuerySchema = z
   .object({
@@ -630,14 +697,9 @@ export const adminAuditEventsQuerySchema = z
     event_type: optionalTrimmedString,
     date_from: optionalDateString,
     date_to: optionalDateString,
-    // has_vehicle = true กรองเฉพาะ event ที่มี vehicle_job_id (การ์ด "รถที่เกี่ยวข้อง")
-    has_vehicle: optionalBooleanQuery,
-    // has_reason = true กรองเฉพาะ event ที่มี reason_code หรือ reason_text จริง (การ์ด "มีเหตุผลประกอบ")
-    has_reason: optionalBooleanQuery,
-    // severity = critical กรองตามชุด event_type คงที่ที่ต้องตรวจสอบ (การ์ด "ต้องตรวจสอบ")
-    severity: z.preprocess(
+    quick_filter: z.preprocess(
       emptyStringToUndefined,
-      z.enum(adminAuditEventsSeverityValues).optional()
+      z.enum(adminAuditQuickFilterValues).optional()
     ),
     page: z.preprocess(
       emptyStringToUndefined,

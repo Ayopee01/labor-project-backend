@@ -129,7 +129,9 @@ paths:
         AdminActionLog) เป็น timeline เดียว โดยไม่มีตาราง audit_events กลาง — ไม่กระทบ
         /api/admin/audit/workers/performance หรือ /api/admin/vehicle-jobs/history
         เพราะเป็น endpoint คนละก้อนกันโดยสิ้นเชิง (event รายตัว vs สรุปผลงานรายคน)
-        Summary คำนวณจากชุดข้อมูลหลัง filter แต่ก่อน pagination เสมอ
+        Summary คำนวณจากชุดข้อมูลหลัง filter จากแถบค้นหา (search/actor_type/event_type/date_from/
+        date_to) แต่ก่อน quick_filter และก่อน pagination เสมอ (27.15.1) — เปลี่ยน quick_filter โดย
+        filter แถบค้นหาชุดเดิม Summary ต้องเหมือนเดิมทุก field เสมอ มีแค่ Data/Pagination ที่เปลี่ยน
         ส่วนใหญ่ event ส่งเฉพาะ Metadata — Before/After เป็น field เสริมที่มีเฉพาะ event ที่ source เก็บ
         สถานะก่อนหน้าไว้จริง (worker_force_status_changed และ mutation event กลุ่ม 27.12 ด้านล่างที่มี
         field เปลี่ยนจริง) ห้ามถือว่า field หายไปคือ "ไม่มีการเปลี่ยนแปลง"
@@ -140,6 +142,9 @@ paths:
         Data/Summary/Pagination ไม่ใช่ 403) เพราะเนื้อหามี IP/User-Agent และ username ที่พยายาม login
         แต่ผิดพลาด ซึ่ง sensitive กว่า event operational เดิม EventType ที่มี ได้แก่
         auth_login_succeeded, auth_login_failed, auth_logout, auth_force_login,
+        auth_session_revoked (27.14.1, written in the same transaction as auth_force_login,
+        referencing the revoked old session — trace it back to its auth_force_login via the same
+        request_id),
         account_password_changed, account_password_reset, admin_account_created,
         admin_account_updated, admin_permissions_changed, admin_status_changed,
         worker_account_created, worker_account_updated, system_settings_updated,
@@ -169,6 +174,10 @@ paths:
               - driver
               - vendor
               - gate
+          description: >
+            Search-bar filter (not a quick filter) — narrows Summary as well as Data/Pagination.
+            To narrow only Data/Pagination by admin/system actor without affecting Summary, use
+            quick_filter=admin|system instead (27.15.1).
         - in: query
           name: event_type
           schema:
@@ -189,32 +198,31 @@ paths:
             example: "2026-08-31"
           description: End Bangkok business date, inclusive. ห่างจาก DateFrom ได้ไม่เกิน 92 วัน
         - in: query
-          name: has_vehicle
-          schema:
-            type: boolean
-          description: >
-            Quick filter สำหรับการ์ด "รถที่เกี่ยวข้อง" — true คืนเฉพาะ event ที่มี VehicleJobId
-            ไม่เป็น null คำนวณก่อน Summary และ Pagination ใช้ร่วมกับ filter อื่นได้ทั้งหมด
-        - in: query
-          name: has_reason
-          schema:
-            type: boolean
-          description: >
-            Quick filter สำหรับการ์ด "มีเหตุผลประกอบ" — true คืนเฉพาะ event ที่มี ReasonCode
-            หรือ ReasonText จริง คำนวณก่อน Summary และ Pagination ใช้ร่วมกับ filter อื่นได้ทั้งหมด
-        - in: query
-          name: severity
+          name: quick_filter
           schema:
             type: string
             enum:
+              - has_vehicle
+              - system
               - critical
+              - admin
+              - has_reason
           description: >
-            Quick filter สำหรับการ์ด "ต้องตรวจสอบ" — critical คืนเฉพาะ event ที่ EventType อยู่ใน
-            ชุดคงที่ (message_delivery_failed, worker_accept_timeout, worker_scan_timeout,
-            vendor_rejected, vehicle_cancelled, market_cancelled, ticket_cancelled,
-            worker_assignment_cancelled, ticket_worker_cancelled, booth_worker_cancelled) —
-            ชุดนี้ต้องตรงกับกฎ severity ที่ Frontend ใช้คำนวณการ์ดเดียวกัน คำนวณก่อน Summary
-            และ Pagination ใช้ร่วมกับ filter อื่นได้ทั้งหมด
+            27.15.1 — single quick-filter card, replacing the old has_vehicle/has_reason/severity
+            params entirely (removed). Computed strictly AFTER Summary: Summary always reflects
+            only the search-bar filters (search/actor_type/event_type/date_from/date_to), never
+            quick_filter — only Data and Pagination narrow further when quick_filter is sent, so
+            switching between quick_filter values with the same search-bar filters must yield
+            byte-identical Summary every time. Omit for no quick filter. has_vehicle: VehicleJobId
+            is not null. system / admin: actor_type resolves to that value — use this instead of
+            the actor_type param above for a "quick tab" that must not narrow Summary. critical:
+            EventType is one of message_delivery_failed, worker_accept_timeout,
+            worker_scan_timeout, vendor_rejected, vehicle_cancelled, market_cancelled,
+            ticket_cancelled, worker_assignment_cancelled, ticket_worker_cancelled,
+            booth_worker_cancelled — must match Frontend's own severity rule for the same card.
+            has_reason: ReasonCode OR ReasonText is present — same condition Summary's
+            with_reason_count uses (27.15.2), so a caller filtering has_reason and one counting
+            with_reason_count always agree on which events qualify.
         - in: query
           name: page
           schema:
