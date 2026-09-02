@@ -219,12 +219,13 @@ test("GET /api/auth/me returns current worker account from access token", async 
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
     "full_name",
-    "labor_color",
     "lang",
     "nationality",
     "phone",
     "role",
     "shift",
+    "shirt_number",
+    "shirt_type",
     "work_start_date",
     "worker_code",
   ]);
@@ -232,7 +233,7 @@ test("GET /api/auth/me returns current worker account from access token", async 
   assert.equal(response.body.role, "worker");
   assert.equal(response.body.worker_code, `W${worker.id}`);
   assert.equal(response.body.nationality, "Thai");
-  assert.equal(response.body.labor_color, "standard");
+  assert.equal(response.body.shirt_type, "standard");
   assert.equal(response.body.work_start_date, "2026-01-01");
   assert.equal(response.body.phone, worker.telephone);
   assert.equal(response.body.lang, "TH");

@@ -5,6 +5,9 @@ node_modules/
 dist/
 *.log
 
+# Worker images decoded to local disk by prisma/master-worker.seed.ts (WORKER_IMAGE_STORAGE_DIR)
+/storage/worker-images/
+
 # SSH deploy keys (see README > CI/CD auto-deploy) — never commit these
 deploy_key*
 *.pem

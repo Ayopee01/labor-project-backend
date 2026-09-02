@@ -121,7 +121,8 @@ interface WorkerMeResponse {
   full_name: string | null;
   worker_code: string;
   nationality: string | null;
-  labor_color: string | null;
+  shirt_type: string | null;
+  shirt_number: string | null;
   work_start_date: string | null;
   phone: string | null;
   lang: string;

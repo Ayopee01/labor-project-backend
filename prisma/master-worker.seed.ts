@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+
 import { Prisma, PrismaClient } from "@prisma/client";
 import { hashPassword } from "../src/utils/password";
 
@@ -4814,11 +4817,36 @@ function hexToBytes(hex: string | null): Uint8Array<ArrayBuffer> | null {
   return bytes as Uint8Array<ArrayBuffer>;
 }
 
+// Function decode pictureHex ออกเป็นไฟล์ .jpg จริงบน disk (path มาจาก WORKER_IMAGE_STORAGE_DIR ใน
+// .env) ตั้งชื่อไฟล์ตาม laborCode (= WorkerCode) กันชนกัน — ถ้าไฟล์มีอยู่แล้วข้าม ไม่ decode/เขียนซ้ำ
+function ensureWorkerPictureFile(laborCode: string, pictureHex: string | null): string | null {
+  const bytes = hexToBytes(pictureHex);
+
+  if (!bytes) {
+    return null;
+  }
+
+  const storageDir = process.env.WORKER_IMAGE_STORAGE_DIR ?? "./storage/worker-images";
+  fs.mkdirSync(storageDir, { recursive: true });
+
+  const filePath = path.join(storageDir, `${laborCode}.jpg`);
+
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, bytes);
+  }
+
+  // เก็บเป็น forward slash เสมอไม่ว่า OS ไหน (path.join บน Windows ได้ backslash ซึ่งใช้เป็น URL ไม่ได้)
+  return filePath.split(path.sep).join("/");
+}
+
 // Function seed ข้อมูล master_workers จาก docs/worker.csv (คัดลอกเป็น literal array ด้านบน) ลง DB
 export async function seedMasterWorkers(prisma: PrismaClient): Promise<void> {
   const inputs: Prisma.MasterWorkerUpsertArgs[] = await Promise.all(
     masterWorkerSeeds.map(async (worker) => {
-      const passwordHash = worker.telephone ? await hashPassword(worker.telephone) : null;
+      // Password ตอน seed = เบอร์โทรแบบไม่มีขีด (Frontend/QA กรอกง่ายกว่า "065-5924660")
+      const passwordHash = worker.telephone
+        ? await hashPassword(worker.telephone.replace(/-/g, ""))
+        : null;
       const data: Prisma.MasterWorkerUncheckedCreateInput = {
         laborId: worker.laborId,
         laborCode: worker.laborCode,
@@ -4841,6 +4869,7 @@ export async function seedMasterWorkers(prisma: PrismaClient): Promise<void> {
         shiftStartTime: worker.timeIn,
         shiftEndTime: worker.timeOut,
         picture: hexToBytes(worker.pictureHex),
+        imageUrl: ensureWorkerPictureFile(worker.laborCode, worker.pictureHex),
         updateDate: worker.updateDate ? new Date(worker.updateDate) : null,
         source: "master_sync",
         passwordHash,

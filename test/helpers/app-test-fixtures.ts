@@ -330,6 +330,7 @@ export function addWorker(
     labor_color: "standard",
     coat_no: String(workerId),
     picture: null,
+    image_url: null,
     work_start_date: "2026-01-01",
     shift_no: 1,
     shift_start_time: "00:00",

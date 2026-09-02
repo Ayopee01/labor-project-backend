@@ -77,6 +77,11 @@ model MasterWorker {
 
   picture Bytes?
 
+  // Path/URL ของไฟล์รูปที่ decode ออกจาก picture (Bytes) แล้วเขียนลง disk จริง — ต่างจาก picture ที่
+  // เป็น raw bytes ดิบจาก sync, image_url คือสิ่งที่ endpoint ฝั่ง Worker Mobile ใช้ตอบกลับจริง (ดู
+  // WORKER_IMAGE_STORAGE_DIR ใน .env) null ถ้ายังไม่เคย decode หรือ worker คนนี้ไม่มีรูป
+  imageUrl String? @map("image_url") @db.VarChar(512)
+
   // UpdateDate ล่าสุดจาก Master ที่เคย sync มา (ไม่ใช่ updatedAt ของแถวนี้ในระบบเรา) ใช้เทียบตอน sync
   // รอบถัดไปว่า Master มีข้อมูลใหม่กว่าหรือไม่
   updateDate DateTime? @map("update_date") @db.Timestamp(3)

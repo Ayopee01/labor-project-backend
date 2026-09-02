@@ -91,7 +91,7 @@ function buildWorkerAssignmentAcceptResponse(
   return {
     ticket_number: detail.vehicle_job.ticket_number,
     worker_code: workerCode,
-    coat_no: coatNo,
+    shirt_number: coatNo,
     accepted_at: assignment.accepted_at,
     license_plate: detail.vehicle_job.license_plate,
     license_plate_province: detail.vehicle_job.license_plate_province,
@@ -100,8 +100,8 @@ function buildWorkerAssignmentAcceptResponse(
     team: team.map((member) => ({
       full_name: member.full_name,
       worker_code: member.worker_code,
-      coat_no: member.coat_no ?? null,
-      picture: member.picture,
+      shirt_number: member.coat_no ?? null,
+      image_url: member.image_url,
       scan_status: member.scan_status,
     })),
     markets: detail.markets.map((market) => ({
@@ -197,7 +197,8 @@ function buildWorkerCurrentJobResponse(
       })),
     })),
     team: team.map((member) => ({
-      coat_no: member.coat_no ?? null,
+      shirt_number: member.coat_no ?? null,
+      image_url: member.image_url,
       full_name: member.full_name,
       scan_status: member.scanned_at ? "scanned" : "not_scanned",
       scanned_at: member.scanned_at ?? null,
@@ -239,9 +240,9 @@ function buildAssignmentTeamUpdatedSocketPayload(
     team_scan: buildWorkerTeamScanResponse(teamScan),
     team: team.map((member) => ({
       worker_code: member.worker_code,
-      coat_no: member.coat_no ?? null,
+      shirt_number: member.coat_no ?? null,
       full_name: member.full_name,
-      picture: member.picture,
+      image_url: member.image_url,
       scan_status: member.scan_status,
       accepted_at: member.accepted_at ?? null,
       scanned_at: member.scanned_at ?? null,
@@ -846,7 +847,7 @@ export async function getWorkerStatus(
   const response: WorkerStatusResponse = {
     full_name: account.full_name ?? account.labor_code,
     worker_code: account.labor_code,
-    picture: account.picture,
+    image_url: account.image_url,
     status,
     ...dailySummary,
     nationality: account.nationality,

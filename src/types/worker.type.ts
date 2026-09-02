@@ -281,7 +281,7 @@ interface WorkerStatusRemainingBreakTime {
 export interface WorkerStatusResponse {
   full_name: string;
   worker_code: string | null;
-  picture: string | null;
+  image_url: string | null;
   status: WorkerWorkStatus;
   today_job_count: number;
   break_count_used: number;
@@ -388,7 +388,19 @@ export interface WorkerAssignmentTeamMemberDto {
   full_name: string;
   worker_code: string | null;
   coat_no?: string | null;
-  picture: string | null;
+  image_url: string | null;
+  scan_status: string;
+  accepted_at?: string | null;
+  scanned_at?: string | null;
+}
+
+// Type สมาชิกทีมใน response ที่ส่งให้ Worker Mobile (ชื่อ field ตาม public API contract)
+export interface WorkerAssignmentTeamMemberResponse {
+  worker_id?: number;
+  full_name: string;
+  worker_code: string | null;
+  shirt_number: string | null;
+  image_url: string | null;
   scan_status: string;
   accepted_at?: string | null;
   scanned_at?: string | null;
@@ -421,7 +433,8 @@ export interface WorkerCurrentJobMarketResponse {
 }
 
 export interface WorkerCurrentJobTeamMemberResponse {
-  coat_no: string | null;
+  shirt_number: string | null;
+  image_url: string | null;
   full_name: string;
   scan_status: "scanned" | "not_scanned";
   scanned_at: string | null;
@@ -486,13 +499,13 @@ interface WorkerAssignmentMarketDto {
 export interface WorkerAssignmentAcceptResponse {
   ticket_number: string;
   worker_code: string | null;
-  coat_no: string | null;
+  shirt_number: string | null;
   accepted_at: string | null;
   license_plate: string;
   license_plate_province: string | null;
   scan_deadline_at: string | null;
   scan_deadline_unix_ms: number | null;
-  team: WorkerAssignmentTeamMemberDto[];
+  team: WorkerAssignmentTeamMemberResponse[];
   markets: WorkerAssignmentMarketDto[];
 }
 

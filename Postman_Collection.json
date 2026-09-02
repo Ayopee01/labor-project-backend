@@ -93,9 +93,33 @@
     },
     {
       "key": "workerCode",
-      "value": "MN000012",
+      "value": "CB000007",
       "type": "string",
-      "description": "WorkerCode used by Admin Workers /:workerCode routes, for example MN000012."
+      "description": "WorkerCode used by Admin Workers /:workerCode routes. Real MasterWorker seeded locally by prisma/master-worker.seed.ts."
+    },
+    {
+      "key": "workerUsername",
+      "value": "CB000007",
+      "type": "string",
+      "description": "Worker login Username for POST /api/auth/login - Worker requests. Real MasterWorker seeded locally (prisma/master-worker.seed.ts)."
+    },
+    {
+      "key": "workerPassword",
+      "value": "0655924660",
+      "type": "string",
+      "description": "Worker login Password for {{workerUsername}} — the worker's telephone digits with no dashes (seed sets password = telephone, dashes stripped)."
+    },
+    {
+      "key": "workerUsername2",
+      "value": "CG000004",
+      "type": "string",
+      "description": "A second real seeded WorkerCode, for scenarios needing more than one worker (e.g. team check-in/accept flows)."
+    },
+    {
+      "key": "workerPassword2",
+      "value": "0951094560",
+      "type": "string",
+      "description": "Worker login Password for {{workerUsername2}} — telephone digits with no dashes."
     },
     {
       "key": "adminUserId",
@@ -282,7 +306,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"Username\": \"MN000012\",\n  \"Password\": \"0812345678\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\",\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
+              "raw": "{\n  \"Username\": \"{{workerUsername}}\",\n  \"Password\": \"{{workerPassword}}\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\",\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -337,7 +361,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"Username\": \"MN000012\",\n  \"Password\": \"0812345678\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\"\n}",
+              "raw": "{\n  \"Username\": \"{{workerUsername}}\",\n  \"Password\": \"{{workerPassword}}\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

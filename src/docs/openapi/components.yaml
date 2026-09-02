@@ -293,6 +293,14 @@
             - Myanmar
             - Cambodia
           example: Myanmar
+        shirt_type:
+          type: string
+          nullable: true
+          example: Navy
+        shirt_number:
+          type: string
+          nullable: true
+          example: "12"
         work_start_date:
           type: string
           nullable: true
@@ -4911,6 +4919,10 @@
           type: string
           nullable: true
           example: "001"
+        image_url:
+          type: string
+          nullable: true
+          example: https://example.com/uploads/workers/mn000142.jpg
         full_name:
           type: string
           example: Worker A

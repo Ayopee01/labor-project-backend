@@ -134,6 +134,7 @@ export function mapMasterWorker(record: MasterWorker | null): MasterWorkerDto | 
     time_in: record.timeIn,
     time_out: record.timeOut,
     picture: toBase64Picture(record.picture),
+    image_url: record.imageUrl,
     update_date: toIsoString(record.updateDate),
     shift_no: record.shiftNo,
     shift_start_time: record.shiftStartTime,

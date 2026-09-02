@@ -1098,9 +1098,9 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
     "break_count_used",
     "completed_job_count",
     "full_name",
+    "image_url",
     "nationality",
     "phone",
-    "picture",
     "shift",
     "shift_active",
     "status",
@@ -1110,7 +1110,7 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
   ]);
   assert.equal(response.body.full_name, worker.full_name);
   assert.equal(response.body.worker_code, `W${worker.id}`);
-  assert.equal(response.body.picture, null);
+  assert.equal(response.body.image_url, null);
   assert.equal(response.body.status, "ready");
   assert.equal(response.body.today_job_count, 0);
   assert.equal(response.body.break_count_used, 0);
@@ -1544,18 +1544,18 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
     "accepted_at",
-    "coat_no",
     "license_plate",
     "license_plate_province",
     "markets",
     "scan_deadline_at",
     "scan_deadline_unix_ms",
+    "shirt_number",
     "team",
     "ticket_number",
     "worker_code",
   ]);
   assert.equal(response.body.worker_code, `W${worker.id}`);
-  assert.equal(response.body.coat_no, String(worker.id));
+  assert.equal(response.body.shirt_number, String(worker.id));
   assert.equal(response.body.ticket_number, job.ticket_number);
   assert.ok(response.body.accepted_at);
   assert.equal(response.body.license_plate, job.license_plate);
@@ -1564,14 +1564,14 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
   assert.equal(response.body.scan_deadline_unix_ms, Date.parse(response.body.scan_deadline_at));
   assert.equal(response.body.team.length, 1);
   assert.deepEqual(Object.keys(response.body.team[0]).sort(), [
-    "coat_no",
     "full_name",
-    "picture",
+    "image_url",
     "scan_status",
+    "shirt_number",
     "worker_code",
   ]);
   assert.equal(response.body.team[0].full_name, worker.full_name);
-  assert.equal(response.body.team[0].coat_no, String(worker.id));
+  assert.equal(response.body.team[0].shirt_number, String(worker.id));
   assert.equal(response.body.team[0].scan_status, "accepted");
   assert.deepEqual(Object.keys(response.body.markets[0]).sort(), [
     "marketName",
@@ -1640,7 +1640,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     };
     team?: Array<{
       worker_code?: string | null;
-      coat_no?: string | null;
+      shirt_number?: string | null;
       scan_status?: string;
       accepted_at?: string | null;
       scanned_at?: string | null;
@@ -1655,7 +1655,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     is_ready: false,
   });
   assert.equal(acceptedTeamPayload.team?.[0]?.worker_code, `W${worker.id}`);
-  assert.equal(acceptedTeamPayload.team?.[0]?.coat_no, String(worker.id));
+  assert.equal(acceptedTeamPayload.team?.[0]?.shirt_number, String(worker.id));
   assert.equal(acceptedTeamPayload.team?.[0]?.scan_status, "accepted");
   assert.equal(acceptedTeamPayload.team?.[0]?.accepted_at, response.body.accepted_at);
   assert.equal(acceptedTeamPayload.team?.[0]?.scanned_at, null);
@@ -1831,7 +1831,7 @@ test("POST /api/workers/me/assignments/check-in-barcode scans correct barcode", 
     };
     team?: Array<{
       worker_code?: string | null;
-      coat_no?: string | null;
+      shirt_number?: string | null;
       scan_status?: string;
       scanned_at?: string | null;
     }>;
@@ -1845,7 +1845,7 @@ test("POST /api/workers/me/assignments/check-in-barcode scans correct barcode", 
     is_ready: true,
   });
   assert.equal(scannedTeamPayload.team?.[0]?.worker_code, `W${worker.id}`);
-  assert.equal(scannedTeamPayload.team?.[0]?.coat_no, String(worker.id));
+  assert.equal(scannedTeamPayload.team?.[0]?.shirt_number, String(worker.id));
   assert.equal(scannedTeamPayload.team?.[0]?.scan_status, "scanned");
   assert.ok(scannedTeamPayload.team?.[0]?.scanned_at);
 });
@@ -2022,7 +2022,7 @@ test("POST /api/workers/me/assignments/check-in-barcode shortens remaining team 
     };
     team?: Array<{
       worker_code?: string | null;
-      coat_no?: string | null;
+      shirt_number?: string | null;
       scan_status?: string;
       scanned_at?: string | null;
     }>;
@@ -2038,26 +2038,26 @@ test("POST /api/workers/me/assignments/check-in-barcode shortens remaining team 
   assert.deepEqual(
     teamUpdatedPayload.team?.map((member) => ({
       worker_code: member.worker_code,
-      coat_no: member.coat_no,
+      shirt_number: member.shirt_number,
       scan_status: member.scan_status,
       scanned: Boolean(member.scanned_at),
     })),
     [
       {
         worker_code: `W${worker.id}`,
-        coat_no: String(worker.id),
+        shirt_number: String(worker.id),
         scan_status: "scanned",
         scanned: true,
       },
       {
         worker_code: `W${second.worker.id}`,
-        coat_no: String(second.worker.id),
+        shirt_number: String(second.worker.id),
         scan_status: "accepted",
         scanned: false,
       },
       {
         worker_code: `W${third.worker.id}`,
-        coat_no: String(third.worker.id),
+        shirt_number: String(third.worker.id),
         scan_status: "accepted",
         scanned: false,
       },

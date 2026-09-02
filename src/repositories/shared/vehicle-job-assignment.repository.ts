@@ -246,9 +246,7 @@ export async function listVehicleJobAssignmentTeam(
       full_name: assignment.worker.fullName ?? assignment.worker.name ?? assignment.worker.laborCode,
       worker_code: assignment.worker.laborCode,
       coat_no: assignment.worker.coatNo ?? null,
-      picture: assignment.worker.picture
-        ? Buffer.from(assignment.worker.picture).toString("base64")
-        : null,
+      image_url: assignment.worker.imageUrl,
       scan_status: buildAssignmentScanStatus(assignmentDto),
       accepted_at: assignmentDto.accepted_at,
       scanned_at: assignmentDto.scanned_at,

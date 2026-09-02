@@ -35,6 +35,7 @@ export type MasterWorkerRecord = {
   labor_color?: string | null;
   coat_no?: string | null;
   picture?: string | null;
+  image_url?: string | null;
   work_start_date?: string | null;
   shift_no?: number | null;
   shift_start_time?: string | null;
