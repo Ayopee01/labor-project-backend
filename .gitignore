@@ -5,10 +5,11 @@ node_modules/
 dist/
 *.log
 
-# Worker images decoded to local disk by prisma/master-worker.seed.ts (WORKER_IMAGE_STORAGE_DIR) and
-# Admin profile images uploaded to local disk via POST /api/auth/me/upload-image (ADMIN_IMAGE_STORAGE_DIR)
-/storage/worker-images/
-/storage/admin-images/
+# Local disk image storage — Worker images decoded by prisma/master-worker.seed.ts
+# (WORKER_IMAGE_STORAGE_DIR), Admin images uploaded via POST /api/auth/me/upload-image
+# (ADMIN_IMAGE_STORAGE_DIR), and any test-only subfolder (e.g. storage/test-tmp-admin-images) — the
+# app/seed creates these folders itself on demand, none of it belongs in git
+/storage/
 
 # SSH deploy keys (see README > CI/CD auto-deploy) — never commit these
 deploy_key*
