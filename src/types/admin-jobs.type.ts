@@ -560,6 +560,7 @@ interface AdminVehicleJobOperationWorkerResponse {
   worker_code: string | null;
   full_name: string;
   labor_color: string | null;
+  shirt_number: string | null;
   picture: string | null;
   shift_name: string | null;
   assignment_status: string;
@@ -871,4 +872,101 @@ export interface DailyWorkerIncomeItemResponse {
   payment_status: DailyWorkerIncomePaymentStatus;
   cancellation: DailyWorkerIncomeCancellationResponse | null;
   riskText: string;
+}
+
+/* -------------------------------------- Daily Stall Fee -------------------------------------- */
+
+// Type record สำหรับอ่านรายงานค่าลงสินค้าแผงค้ารายวันจาก DB — หนึ่งแถว = หนึ่ง TicketProductFinancial
+// ที่ finalize แล้ว join ตามสาย TicketProductFinancial -> TicketProduct -> GateTicket -> MarketJob ->
+// VehicleJob ตาม docs/backend-missing-apis-spec V8.md ข้อ 28.2 — ห้ามอ่านชื่อ/ราคาสินค้าจาก master
+// ปัจจุบัน ใช้ snapshot ใน TicketProduct เท่านั้น
+export type DailyStallFeeRecord = Prisma.TicketProductFinancialGetPayload<{
+  include: {
+    product: {
+      include: {
+        ticket: {
+          include: {
+            marketJob: {
+              include: {
+                vehicleJob: true;
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+}>;
+
+export interface DailyStallFeeFilters {
+  startAt: Date;
+  endAt: Date;
+  search?: string;
+  productCode?: string;
+  packageCode?: string;
+  page: number;
+  limit: number;
+}
+
+export interface DailyStallFeeSummary {
+  row_count: number;
+  stall_count: number;
+  confirmed_quantity_total: Prisma.Decimal;
+  stall_fee_total: Prisma.Decimal;
+}
+
+export interface DailyStallFeeProductOption {
+  product_code: string;
+  product_name: string;
+}
+
+export interface DailyStallFeePackageOption {
+  package_code: string;
+  package_name: string;
+}
+
+// Type ผลลัพธ์ดิบจาก repository — service เป็นคนแปลง Decimal/Date เป็น string ตาม response contract
+export interface DailyStallFeeQueryResult {
+  data: DailyStallFeeRecord[];
+  total: number;
+  summary: DailyStallFeeSummary;
+  available_products: DailyStallFeeProductOption[];
+  available_packages: DailyStallFeePackageOption[];
+}
+
+export interface DailyStallFeeItemResponse {
+  id: number;
+  business_date: string;
+  finalized_at: string;
+  booth_code: string;
+  plate: string;
+  plate_province: string | null;
+  ticket_no: string;
+  market_code: string;
+  market_name: string;
+  product_code: string;
+  product_full_code: string | null;
+  product_name: string;
+  package_code: string;
+  package_name: string;
+  confirmed_quantity: string;
+  stall_fee_rounded: string;
+}
+
+export interface DailyStallFeeListResponse {
+  data: DailyStallFeeItemResponse[];
+  summary: {
+    row_count: number;
+    stall_count: number;
+    confirmed_quantity_total: string;
+    stall_fee_total: string;
+  };
+  available_products: DailyStallFeeProductOption[];
+  available_packages: DailyStallFeePackageOption[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    total_pages: number;
+  };
 }

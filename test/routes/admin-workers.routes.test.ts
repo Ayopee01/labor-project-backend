@@ -69,6 +69,7 @@ test("GET /api/admin/users returns Phone alongside existing fields for every wor
     "full_name",
     "labor_color",
     "phone",
+    "shirt_number",
     "status",
     "updated_at",
     "work_schedule",
@@ -79,6 +80,7 @@ test("GET /api/admin/users returns Phone alongside existing fields for every wor
   assert.equal(item.full_name, worker.full_name);
   assert.equal(item.phone, "0899999999");
   assert.equal(item.labor_color, worker.labor_color);
+  assert.equal(item.shirt_number, worker.coat_no);
   assert.equal(item.status, worker.status === 1 ? "active" : "inactive");
 });
 

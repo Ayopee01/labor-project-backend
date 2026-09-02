@@ -435,7 +435,7 @@ test("GET /api/admin/jobs/workers/status shows queued worker when socket is disc
   assert.equal(response.body.summary.total, 1);
   assert.equal(response.body.summary.ready, 1);
   assert.equal(response.body.data[0].worker_code, worker.labor_code);
-  assert.equal(response.body.data[0].coat_no, worker.coat_no);
+  assert.equal(response.body.data[0].shirt_number, worker.coat_no);
   assert.equal(response.body.data[0].status, "ready");
   assert.equal(response.body.data[0].socket_connected, false);
 });
@@ -1821,6 +1821,42 @@ test("GET /api/admin/vehicle-jobs/operations?status filters by VehicleJob.status
 
   assert.ok(ticketNumbers.includes(workingJob.ticket_number));
   assert.ok(!ticketNumbers.includes(waitJob.ticket_number));
+});
+
+test("GET /api/admin/vehicle-jobs/operations includes shirt_number per assigned worker from MasterWorker.coat_no, including null", async () => {
+  const { token } = await loginJobAdmin(9932);
+  const job = addDispatchableJob(995, 1);
+  const worker = addWorker(9951);
+  worker.coat_no = "42";
+  const noShirtWorker = addWorker(9952);
+  noShirtWorker.coat_no = null;
+  addPendingAssignment(19951, job.id, worker.id);
+  addPendingAssignment(19952, job.id, noShirtWorker.id);
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/operations",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const item = response.body.data.find(
+    (entry: { vehicle_job: { ticket_number: string } }) =>
+      entry.vehicle_job.ticket_number === job.ticket_number,
+  );
+
+  assert.ok(item);
+  const workerRow = item.workers.find(
+    (row: { worker_code: string }) => row.worker_code === worker.labor_code,
+  );
+  const noShirtRow = item.workers.find(
+    (row: { worker_code: string }) => row.worker_code === noShirtWorker.labor_code,
+  );
+
+  assert.ok(workerRow);
+  assert.ok(noShirtRow);
+  assert.equal(workerRow.shirt_number, "42");
+  assert.equal(noShirtRow.shirt_number, null);
 });
 
 test("GET /api/admin/vehicle-jobs/operations vehicle_job uses plate_no/plate_province instead of license_plate/license_plate_province", async () => {
@@ -7943,6 +7979,349 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income treats an empty sh
 
   assert.equal(response.status, 200, JSON.stringify(response.body));
   assert.equal(response.body.data.length, 2);
+});
+
+/* -------------------------------------- Daily Stall Fee Route Tests -------------------------------------- */
+
+// Function เพิ่ม TicketProductFinancial ตรงๆ ลง state สำหรับ test รายงานค่าลงสินค้าแผงค้ารายวัน —
+// เร็วกว่าไล่ submit+vendor-confirm จริงเวลาต้องการหลายแถว/หลายวันที่ควบคุม finalized_at เอง
+function addTicketProductFinancial(
+  id: number,
+  ticketProductId: number,
+  overrides: {
+    confirmed_quantity?: string;
+    stall_fee_rounded?: string;
+    finalized_at?: string;
+  } = {},
+) {
+  state.ticketProductFinancials.push({
+    id,
+    ticket_product_id: ticketProductId,
+    confirmed_quantity: overrides.confirmed_quantity ?? "1.00",
+    stall_fee_raw: "1.0000",
+    stall_fee_rounded: overrides.stall_fee_rounded ?? "1.00",
+    labor_fee_raw: "0.5000",
+    product_charge: "1.50",
+    worker_count: 1,
+    worker_payout_total: "0.50",
+    fund_amount: "0.0000",
+    finalized_at: overrides.finalized_at ?? new Date().toISOString(),
+  });
+}
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees requires authentication", async () => {
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-08-31",
+  );
+
+  assert.equal(response.status, 401);
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees requires jobs:read permission", async () => {
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(96001, passwordHash);
+  state.adminPermissions.set(admin.id, []);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: { username: admin.username, password: "Admin@123456" },
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-08-31",
+    { token: login.body.access_token },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees validates date_from/date_to", async () => {
+  const { token } = await loginJobAdmin(96002);
+
+  const missingDateTo = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01",
+    { token },
+  );
+  assert.equal(missingDateTo.status, 400);
+  assert.equal(missingDateTo.body.code, "VALIDATION_ERROR");
+
+  const badFormat = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026/08/01&date_to=2026-08-31",
+    { token },
+  );
+  assert.equal(badFormat.status, 400);
+  assert.equal(badFormat.body.code, "VALIDATION_ERROR");
+
+  const fromAfterTo = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-31&date_to=2026-08-01",
+    { token },
+  );
+  assert.equal(fromAfterTo.status, 400);
+  assert.equal(fromAfterTo.body.code, "VALIDATION_ERROR");
+
+  const tooLong = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-09-05",
+    { token },
+  );
+  assert.equal(tooLong.status, 400);
+  assert.equal(tooLong.body.code, "VALIDATION_ERROR");
+  assert.equal(tooLong.body.validation_errors[0].field, "date_to");
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees only shows finalized TicketProductFinancial rows, using persisted confirmed_quantity/stall_fee_rounded verbatim", async () => {
+  const { token } = await loginJobAdmin(96010);
+  const job = addDispatchableJob(9601, 1);
+  const ticket = addTicketForVehicleJob(job.id, 196010);
+  // ticket.id * 10 + 2 (Cabbage) ไม่มี TicketProductFinancial เลย ต้องไม่โผล่ในรายงาน
+  addTicketProductFinancial(960101, ticket.id * 10 + 1, {
+    confirmed_quantity: "7.00",
+    stall_fee_rounded: "28.00",
+    finalized_at: bangkokDateToUtcIso("2026-08-15", 10),
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-08-31",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.data.length, 1);
+  const row = response.body.data[0];
+  assert.equal(row.id, 960101);
+  assert.equal(row.boothCode, ticket.boothCode);
+  assert.equal(row.plate, job.license_plate);
+  assert.equal(row.confirmed_quantity, "7.00");
+  assert.equal(row.stall_fee_rounded, "28.00");
+  assert.equal(row.business_date, "2026-08-15");
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees uses Asia/Bangkok day boundaries for finalized_at, not UTC", async () => {
+  const { token } = await loginJobAdmin(96011);
+  const job = addDispatchableJob(9602, 1);
+  const ticket = addTicketForVehicleJob(job.id, 196020);
+
+  // 2026-08-01 00:00 Asia/Bangkok = 2026-07-31 17:00 UTC — ต้องนับเป็นวันที่ 08-01 ตาม Bangkok
+  addTicketProductFinancial(960201, ticket.id * 10 + 1, {
+    finalized_at: bangkokDateToUtcIso("2026-08-01", 0),
+  });
+  // 2026-07-31 23:00 Asia/Bangkok — ก่อนช่วงเริ่มของ date_from=2026-08-01 ต้องไม่ถูกนับ
+  addTicketProductFinancial(960202, ticket.id * 10 + 2, {
+    finalized_at: bangkokDateToUtcIso("2026-07-31", 23),
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-08-01",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.data.length, 1);
+  assert.equal(response.body.data[0].id, 960201);
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees supports multi-token search and exact product_code/package_code filters without narrowing dropdown options", async () => {
+  const { token } = await loginJobAdmin(96012);
+  const job = addDispatchableJob(9603, 1);
+  const ticket = addTicketForVehicleJob(job.id, 196030); // สร้าง product Apple/fruit และ Cabbage/vegetable ให้อัตโนมัติ
+  const appleProductId = ticket.id * 10 + 1;
+  const cabbageProductId = ticket.id * 10 + 2;
+  const cabbageProductCode = state.ticketProducts.find((item) => item.id === cabbageProductId)!.productCode;
+
+  addTicketProductFinancial(960301, appleProductId, {
+    finalized_at: bangkokDateToUtcIso("2026-08-10", 10),
+  });
+  addTicketProductFinancial(960302, cabbageProductId, {
+    finalized_at: bangkokDateToUtcIso("2026-08-10", 10),
+  });
+
+  // token "apple" + token ทะเบียนรถ (ตรงกันทั้งสองแถว) -> ต้อง AND กัน เหลือแค่แถว Apple
+  const searchResponse = await server.request(
+    "GET",
+    `/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-08-31&search=${encodeURIComponent(`${job.license_plate} apple`)}`,
+    { token },
+  );
+  assert.equal(searchResponse.status, 200, JSON.stringify(searchResponse.body));
+  assert.equal(searchResponse.body.data.length, 1);
+  assert.equal(searchResponse.body.data[0].id, 960301);
+
+  const productFilterResponse = await server.request(
+    "GET",
+    `/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-08-31&product_code=${encodeURIComponent(cabbageProductCode)}`,
+    { token },
+  );
+  assert.equal(productFilterResponse.status, 200, JSON.stringify(productFilterResponse.body));
+  assert.equal(productFilterResponse.body.data.length, 1);
+  assert.equal(productFilterResponse.body.data[0].id, 960302);
+  // available_products ต้องยังเห็นทั้ง Apple และ Cabbage แม้กำลังกรอง product_code=Cabbage อยู่
+  assert.equal(productFilterResponse.body.available_products.length, 2);
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees summary reflects the full filtered set regardless of page/limit", async () => {
+  const { token } = await loginJobAdmin(96013);
+  const job = addDispatchableJob(9604, 1);
+  const ticket = addTicketForVehicleJob(job.id, 196040);
+
+  addTicketProductFinancial(960401, ticket.id * 10 + 1, {
+    confirmed_quantity: "5.00",
+    stall_fee_rounded: "5.00",
+    finalized_at: bangkokDateToUtcIso("2026-08-10", 9),
+  });
+  addTicketProductFinancial(960402, ticket.id * 10 + 2, {
+    confirmed_quantity: "3.00",
+    stall_fee_rounded: "3.00",
+    finalized_at: bangkokDateToUtcIso("2026-08-10", 10),
+  });
+
+  const page1 = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-08-31&page=1&limit=1",
+    { token },
+  );
+  const page2 = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-08-31&page=2&limit=1",
+    { token },
+  );
+
+  assert.equal(page1.status, 200, JSON.stringify(page1.body));
+  assert.equal(page1.body.data.length, 1);
+  assert.equal(page2.body.data.length, 1);
+  assert.notEqual(page1.body.data[0].id, page2.body.data[0].id);
+  assert.deepEqual(page1.body.summary, page2.body.summary);
+  assert.equal(page1.body.summary.row_count, 2);
+  assert.equal(page1.body.summary.stall_count, 1);
+  assert.equal(page1.body.summary.confirmed_quantity_total, "8.00");
+  assert.equal(page1.body.summary.stall_fee_total, "8.00");
+  assert.equal(page1.body.pagination.total, 2);
+  assert.equal(page1.body.pagination.total_pages, 2);
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees paginates stably (no duplicate/missing rows) when finalized_at ties", async () => {
+  const { token } = await loginJobAdmin(96014);
+  const job = addDispatchableJob(9605, 1);
+  const ticket1 = addTicketForVehicleJob(job.id, 196050, 296050);
+  const ticket2 = addTicketForVehicleJob(job.id, 196051, 296051);
+  const sameFinalizedAt = bangkokDateToUtcIso("2026-08-12", 9);
+
+  addTicketProductFinancial(960501, ticket1.id * 10 + 1, { finalized_at: sameFinalizedAt });
+  addTicketProductFinancial(960502, ticket1.id * 10 + 2, { finalized_at: sameFinalizedAt });
+  addTicketProductFinancial(960503, ticket2.id * 10 + 1, { finalized_at: sameFinalizedAt });
+
+  const seenIds: number[] = [];
+  for (const page of [1, 2, 3]) {
+    const response = await server.request(
+      "GET",
+      `/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-08-01&date_to=2026-08-31&page=${page}&limit=1`,
+      { token },
+    );
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    seenIds.push(...response.body.data.map((row: { id: number }) => row.id));
+  }
+
+  assert.deepEqual([...seenIds].sort((a, b) => a - b), [960501, 960502, 960503]);
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees returns 200 with zero summary when nothing matches", async () => {
+  const { token } = await loginJobAdmin(96015);
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2020-01-01&date_to=2020-01-31",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.deepEqual(response.body.data, []);
+  assert.equal(response.body.summary.row_count, 0);
+  assert.equal(response.body.summary.stall_count, 0);
+  assert.equal(response.body.summary.confirmed_quantity_total, "0.00");
+  assert.equal(response.body.summary.stall_fee_total, "0.00");
+  assert.deepEqual(response.body.available_products, []);
+  assert.deepEqual(response.body.available_packages, []);
+  assert.equal(response.body.pagination.total, 0);
+  assert.equal(response.body.pagination.total_pages, 0);
+});
+
+test("GET /api/admin/vehicle-jobs/history/daily-stall-fees reflects the real persisted TicketProductFinancial from a genuine submit+vendor-confirm finalize flow", async () => {
+  const { token: adminToken } = await loginJobAdmin(96016);
+  const { token: workerToken, worker } = await loginWorker(96017);
+  const job = addDispatchableJob(9606, 1);
+  job.tickets_closed_at = new Date().toISOString();
+  const ticket = addTicketForVehicleJob(job.id, 196060);
+  const assignment = addPendingAssignment(196061, job.id, worker.id);
+  assignment.status = "SCANNED";
+  assignment.accepted_at = new Date().toISOString();
+  assignment.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker.id);
+  await workerQueue.markWorkerAssigned(worker.id);
+
+  const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
+
+  const submitResponse = await server.request(
+    "POST",
+    "/api/workers/me/assignments/tickets/complete",
+    {
+      token: workerToken,
+      body: {
+        ticket_no: market.ticket_no,
+        boothCode: ticket.boothCode,
+        items: products.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    },
+  );
+  assert.equal(submitResponse.status, 200);
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  const processor = state.workerProcessors.get(queueName);
+  const submission = state.completionSubmissions.at(-1);
+  assert.ok(submission);
+
+  await processor!({
+    data: { ticketId: ticket.id, submissionId: submission.id, kind: "vendor_confirm" },
+  });
+
+  const financials = state.ticketProductFinancials.filter((item) =>
+    products.some((product) => product.id === item.ticket_product_id),
+  );
+  assert.equal(financials.length, 2);
+
+  const today = bangkokDateKey();
+  const response = await server.request(
+    "GET",
+    `/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=${today}&date_to=${today}`,
+    { token: adminToken },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const rows = response.body.data.filter((row: { id: number }) =>
+    financials.some((financial) => financial.id === row.id),
+  );
+  assert.equal(rows.length, 2);
+
+  for (const financial of financials) {
+    const row = rows.find((item: { id: number }) => item.id === financial.id);
+
+    assert.ok(row);
+    // ค่าจริงที่ persist ไว้ตอน finalize อาจไม่มี trailing zero ("10" แทน "10.00") — endpoint ต้อง
+    // format เป็น decimal string 2 ตำแหน่งเสมอ แต่ต้องเป็น "ค่าเดียวกัน" ไม่ใช่คำนวณใหม่
+    assert.equal(Number(row.confirmed_quantity), Number(financial.confirmed_quantity));
+    assert.equal(Number(row.stall_fee_rounded), Number(financial.stall_fee_rounded));
+    assert.equal(row.plate, job.license_plate);
+    assert.equal(row.boothCode, ticket.boothCode);
+    assert.equal(row.ticket_no, market.ticket_no);
+  }
 });
 
 /* -------------------------------------- Worker Queue Route Tests -------------------------------------- */

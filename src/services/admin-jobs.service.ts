@@ -25,13 +25,13 @@ import { buildVehicleOperationSummary, formatVehicleOperationItem } from "../uti
 import { isTimeInWorkSchedule } from "../utils/shift";
 import { logger } from "../utils/logger";
 // Import Types
-import type { AdminVehicleJobFinancialResponse, AdminVehicleJobFinancialRecord, AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelTicketWorkerFromBoothResponse, AdminCancelTicketWorkerResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminHistoryCancellationResponse, AdminHistoryRejectionResponse, AdminHistoryBoothResponse, AdminHistoryProductResponse, AdminHistoryTimelineItemResponse, AdminHistoryWorkerResponse, AdminVehicleJobAssignmentCancelResponse, HistoryStatusValue, HistoryFlagValue, DailyWorkerIncomeItemResponse, DailyWorkerIncomePaymentStatus, DailyWorkerIncomeRecord, AdminMarketJobActionResponse, AdminOverrideCountResponse, AdminReleaseWorkersResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobHistoryRecord, AdminVehicleJobOperationListResponse, AdminVehicleWaitResponse } from "../types/admin-jobs.type";
+import type { AdminVehicleJobFinancialResponse, AdminVehicleJobFinancialRecord, AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelTicketWorkerFromBoothResponse, AdminCancelTicketWorkerResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminHistoryCancellationResponse, AdminHistoryRejectionResponse, AdminHistoryBoothResponse, AdminHistoryProductResponse, AdminHistoryTimelineItemResponse, AdminHistoryWorkerResponse, AdminVehicleJobAssignmentCancelResponse, HistoryStatusValue, HistoryFlagValue, DailyStallFeeItemResponse, DailyStallFeeListResponse, DailyStallFeeRecord, DailyWorkerIncomeItemResponse, DailyWorkerIncomePaymentStatus, DailyWorkerIncomeRecord, AdminMarketJobActionResponse, AdminOverrideCountResponse, AdminReleaseWorkersResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobHistoryRecord, AdminVehicleJobOperationListResponse, AdminVehicleWaitResponse } from "../types/admin-jobs.type";
 import { HISTORY_FLAG_VALUES } from "../types/admin-jobs.type";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { CompletedVehicleJobResult, GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
-import { adminAssignWorkersBodySchema, adminCancelAssignmentBodySchema, adminCancelBodySchema, adminDailyWorkerIncomeQuerySchema, adminExtendScanDeadlineBodySchema, adminOverrideCountBodySchema, adminReleaseWorkersBodySchema, adminVehicleJobAssignmentCancelBodySchema, adminVehicleJobListQuerySchema, adminVehicleJobOperationsQuerySchema, adminVehicleWaitBodySchema } from "../validation/schemas";
+import { adminAssignWorkersBodySchema, adminCancelAssignmentBodySchema, adminCancelBodySchema, adminDailyStallFeeQuerySchema, adminDailyWorkerIncomeQuerySchema, adminExtendScanDeadlineBodySchema, adminOverrideCountBodySchema, adminReleaseWorkersBodySchema, adminVehicleJobAssignmentCancelBodySchema, adminVehicleJobListQuerySchema, adminVehicleJobOperationsQuerySchema, adminVehicleWaitBodySchema } from "../validation/schemas";
 // Import Utils
 import { requireActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
@@ -39,7 +39,7 @@ import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, DAILY_WORKER_INCOME_PAYM
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
 import type { AdminActionLogDto } from "../types/shared/admin-action-log.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
-import { buildBangkokDateSpanRange, buildDeadline, getDelayUntil, toUnixMs } from "../utils/time";
+import { buildBangkokDateSpanRange, buildDeadline, formatBangkokDate, getDelayUntil, toUnixMs } from "../utils/time";
 import { buildWorkerAssignedPayload } from "../utils/worker-payload";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 
@@ -3490,6 +3490,71 @@ export async function listDailyWorkerIncome(query: unknown): Promise<{
       limit,
       total: items.length,
       total_pages: Math.ceil(items.length / limit),
+    },
+  };
+}
+
+// Function format หนึ่งแถวรายงานค่าลงสินค้าแผงค้ารายวันสำหรับ Admin — ใช้ snapshot/ยอด finalize จริง
+// ตรงๆ ห้ามคำนวณ fee ใหม่จาก rate ปัจจุบัน ตาม docs/backend-missing-apis-spec V8.md ข้อ 28.2/28.5
+function formatDailyStallFeeItem(record: DailyStallFeeRecord): DailyStallFeeItemResponse {
+  const { ticket } = record.product;
+  const { marketJob } = ticket;
+  const { vehicleJob } = marketJob;
+
+  return {
+    id: record.id,
+    business_date: formatBangkokDate(record.finalizedAt),
+    finalized_at: record.finalizedAt.toISOString(),
+    booth_code: ticket.boothCode,
+    plate: vehicleJob.licensePlate,
+    plate_province: vehicleJob.licensePlateProvince,
+    ticket_no: marketJob.ticketNo,
+    market_code: marketJob.marketCode,
+    market_name: marketJob.marketName,
+    product_code: record.product.productCode,
+    product_full_code: record.product.productFullCode,
+    product_name: record.product.productName,
+    package_code: record.product.packageCode,
+    package_name: record.product.packageName,
+    confirmed_quantity: record.confirmedQuantity.toFixed(2),
+    stall_fee_rounded: record.stallFeeRounded.toFixed(2),
+  };
+}
+
+// Function ดึงรายงานค่าลงสินค้าแผงค้ารายวันสำหรับ Admin ใน service flow ตาม
+// docs/backend-missing-apis-spec V8.md ข้อ 28 — filter/summary/pagination ทั้งหมดทำที่ DB layer
+// (adminJobsRepository.listDailyStallFees) ไม่ paginate ใน service เหมือน listDailyWorkerIncome ด้านบน
+// เพราะไม่มี field ที่ derive ข้ามตารางแบบ payment_status
+export async function listDailyStallFees(query: unknown): Promise<DailyStallFeeListResponse> {
+  const filters = parseWithSchema(adminDailyStallFeeQuerySchema, query);
+  const dateRange = buildBangkokDateSpanRange(filters.date_from, filters.date_to);
+  // date_from/date_to บังคับใน adminDailyStallFeeQuerySchema แล้ว (ไม่ใช่ optionalDateString) จึง
+  // การันตีได้ว่า buildBangkokDateSpanRange คืน startAt/endAt เสมอ ไม่มีทางเป็น undefined ที่นี่
+  const result = await adminJobsRepository.listDailyStallFees({
+    startAt: dateRange.startAt as Date,
+    endAt: dateRange.endAt as Date,
+    search: filters.search,
+    productCode: filters.product_code,
+    packageCode: filters.package_code,
+    page: filters.page,
+    limit: filters.limit,
+  });
+
+  return {
+    data: result.data.map(formatDailyStallFeeItem),
+    summary: {
+      row_count: result.summary.row_count,
+      stall_count: result.summary.stall_count,
+      confirmed_quantity_total: result.summary.confirmed_quantity_total.toFixed(2),
+      stall_fee_total: result.summary.stall_fee_total.toFixed(2),
+    },
+    available_products: result.available_products,
+    available_packages: result.available_packages,
+    pagination: {
+      page: filters.page,
+      limit: filters.limit,
+      total: result.total,
+      total_pages: Math.ceil(result.total / filters.limit),
     },
   };
 }

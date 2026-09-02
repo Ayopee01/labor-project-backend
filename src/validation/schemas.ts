@@ -820,6 +820,35 @@ export const adminDailyWorkerIncomeQuerySchema = z
     limit: input.limit ?? input.pageSize,
   }));
 
+// Format query ของรายงานค่าลงสินค้าแผงค้ารายวัน (Admin) — date_from/date_to บังคับคู่กันเสมอ (ต่างจาก
+// adminDailyWorkerIncomeQuerySchema ที่ optional) และช่วงวันที่ห้ามเกิน 31 วัน ตาม docs/backend-missing-apis-spec V8.md ข้อ 28.4
+export const adminDailyStallFeeQuerySchema = z
+  .object({
+    date_from: dateString,
+    date_to: dateString,
+    search: optionalLowercaseString,
+    product_code: optionalTrimmedString,
+    package_code: optionalTrimmedString,
+    page: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).default(1)),
+    limit: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).max(100).default(20)),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    checkDateRangeOrder(input, context);
+
+    if (input.date_from > input.date_to) {
+      return;
+    }
+
+    if (countInclusiveCalendarDays(input.date_from, input.date_to) > 31) {
+      context.addIssue({
+        code: "custom",
+        path: ["date_to"],
+        message: "Date range must not exceed 31 calendar days.",
+      });
+    }
+  });
+
 export const adminExtendScanDeadlineBodySchema = z.object({
   minutes: z.coerce.number().int().positive().max(240),
   worker_codes: z.array(trimmedString).min(1).optional(),

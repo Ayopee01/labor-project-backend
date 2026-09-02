@@ -2785,10 +2785,11 @@
           type: string
           nullable: true
           example: NAVY
-        coat_no:
+        shirt_number:
           type: string
           nullable: true
-          example: N0115
+          description: MasterWorker.coatNo, never derived from WorkerCode/workCode.
+          example: "115"
         picture:
           type: string
           nullable: true
@@ -4083,6 +4084,139 @@
               type: integer
             total_pages:
               type: integer
+    AdminDailyStallFeeItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 9812
+          description: TicketProductFinancial.id — stable unique key of this row, never an array index.
+        business_date:
+          type: string
+          format: date
+          example: "2026-08-31"
+          description: DATE(TicketProductFinancial.finalizedAt) in Asia/Bangkok.
+        finalized_at:
+          type: string
+          format: date-time
+          example: "2026-08-31T08:42:10.125Z"
+        booth_code:
+          type: string
+          example: "IV4/19"
+        plate:
+          type: string
+          example: "กข 1234"
+        plate_province:
+          type: string
+          nullable: true
+          example: "กรุงเทพมหานคร"
+        ticket_no:
+          type: string
+          example: "20260831000142"
+        market_code:
+          type: string
+          example: "MKT-01"
+        market_name:
+          type: string
+          example: "ตลาดสี่มุมเมือง"
+        product_code:
+          type: string
+          example: "VEG-CAB"
+        product_full_code:
+          type: string
+          nullable: true
+          example: "VEG-CAB-BAG"
+        product_name:
+          type: string
+          example: "กะหล่ำปลี"
+        package_code:
+          type: string
+          example: "BAG"
+        package_name:
+          type: string
+          example: "กระสอบ"
+        confirmed_quantity:
+          type: string
+          example: "7.00"
+          description: Decimal string — TicketProductFinancial.confirmedQuantity as persisted at finalize, never recomputed.
+        stall_fee_rounded:
+          type: string
+          example: "28.00"
+          description: Decimal string — TicketProductFinancial.stallFeeRounded as persisted at finalize, never recomputed.
+    AdminDailyStallFeeProductOption:
+      type: object
+      properties:
+        product_code:
+          type: string
+          example: "VEG-CAB"
+        product_name:
+          type: string
+          example: "กะหล่ำปลี"
+    AdminDailyStallFeePackageOption:
+      type: object
+      properties:
+        package_code:
+          type: string
+          example: "BAG"
+        package_name:
+          type: string
+          example: "กระสอบ"
+    AdminDailyStallFeeListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminDailyStallFeeItem"
+        summary:
+          type: object
+          description: >-
+            Aggregated over the full date range + search + product_code + package_code filtered
+            set, independent of page/limit.
+          properties:
+            row_count:
+              type: integer
+              example: 18
+            stall_count:
+              type: integer
+              example: 12
+              description: COUNT(DISTINCT GateTicket.id) under the filtered set.
+            confirmed_quantity_total:
+              type: string
+              example: "146.50"
+            stall_fee_total:
+              type: string
+              example: "1160.00"
+        available_products:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminDailyStallFeeProductOption"
+          description: >-
+            Distinct products under the current date range + search filters — independent of
+            product_code/package_code themselves so the dropdown does not shrink after selecting a
+            value, for building a product filter dropdown.
+        available_packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminDailyStallFeePackageOption"
+          description: >-
+            Distinct packages under the current date range + search filters — independent of
+            product_code/package_code themselves, for building a package filter dropdown.
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+              example: 1
+            limit:
+              type: integer
+              example: 20
+            total:
+              type: integer
+              example: 18
+            total_pages:
+              type: integer
+              example: 1
     AdminCancelVehicleJobRequeueResponse:
       type: object
       properties:

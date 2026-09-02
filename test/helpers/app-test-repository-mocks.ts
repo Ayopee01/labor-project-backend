@@ -3532,6 +3532,7 @@ function buildAdminVehicleJobHistoryRecordForTest(vehicleJobId: number) {
       laborCode: worker.labor_code,
       fullName: worker.full_name,
       laborColor: worker.labor_color ?? null,
+      coatNo: worker.coat_no ?? null,
       picture: worker.picture ?? null,
       shiftNo: worker.shift_no ?? null,
       shiftStartTime: worker.shift_start_time ?? null,
@@ -4002,6 +4003,96 @@ function matchesHistoryStatusFilter(
   }
 
   return jobMatchesHistoryStatusGroup(job, historyStatus);
+}
+
+// Function สร้าง record รูปทรงเดียวกับ DailyStallFeeRecord จริง (Prisma.TicketProductFinancialGetPayload
+// join product.ticket.marketJob.vehicleJob) สำหรับ listDailyStallFees mock ด้านล่าง
+function buildDailyStallFeeRecordForTest(financialId: number) {
+  const financial = state.ticketProductFinancials.find((item) => item.id === financialId);
+
+  if (!financial) {
+    throw new Error("Ticket product financial not found for daily stall fee test.");
+  }
+
+  const product = state.ticketProducts.find((item) => item.id === financial.ticket_product_id);
+
+  if (!product) {
+    throw new Error("Ticket product not found for daily stall fee test.");
+  }
+
+  const ticket = state.gateTickets.find((item) => item.id === product.ticket_id);
+
+  if (!ticket) {
+    throw new Error("Gate ticket not found for daily stall fee test.");
+  }
+
+  const marketJob = state.marketJobs.find((item) => item.id === ticket.market_job_id);
+
+  if (!marketJob) {
+    throw new Error("Market job not found for daily stall fee test.");
+  }
+
+  const vehicleJob = state.vehicleJobs.find((item) => item.id === marketJob.vehicle_job_id);
+
+  if (!vehicleJob) {
+    throw new Error("Vehicle job not found for daily stall fee test.");
+  }
+
+  return {
+    id: financial.id,
+    confirmedQuantity: new Prisma.Decimal(financial.confirmed_quantity),
+    stallFeeRounded: new Prisma.Decimal(financial.stall_fee_rounded),
+    finalizedAt: new Date(financial.finalized_at),
+    product: {
+      productCode: product.productCode,
+      productFullCode: product.productFullCode,
+      productName: product.productName,
+      packageCode: product.packageCode,
+      packageName: product.packageName,
+      ticket: {
+        boothCode: ticket.boothCode,
+        marketJob: {
+          ticketNo: marketJob.ticket_no,
+          marketCode: marketJob.marketCode,
+          marketName: marketJob.marketName,
+          vehicleJob: {
+            licensePlate: vehicleJob.license_plate,
+            licensePlateProvince: vehicleJob.license_plate_province,
+          },
+        },
+      },
+    },
+  };
+}
+
+// Function join ห่วงโซ่ TicketProductFinancial -> TicketProduct -> GateTicket -> MarketJob ->
+// VehicleJob สำหรับ filter/search ของ listDailyStallFees mock — คืน null ถ้า link ขาดตอนไหนก็ตาม
+function resolveDailyStallFeeChain(financial: (typeof state.ticketProductFinancials)[number]) {
+  const product = state.ticketProducts.find((item) => item.id === financial.ticket_product_id);
+
+  if (!product) {
+    return null;
+  }
+
+  const ticket = state.gateTickets.find((item) => item.id === product.ticket_id);
+
+  if (!ticket) {
+    return null;
+  }
+
+  const marketJob = state.marketJobs.find((item) => item.id === ticket.market_job_id);
+
+  if (!marketJob) {
+    return null;
+  }
+
+  const vehicleJob = state.vehicleJobs.find((item) => item.id === marketJob.vehicle_job_id);
+
+  if (!vehicleJob) {
+    return null;
+  }
+
+  return { product, ticket, marketJob, vehicleJob };
 }
 
 // Mock repository สำหรับ Admin VehicleJob Financial route test
@@ -4825,6 +4916,123 @@ export const adminJobsRepositoryMock = {
       data: ticketWorkers.map((item) => buildDailyWorkerIncomeRecordForTest(item.id)),
       available_worker_codes: availableWorkerCodes,
       available_shifts: availableShifts,
+    };
+  },
+
+  listDailyStallFees: async (filters: {
+    startAt: Date;
+    endAt: Date;
+    search?: string;
+    productCode?: string;
+    packageCode?: string;
+    page: number;
+    limit: number;
+  }) => {
+    let base = state.ticketProductFinancials
+      .map((financial) => ({ financial, chain: resolveDailyStallFeeChain(financial) }))
+      .filter(
+        (entry): entry is { financial: (typeof state.ticketProductFinancials)[number]; chain: NonNullable<ReturnType<typeof resolveDailyStallFeeChain>> } =>
+          entry.chain !== null,
+      );
+
+    base = base.filter(({ financial }) => {
+      const finalizedAtMs = new Date(financial.finalized_at).getTime();
+
+      return finalizedAtMs >= filters.startAt.getTime() && finalizedAtMs < filters.endAt.getTime();
+    });
+
+    if (filters.search) {
+      const tokens = filters.search
+        .split(/[\s,]+/)
+        .map((token) => token.trim().toLowerCase())
+        .filter((token) => token.length > 0);
+
+      base = base.filter(({ chain }) => {
+        const haystacks = [
+          chain.ticket.boothCode,
+          chain.vehicleJob.license_plate,
+          chain.marketJob.ticket_no,
+          chain.product.productCode,
+          chain.product.productName,
+          chain.product.packageCode,
+          chain.product.packageName,
+        ].map((value) => (value ?? "").toLowerCase());
+
+        return tokens.every((token) => haystacks.some((haystack) => haystack.includes(token)));
+      });
+    }
+
+    // available_products/available_packages ต้องไม่ narrow ตาม product_code/package_code เอง — คำนวณ
+    // จาก base ก่อน apply สอง filter นั้น เหมือน buildDailyStallFeeProductWhere ฝั่ง repository จริง
+    const availableProducts = Array.from(
+      new Map(
+        base.map(({ chain }) => [
+          chain.product.productCode,
+          { product_code: chain.product.productCode, product_name: chain.product.productName },
+        ]),
+      ).values(),
+    ).sort(
+      (left, right) =>
+        left.product_name.localeCompare(right.product_name, "th") ||
+        left.product_code.localeCompare(right.product_code, "th"),
+    );
+    const availablePackages = Array.from(
+      new Map(
+        base.map(({ chain }) => [
+          chain.product.packageCode,
+          { package_code: chain.product.packageCode, package_name: chain.product.packageName },
+        ]),
+      ).values(),
+    ).sort(
+      (left, right) =>
+        left.package_name.localeCompare(right.package_name, "th") ||
+        left.package_code.localeCompare(right.package_code, "th"),
+    );
+
+    if (filters.productCode) {
+      base = base.filter(({ chain }) => chain.product.productCode === filters.productCode);
+    }
+
+    if (filters.packageCode) {
+      base = base.filter(({ chain }) => chain.product.packageCode === filters.packageCode);
+    }
+
+    base = base.sort((left, right) => {
+      const leftTime = new Date(left.financial.finalized_at).getTime();
+      const rightTime = new Date(right.financial.finalized_at).getTime();
+
+      if (leftTime !== rightTime) {
+        return rightTime - leftTime;
+      }
+
+      return right.financial.id - left.financial.id;
+    });
+
+    const rowCount = base.length;
+    const stallCount = new Set(base.map(({ chain }) => chain.ticket.id)).size;
+    const confirmedQuantityTotal = base.reduce(
+      (sum, { financial }) => sum.plus(new Prisma.Decimal(financial.confirmed_quantity)),
+      new Prisma.Decimal(0),
+    );
+    const stallFeeTotal = base.reduce(
+      (sum, { financial }) => sum.plus(new Prisma.Decimal(financial.stall_fee_rounded)),
+      new Prisma.Decimal(0),
+    );
+
+    const start = (filters.page - 1) * filters.limit;
+    const paged = base.slice(start, start + filters.limit);
+
+    return {
+      data: paged.map(({ financial }) => buildDailyStallFeeRecordForTest(financial.id)),
+      total: rowCount,
+      summary: {
+        row_count: rowCount,
+        stall_count: stallCount,
+        confirmed_quantity_total: confirmedQuantityTotal,
+        stall_fee_total: stallFeeTotal,
+      },
+      available_products: availableProducts,
+      available_packages: availablePackages,
     };
   },
 };

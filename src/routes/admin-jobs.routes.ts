@@ -107,6 +107,21 @@ router.get(
   }
 );
 
+// Route รายงานค่าลงสินค้าแผงค้ารายวัน — อยู่ใต้ namespace เดียวกับ daily-worker-income ด้านบนตาม
+// docs/backend-missing-apis-spec V8.md ข้อ 28.7.4
+router.get(
+  "/vehicle-jobs/history/daily-stall-fees",
+  permissionMiddleware(["jobs:read"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.listDailyStallFees(req.query);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.get(
   "/vehicle-jobs/:ticketNumber/financials",
   permissionMiddleware(["jobs:read"]),

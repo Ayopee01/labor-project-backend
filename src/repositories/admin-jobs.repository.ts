@@ -14,7 +14,7 @@ import { client, requireDto } from "./shared/repository-utils";
 import type { DbConnection } from "../types/shared/common.type";
 import type { MasterWorkerDto } from "../types/admin-workers.type";
 import type { GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
-import type { AdminVehicleJobFinancialRecord, DailyWorkerIncomeFilters, DailyWorkerIncomeRecord, HistoryStatusFilter, VehicleJobHistoryListResult, VehicleJobListFilters, VehicleJobOperationFilters, VehicleJobOperationRecord } from "../types/admin-jobs.type";
+import type { AdminVehicleJobFinancialRecord, DailyStallFeeFilters, DailyStallFeeQueryResult, DailyWorkerIncomeFilters, DailyWorkerIncomeRecord, HistoryStatusFilter, VehicleJobHistoryListResult, VehicleJobListFilters, VehicleJobOperationFilters, VehicleJobOperationRecord } from "../types/admin-jobs.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -1270,5 +1270,206 @@ export async function listDailyWorkerIncome(
     data,
     available_worker_codes: availableWorkerCodes,
     available_shifts: availableShifts,
+  };
+}
+
+/* -------------------------------------- Daily Stall Fee -------------------------------------- */
+
+// Function แยก search เป็น token ด้วยช่องว่างหรือ comma ตาม docs/backend-missing-apis-spec V8.md ข้อ
+// 28.4.5 — ทุก token ต้อง match อย่างน้อยหนึ่ง field (AND ระหว่าง token, OR ระหว่าง field)
+function splitDailyStallFeeSearchTokens(search: string): string[] {
+  return search
+    .split(/[\s,]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+}
+
+// Function สร้าง OR filter ของหนึ่ง search token ครอบคลุมเลขแผง/ทะเบียนรถ/เลขตั๋ว/รหัส-ชื่อสินค้า/
+// รหัส-ชื่อบรรจุภัณฑ์ — anchor ที่ TicketProductFinancial (ใช้กับ query หลัก)
+function buildDailyStallFeeTokenFilter(token: string): Prisma.TicketProductFinancialWhereInput {
+  const contains = { contains: token, mode: "insensitive" as const };
+
+  return {
+    OR: [
+      { product: { ticket: { boothCode: contains } } },
+      { product: { ticket: { marketJob: { vehicleJob: { licensePlate: contains } } } } },
+      { product: { ticket: { marketJob: { ticketNo: contains } } } },
+      { product: { productCode: contains } },
+      { product: { productName: contains } },
+      { product: { packageCode: contains } },
+      { product: { packageName: contains } },
+    ],
+  };
+}
+
+// Function เดียวกับด้านบนแต่ anchor ที่ TicketProduct (ใช้กับ query available_products/available_packages
+// ที่ query จาก TicketProduct ตรงๆ เพื่อใช้ distinct บน productCode/packageCode ได้)
+function buildDailyStallFeeProductTokenFilter(token: string): Prisma.TicketProductWhereInput {
+  const contains = { contains: token, mode: "insensitive" as const };
+
+  return {
+    OR: [
+      { ticket: { boothCode: contains } },
+      { ticket: { marketJob: { vehicleJob: { licensePlate: contains } } } },
+      { ticket: { marketJob: { ticketNo: contains } } },
+      { productCode: contains },
+      { productName: contains },
+      { packageCode: contains },
+      { packageName: contains },
+    ],
+  };
+}
+
+// Function สร้าง where ของ query หลัก (data/summary/stall_count) — includeProductCode/includePackageCode
+// แยกได้อิสระเผื่ออนาคตต้องคำนวณ available_products/available_packages จาก where ที่ไม่รวม filter ของ
+// ตัวเอง (ตอนนี้ available_* คำนวณจาก buildDailyStallFeeProductWhere แยกต่างหากซึ่งไม่รับ product_code/
+// package_code อยู่แล้วตามข้อ 28.6.2 แต่คง flag นี้ไว้ให้ตรง pattern เดียวกับ listDailyWorkerIncome)
+function buildDailyStallFeeWhere(
+  filters: DailyStallFeeFilters,
+  options: { includeProductCode: boolean; includePackageCode: boolean },
+): Prisma.TicketProductFinancialWhereInput {
+  const searchTokens = filters.search ? splitDailyStallFeeSearchTokens(filters.search) : [];
+  const productWhere: Prisma.TicketProductWhereInput = {
+    ...(options.includeProductCode && filters.productCode && { productCode: filters.productCode }),
+    ...(options.includePackageCode && filters.packageCode && { packageCode: filters.packageCode }),
+  };
+
+  return {
+    finalizedAt: {
+      gte: filters.startAt,
+      lt: filters.endAt,
+    },
+    ...(Object.keys(productWhere).length > 0 && { product: productWhere }),
+    ...(searchTokens.length > 0 && { AND: searchTokens.map(buildDailyStallFeeTokenFilter) }),
+  };
+}
+
+// Function สร้าง where ของ available_products/available_packages — date range + search เท่านั้น ไม่ใช้
+// product_code/package_code จำกัด option ตามข้อ 28.6.2 (dropdown ต้องไม่หายหลังผู้ใช้เลือก filter)
+function buildDailyStallFeeProductWhere(
+  filters: Pick<DailyStallFeeFilters, "startAt" | "endAt" | "search">,
+): Prisma.TicketProductWhereInput {
+  const searchTokens = filters.search ? splitDailyStallFeeSearchTokens(filters.search) : [];
+
+  return {
+    financial: {
+      finalizedAt: {
+        gte: filters.startAt,
+        lt: filters.endAt,
+      },
+    },
+    ...(searchTokens.length > 0 && { AND: searchTokens.map(buildDailyStallFeeProductTokenFilter) }),
+  };
+}
+
+// Function ดึงรายงานค่าลงสินค้าแผงค้ารายวันสำหรับ Admin ใน repository — หนึ่งแถว = หนึ่ง
+// TicketProductFinancial ที่ finalize แล้ว ใช้ join เดียว + filter ที่ฐานข้อมูลทั้งหมด ตาม
+// docs/backend-missing-apis-spec V8.md ข้อ 28.7.2 (ห้าม N+1, ห้าม load worker payments เพราะรายงานนี้
+// ไม่ใช้รายได้แรงงาน)
+export async function listDailyStallFees(
+  filters: DailyStallFeeFilters,
+  connection?: DbConnection,
+): Promise<DailyStallFeeQueryResult> {
+  const db = client(connection);
+  const where = buildDailyStallFeeWhere(filters, {
+    includeProductCode: true,
+    includePackageCode: true,
+  });
+  const optionsWhere = buildDailyStallFeeProductWhere(filters);
+
+  const [data, aggregate, stallIdRows, productRows, packageRows] = await Promise.all([
+    db.ticketProductFinancial.findMany({
+      where,
+      orderBy: [{ finalizedAt: "desc" }, { id: "desc" }],
+      include: {
+        product: {
+          include: {
+            ticket: {
+              include: {
+                marketJob: {
+                  include: {
+                    vehicleJob: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      skip: (filters.page - 1) * filters.limit,
+      take: filters.limit,
+    }),
+    db.ticketProductFinancial.aggregate({
+      where,
+      _count: {
+        _all: true,
+      },
+      _sum: {
+        confirmedQuantity: true,
+        stallFeeRounded: true,
+      },
+    }),
+    // stall_count = COUNT(DISTINCT GateTicket.id) — Prisma ไม่รองรับ distinct บน field ของ relation
+    // ที่ไม่ใช่ query root โดยตรง เลยดึงเฉพาะ id มา dedupe เองแทนที่จะโหลดทั้งแถว
+    db.ticketProductFinancial.findMany({
+      where,
+      select: {
+        product: {
+          select: {
+            ticket: {
+              select: {
+                id: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+    db.ticketProduct.findMany({
+      where: optionsWhere,
+      distinct: ["productCode"],
+      select: {
+        productCode: true,
+        productName: true,
+      },
+    }),
+    db.ticketProduct.findMany({
+      where: optionsWhere,
+      distinct: ["packageCode"],
+      select: {
+        packageCode: true,
+        packageName: true,
+      },
+    }),
+  ]);
+
+  const stallCount = new Set(stallIdRows.map((row) => row.product.ticket.id)).size;
+  // เรียงด้วยชื่อภาษาไทยแล้วตามด้วย code ในโค้ด (ไม่พึ่ง DB collation ที่อาจไม่รองรับ Thai locale sort)
+  const availableProducts = productRows
+    .map((row) => ({ product_code: row.productCode, product_name: row.productName }))
+    .sort(
+      (a, b) =>
+        a.product_name.localeCompare(b.product_name, "th") ||
+        a.product_code.localeCompare(b.product_code, "th"),
+    );
+  const availablePackages = packageRows
+    .map((row) => ({ package_code: row.packageCode, package_name: row.packageName }))
+    .sort(
+      (a, b) =>
+        a.package_name.localeCompare(b.package_name, "th") ||
+        a.package_code.localeCompare(b.package_code, "th"),
+    );
+
+  return {
+    data,
+    total: aggregate._count._all,
+    summary: {
+      row_count: aggregate._count._all,
+      stall_count: stallCount,
+      confirmed_quantity_total: aggregate._sum.confirmedQuantity ?? new Prisma.Decimal(0),
+      stall_fee_total: aggregate._sum.stallFeeRounded ?? new Prisma.Decimal(0),
+    },
+    available_products: availableProducts,
+    available_packages: availablePackages,
   };
 }
