@@ -5,8 +5,7 @@ import authMiddleware from "../middlewares/auth.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 import { loginRateLimitMiddleware } from "../middlewares/security.middleware";
-import { uploadAdminImage } from "../middlewares/upload.middleware";
-import { uploadAdminProfileImage } from "../config/spaces";
+import { uploadAdminImageLocal } from "../middlewares/upload.middleware";
 import * as authService from "../services/auth.service";
 import ApiError from "../utils/api-error";
 
@@ -177,14 +176,14 @@ router.post(
   authMiddleware,
   sessionMiddleware,
   roleMiddleware(["admin"]),
-  uploadAdminImage.single("file"),
+  uploadAdminImageLocal.single("file"),
   async (req, res, next) => {
     try {
       if (!req.file) {
         throw new ApiError(400, "IMAGE_FILE_REQUIRED", "Image file is required.");
       }
 
-      const imageUrl = await uploadAdminProfileImage(req.file.buffer, req.file.mimetype);
+      const imageUrl = `/storage/admin-images/${req.file.filename}`;
       const result = await authService.uploadOwnProfileImage(
         req.auth,
         imageUrl,

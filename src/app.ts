@@ -43,6 +43,13 @@ app.use(
 app.use(normalizeApiRequestBody);
 app.use(pascalCaseApiResponse);
 
+// Serve รูปโปรไฟล์ Admin ที่ POST /api/auth/me/upload-image เขียนลง local disk ไว้ (ADMIN_IMAGE_STORAGE_DIR
+// ใน .env) — ใช้ชั่วคราวก่อน deploy จริงแทน DigitalOcean Spaces (src/config/spaces.ts)
+app.use(
+  "/storage/admin-images",
+  express.static(process.env.ADMIN_IMAGE_STORAGE_DIR ?? "./storage/admin-images")
+);
+
 // Routes
 app.use("/", systemRoutes);
 app.use("/api/auth", authRoutes);

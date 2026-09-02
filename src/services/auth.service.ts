@@ -6,7 +6,7 @@ import { getAccountPermissions } from "./shared/account-permission.service";
 import { registerWorkerPushToken as registerWorkerPushTokenForSession, registerWorkerPushTokenForAccount, revokeWorkerPushTokensBySession, sendWorkerPushNotificationToSession } from "./shared/worker-push.service";
 import { diffChangedFields, writeSecurityAuditLog, writeSecurityAuditLogBestEffort } from "./shared/security-audit-log.service";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
-import { deleteAdminProfileImageByUrl } from "../config/spaces";
+import { deleteAdminProfileImageLocal as deleteAdminProfileImageByUrl } from "../config/local-storage";
 import { withTransaction } from "../db/prisma";
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto, UpdateLangResponse } from "../types/auth.type";

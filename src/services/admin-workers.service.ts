@@ -20,7 +20,7 @@ import { parseWithSchema } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
 import { getActorId, requireActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
-import { hashPassword } from "../utils/password";
+import { hashPassword, normalizePhoneDigits } from "../utils/password";
 import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, findActiveWorkSchedule, formatScheduleWithShift, isTimeInWorkSchedule, resolveShiftNoFromStartTime, resolveShiftPreset } from "../utils/shift";
 import { buildDeadline, formatBangkokDate, toUnixMs } from "../utils/time";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
@@ -232,6 +232,15 @@ export async function createUser(
   const laborCode = requestedUsername ?? workerCode;
   const initialWorkStartDate = workStartDate ?? formatBangkokDate();
   const shiftPreset = resolveShiftPreset(shiftNo);
+  // เก็บ telephone ลง DB เป็นตัวเลขล้วนเสมอ (ตัดขีด/วงเล็บ/เว้นวรรคทิ้ง) ไม่ว่า Admin จะพิมพ์มารูปแบบไหน
+  // — ใช้ค่าเดียวกันนี้ทั้ง telephone column และตอนสร้าง password ด้านล่าง กันไม่ให้สองที่ไม่ตรงกัน
+  const normalizedPhone = normalizePhoneDigits(phone);
+  // work_code สร้างจาก shirt_number ตรงๆ (buildWorkerCode ด้านบนตรวจแล้วว่าเป็นเลขจำนวนเต็ม 0-999999
+  // ก่อนหน้านี้) ให้ตรงกับที่ masterdata จริงได้ตอน sync (ตัดตัวอักษรนำหน้า labor_code ออก)
+  const workCode = Number(shirtNumber);
+  // time_work/time_in/time_out ต้องมาจากชุดเวลาเดียวกับ shift_start_time/shift_end_time เสมอ ไม่งั้น
+  // การคิดเวลาเข้ากะ/ออกกะจะไม่ตรงกัน — ชื่อกะ ("Morning"/"Evening") ตรงกับ pattern จริงใน docs/worker.csv
+  const timeWork = shiftPreset.shift_no === 1 ? "Morning" : "Evening";
 
   return withTransaction(async (transaction) => {
     await assertWorkerCodeAvailable(laborCode, null, transaction);
@@ -240,19 +249,23 @@ export async function createUser(
       {
         labor_code: laborCode,
         full_name: fullName,
-        telephone: phone,
+        telephone: normalizedPhone,
         nationality,
         labor_color: shirtType,
         work_start_date: initialWorkStartDate,
+        work_code: workCode,
         shift_no: shiftPreset.shift_no,
         shift_start_time: shiftPreset.shift_start_time,
         shift_end_time: shiftPreset.shift_end_time,
+        time_work: timeWork,
+        time_in: shiftPreset.shift_start_time,
+        time_out: shiftPreset.shift_end_time,
         status: status === "active" ? 1 : 0,
       },
       transaction
     );
 
-    const passwordHash = await hashPassword(phone);
+    const passwordHash = await hashPassword(normalizedPhone);
     const created = await workerRepository.findByIdentifier(laborCode, transaction);
 
     if (created) {
@@ -350,6 +363,8 @@ export async function updateUser(
   } = parseWithSchema(updateUserBodySchema, body);
   const hasScheduleTimeInput =
     shiftStartTime !== undefined || shiftEndTime !== undefined;
+  // เก็บ telephone ลง DB เป็นตัวเลขล้วนเสมอเช่นเดียวกับตอนสร้าง (undefined = ไม่ได้แก้เบอร์)
+  const normalizedPhone = phone !== undefined ? normalizePhoneDigits(phone) : undefined;
 
   return withTransaction(async (transaction) => {
     const worker = await requireWorker(id, transaction);
@@ -379,17 +394,17 @@ export async function updateUser(
         {
           labor_code: nextWorkerCode,
           full_name: nextFullName !== undefined && nextFullName !== "" ? nextFullName : undefined,
-          telephone: phone,
+          telephone: normalizedPhone,
           nationality,
           labor_color: shirtType,
         },
         transaction
       );
 
-      if (phone !== undefined) {
+      if (normalizedPhone !== undefined) {
         await workerRepository.updatePasswordHash(
           worker.id,
-          await hashPassword(phone),
+          await hashPassword(normalizedPhone),
           transaction
         );
       }

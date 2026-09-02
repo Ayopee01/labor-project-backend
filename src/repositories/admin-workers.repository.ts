@@ -105,11 +105,18 @@ export async function create(
       nationality: input.nationality,
       laborColor: input.labor_color,
       workStartDate: input.work_start_date ? new Date(input.work_start_date) : null,
+      workCode: input.work_code ?? null,
       shiftNo: input.shift_no ?? null,
       shiftStartTime: input.shift_start_time ?? null,
       shiftEndTime: input.shift_end_time ?? null,
+      timeWork: input.time_work ?? null,
+      timeIn: input.time_in ?? null,
+      timeOut: input.time_out ?? null,
       status: input.status ?? 1,
       source: "admin_created",
+      // ให้เป็น "TH" เสมอสำหรับ worker ที่สร้างทาง Admin (ไม่รับค่าจาก body) ต่างจาก worker ที่ sync
+      // มาจาก Master ซึ่งค่านี้มาจากข้อมูลจริง
+      lang: "TH",
     },
   });
 

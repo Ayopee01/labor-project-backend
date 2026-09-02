@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 import { Prisma, PrismaClient } from "@prisma/client";
-import { hashPassword } from "../src/utils/password";
+import { hashPassword, normalizePhoneDigits } from "../src/utils/password";
 
 /**
  * Source: docs/worker.csv ([LMSDB].[dbo].[LaborMaster] joined with a Card-side record).
@@ -4843,9 +4843,13 @@ function ensureWorkerPictureFile(laborCode: string, pictureHex: string | null): 
 export async function seedMasterWorkers(prisma: PrismaClient): Promise<void> {
   const inputs: Prisma.MasterWorkerUpsertArgs[] = await Promise.all(
     masterWorkerSeeds.map(async (worker) => {
-      // Password ตอน seed = เบอร์โทรแบบไม่มีขีด (Frontend/QA กรอกง่ายกว่า "065-5924660")
-      const passwordHash = worker.telephone
-        ? await hashPassword(worker.telephone.replace(/-/g, ""))
+      // เก็บ telephone ลง DB เป็นตัวเลขล้วนเสมอ (ตัดขีด/วงเล็บ/เว้นวรรคจาก docs/worker.csv ทิ้ง) ตั้งแต่
+      // ตอน seed เลย ไม่ใช่แค่ตอนแปลงเป็น password — กันไม่ให้ค่าที่บันทึกจริงกับ password ไม่ตรงกัน
+      const normalizedTelephone = worker.telephone
+        ? normalizePhoneDigits(worker.telephone)
+        : null;
+      const passwordHash = normalizedTelephone
+        ? await hashPassword(normalizedTelephone)
         : null;
       const data: Prisma.MasterWorkerUncheckedCreateInput = {
         laborId: worker.laborId,
@@ -4857,7 +4861,7 @@ export async function seedMasterWorkers(prisma: PrismaClient): Promise<void> {
         status: worker.status,
         workCode: worker.workCode,
         nationality: worker.laborCountry,
-        telephone: worker.telephone,
+        telephone: normalizedTelephone,
         workStartDate: worker.workStartDate ? new Date(worker.workStartDate) : null,
         laborColor: worker.laborColor,
         laborCoat: worker.laborCoat,

@@ -314,7 +314,7 @@ export function toPascalCasePayload(value: unknown): unknown {
 
 // Function ข้าม casing middleware สำหรับ Swagger และ route static upload
 function shouldSkipCaseMiddleware(req: Request): boolean {
-  return req.path.startsWith("/api-docs") || req.path.startsWith("/uploads");
+  return req.path.startsWith("/api-docs") || req.path.startsWith("/uploads") || req.path.startsWith("/storage");
 }
 
 // Function ปรับรูปแบบ JSON body ที่รับเข้ามาก่อน route/service อ่าน schema

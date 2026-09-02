@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 
-import { addAdmin, addWorker, getPassword, resetRouteTestState, resetSpacesMockState, restoreRouteTestLoader, spacesMockState, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
+import { addAdmin, addWorker, getPassword, resetRouteTestState, resetSpacesMockState, restoreRouteTestLoader, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
 
-// ตั้ง UPLOAD_DIR ให้ชี้ไปที่โฟลเดอร์ย่อยใต้ uploads/ (gitignored อยู่แล้ว) ก่อน src/app.ts และ
-// upload.middleware.ts ถูก import จริงใน startRouteTestServer() — ป้องกันไม่ให้ test เขียนไฟล์รูป
-// จริงเข้าไปปนกับ uploads/workers ที่ใช้งานจริง
-process.env.UPLOAD_DIR = "uploads/test-tmp";
+// ตั้ง ADMIN_IMAGE_STORAGE_DIR ให้ชี้ไปที่โฟลเดอร์ย่อยแยกต่างหาก (gitignored อยู่แล้วเพราะอยู่ใต้
+// storage/) ก่อน src/app.ts และ upload.middleware.ts ถูก import จริงใน startRouteTestServer() —
+// ป้องกันไม่ให้ test เขียนไฟล์รูปจริงเข้าไปปนกับ storage/admin-images ที่ใช้งานจริงบน local dev
+process.env.ADMIN_IMAGE_STORAGE_DIR = "storage/test-tmp-admin-images";
+
+// Function หา path ไฟล์จริงบน disk จาก image_url ที่ตอบกลับมา — URL prefix (/storage/admin-images/)
+// คงที่เสมอ แต่ physical directory มาจาก ADMIN_IMAGE_STORAGE_DIR ด้านบน ไม่ใช่ตัว URL เอง
+function resolveAdminImageDiskPath(imageUrl: string): string {
+  return path.join(process.cwd(), process.env.ADMIN_IMAGE_STORAGE_DIR as string, path.basename(imageUrl));
+}
 
 let server: TestServer;
 let password: typeof import("../../src/utils/password");
@@ -396,7 +404,7 @@ test("PATCH /api/auth/me is rejected for a worker token (admin-only self-service
   assert.equal(update.status, 403);
 });
 
-test("POST /api/auth/me/upload-image uploads the file to object storage (Spaces) and persists image_url", async () => {
+test("POST /api/auth/me/upload-image uploads the file to local disk and persists image_url", async () => {
   const passwordHash = await password.hashPassword("Admin@123456");
   const admin = addAdmin(1022, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
@@ -419,9 +427,9 @@ test("POST /api/auth/me/upload-image uploads the file to object storage (Spaces)
   });
 
   assert.equal(response.status, 200);
-  assert.ok(response.body.image_url.startsWith("https://test-admin-uploads.sgp1.digitaloceanspaces.com/admins/"));
+  assert.ok(response.body.image_url.startsWith("/storage/admin-images/"));
   assert.ok(response.body.image_url.endsWith(".jpg"));
-  assert.deepEqual(spacesMockState.uploadedUrls, [response.body.image_url]);
+  assert.ok(fs.existsSync(resolveAdminImageDiskPath(response.body.image_url)));
 
   const me = await server.request("GET", "/api/auth/me", {
     token: login.body.access_token,
@@ -433,7 +441,7 @@ test("POST /api/auth/me/upload-image uploads the file to object storage (Spaces)
   assert.equal(me.body.image_url, response.body.image_url);
 });
 
-test("POST /api/auth/me/upload-image deletes the previous image from object storage when replaced", async () => {
+test("POST /api/auth/me/upload-image deletes the previous image from local disk when replaced", async () => {
   const passwordHash = await password.hashPassword("Admin@123456");
   const admin = addAdmin(1025, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
@@ -467,7 +475,8 @@ test("POST /api/auth/me/upload-image deletes the previous image from object stor
 
   assert.equal(second.status, 200);
   assert.notEqual(second.body.image_url, first.body.image_url);
-  assert.deepEqual(spacesMockState.deletedUrls, [first.body.image_url]);
+  assert.ok(!fs.existsSync(resolveAdminImageDiskPath(first.body.image_url)));
+  assert.ok(fs.existsSync(resolveAdminImageDiskPath(second.body.image_url)));
 });
 
 test("POST /api/auth/me/upload-image rejects a non-image file", async () => {

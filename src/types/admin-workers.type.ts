@@ -140,9 +140,13 @@ export interface MasterWorkerCreateInput {
   nationality: string;
   labor_color: string;
   work_start_date?: string | null;
+  work_code?: number | null;
   shift_no?: number | null;
   shift_start_time?: string | null;
   shift_end_time?: string | null;
+  time_work?: string | null;
+  time_in?: string | null;
+  time_out?: string | null;
   status?: number;
 }
 
