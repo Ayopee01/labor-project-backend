@@ -319,10 +319,15 @@ function formatAdminHistoryWorkers(
       worker_code: assignment.worker.laborCode,
       full_name: assignment.worker.fullName ?? assignment.worker.laborCode,
       labor_color: assignment.worker.laborColor ?? null,
+      shirt_number: assignment.worker.coatNo ?? null,
       accepted_at: assignment.acceptedAt?.toISOString() ?? null,
       scanned_at: assignment.scannedAt?.toISOString() ?? null,
-      // Business Definition: Worker ถือว่าเริ่มงานตั้งแต่กด Accept Assignment ไม่ใช่ตอน Scan
-      started_at: assignment.acceptedAt?.toISOString() ?? null,
+      // Business Definition: Worker ถือว่าเริ่มงานตั้งแต่ Scan เข้างานจริง ไม่ใช่ตอนกด Accept —
+      // ใช้เวลาเริ่มงานระดับ VehicleJob เป็นหลัก fallback เป็น scannedAt ของคนนั้นเฉพาะข้อมูลเก่าที่
+      // ไม่มี workStartedAt บันทึกไว้
+      started_at: assignment.scannedAt
+        ? (record.workStartedAt?.toISOString() ?? assignment.scannedAt.toISOString())
+        : null,
       submitted_at: submittedAtByAssignmentId.get(assignment.id) ?? null,
       released_at: assignment.releasedAt?.toISOString() ?? null,
       final_status: assignment.status,
@@ -730,6 +735,12 @@ function formatAdminHistoryBooth(
 // Function สร้าง Job-level Worker Earnings ของ Work History ใน service flow — เงินจริงต่อ Worker
 // ไม่ใช่ค่าเฉลี่ย: GROUP BY workerId แล้ว SUM(TicketWorker.finalEarningAmount) ที่ finalize
 // ไว้แล้วในทุก MarketJob (Business Ticket) ของ VehicleJob นี้
+//
+// ชุด Worker มาจาก TicketWorker ที่ finalEarningAmount ถูก finalize ไว้แล้วเท่านั้น (มี payment
+// จริง) ไม่ใช่จาก assignment ที่กด Accept — คนที่ timeout ก่อน Scan (ไม่มีแถว ticket_workers เลย
+// หรือมีแต่ finalEarningAmount เป็น null) ต้องไม่โผล่ใน Finance.Workers[] เลย ส่วนคนที่อยู่ใน
+// submission snapshot แต่ไม่ได้เป็นผู้กดส่งยอดเอง ยังคงมีแถว ticket_workers ของตัวเองตามปกติ จึงยัง
+// ถูกนับตามข้อมูลเงินจริง
 function buildAdminHistoryJobWorkerEarnings(
   record: AdminVehicleJobHistoryRecord,
 ): Array<{
@@ -739,29 +750,34 @@ function buildAdminHistoryJobWorkerEarnings(
   total_amount: string;
 }> {
   const totalByWorkerId = new Map<number, Prisma.Decimal>();
+  const workerById = new Map<
+    number,
+    AdminVehicleJobHistoryRecord["marketJobs"][number]["ticketWorkers"][number]["worker"]
+  >();
 
   for (const market of record.marketJobs) {
     for (const ticketWorker of market.ticketWorkers) {
-      const amount = ticketWorker.finalEarningAmount ?? new Prisma.Decimal(0);
+      if (ticketWorker.finalEarningAmount === null) {
+        continue;
+      }
+
       const existing = totalByWorkerId.get(ticketWorker.workerId) ?? new Prisma.Decimal(0);
 
-      totalByWorkerId.set(ticketWorker.workerId, existing.plus(amount));
+      totalByWorkerId.set(ticketWorker.workerId, existing.plus(ticketWorker.finalEarningAmount));
+      workerById.set(ticketWorker.workerId, ticketWorker.worker);
     }
   }
 
-  // ชุด Worker ต้องตรงกับ Workers[] เป๊ะ (คนที่กดรับงานจริงและไม่ซ้ำต่อคน) ไม่ใช่ทุกคนที่เคยมีแถวใน
-  // ticket_workers — คนที่กดรับแล้วถูกยกเลิกก่อน Scan (ไม่มีแถว ticket_workers เลย) ต้องยังมีหนึ่ง
-  // แถวที่นี่ TotalAmount = "0.00" แทนที่จะหายไปเงียบๆ
-  const acceptedWorkers = selectLatestAcceptedAssignmentPerWorker(record.assignments);
+  return Array.from(totalByWorkerId.entries()).map(([workerId, totalAmount]) => {
+    const worker = workerById.get(workerId);
 
-  return acceptedWorkers.map((assignment) => ({
-    worker_id: assignment.workerId,
-    worker_code: assignment.worker.laborCode,
-    full_name: assignment.worker.fullName ?? assignment.worker.laborCode,
-    total_amount: (
-      totalByWorkerId.get(assignment.workerId) ?? new Prisma.Decimal(0)
-    ).toFixed(2),
-  }));
+    return {
+      worker_id: workerId,
+      worker_code: worker?.laborCode ?? null,
+      full_name: worker?.fullName ?? worker?.laborCode ?? "",
+      total_amount: totalAmount.toFixed(2),
+    };
+  });
 }
 
 // Function derive HistoryStatus ต่อ record เดียวกับ business group ที่ history_status query กรอง
@@ -3430,7 +3446,7 @@ function formatDailyWorkerIncomeItem(
     worker: {
       code: record.worker.laborCode,
       name: record.worker.fullName ?? record.worker.laborCode,
-      shirt: record.worker.laborColor ?? null,
+      shirt_number: record.worker.coatNo ?? null,
     },
     accepted_at: assignment?.acceptedAt?.toISOString() ?? null,
     shift: record.worker.shiftNo ?? null,

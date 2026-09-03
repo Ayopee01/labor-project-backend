@@ -5959,8 +5959,12 @@ test("GET /api/admin/vehicle-jobs/history returns Workers, Timeline, Finance and
   assert.equal(item.workers[0].worker_code, worker.labor_code);
   assert.ok(item.workers[0].accepted_at);
   assert.ok(item.workers[0].scanned_at);
-  // started_at ต้องเท่ากับ accepted_at (Business Definition: เริ่มงานตั้งแต่กด Accept)
-  assert.equal(item.workers[0].started_at, item.workers[0].accepted_at);
+  // started_at: Scan แล้วจึงต้องใช้ VehicleJob.workStartedAt เป็นหลัก (fallback scanned_at ถ้าไม่มี)
+  // ไม่ใช่ accepted_at อีกต่อไป
+  assert.equal(
+    item.workers[0].started_at,
+    item.vehicle_job.work_started_at ?? item.workers[0].scanned_at,
+  );
   assert.ok(item.workers[0].submitted_at);
   assert.equal(item.workers[0].cancellation, null);
 
@@ -6553,6 +6557,96 @@ test("GET /api/admin/vehicle-jobs/history job-level finance.workers shows distin
   );
 
   assert.equal(workerAEntry.worker_id, workerA.id);
+});
+
+test("GET /api/admin/vehicle-jobs/history includes shirt_number per worker from MasterWorker.coat_no, including null", async () => {
+  const { token: adminToken } = await loginJobAdmin(88880);
+  const job = addDispatchableJob(8888, 2);
+  const worker = addWorker(88881);
+  worker.coat_no = "12";
+  const noShirtWorker = addWorker(88882);
+  noShirtWorker.coat_no = null;
+  const assignment = addPendingAssignment(688881, job.id, worker.id);
+  assignment.status = "COMPLETED";
+  assignment.accepted_at = new Date().toISOString();
+  const noShirtAssignment = addPendingAssignment(688882, job.id, noShirtWorker.id);
+  noShirtAssignment.status = "COMPLETED";
+  noShirtAssignment.accepted_at = new Date().toISOString();
+
+  const historyResponse = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history",
+    { token: adminToken },
+  );
+
+  const item = historyResponse.body.data.find(
+    (entry: { vehicle_job: { ticket_number: string } }) =>
+      entry.vehicle_job.ticket_number === job.ticket_number,
+  );
+
+  assert.ok(item);
+  const workerRow = item.workers.find(
+    (row: { worker_code: string }) => row.worker_code === worker.labor_code,
+  );
+  const noShirtRow = item.workers.find(
+    (row: { worker_code: string }) => row.worker_code === noShirtWorker.labor_code,
+  );
+
+  assert.ok(workerRow);
+  assert.ok(noShirtRow);
+  assert.equal(workerRow.shirt_number, "12");
+  assert.equal(noShirtRow.shirt_number, null);
+});
+
+test("GET /api/admin/vehicle-jobs/history finance.workers excludes a worker who timed out before Scan and never earned a finalized payment", async () => {
+  const { token: adminToken } = await loginJobAdmin(88890);
+  const job = addDispatchableJob(8889, 2);
+  const paidWorker = addWorker(88891);
+  const timedOutWorker = addWorker(88892);
+
+  // Paid worker: accepted, scanned, และมี ticket_workers ที่ finalize แล้วจริง
+  const paidAssignment = addPendingAssignment(688891, job.id, paidWorker.id);
+  paidAssignment.status = "COMPLETED";
+  paidAssignment.accepted_at = new Date().toISOString();
+  paidAssignment.scanned_at = new Date().toISOString();
+
+  const market = addMarketJobForVehicle(job.id, { id: 88893, ticket_no: "TICKET-8889-A" });
+
+  state.ticketWorkers.push({
+    id: 588891,
+    market_job_id: market.id,
+    worker_id: paidWorker.id,
+    status: "COMPLETED",
+    final_earning_amount: "150.00",
+    joined_at: new Date().toISOString(),
+    cancelled_at: null,
+    completed_at: new Date().toISOString(),
+  });
+
+  // Timed-out worker: กด Accept แล้วแต่ timeout ก่อน Scan — ไม่เคยมีแถว ticket_workers เลย จึงไม่มี
+  // payment จริง ต้องไม่โผล่ใน finance.workers[] แม้จะเคย Accept assignment ก็ตาม
+  const timedOutAssignment = addPendingAssignment(688892, job.id, timedOutWorker.id);
+  timedOutAssignment.status = "CANCELLED";
+  timedOutAssignment.accepted_at = new Date().toISOString();
+
+  const historyResponse = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history",
+    { token: adminToken },
+  );
+
+  const item = historyResponse.body.data.find(
+    (entry: { vehicle_job: { ticket_number: string } }) =>
+      entry.vehicle_job.ticket_number === job.ticket_number,
+  );
+
+  assert.ok(item);
+  const financeCodes = item.finance.workers.map(
+    (entry: { worker_code: string }) => entry.worker_code,
+  );
+
+  assert.ok(financeCodes.includes(paidWorker.labor_code));
+  assert.ok(!financeCodes.includes(timedOutWorker.labor_code));
 });
 
 test("GET /api/admin/vehicle-jobs/history rejection_history resolves correction_owner and rejected_by_type=owner across two reject/correct cycles", async () => {
@@ -7531,6 +7625,7 @@ test("GET /api/admin/vehicle-jobs/history Booth worker_count is null for a legac
 test("GET /api/admin/vehicle-jobs/history/daily-worker-income lists one row per Worker per Business Ticket with the locked payout", async () => {
   const { token: adminToken } = await loginJobAdmin(9970);
   const { token: workerToken, worker } = await loginWorker(9971);
+  worker.coat_no = "7";
   const job = addDispatchableJob(997, 1);
   job.tickets_closed_at = new Date().toISOString();
   const ticket = addTicketForVehicleJob(job.id, 19970);
@@ -7606,6 +7701,9 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income lists one row per 
   assert.equal(row.ticket_no, marketJob.ticket_no);
   assert.equal(row.plate, job.license_plate);
   assert.equal(row.worker.code, worker.labor_code);
+  // shirt_number ต้องมาจาก coat_no (เบอร์เสื้อ) ไม่ใช่ labor_color (สีเสื้อ) เหมือน field shirt เดิม
+  assert.equal(row.worker.shirt_number, worker.coat_no);
+  assert.equal("shirt" in row.worker, false);
   assert.equal(row.payable, ticketWorker.final_earning_amount);
   assert.equal(row.payment_status, "success");
   assert.ok(row.accepted_at);

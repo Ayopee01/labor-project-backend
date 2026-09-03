@@ -453,9 +453,11 @@ export interface AdminHistoryWorkerResponse {
   worker_code: string | null;
   full_name: string;
   labor_color: string | null;
+  shirt_number: string | null;
   accepted_at: string | null;
   scanned_at: string | null;
-  // Business Definition: Worker ถือว่าเริ่มงานตั้งแต่กด Accept Assignment จึงใช้ accepted_at เป็น started_at
+  // Business Definition: Worker ถือว่าเริ่มงานตั้งแต่ Scan เข้างานจริง — null จนกว่าจะ Scan, ใช้
+  // VehicleJob.workStartedAt เป็นหลัก fallback เป็น scanned_at เฉพาะข้อมูลเก่าที่ไม่มี workStartedAt
   started_at: string | null;
   submitted_at: string | null;
   released_at: string | null;
@@ -830,7 +832,7 @@ export interface DailyWorkerIncomeFilters {
 export interface DailyWorkerIncomeWorkerResponse {
   code: string | null;
   name: string;
-  shirt: string | null;
+  shirt_number: string | null;
 }
 
 export interface DailyWorkerIncomeCancellationResponse {

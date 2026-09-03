@@ -3859,6 +3859,7 @@ function buildDailyWorkerIncomeRecordForTest(ticketWorkerId: number) {
       laborCode: worker.labor_code,
       fullName: worker.full_name,
       laborColor: worker.labor_color ?? null,
+      coatNo: worker.coat_no ?? null,
       shiftNo: worker.shift_no ?? null,
     },
 
