@@ -219,7 +219,7 @@ interface UserDetailInfo {
 }
 
 export interface UserDetailResponse {
-  picture: string | null;
+  image_url: string | null;
   worker_code: string;
   full_name: string | null;
   status: AccountStatus;
@@ -243,7 +243,7 @@ export type AdminWorkerStatusItem = {
   worker_code: string;
   labor_color: string | null;
   shirt_number: string | null;
-  picture: string | null;
+  image_url: string | null;
   shift_name: string | null;
   latest_activity_at: string | null;
   status_entered_at: string | null;

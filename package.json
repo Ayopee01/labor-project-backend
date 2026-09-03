@@ -19,6 +19,7 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "docker:up": "docker compose up --build",
+    "docker:up:local-db": "docker compose --profile local-db up --build",
     "docker:down": "docker compose down",
     "docker:redis": "docker compose up redis",
     "test": "npm run test:unit && npm run test:routes",

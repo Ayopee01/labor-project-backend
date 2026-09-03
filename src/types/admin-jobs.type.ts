@@ -561,7 +561,7 @@ interface AdminVehicleJobOperationWorkerResponse {
   full_name: string;
   labor_color: string | null;
   shirt_number: string | null;
-  picture: string | null;
+  image_url: string | null;
   shift_name: string | null;
   assignment_status: string;
   worker_status: string;

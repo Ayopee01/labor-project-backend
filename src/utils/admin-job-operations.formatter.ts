@@ -351,9 +351,7 @@ export function formatVehicleOperationItem(
       full_name: assignment.worker.fullName ?? assignment.worker.laborCode,
       labor_color: assignment.worker.laborColor ?? null,
       shirt_number: assignment.worker.coatNo ?? null,
-      picture: assignment.worker.picture
-        ? Buffer.from(assignment.worker.picture).toString("base64")
-        : null,
+      image_url: assignment.worker.imageUrl,
       shift_name: resolveOperationWorkerShiftName(assignment.worker),
       assignment_status: assignment.status,
       worker_status: toOperationWorkerStatus(assignment.status),

@@ -161,7 +161,7 @@ function formatUserDetail(worker: MasterWorkerDto): UserDetailResponse {
   const schedule = formatScheduleWithShift(scheduleFromWorker(worker));
 
   return {
-    picture: worker.picture,
+    image_url: worker.image_url,
     worker_code: worker.labor_code,
     full_name: worker.full_name,
     status: toAccountStatus(worker.status),
@@ -702,7 +702,7 @@ function formatAdminWorkerStatusItem(
     worker_code: worker.labor_code,
     labor_color: worker.labor_color,
     shirt_number: worker.coat_no,
-    picture: worker.picture,
+    image_url: worker.image_url,
     shift_name: scheduleWithShift?.shift_name ?? null,
     latest_activity_at: resolveLatestActivityAt(queue, assignment, presence),
     status_entered_at: resolveStatusEnteredAt(status, queue, assignment, presence),
