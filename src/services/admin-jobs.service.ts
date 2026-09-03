@@ -3449,7 +3449,7 @@ function formatDailyWorkerIncomeItem(
       shirt_number: record.worker.coatNo ?? null,
     },
     accepted_at: assignment?.acceptedAt?.toISOString() ?? null,
-    shift: record.worker.shiftNo ?? null,
+    shift: record.worker.timeWork ?? null,
     ticket_no: marketJob.ticketNo,
     plate: vehicleJob.licensePlate,
     payable: record.finalEarningAmount?.toFixed(2) ?? "0.00",
@@ -3475,7 +3475,7 @@ function formatDailyWorkerIncomeItem(
 export async function listDailyWorkerIncome(query: unknown): Promise<{
   data: DailyWorkerIncomeItemResponse[];
   available_worker_codes: string[];
-  available_shifts: number[];
+  available_shifts: string[];
   pagination: {
     page: number;
     limit: number;

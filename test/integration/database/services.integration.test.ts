@@ -57,7 +57,7 @@ test(
           shirt_number: shirtNumber,
           work_start_date: "2024-07-15",
           status: "active",
-          shift_no: 1,
+          time_work: "Morning",
         },
         {
           account_id: 1,
@@ -162,9 +162,9 @@ test(
       assert.equal(createdUser.status, "active");
       assert.equal(createdUser.work_start_date, "2024-07-15");
       assert.equal((createdUser as { work_schedules?: unknown }).work_schedules, undefined);
-      assert.equal(createdUser.work_schedule?.shift_no, 1);
-      assert.equal(createdUser.work_schedule?.shift_start_time, "08:00");
-      assert.equal(createdUser.work_schedule?.shift_end_time, "18:00");
+      assert.equal(createdUser.work_schedule?.time_work, "Morning");
+      assert.equal(createdUser.work_schedule?.time_in, "08:00");
+      assert.equal(createdUser.work_schedule?.time_out, "18:00");
       assert.ok(createdUser.work_schedule?.shift_name);
       assert.equal(
         (createdUser.work_schedule as { id?: number } | null)?.id,
@@ -198,8 +198,8 @@ test(
         workerCode,
         {
           status: "inactive",
-          shift_start_time: "18:00",
-          shift_end_time: "06:00",
+          time_in: "18:00",
+          time_out: "06:00",
         },
         {
           account_id: 1,
@@ -213,9 +213,9 @@ test(
       assert.equal(updated.worker_code, workerCode);
       assert.equal(updated.details.work_start_date, "2024-07-15");
       assert.equal((updated.details as { work_schedules?: unknown }).work_schedules, undefined);
-      assert.equal(updated.details.shift_no, 2);
-      assert.equal(updated.details.shift_start_time, "18:00");
-      assert.equal(updated.details.shift_end_time, "06:00");
+      assert.equal(updated.details.time_work, "Evening");
+      assert.equal(updated.details.time_in, "18:00");
+      assert.equal(updated.details.time_out, "06:00");
       assert.ok(updated.details.shift_name);
     } finally {
       await closePrisma();

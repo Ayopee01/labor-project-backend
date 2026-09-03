@@ -821,7 +821,7 @@ export type DailyWorkerIncomeRecord = Prisma.TicketWorkerGetPayload<{
 export interface DailyWorkerIncomeFilters {
   workerCode?: string;
   status?: string;
-  shift?: number;
+  shift?: string;
   startAt?: Date;
   endAt?: Date;
   search?: string;
@@ -853,7 +853,7 @@ export type DailyWorkerIncomePaymentStatus =
 export interface DailyWorkerIncomeItemResponse {
   worker: DailyWorkerIncomeWorkerResponse;
   accepted_at: string | null;
-  shift: number | null;
+  shift: string | null;
   ticket_no: string;
   plate: string;
   // ยอดรวมที่ worker คนนี้ได้จาก ticket_no ใบนี้เท่านั้น (TicketWorker.final_earning_amount

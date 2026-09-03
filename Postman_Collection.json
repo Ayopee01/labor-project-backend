@@ -274,7 +274,7 @@
           "response": []
         },
         {
-          "name": "POST /api/auth/login - Worker",
+          "name": "POST /api/auth/login - Worker 1",
           "event": [
             {
               "listen": "test",
@@ -306,7 +306,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"Username\": \"{{workerUsername}}\",\n  \"Password\": \"{{workerPassword}}\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\",\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
+              "raw": "{\n  \"Username\": \"CG000004\",\n  \"Password\": \"0951094560\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\",\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -324,7 +324,172 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone from worker creation, DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker CG000004 (กะเช้า 06:00-18:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/login - Worker 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let body = {};",
+                  "try { body = pm.response.json(); } catch (error) {}",
+                  "if (body.AccessToken) pm.collectionVariables.set('accessToken', body.AccessToken);",
+                  "if (body.RefreshToken) pm.collectionVariables.set('refreshToken', body.RefreshToken);",
+                  "if (body.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.LoginChallengeToken);",
+                  "if (body.Details && body.Details.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.Details.LoginChallengeToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text",
+                "description": "Required when sending JSON body."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Username\": \"CG000005\",\n  \"Password\": \"0950039059\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\",\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker CG000005 (กะเช้า 06:00-18:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/login - Worker 3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let body = {};",
+                  "try { body = pm.response.json(); } catch (error) {}",
+                  "if (body.AccessToken) pm.collectionVariables.set('accessToken', body.AccessToken);",
+                  "if (body.RefreshToken) pm.collectionVariables.set('refreshToken', body.RefreshToken);",
+                  "if (body.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.LoginChallengeToken);",
+                  "if (body.Details && body.Details.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.Details.LoginChallengeToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text",
+                "description": "Required when sending JSON body."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Username\": \"CB000007\",\n  \"Password\": \"0655924660\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\",\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker CB000007 (กะเย็น 18:00-06:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/login - Worker 4",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let body = {};",
+                  "try { body = pm.response.json(); } catch (error) {}",
+                  "if (body.AccessToken) pm.collectionVariables.set('accessToken', body.AccessToken);",
+                  "if (body.RefreshToken) pm.collectionVariables.set('refreshToken', body.RefreshToken);",
+                  "if (body.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.LoginChallengeToken);",
+                  "if (body.Details && body.Details.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.Details.LoginChallengeToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text",
+                "description": "Required when sending JSON body."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Username\": \"CB000144\",\n  \"Password\": \"0633721990\",\n  \"DeviceId\": \"{{deviceId}}\",\n  \"DeviceName\": \"{{deviceName}}\",\n  \"FcmToken\": \"{{fcmToken}}\",\n  \"Platform\": \"{{pushPlatform}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker CB000144 (กะเย็น 18:00-06:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
           "response": []
         },
@@ -433,7 +598,7 @@
                 "confirm-force"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName, optional FcmToken, optional Platform\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken. If FcmToken is sent, backend revokes the old session push token and stores the new token for this WorkerCode. If Mobile does not have an FCM token yet, omit it here and call POST /api/auth/push-token after Firebase SDK returns the token."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName, optional FcmToken, optional Platform\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken. If FcmToken is sent, backend revokes the old session push token and stores the new token for this WorkerCode. If Mobile does not have an FCM token yet, omit it here and call POST /api/auth/push-token after Firebase SDK returns the token. The push notification sent to the old device (telling it it was signed out) is best-effort only: if it fails for any reason (Firebase/network issues, invalid credential, expired token, etc.), this request still returns 200 and still revokes the old session and creates the new one."
           },
           "response": []
         },
@@ -689,7 +854,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: WorkerCode, ShirtNumber, FullName, Phone, WorkStartDate, WorkSchedule, Status, UpdatedAt. Shift availability uses only ShiftStartTime and ShiftEndTime; WorkSchedule does not return WorkDate."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: WorkerCode, ShirtNumber, FullName, Phone, WorkStartDate, WorkSchedule, Status, UpdatedAt. Shift availability uses only TimeIn and TimeOut; WorkSchedule does not return WorkDate."
           },
           "response": []
         },
@@ -720,7 +885,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{workerCode}} must be WorkerCode, for example MN000012. Response is trimmed for worker edit UI: ImageUrl, WorkerCode, FullName, Status, and Details. Details includes Phone, Position, Nationality, ShirtNumber, ShirtType, WorkStartDate, ShiftNo, ShiftStartTime, ShiftEndTime, and ShiftName."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{workerCode}} must be WorkerCode, for example MN000012. Response is trimmed for worker edit UI: ImageUrl, WorkerCode, FullName, Status, and Details. Details includes Phone, Position, Nationality, ShirtNumber, ShirtType, WorkStartDate, TimeWork, TimeIn, TimeOut, and ShiftName."
           },
           "response": []
         },
@@ -777,10 +942,10 @@
                   "description": "Optional. First working date. If omitted, backend uses the current Bangkok date."
                 },
                 {
-                  "key": "ShiftNo",
-                  "value": "1",
+                  "key": "TimeWork",
+                  "value": "Morning",
                   "type": "text",
-                  "description": "Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00."
+                  "description": "Required. Morning = shift preset 08:00-18:00, Evening = shift preset 18:00-08:00."
                 },
                 {
                   "key": "Status",
@@ -803,7 +968,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data. ImageUrl (text, optional) — leave blank or omit entirely for null; the frontend passes a URL string here (e.g. a pre-uploaded CDN link), not a file. Text fields: FullName, Phone, Nationality, ShirtType, ShirtNumber, ShiftNo, optional WorkStartDate, Status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. ShiftNo 1 uses preset 08:00-18:00 and ShiftNo 2 uses preset 18:00-08:00. WorkStartDate is optional; if omitted, backend uses the current Bangkok date. ImageUrl is saved as-is to accounts.image_url — no upload/processing happens server-side for this field. A real binary file upload is still accepted too, via a separate multipart file field named Image (not shown in this example) which the backend saves under /uploads/workers and uses instead of ImageUrl if both are sent."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data. ImageUrl (text, optional) — leave blank or omit entirely for null; the frontend passes a URL string here (e.g. a pre-uploaded CDN link), not a file. Text fields: FullName, Phone, Nationality, ShirtType, ShirtNumber, TimeWork, optional WorkStartDate, Status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. TimeWork Morning uses preset 08:00-18:00 and TimeWork Evening uses preset 18:00-08:00. WorkStartDate is optional; if omitted, backend uses the current Bangkok date. ImageUrl is saved as-is to accounts.image_url — no upload/processing happens server-side for this field. A real binary file upload is still accepted too, via a separate multipart file field named Image (not shown in this example) which the backend saves under /uploads/workers and uses instead of ImageUrl if both are sent."
           },
           "response": []
         },
@@ -827,7 +992,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"ImageUrl\": \"https://example.com/uploads/workers/mn000012.jpg\",\n  \"FullName\": \"Worker One Updated\",\n  \"Phone\": \"0811111111\",\n  \"Nationality\": \"Myanmar\",\n  \"Status\": \"active\",\n  \"Position\": \"Worker\",\n  \"ShirtNumber\": \"12\",\n  \"ShirtType\": \"Navy\",\n  \"WorkStartDate\": \"2026-07-03\",\n  \"ShiftStartTime\": \"08:00\",\n  \"ShiftEndTime\": \"19:00\"\n}",
+              "raw": "{\n  \"ImageUrl\": \"https://example.com/uploads/workers/mn000012.jpg\",\n  \"FullName\": \"Worker One Updated\",\n  \"Phone\": \"0811111111\",\n  \"Nationality\": \"Myanmar\",\n  \"Status\": \"active\",\n  \"Position\": \"Worker\",\n  \"ShirtNumber\": \"12\",\n  \"ShirtType\": \"Navy\",\n  \"WorkStartDate\": \"2026-07-03\",\n  \"TimeIn\": \"08:00\",\n  \"TimeOut\": \"19:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -849,7 +1014,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: ImageUrl/img, WorkerCode, FullName, Phone, Nationality, Status, Position, ShirtNumber, ShirtType, optional WorkStartDate, ShiftStartTime, ShiftEndTime. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. ShiftNo cannot be updated in this body. Admin edits only ShiftStartTime and ShiftEndTime; backend derives ShiftNo and ShiftName from ShiftStartTime. ShiftStartTime and ShiftEndTime must be time only in HH:mm and must be sent together.\nNotes: Admin only. {{workerCode}} must be WorkerCode. If nationality, ShirtType, or ShirtNumber is sent without WorkerCode, backend regenerates WorkerCode/username from nationality + ShirtType + ShirtNumber, using existing profile values for fields omitted from the request. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{workerCode}}/password."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: ImageUrl/img, WorkerCode, FullName, Phone, Nationality, Status, Position, ShirtNumber, ShirtType, optional WorkStartDate, TimeIn, TimeOut. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. TimeWork cannot be updated in this body. Admin edits only TimeIn and TimeOut; backend derives TimeWork and ShiftName from TimeIn. TimeIn and TimeOut must be time only in HH:mm and must be sent together.\nNotes: Admin only. {{workerCode}} must be WorkerCode. If nationality, ShirtType, or ShirtNumber is sent without WorkerCode, backend regenerates WorkerCode/username from nationality + ShirtType + ShirtNumber, using existing profile values for fields omitted from the request. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{workerCode}}/password."
           },
           "response": []
         },

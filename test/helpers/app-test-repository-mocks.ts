@@ -11,7 +11,7 @@ export class TicketSubmissionAlreadyResolvedError extends Error {
   }
 }
 import { activateNextTicketForVehicleJob, findCurrentOpenTicketForVehicleJob, recordWorkerAssignmentEventOnce } from "./app-test-fixtures";
-import type { AccountRecord, AssignmentRecord, GateClientRecord, GateTicketRecord, MasterWorkerRecord, TicketWorkerRecord, VehicleJobRecord } from "./app-test-harness.records";
+import type { AccountRecord, AssignmentRecord, GateClientRecord, GateTicketRecord, MasterWorkerRecord, TicketWorkerRecord, VehicleJobRecord, WorkerShiftAttendanceRecord } from "./app-test-harness.records";
 
 const ACTIVE_ASSIGNMENT_STATUSES = [
   "PENDING",
@@ -105,13 +105,13 @@ export const workerApplicationRepositoryMock = {
       worker_code: string;
       shift_instance_key: string;
       schedule: {
-        shift_no: number;
-        shift_start_time: string;
-        shift_end_time: string;
+        time_work: string;
+        time_in: string;
+        time_out: string;
       };
     }) => {
       const now = new Date().toISOString();
-      let attendance = state.shiftAttendances.find(
+      let attendance: WorkerShiftAttendanceRecord | undefined = state.shiftAttendances.find(
         (item) =>
           item.workerId === input.worker_id &&
           item.shiftInstanceKey === input.shift_instance_key,
@@ -123,9 +123,9 @@ export const workerApplicationRepositoryMock = {
           workerId: input.worker_id,
           workerCode: input.worker_code,
           shiftInstanceKey: input.shift_instance_key,
-          shiftNo: input.schedule.shift_no,
-          shiftStartTime: input.schedule.shift_start_time,
-          shiftEndTime: input.schedule.shift_end_time,
+          timeWork: input.schedule.time_work,
+          timeIn: input.schedule.time_in,
+          timeOut: input.schedule.time_out,
           firstOnlineAt: now,
           lastOnlineAt: now,
           offlineAt: null,
@@ -139,9 +139,9 @@ export const workerApplicationRepositoryMock = {
         state.shiftAttendances.push(attendance);
       } else {
         attendance.workerCode = input.worker_code;
-        attendance.shiftNo = input.schedule.shift_no;
-        attendance.shiftStartTime = input.schedule.shift_start_time;
-        attendance.shiftEndTime = input.schedule.shift_end_time;
+        attendance.timeWork = input.schedule.time_work;
+        attendance.timeIn = input.schedule.time_in;
+        attendance.timeOut = input.schedule.time_out;
         attendance.lastOnlineAt = now;
         attendance.updatedAt = now;
       }
@@ -153,13 +153,13 @@ export const workerApplicationRepositoryMock = {
       worker_code: string;
       shift_instance_key: string;
       schedule: {
-        shift_no: number;
-        shift_start_time: string;
-        shift_end_time: string;
+        time_work: string;
+        time_in: string;
+        time_out: string;
       };
     }) => {
       const now = new Date().toISOString();
-      let attendance = state.shiftAttendances.find(
+      let attendance: WorkerShiftAttendanceRecord | undefined = state.shiftAttendances.find(
         (item) =>
           item.workerId === input.worker_id &&
           item.shiftInstanceKey === input.shift_instance_key,
@@ -171,9 +171,9 @@ export const workerApplicationRepositoryMock = {
           workerId: input.worker_id,
           workerCode: input.worker_code,
           shiftInstanceKey: input.shift_instance_key,
-          shiftNo: input.schedule.shift_no,
-          shiftStartTime: input.schedule.shift_start_time,
-          shiftEndTime: input.schedule.shift_end_time,
+          timeWork: input.schedule.time_work,
+          timeIn: input.schedule.time_in,
+          timeOut: input.schedule.time_out,
           firstOnlineAt: now,
           lastOnlineAt: now,
           offlineAt: null,
@@ -190,9 +190,9 @@ export const workerApplicationRepositoryMock = {
       }
 
       attendance.workerCode = input.worker_code;
-      attendance.shiftNo = input.schedule.shift_no;
-      attendance.shiftStartTime = input.schedule.shift_start_time;
-      attendance.shiftEndTime = input.schedule.shift_end_time;
+      attendance.timeWork = input.schedule.time_work;
+      attendance.timeIn = input.schedule.time_in;
+      attendance.timeOut = input.schedule.time_out;
       attendance.acceptTimeoutStreak += 1;
       attendance.lastAcceptTimeoutAt = now;
       attendance.updatedAt = now;
@@ -204,13 +204,13 @@ export const workerApplicationRepositoryMock = {
       worker_code: string;
       shift_instance_key: string;
       schedule: {
-        shift_no: number;
-        shift_start_time: string;
-        shift_end_time: string;
+        time_work: string;
+        time_in: string;
+        time_out: string;
       };
     }) => {
       const now = new Date().toISOString();
-      let attendance = state.shiftAttendances.find(
+      let attendance: WorkerShiftAttendanceRecord | undefined = state.shiftAttendances.find(
         (item) =>
           item.workerId === input.worker_id &&
           item.shiftInstanceKey === input.shift_instance_key,
@@ -222,9 +222,9 @@ export const workerApplicationRepositoryMock = {
           workerId: input.worker_id,
           workerCode: input.worker_code,
           shiftInstanceKey: input.shift_instance_key,
-          shiftNo: input.schedule.shift_no,
-          shiftStartTime: input.schedule.shift_start_time,
-          shiftEndTime: input.schedule.shift_end_time,
+          timeWork: input.schedule.time_work,
+          timeIn: input.schedule.time_in,
+          timeOut: input.schedule.time_out,
           firstOnlineAt: now,
           lastOnlineAt: now,
           offlineAt: null,
@@ -241,9 +241,9 @@ export const workerApplicationRepositoryMock = {
       }
 
       attendance.workerCode = input.worker_code;
-      attendance.shiftNo = input.schedule.shift_no;
-      attendance.shiftStartTime = input.schedule.shift_start_time;
-      attendance.shiftEndTime = input.schedule.shift_end_time;
+      attendance.timeWork = input.schedule.time_work;
+      attendance.timeIn = input.schedule.time_in;
+      attendance.timeOut = input.schedule.time_out;
       attendance.acceptTimeoutStreak = 0;
       attendance.lastAcceptTimeoutAt = null;
       attendance.updatedAt = now;
@@ -255,14 +255,14 @@ export const workerApplicationRepositoryMock = {
       worker_code: string;
       shift_instance_key: string;
       schedule: {
-        shift_no: number;
-        shift_start_time: string;
-        shift_end_time: string;
+        time_work: string;
+        time_in: string;
+        time_out: string;
       };
       reason: string;
     }) => {
       const now = new Date().toISOString();
-      let attendance = state.shiftAttendances.find(
+      let attendance: WorkerShiftAttendanceRecord | undefined = state.shiftAttendances.find(
         (item) =>
           item.workerId === input.worker_id &&
           item.shiftInstanceKey === input.shift_instance_key,
@@ -278,9 +278,9 @@ export const workerApplicationRepositoryMock = {
           workerId: input.worker_id,
           workerCode: input.worker_code,
           shiftInstanceKey: input.shift_instance_key,
-          shiftNo: input.schedule.shift_no,
-          shiftStartTime: input.schedule.shift_start_time,
-          shiftEndTime: input.schedule.shift_end_time,
+          timeWork: input.schedule.time_work,
+          timeIn: input.schedule.time_in,
+          timeOut: input.schedule.time_out,
           firstOnlineAt: null,
           lastOnlineAt: null,
           offlineAt: now,
@@ -297,9 +297,9 @@ export const workerApplicationRepositoryMock = {
       }
 
       attendance.workerCode = input.worker_code;
-      attendance.shiftNo = input.schedule.shift_no;
-      attendance.shiftStartTime = input.schedule.shift_start_time;
-      attendance.shiftEndTime = input.schedule.shift_end_time;
+      attendance.timeWork = input.schedule.time_work;
+      attendance.timeIn = input.schedule.time_in;
+      attendance.timeOut = input.schedule.time_out;
       attendance.offlineAt = now;
       attendance.closedAt = now;
       attendance.closeReason = input.reason;
@@ -3006,9 +3006,9 @@ export const adminWorkersRepositoryMock = {
       nationality: string;
       labor_color: string;
       work_start_date?: string | null;
-      shift_no?: number | null;
-      shift_start_time?: string | null;
-      shift_end_time?: string | null;
+      time_work?: string | null;
+      time_in?: string | null;
+      time_out?: string | null;
       status?: number;
     }) => {
       const id = Math.max(0, ...state.workers.keys()) + 1;
@@ -3026,9 +3026,9 @@ export const adminWorkersRepositoryMock = {
         picture: null,
         image_url: null,
         work_start_date: input.work_start_date ?? null,
-        shift_no: input.shift_no ?? null,
-        shift_start_time: input.shift_start_time ?? null,
-        shift_end_time: input.shift_end_time ?? null,
+        time_work: input.time_work ?? null,
+        time_in: input.time_in ?? null,
+        time_out: input.time_out ?? null,
         lang: "TH",
         source: "admin_created",
         created_at: now,
@@ -3040,10 +3040,10 @@ export const adminWorkersRepositoryMock = {
       state.schedules.set(id, {
         id,
         worker_id: id,
-        shift_no: worker.shift_no,
+        time_work: worker.time_work,
         work_date: worker.work_start_date,
-        shift_start_time: worker.shift_start_time,
-        shift_end_time: worker.shift_end_time,
+        time_in: worker.time_in,
+        time_out: worker.time_out,
         is_current: true,
         created_by: null,
         updated_by: null,
@@ -3138,9 +3138,9 @@ export const adminWorkersRepositoryMock = {
     updateShift: async (
       workerId: number | string,
       shift: {
-        shift_no: number;
-        shift_start_time: string;
-        shift_end_time: string;
+        time_work: string;
+        time_in: string;
+        time_out: string;
         work_start_date?: string | null;
       },
     ) => {
@@ -3150,9 +3150,9 @@ export const adminWorkersRepositoryMock = {
         throw new Error("MasterWorker not found.");
       }
 
-      worker.shift_no = shift.shift_no;
-      worker.shift_start_time = shift.shift_start_time;
-      worker.shift_end_time = shift.shift_end_time;
+      worker.time_work = shift.time_work;
+      worker.time_in = shift.time_in;
+      worker.time_out = shift.time_out;
       if (shift.work_start_date !== undefined) {
         worker.work_start_date = shift.work_start_date;
       }
@@ -3161,10 +3161,10 @@ export const adminWorkersRepositoryMock = {
       state.schedules.set(worker.id, {
         id: worker.id,
         worker_id: worker.id,
-        shift_no: worker.shift_no,
+        time_work: worker.time_work,
         work_date: worker.work_start_date,
-        shift_start_time: worker.shift_start_time,
-        shift_end_time: worker.shift_end_time,
+        time_in: worker.time_in,
+        time_out: worker.time_out,
         is_current: true,
         created_by: null,
         updated_by: null,
@@ -3524,9 +3524,9 @@ function buildAdminVehicleJobHistoryRecordForTest(vehicleJobId: number) {
       laborColor: worker.labor_color ?? null,
       coatNo: worker.coat_no ?? null,
       picture: worker.picture ?? null,
-      shiftNo: worker.shift_no ?? null,
-      shiftStartTime: worker.shift_start_time ?? null,
-      shiftEndTime: worker.shift_end_time ?? null,
+      timeWork: worker.time_work ?? null,
+      timeIn: worker.time_in ?? null,
+      timeOut: worker.time_out ?? null,
       workStartDate: worker.work_start_date ? new Date(worker.work_start_date) : null,
       createdAt: new Date(worker.created_at ?? new Date().toISOString()),
       updatedAt: new Date(worker.updated_at ?? new Date().toISOString()),
@@ -3860,7 +3860,7 @@ function buildDailyWorkerIncomeRecordForTest(ticketWorkerId: number) {
       fullName: worker.full_name,
       laborColor: worker.labor_color ?? null,
       coatNo: worker.coat_no ?? null,
-      shiftNo: worker.shift_no ?? null,
+      timeWork: worker.time_work ?? null,
     },
 
     marketJob: {
@@ -4880,7 +4880,7 @@ export const adminJobsRepositoryMock = {
     const applyShift = (list: typeof base) =>
       filters.shift !== undefined
         ? list.filter(
-          (item) => resolveWorker(item)?.shift_no === filters.shift,
+          (item) => resolveWorker(item)?.time_work === filters.shift,
         )
         : list;
 
@@ -4896,10 +4896,10 @@ export const adminJobsRepositoryMock = {
     const availableShifts = Array.from(
       new Set(
         base
-          .map((item) => resolveWorker(item)?.shift_no)
-          .filter((shiftNo): shiftNo is number => shiftNo !== null && shiftNo !== undefined),
+          .map((item) => resolveWorker(item)?.time_work)
+          .filter((timeWork): timeWork is string => timeWork !== null && timeWork !== undefined),
       ),
-    ).sort((a, b) => a - b);
+    ).sort();
 
     const ticketWorkers = applyShift(applyWorkerCode(base));
 

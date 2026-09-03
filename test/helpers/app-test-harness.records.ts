@@ -19,7 +19,7 @@ export type AccountRecord = {
   // migrate ไป MasterWorker เต็มรูปแบบ (admin-jobs/admin-audit — รอ Phase 3) ลบทิ้งได้เมื่อ Phase 3
   // ย้าย mock สองไฟล์นั้นไปอ่าน state.workers (MasterWorkerRecord) โดยตรงแทน
   shirt_number?: string | null;
-  shift_no?: number | null;
+  time_work?: string | null;
 };
 
 // Worker master data — คู่ขนานของ AccountRecord แต่สำหรับ Worker (ไม่มี Account record อีกต่อไป)
@@ -37,9 +37,9 @@ export type MasterWorkerRecord = {
   picture?: string | null;
   image_url?: string | null;
   work_start_date?: string | null;
-  shift_no?: number | null;
-  shift_start_time?: string | null;
-  shift_end_time?: string | null;
+  time_work?: string | null;
+  time_in?: string | null;
+  time_out?: string | null;
   lang: string;
   source: "master_sync" | "admin_created";
   created_at?: string;
@@ -183,9 +183,9 @@ export type WorkerShiftAttendanceRecord = {
   workerId: number;
   workerCode: string;
   shiftInstanceKey: string;
-  shiftNo: number;
-  shiftStartTime: string;
-  shiftEndTime: string;
+  timeWork: string;
+  timeIn: string;
+  timeOut: string;
   firstOnlineAt: string | null;
   lastOnlineAt: string | null;
   offlineAt: string | null;

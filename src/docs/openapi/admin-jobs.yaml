@@ -358,9 +358,11 @@
         - in: query
           name: shift
           schema:
-            type: integer
-            minimum: 1
-          description: Filter by the worker's shift number.
+            type: string
+            enum:
+              - Morning
+              - Evening
+          description: Filter by the worker's shift.
         - in: query
           name: search
           schema:

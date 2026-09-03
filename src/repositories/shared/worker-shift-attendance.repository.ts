@@ -11,9 +11,9 @@ import type { WorkerShiftAttendanceKeyInput, WorkerShiftAttendanceWriteInput, Wo
 function buildShiftSnapshot(input: WorkerShiftAttendanceWriteInput) {
   return {
     workerCode: input.worker_code,
-    shiftNo: input.schedule.shift_no,
-    shiftStartTime: input.schedule.shift_start_time,
-    shiftEndTime: input.schedule.shift_end_time,
+    timeWork: input.schedule.time_work,
+    timeIn: input.schedule.time_in,
+    timeOut: input.schedule.time_out,
   };
 }
 

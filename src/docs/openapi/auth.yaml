@@ -47,6 +47,9 @@ paths:
       description: |
         ใช้ต่อจาก login ที่เจอ ACTIVE_SESSION_EXISTS เพื่อปิด session อุปกรณ์เดิมและสร้าง session ใหม่
         แนบ FCM token ของอุปกรณ์ใหม่ได้ ถ้ายังไม่มีให้เรียก /api/auth/push-token ภายหลัง
+        การแจ้งเตือน push ไปยังอุปกรณ์เดิม (ว่าถูกดีดออก) เป็น best-effort เท่านั้น — ถ้าส่งไม่สำเร็จ
+        (Firebase/network ผิดพลาด, credential ไม่ถูกต้อง ฯลฯ) request นี้ยังตอบ 200 ตามปกติ ไม่ทำให้
+        การ revoke session เดิม/สร้าง session ใหม่ล้มเหลวไปด้วย
       operationId: confirmForceLogin
       requestBody:
         required: true

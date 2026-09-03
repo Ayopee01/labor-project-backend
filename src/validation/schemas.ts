@@ -39,13 +39,10 @@ const timeString = trimmedString.pipe(
   z.iso.time({ precision: -1, error: "Must use HH:mm format." })
 );
 
-// Format เลขกะมาตรฐานของ worker: 1 = กะเช้า, 2 = กะเย็น
-const shiftNoSchema = z.coerce
-  .number()
-  .int()
-  .refine((value) => value === 1 || value === 2, {
-    message: "ShiftNo must be 1 or 2.",
-  });
+// Format กะมาตรฐานของ worker: Morning = กะเช้า, Evening = กะเย็น
+const timeWorkSchema = z.enum(["Morning", "Evening"], {
+  error: "TimeWork must be Morning or Evening.",
+});
 
 // Function แปลง empty string เป็น undefined ก่อน validate optional field
 const emptyStringToUndefined = (value: unknown): unknown =>
@@ -352,7 +349,7 @@ export const createUserBodySchema = z
     shirt_type: workerShirtTypeSchema,
     shirt_number: trimmedString,
     work_start_date: optionalDateString,
-    shift_no: shiftNoSchema,
+    time_work: timeWorkSchema,
     status: defaultActiveStatusSchema,
   });
 
@@ -365,9 +362,9 @@ export const updateUserBodySchema = z.object({
   shirt_type: optionalWorkerShirtTypeSchema,
   shirt_number: optionalTrimmedString,
   work_start_date: optionalDateString,
-  shift_no: z.never("ShiftNo cannot be updated. Send ShiftStartTime and ShiftEndTime instead.").optional(),
-  shift_start_time: z.preprocess(emptyStringToUndefined, timeString.optional()),
-  shift_end_time: z.preprocess(emptyStringToUndefined, timeString.optional()),
+  time_work: z.never("TimeWork cannot be updated. Send TimeIn and TimeOut instead.").optional(),
+  time_in: z.preprocess(emptyStringToUndefined, timeString.optional()),
+  time_out: z.preprocess(emptyStringToUndefined, timeString.optional()),
   profile: updateProfileInputSchema.optional(),
   status: optionalActiveStatusSchema,
 });
@@ -800,7 +797,7 @@ export const adminDailyWorkerIncomeQuerySchema = z
     status: optionalTrimmedString,
     shift: z.preprocess(
       emptyStringToUndefined,
-      z.coerce.number().int().positive().optional()
+      z.enum(["Morning", "Evening"]).optional()
     ),
     search: optionalLowercaseString,
     keyword: optionalLowercaseString,

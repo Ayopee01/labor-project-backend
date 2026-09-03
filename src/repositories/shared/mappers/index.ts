@@ -136,9 +136,6 @@ export function mapMasterWorker(record: MasterWorker | null): MasterWorkerDto | 
     picture: toBase64Picture(record.picture),
     image_url: record.imageUrl,
     update_date: toIsoString(record.updateDate),
-    shift_no: record.shiftNo,
-    shift_start_time: record.shiftStartTime,
-    shift_end_time: record.shiftEndTime,
     lang: record.lang,
     source: toMasterWorkerSource(record.source),
     password_hash: record.passwordHash,
@@ -152,9 +149,9 @@ export function mapMasterWorker(record: MasterWorker | null): MasterWorkerDto | 
 export function mapWorkerSchedule(record: MasterWorker | null): WorkScheduleDto | null {
   if (
     !record ||
-    record.shiftNo === null ||
-    record.shiftStartTime === null ||
-    record.shiftEndTime === null
+    record.timeWork === null ||
+    record.timeIn === null ||
+    record.timeOut === null
   ) {
     return null;
   }
@@ -162,10 +159,10 @@ export function mapWorkerSchedule(record: MasterWorker | null): WorkScheduleDto 
   return {
     id: record.id,
     worker_id: record.id,
-    shift_no: record.shiftNo,
+    time_work: record.timeWork,
     work_date: record.workStartDate ? toDateString(record.workStartDate) : toDateString(record.createdAt),
-    shift_start_time: record.shiftStartTime,
-    shift_end_time: record.shiftEndTime,
+    time_in: record.timeIn,
+    time_out: record.timeOut,
     is_current: true,
     created_by: null,
     updated_by: null,

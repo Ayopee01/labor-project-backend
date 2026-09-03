@@ -51,9 +51,9 @@ function resolveOperationWorkerShiftName(
   worker: VehicleJobOperationRecord["assignments"][number]["worker"]
 ): string | null {
   if (
-    worker.shiftNo === null ||
-    worker.shiftStartTime === null ||
-    worker.shiftEndTime === null
+    worker.timeWork === null ||
+    worker.timeIn === null ||
+    worker.timeOut === null
   ) {
     return null;
   }
@@ -61,10 +61,10 @@ function resolveOperationWorkerShiftName(
   const scheduleDto = {
     id: worker.id,
     worker_id: worker.id,
-    shift_no: worker.shiftNo,
+    time_work: worker.timeWork,
     work_date: (worker.workStartDate ?? worker.createdAt).toISOString().slice(0, 10),
-    shift_start_time: worker.shiftStartTime,
-    shift_end_time: worker.shiftEndTime,
+    time_in: worker.timeIn,
+    time_out: worker.timeOut,
     is_current: true,
     created_by: null,
     updated_by: null,

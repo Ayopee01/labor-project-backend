@@ -343,8 +343,8 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force rejects any status w
   await workerQueue.recordWorkerHeartbeat(worker.id);
 
   // เลื่อนกะไปในอนาคต 2-3 ชั่วโมง (ตามเวลา Bangkok) เพื่อให้ "ตอนนี้" อยู่นอกกะแน่นอน — schedule ทั้งฝั่ง
-  // Admin (forceAdminWorkerStatus) และฝั่ง Worker เอง อ่านจาก shift_no/shift_start_time/shift_end_time
-  // บน MasterWorker โดยตรงแล้ว (ไม่ใช่ entity แยกอีกต่อไป) แก้ที่ worker record เดียวพอ
+  // Admin (forceAdminWorkerStatus) และฝั่ง Worker เอง อ่านจาก time_work/time_in/time_out บน MasterWorker
+  // โดยตรงแล้ว (ไม่ใช่ entity แยกอีกต่อไป) แก้ที่ worker record เดียวพอ
   const bangkokFormatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Bangkok",
     hour: "2-digit",
@@ -352,19 +352,19 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force rejects any status w
     hourCycle: "h23",
   });
 
-  worker.shift_start_time = bangkokFormatter
+  worker.time_in = bangkokFormatter
     .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
     .replace(" ", "");
-  worker.shift_end_time = bangkokFormatter
+  worker.time_out = bangkokFormatter
     .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
     .replace(" ", "");
   state.schedules.set(worker.id, {
     id: worker.id,
     worker_id: worker.id,
-    shift_no: worker.shift_no,
+    time_work: worker.time_work,
     work_date: worker.work_start_date,
-    shift_start_time: worker.shift_start_time,
-    shift_end_time: worker.shift_end_time,
+    time_in: worker.time_in,
+    time_out: worker.time_out,
     is_current: true,
     created_by: null,
     updated_by: null,
@@ -1444,10 +1444,10 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/assign-workers rejects a worker
 
   state.schedules.set(worker.id, {
     ...(schedule as object),
-    shift_start_time: bangkokFormatter
+    time_in: bangkokFormatter
       .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
       .replace(" ", ""),
-    shift_end_time: bangkokFormatter
+    time_out: bangkokFormatter
       .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
       .replace(" ", ""),
   });
@@ -7951,8 +7951,8 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income available_worker_c
   const workerA = addWorker(9986);
   const workerB = addWorker(9987);
 
-  workerA.shift_no = 1;
-  workerB.shift_no = 2;
+  workerA.time_work = "Morning";
+  workerB.time_work = "Evening";
 
   const jobA = addDispatchableJob(9985, 1);
   const ticketA = addTicketForVehicleJob(jobA.id, 199850);
@@ -7999,17 +7999,20 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income available_worker_c
 
   assert.equal(byWorkerCodeResponse.status, 200);
   assert.equal(byWorkerCodeResponse.body.data.length, 1);
-  assert.deepEqual([...byWorkerCodeResponse.body.available_shifts].sort(), [1, 2]);
+  assert.deepEqual(
+    [...byWorkerCodeResponse.body.available_shifts].sort(),
+    ["Evening", "Morning"],
+  );
   // available_worker_codes ก็ต้องเห็นทั้งคู่เช่นกัน (ไม่ใช่แค่ workerA ที่กำลังกรองอยู่)
   assert.deepEqual(
     [...byWorkerCodeResponse.body.available_worker_codes].sort(),
     [workerA.labor_code, workerB.labor_code].sort(),
   );
 
-  // Filter ด้วย shift แล้ว data เหลือแค่ workerA (shift 1) แต่ available_worker_codes ต้องเห็นทั้งคู่
+  // Filter ด้วย shift แล้ว data เหลือแค่ workerA (Morning) แต่ available_worker_codes ต้องเห็นทั้งคู่
   const byShiftResponse = await server.request(
     "GET",
-    "/api/admin/vehicle-jobs/history/daily-worker-income?shift=1",
+    "/api/admin/vehicle-jobs/history/daily-worker-income?shift=Morning",
     { token: adminToken },
   );
 
@@ -8020,7 +8023,10 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income available_worker_c
     [...byShiftResponse.body.available_worker_codes].sort(),
     [workerA.labor_code, workerB.labor_code].sort(),
   );
-  assert.deepEqual([...byShiftResponse.body.available_shifts].sort(), [1, 2]);
+  assert.deepEqual(
+    [...byShiftResponse.body.available_shifts].sort(),
+    ["Evening", "Morning"],
+  );
 });
 
 test("GET /api/admin/vehicle-jobs/history/daily-worker-income treats an empty shift query param as not filtering at all (regression: shift= used to coerce to 0 and fail validation)", async () => {
@@ -8028,8 +8034,8 @@ test("GET /api/admin/vehicle-jobs/history/daily-worker-income treats an empty sh
   const workerA = addWorker(96602);
   const workerB = addWorker(96603);
 
-  workerA.shift_no = 1;
-  workerB.shift_no = 2;
+  workerA.time_work = "Morning";
+  workerB.time_work = "Evening";
 
   const jobA = addDispatchableJob(96604, 1);
   const ticketA = addTicketForVehicleJob(jobA.id, 966050);

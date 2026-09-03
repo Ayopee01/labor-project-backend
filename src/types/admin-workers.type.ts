@@ -67,9 +67,6 @@ export interface MasterWorkerDto {
   picture: string | null;
   image_url: string | null;
   update_date: string | null;
-  shift_no: number | null;
-  shift_start_time: string | null;
-  shift_end_time: string | null;
   lang: string;
   source: MasterWorkerSource;
   password_hash: string | null;
@@ -79,15 +76,15 @@ export interface MasterWorkerDto {
 
 export type SafeMasterWorkerDto = Omit<MasterWorkerDto, "password_hash">;
 
-// Type schedule ปัจจุบันของ worker หนึ่งคน — field เก็บอยู่บน MasterWorker เอง (shiftNo/
-// shiftStartTime/shiftEndTime) ไม่ใช่ entity แยก เหมือนที่เคยเป็น Account มาก่อน
+// Type schedule ปัจจุบันของ worker หนึ่งคน — field เก็บอยู่บน MasterWorker เอง (timeWork/timeIn/
+// timeOut) ไม่ใช่ entity แยก เหมือนที่เคยเป็น Account มาก่อน
 export interface WorkScheduleDto {
   id: number;
   worker_id: number;
-  shift_no: number;
+  time_work: string;
   work_date: string;
-  shift_start_time: string;
-  shift_end_time: string;
+  time_in: string;
+  time_out: string;
   is_current: boolean;
   created_by: number | null;
   updated_by: number | null;
@@ -141,9 +138,6 @@ export interface MasterWorkerCreateInput {
   labor_color: string;
   work_start_date?: string | null;
   work_code?: number | null;
-  shift_no?: number | null;
-  shift_start_time?: string | null;
-  shift_end_time?: string | null;
   time_work?: string | null;
   time_in?: string | null;
   time_out?: string | null;
@@ -158,17 +152,6 @@ export interface MasterWorkerUpdateInput {
   labor_color?: string | null;
   work_start_date?: string | null;
   status?: number;
-}
-
-export interface WorkScheduleCreateInput {
-  worker_id: number;
-  shift_no?: number;
-  work_date: string;
-  shift_start_time: string;
-  shift_end_time: string;
-  is_current?: boolean;
-  created_by?: number | null;
-  updated_by?: number | null;
 }
 
 interface PaginationFilters {
@@ -189,9 +172,9 @@ export interface PaginationMeta {
 }
 
 export interface UserListSchedule {
-  shift_no: number;
-  shift_start_time: string;
-  shift_end_time: string;
+  time_work: string;
+  time_in: string;
+  time_out: string;
   shift_name: string;
 }
 
@@ -212,9 +195,9 @@ interface UserDetailInfo {
   nationality: string | null;
   labor_color: string | null;
   work_start_date: string | null;
-  shift_no: number | null;
-  shift_start_time: string | null;
-  shift_end_time: string | null;
+  time_work: string | null;
+  time_in: string | null;
+  time_out: string | null;
   shift_name: string | null;
 }
 

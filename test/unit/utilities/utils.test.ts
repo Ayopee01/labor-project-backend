@@ -392,30 +392,30 @@ test("API case utilities transform response payloads to PascalCase", () => {
   });
 });
 
-test("worker schemas accept shift number on create and time-only shifts on update", () => {
+test("worker schemas accept time_work on create and time-only shifts on update", () => {
   const createBody = schemas.createUserBodySchema.parse({
     full_name: "Worker One",
     phone: "0812345678",
     nationality: "Myanmar",
     shirt_type: "Navy",
     shirt_number: "12",
-    shift_no: 1,
+    time_work: "Morning",
   });
   const updateBody = schemas.updateUserBodySchema.parse({
-    shift_start_time: "08:00",
-    shift_end_time: "17:00",
+    time_in: "08:00",
+    time_out: "17:00",
   });
 
-  assert.equal(createBody.shift_no, 1);
+  assert.equal(createBody.time_work, "Morning");
   assert.equal(createBody.work_start_date, undefined);
-  assert.equal(updateBody.shift_start_time, "08:00");
-  assert.equal(updateBody.shift_end_time, "17:00");
+  assert.equal(updateBody.time_in, "08:00");
+  assert.equal(updateBody.time_out, "17:00");
 });
 
-test("worker update schema rejects shift number changes", () => {
+test("worker update schema rejects time_work changes", () => {
   assert.throws(() =>
     schemas.updateUserBodySchema.parse({
-      shift_no: 2,
+      time_work: "Evening",
     })
   );
 });
@@ -423,13 +423,13 @@ test("worker update schema rejects shift number changes", () => {
 test("worker schemas reject date-time values for shifts", () => {
   assert.throws(() =>
     schemas.updateUserBodySchema.parse({
-      shift_start_time: "2026-07-03T08:00:00+07:00",
-      shift_end_time: "2026-07-03T17:00:00+07:00",
+      time_in: "2026-07-03T08:00:00+07:00",
+      time_out: "2026-07-03T17:00:00+07:00",
     })
   );
 });
 
-test("worker create schema rejects missing or invalid shift number", () => {
+test("worker create schema rejects missing or invalid time_work", () => {
   assert.throws(() =>
     schemas.createUserBodySchema.parse({
       full_name: "Worker One",
@@ -448,7 +448,7 @@ test("worker create schema rejects missing or invalid shift number", () => {
       nationality: "Myanmar",
       shirt_type: "Navy",
       shirt_number: "12",
-      shift_no: 3,
+      time_work: "Afternoon",
     })
   );
 });
@@ -457,10 +457,10 @@ test("shift utility builds a stable break counter key for one shift instance", (
   const schedule = {
     id: 1,
     worker_id: 1,
-    shift_no: 1,
+    time_work: "Evening",
     work_date: "2026-07-13",
-    shift_start_time: "18:00",
-    shift_end_time: "08:00",
+    time_in: "18:00",
+    time_out: "08:00",
     is_current: true,
     created_by: null,
     updated_by: null,
@@ -816,7 +816,7 @@ test("shift utility calculates shifts from start time", () => {
 test("shift utility rejects invalid shift time", () => {
   assert.throws(
     () => shift.calculateShiftName("25:00"),
-    (error) => error instanceof ApiError && error.code === "INVALID_SHIFT_TIME"
+    (error) => error instanceof ApiError && error.code === "INVALID_TIME_FORMAT"
   );
 });
 
@@ -824,10 +824,10 @@ test("shift utility checks whether a time is inside work schedule", () => {
   const morningSchedule = {
     id: 1,
     worker_id: 1,
-    shift_no: 1,
+    time_work: "Morning",
     work_date: "2026-07-07",
-    shift_start_time: "08:00",
-    shift_end_time: "17:00",
+    time_in: "08:00",
+    time_out: "17:00",
     is_current: true,
     created_by: null,
     updated_by: null,
@@ -836,8 +836,8 @@ test("shift utility checks whether a time is inside work schedule", () => {
   };
   const nightSchedule = {
     ...morningSchedule,
-    shift_start_time: "18:00",
-    shift_end_time: "06:00",
+    time_in: "18:00",
+    time_out: "06:00",
   };
 
   assert.equal(

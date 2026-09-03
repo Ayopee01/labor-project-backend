@@ -866,8 +866,8 @@ export async function getWorkerStatus(
     shift: schedule
       ? {
           name: schedule.shift_name,
-          start_time: schedule.shift_start_time,
-          end_time: schedule.shift_end_time,
+          start_time: schedule.time_in,
+          end_time: schedule.time_out,
         }
       : null,
     shift_active: isWithinShiftTime && hasShiftAttendanceEligibility,

@@ -1071,7 +1071,7 @@ function buildDailyWorkerIncomeWhere(
       },
     }),
     ...(options.includeShift && filters.shift !== undefined && {
-      shiftNo: filters.shift,
+      timeWork: filters.shift,
     }),
   };
 
@@ -1128,7 +1128,7 @@ export async function listDailyWorkerIncome(
 ): Promise<{
   data: DailyWorkerIncomeRecord[];
   available_worker_codes: string[];
-  available_shifts: number[];
+  available_shifts: string[];
 }> {
   const db = client(connection);
   const where = buildDailyWorkerIncomeWhere(filters, {
@@ -1248,7 +1248,7 @@ export async function listDailyWorkerIncome(
       select: {
         worker: {
           select: {
-            shiftNo: true,
+            timeWork: true,
           },
         },
       },
@@ -1260,10 +1260,10 @@ export async function listDailyWorkerIncome(
   const availableShifts = Array.from(
     new Set(
       shiftRows
-        .map((row) => row.worker.shiftNo)
-        .filter((shiftNo): shiftNo is number => shiftNo !== null),
+        .map((row) => row.worker.timeWork)
+        .filter((timeWork): timeWork is string => timeWork !== null),
     ),
-  ).sort((a, b) => a - b);
+  ).sort();
 
   return {
     data,

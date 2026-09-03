@@ -21,7 +21,7 @@ import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuery
 import { requireActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
 import { hashPassword, normalizePhoneDigits } from "../utils/password";
-import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, isTimeInWorkSchedule, resolveShiftNoFromStartTime, resolveShiftPreset } from "../utils/shift";
+import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, isTimeInWorkSchedule, resolveTimeWorkFromTimeIn, resolveTimeWorkPreset } from "../utils/shift";
 import { buildDeadline, formatBangkokDate, toUnixMs } from "../utils/time";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 import { buildWorkerCode } from "../utils/worker-code";
@@ -101,9 +101,9 @@ function formatUserListSchedule(
   }
 
   return {
-    shift_no: schedule.shift_no,
-    shift_start_time: schedule.shift_start_time,
-    shift_end_time: schedule.shift_end_time,
+    time_work: schedule.time_work,
+    time_in: schedule.time_in,
+    time_out: schedule.time_out,
     shift_name: schedule.shift_name,
   };
 }
@@ -134,9 +134,9 @@ function formatUserListItem(worker: MasterWorkerDto): UserListItem {
 // Function สร้าง WorkScheduleDto จาก field shift บน MasterWorker เอง (schedule ไม่ใช่ entity แยก)
 function scheduleFromWorker(worker: MasterWorkerDto): WorkScheduleDto | null {
   if (
-    worker.shift_no === null ||
-    worker.shift_start_time === null ||
-    worker.shift_end_time === null
+    worker.time_work === null ||
+    worker.time_in === null ||
+    worker.time_out === null
   ) {
     return null;
   }
@@ -144,10 +144,10 @@ function scheduleFromWorker(worker: MasterWorkerDto): WorkScheduleDto | null {
   return {
     id: worker.id,
     worker_id: worker.id,
-    shift_no: worker.shift_no,
+    time_work: worker.time_work,
     work_date: worker.work_start_date ?? worker.created_at.slice(0, 10),
-    shift_start_time: worker.shift_start_time,
-    shift_end_time: worker.shift_end_time,
+    time_in: worker.time_in,
+    time_out: worker.time_out,
     is_current: true,
     created_by: null,
     updated_by: null,
@@ -170,9 +170,9 @@ function formatUserDetail(worker: MasterWorkerDto): UserDetailResponse {
       nationality: worker.nationality,
       labor_color: worker.labor_color,
       work_start_date: worker.work_start_date,
-      shift_no: schedule?.shift_no ?? null,
-      shift_start_time: schedule?.shift_start_time ?? null,
-      shift_end_time: schedule?.shift_end_time ?? null,
+      time_work: schedule?.time_work ?? null,
+      time_in: schedule?.time_in ?? null,
+      time_out: schedule?.time_out ?? null,
       shift_name: schedule?.shift_name ?? null,
     },
   };
@@ -236,7 +236,7 @@ export async function createUser(
     shirt_type: shirtType,
     shirt_number: shirtNumber,
     work_start_date: workStartDate,
-    shift_no: shiftNo,
+    time_work: timeWork,
     status,
   } = parseWithSchema(createUserBodySchema, body);
   const workerCode = buildWorkerCode({
@@ -246,7 +246,7 @@ export async function createUser(
   });
   const laborCode = requestedUsername ?? workerCode;
   const initialWorkStartDate = workStartDate ?? formatBangkokDate();
-  const shiftPreset = resolveShiftPreset(shiftNo);
+  const timeWorkPreset = resolveTimeWorkPreset(timeWork);
   // เก็บ telephone ลง DB เป็นตัวเลขล้วนเสมอ (ตัดขีด/วงเล็บ/เว้นวรรคทิ้ง) ไม่ว่า Admin จะพิมพ์มารูปแบบไหน
   // — ใช้ค่าเดียวกันนี้ทั้ง telephone column และตอนสร้าง password ด้านล่าง กันไม่ให้สองที่ไม่ตรงกัน
   const normalizedPhone = normalizePhoneDigits(phone);
@@ -254,9 +254,6 @@ export async function createUser(
   // work_code สร้างจาก shirt_number ตรงๆ (buildWorkerCode ด้านบนตรวจแล้วว่าเป็นเลขจำนวนเต็ม 0-999999
   // ก่อนหน้านี้) ให้ตรงกับที่ masterdata จริงได้ตอน sync (ตัดตัวอักษรนำหน้า labor_code ออก)
   const workCode = Number(shirtNumber);
-  // time_work/time_in/time_out ต้องมาจากชุดเวลาเดียวกับ shift_start_time/shift_end_time เสมอ ไม่งั้น
-  // การคิดเวลาเข้ากะ/ออกกะจะไม่ตรงกัน — ชื่อกะ ("Morning"/"Evening") ตรงกับ pattern จริงใน docs/worker.csv
-  const timeWork = shiftPreset.shift_no === 1 ? "Morning" : "Evening";
 
   return withTransaction(async (transaction) => {
     await assertWorkerCodeAvailable(laborCode, null, transaction);
@@ -270,12 +267,9 @@ export async function createUser(
         labor_color: shirtType,
         work_start_date: initialWorkStartDate,
         work_code: workCode,
-        shift_no: shiftPreset.shift_no,
-        shift_start_time: shiftPreset.shift_start_time,
-        shift_end_time: shiftPreset.shift_end_time,
-        time_work: timeWork,
-        time_in: shiftPreset.shift_start_time,
-        time_out: shiftPreset.shift_end_time,
+        time_work: timeWorkPreset.time_work,
+        time_in: timeWorkPreset.time_in,
+        time_out: timeWorkPreset.time_out,
         status: status === "active" ? 1 : 0,
       },
       transaction
@@ -308,7 +302,7 @@ export async function createUser(
           after: {
             full_name: fullName,
             status,
-            shift_no: shiftPreset.shift_no,
+            time_work: timeWorkPreset.time_work,
           },
         },
       },
@@ -373,12 +367,12 @@ export async function updateUser(
     shirt_type: shirtType,
     shirt_number: shirtNumber,
     work_start_date: workStartDate,
-    shift_start_time: shiftStartTime,
-    shift_end_time: shiftEndTime,
+    time_in: timeIn,
+    time_out: timeOut,
     status,
   } = parseWithSchema(updateUserBodySchema, body);
   const hasScheduleTimeInput =
-    shiftStartTime !== undefined || shiftEndTime !== undefined;
+    timeIn !== undefined || timeOut !== undefined;
   // เก็บ telephone ลง DB เป็นตัวเลขล้วนเสมอเช่นเดียวกับตอนสร้าง (undefined = ไม่ได้แก้เบอร์)
   const normalizedPhone = phone !== undefined ? normalizePhoneDigits(phone) : undefined;
 
@@ -447,22 +441,22 @@ export async function updateUser(
     }
 
     if (hasScheduleTimeInput) {
-      if (shiftStartTime === undefined || shiftEndTime === undefined) {
+      if (timeIn === undefined || timeOut === undefined) {
         throw new ApiError(
           400,
-          "SHIFT_TIME_PAIR_REQUIRED",
-          "ShiftStartTime and ShiftEndTime must be sent together."
+          "TIME_PAIR_REQUIRED",
+          "TimeIn and TimeOut must be sent together."
         );
       }
 
-      const resolvedShiftNo = resolveShiftNoFromStartTime(shiftStartTime);
+      const resolvedTimeWork = resolveTimeWorkFromTimeIn(timeIn);
 
       await workerRepository.updateShift(
         worker.id,
         {
-          shift_no: resolvedShiftNo,
-          shift_start_time: shiftStartTime,
-          shift_end_time: shiftEndTime,
+          time_work: resolvedTimeWork,
+          time_in: timeIn,
+          time_out: timeOut,
           work_start_date: workStartDate,
         },
         transaction
@@ -478,9 +472,9 @@ export async function updateUser(
       "labor_color",
       "work_start_date",
       "status",
-      "shift_no",
-      "shift_start_time",
-      "shift_end_time",
+      "time_work",
+      "time_in",
+      "time_out",
     ]);
 
     if (diff) {

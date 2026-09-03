@@ -89,8 +89,8 @@ function formatProfileCardShift(
 
   return {
     name: schedule.shift_name,
-    start_time: schedule.shift_start_time,
-    end_time: schedule.shift_end_time,
+    start_time: schedule.time_in,
+    end_time: schedule.time_out,
   };
 }
 
@@ -126,14 +126,14 @@ async function buildAdminMeResponse(
 // Function สร้าง me response ของ Worker ใน service flow
 function buildWorkerMeResponse(worker: MasterWorkerDto): MeResponse {
   const schedule = formatScheduleWithShift(
-    worker.shift_no !== null && worker.shift_start_time !== null && worker.shift_end_time !== null
+    worker.time_work !== null && worker.time_in !== null && worker.time_out !== null
       ? {
           id: worker.id,
           worker_id: worker.id,
-          shift_no: worker.shift_no,
+          time_work: worker.time_work,
           work_date: worker.work_start_date ?? worker.created_at.slice(0, 10),
-          shift_start_time: worker.shift_start_time,
-          shift_end_time: worker.shift_end_time,
+          time_in: worker.time_in,
+          time_out: worker.time_out,
           is_current: true,
           created_by: null,
           updated_by: null,
@@ -566,6 +566,9 @@ export async function confirmForceLogin(
       fallbackMessage:
         "This session was signed out because login was confirmed on another device.",
     });
+    // Best-effort เท่านั้น — แค่แจ้งเตือนอุปกรณ์เดิมว่าถูกดีดออก ไม่ใช่ core ของ force login เอง ห้ามให้
+    // ความล้มเหลวของ FCM (Firebase credential ผิด, token หมดอายุ, network ขัดข้อง ฯลฯ) ทำให้ revoke
+    // session เดิม/สร้าง session ใหม่ด้านล่างไม่เกิดขึ้น
     await sendWorkerPushNotificationToSession({
       session_id: oldSession.id,
       type: "SESSION_REVOKED",
@@ -576,6 +579,8 @@ export async function confirmForceLogin(
       notification_params: notificationPayload,
       lang: worker.lang,
       payload: notificationPayload,
+    }).catch((error) => {
+      logger.warn("Failed to send force-login push notification to previous session.", { error });
     });
 
     return withTransaction(async (transaction) => {

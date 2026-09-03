@@ -4835,8 +4835,10 @@ function ensureWorkerPictureFile(laborCode: string, pictureHex: string | null): 
     fs.writeFileSync(filePath, bytes);
   }
 
-  // เก็บเป็น forward slash เสมอไม่ว่า OS ไหน (path.join บน Windows ได้ backslash ซึ่งใช้เป็น URL ไม่ได้)
-  return filePath.split(path.sep).join("/");
+  // URL path คงที่ที่ app.ts mount static route ไว้ (/storage/worker-images) แยกจาก physical
+  // directory จริงบน disk (storageDir ด้านบน ตั้งค่าได้อิสระผ่าน WORKER_IMAGE_STORAGE_DIR) — ห้ามคืน
+  // filePath ดิบตรงๆ เพราะจะไม่มี "/" นำหน้าและอาจมี "./" ปนมาจาก storageDir ทำให้ client เปิด URL ไม่ได้
+  return `/storage/worker-images/${laborCode}.jpg`;
 }
 
 // Function seed ข้อมูล master_workers จาก docs/worker.csv (คัดลอกเป็น literal array ด้านบน) ลง DB
@@ -4869,9 +4871,6 @@ export async function seedMasterWorkers(prisma: PrismaClient): Promise<void> {
         timeWork: worker.timeWork,
         timeIn: worker.timeIn,
         timeOut: worker.timeOut,
-        shiftNo: worker.shiftNo,
-        shiftStartTime: worker.timeIn,
-        shiftEndTime: worker.timeOut,
         picture: hexToBytes(worker.pictureHex),
         imageUrl: ensureWorkerPictureFile(worker.laborCode, worker.pictureHex),
         updateDate: worker.updateDate ? new Date(worker.updateDate) : null,

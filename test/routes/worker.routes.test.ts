@@ -1049,14 +1049,14 @@ test("worker-shift-end job ejects to open_app and closes attendance when the shi
 
   // จำลองว่ากะจบไปแล้วจริง (เลื่อนเวลากะไปในอดีตแล้ว ตอนนี้จึงอยู่นอกกะแน่นอนตอน job ทำงาน)
   const schedule = state.schedules.get(worker.id) as {
-    shift_start_time: string;
-    shift_end_time: string;
+    time_in: string;
+    time_out: string;
   };
 
   state.schedules.set(worker.id, {
     ...schedule,
-    shift_start_time: "00:00",
-    shift_end_time: "00:01",
+    time_in: "00:00",
+    time_out: "00:01",
   });
 
   workerDispatch.startAssignmentTimeoutProcessing();
@@ -1143,10 +1143,10 @@ test("GET /api/workers/me/status returns shift_active false when worker is outsi
 
   state.schedules.set(worker.id, {
     ...schedule,
-    shift_start_time: bangkokFormatter
+    time_in: bangkokFormatter
       .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
       .replace(" ", ""),
-    shift_end_time: bangkokFormatter
+    time_out: bangkokFormatter
       .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
       .replace(" ", ""),
   });
@@ -1166,9 +1166,9 @@ test("GET /api/workers/me/status returns shift_active false when the worker alre
   // (เช่น กด "เลิกงาน" เอง หรือ shift-end job ปิดให้) — shift_active ต้องเป็น false ทันที ไม่ต้องรอให้
   // พ้นเวลากะก่อน
   const schedule = state.schedules.get(worker.id) as {
-    shift_no: number;
-    shift_start_time: string;
-    shift_end_time: string;
+    time_work: string;
+    time_in: string;
+    time_out: string;
   };
   assert.ok(schedule, "Worker fixture must seed a default work schedule.");
   const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(
@@ -1180,9 +1180,9 @@ test("GET /api/workers/me/status returns shift_active false when the worker alre
     workerId: worker.id,
     workerCode: worker.labor_code,
     shiftInstanceKey,
-    shiftNo: schedule.shift_no,
-    shiftStartTime: schedule.shift_start_time,
-    shiftEndTime: schedule.shift_end_time,
+    timeWork: schedule.time_work,
+    timeIn: schedule.time_in,
+    timeOut: schedule.time_out,
     firstOnlineAt: new Date().toISOString(),
     lastOnlineAt: new Date().toISOString(),
     offlineAt: new Date().toISOString(),

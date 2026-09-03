@@ -10,20 +10,20 @@ const MORNING_SHIFT = "Morning shift";
 const NIGHT_SHIFT = "Evening shift";
 
 // เวลาเริ่มกะตั้งแต่ 18:00 ขึ้นไปถือเป็นกะดึก ใช้ค่าเดียวกันทั้ง calculateShiftName และ
-// resolveShiftNoFromStartTime กันไม่ให้ boundary เพี้ยนไปคนละค่ากัน
+// resolveTimeWorkFromTimeIn กันไม่ให้ boundary เพี้ยนไปคนละค่ากัน
 const NIGHT_SHIFT_START_MINUTES = 18 * 60;
 
-const SHIFT_PRESETS = {
-  1: {
-    shift_no: 1,
-    shift_start_time: "08:00",
-    shift_end_time: "18:00",
+const TIME_WORK_PRESETS = {
+  Morning: {
+    time_work: "Morning",
+    time_in: "08:00",
+    time_out: "18:00",
     shift_name: MORNING_SHIFT,
   },
-  2: {
-    shift_no: 2,
-    shift_start_time: "18:00",
-    shift_end_time: "08:00",
+  Evening: {
+    time_work: "Evening",
+    time_in: "18:00",
+    time_out: "08:00",
     shift_name: NIGHT_SHIFT,
   },
 } as const;
@@ -106,7 +106,7 @@ export function buildWorkScheduleShiftInstanceKey(
       ? addDaysToDateString(currentDate, -1)
       : currentDate;
 
-  return `${shiftStartDate}:${schedule.shift_start_time}-${schedule.shift_end_time}`;
+  return `${shiftStartDate}:${schedule.time_in}-${schedule.time_out}`;
 }
 
 // Function ดึง work schedule shift end at สำหรับ helper กลาง
@@ -126,7 +126,7 @@ function getWorkScheduleShiftEndAt(
       ? addDaysToDateString(shiftStartDate, 1)
       : shiftStartDate;
 
-  return new Date(`${shiftEndDate}T${schedule.shift_end_time}:00.000+07:00`);
+  return new Date(`${shiftEndDate}T${schedule.time_out}:00.000+07:00`);
 }
 
 // Function ดึง work schedule shift end delay ms สำหรับ helper กลาง
@@ -159,14 +159,14 @@ function parseScheduleTimeRange(schedule: WorkScheduleDto): {
   startMinutes: number;
   endMinutes: number;
 } {
-  const startMinutes = parseTimeToMinutes(schedule.shift_start_time);
-  const endMinutes = parseTimeToMinutes(schedule.shift_end_time);
+  const startMinutes = parseTimeToMinutes(schedule.time_in);
+  const endMinutes = parseTimeToMinutes(schedule.time_out);
 
   if (startMinutes === null || endMinutes === null) {
     throw new ApiError(
       400,
-      "INVALID_SHIFT_TIME",
-      "Shift time must use HH:mm format."
+      "INVALID_TIME_FORMAT",
+      "TimeIn/TimeOut must use HH:mm format."
     );
   }
 
@@ -178,27 +178,27 @@ function parseScheduleTimeRange(schedule: WorkScheduleDto): {
 
 // Function จัดการ calculate shift name สำหรับ helper กลาง
 export function calculateShiftName(
-  shiftStartTime: string,
-  shiftEndTime?: string
+  timeIn: string,
+  timeOut?: string
 ): string {
-  const startMinutes = parseTimeToMinutes(shiftStartTime);
+  const startMinutes = parseTimeToMinutes(timeIn);
 
   if (startMinutes === null) {
     throw new ApiError(
       400,
-      "INVALID_SHIFT_TIME",
-      "Shift start time must use HH:mm format."
+      "INVALID_TIME_FORMAT",
+      "TimeIn must use HH:mm format."
     );
   }
 
-  if (shiftEndTime !== undefined) {
-    const endMinutes = parseTimeToMinutes(shiftEndTime);
+  if (timeOut !== undefined) {
+    const endMinutes = parseTimeToMinutes(timeOut);
 
     if (endMinutes === null) {
       throw new ApiError(
         400,
-        "INVALID_SHIFT_TIME",
-        "Shift end time must use HH:mm format."
+        "INVALID_TIME_FORMAT",
+        "TimeOut must use HH:mm format."
       );
     }
 
@@ -211,37 +211,37 @@ export function calculateShiftName(
   return MORNING_SHIFT;
 }
 
-// Function ค้นหาหรือตัดสิน shift no จาก start time สำหรับ helper กลาง
-export function resolveShiftNoFromStartTime(shiftStartTime: string): 1 | 2 {
-  const startMinutes = parseTimeToMinutes(shiftStartTime);
+// Function ค้นหาหรือตัดสิน time_work จาก time_in สำหรับ helper กลาง
+export function resolveTimeWorkFromTimeIn(timeIn: string): "Morning" | "Evening" {
+  const startMinutes = parseTimeToMinutes(timeIn);
 
   if (startMinutes === null) {
     throw new ApiError(
       400,
-      "INVALID_SHIFT_TIME",
-      "Shift start time must use HH:mm format."
+      "INVALID_TIME_FORMAT",
+      "TimeIn must use HH:mm format."
     );
   }
 
-  return startMinutes >= NIGHT_SHIFT_START_MINUTES ? 2 : 1;
+  return startMinutes >= NIGHT_SHIFT_START_MINUTES ? "Evening" : "Morning";
 }
 
-// Function ค้นหาหรือตัดสิน shift preset สำหรับ helper กลาง
-export function resolveShiftPreset(shiftNo: number): {
-  shift_no: 1 | 2;
-  shift_start_time: string;
-  shift_end_time: string;
+// Function ค้นหาหรือตัดสิน time_work preset สำหรับ helper กลาง
+export function resolveTimeWorkPreset(timeWork: string): {
+  time_work: "Morning" | "Evening";
+  time_in: string;
+  time_out: string;
   shift_name: string;
 } {
-  if (shiftNo !== 1 && shiftNo !== 2) {
+  if (timeWork !== "Morning" && timeWork !== "Evening") {
     throw new ApiError(
       400,
-      "INVALID_SHIFT_NO",
-      "ShiftNo must be 1 or 2."
+      "INVALID_TIME_WORK",
+      "TimeWork must be Morning or Evening."
     );
   }
 
-  return SHIFT_PRESETS[shiftNo];
+  return TIME_WORK_PRESETS[timeWork];
 }
 
 // Function จัดรูปแบบ schedule พร้อม shift สำหรับ helper กลาง
@@ -255,8 +255,8 @@ export function formatScheduleWithShift(
   return {
     ...schedule,
     shift_name: calculateShiftName(
-      schedule.shift_start_time,
-      schedule.shift_end_time
+      schedule.time_in,
+      schedule.time_out
     ),
   };
 }
@@ -321,11 +321,11 @@ export function buildShiftWaitInfo(
   return {
     shift: {
       name: calculateShiftName(
-        schedule.shift_start_time,
-        schedule.shift_end_time
+        schedule.time_in,
+        schedule.time_out
       ),
-      start_time: schedule.shift_start_time,
-      end_time: schedule.shift_end_time,
+      start_time: schedule.time_in,
+      end_time: schedule.time_out,
     },
     remaining_time: formatRemainingTime(minutesUntilShiftStart),
   };

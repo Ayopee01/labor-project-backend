@@ -106,9 +106,6 @@ export async function create(
       laborColor: input.labor_color,
       workStartDate: input.work_start_date ? new Date(input.work_start_date) : null,
       workCode: input.work_code ?? null,
-      shiftNo: input.shift_no ?? null,
-      shiftStartTime: input.shift_start_time ?? null,
-      shiftEndTime: input.shift_end_time ?? null,
       timeWork: input.time_work ?? null,
       timeIn: input.time_in ?? null,
       timeOut: input.time_out ?? null,
@@ -217,9 +214,9 @@ export async function update(
 export async function updateShift(
   id: number | string,
   shift: {
-    shift_no: number;
-    shift_start_time: string;
-    shift_end_time: string;
+    time_work: string;
+    time_in: string;
+    time_out: string;
     work_start_date?: string | null;
   },
   connection?: DbConnection,
@@ -230,9 +227,9 @@ export async function updateShift(
       id: toId(id),
     },
     data: {
-      shiftNo: shift.shift_no,
-      shiftStartTime: shift.shift_start_time,
-      shiftEndTime: shift.shift_end_time,
+      timeWork: shift.time_work,
+      timeIn: shift.time_in,
+      timeOut: shift.time_out,
       ...(shift.work_start_date !== undefined
         ? { workStartDate: shift.work_start_date ? new Date(shift.work_start_date) : null }
         : {}),

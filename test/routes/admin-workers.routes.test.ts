@@ -126,7 +126,7 @@ test("POST /api/admin/users writes a worker_account_created SecurityAuditLog wit
       nationality: "Myanmar",
       shirt_type: "Navy",
       shirt_number: "9731",
-      shift_no: 1,
+      time_work: "Morning",
       status: "active",
     },
   });

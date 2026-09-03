@@ -50,6 +50,13 @@ app.use(
   express.static(process.env.ADMIN_IMAGE_STORAGE_DIR ?? "./storage/admin-images")
 );
 
+// Serve รูป Worker ที่ decode ไว้ตอน sync จาก Master (MasterWorker.imageUrl, WORKER_IMAGE_STORAGE_DIR
+// ใน .env) — คู่ขนานกับ admin-images ด้านบน
+app.use(
+  "/storage/worker-images",
+  express.static(process.env.WORKER_IMAGE_STORAGE_DIR ?? "./storage/worker-images")
+);
+
 // Routes
 app.use("/", systemRoutes);
 app.use("/api/auth", authRoutes);

@@ -355,23 +355,23 @@
         worker_code:
           type: string
           example: MN000142
-        shift_no:
-          type: integer
+        time_work:
+          type: string
           enum:
-            - 1
-            - 2
-          description: Current shift order for the worker.
-          example: 1
+            - Morning
+            - Evening
+          description: Current shift category for the worker.
+          example: Morning
         work_date:
           type: string
           format: date
           example: 2026-07-01
-        shift_start_time:
+        time_in:
           type: string
           description: Time only in HH:mm. This is a daily recurring shift time.
           pattern: "^\\d{2}:\\d{2}$"
           example: "08:00"
-        shift_end_time:
+        time_out:
           type: string
           description: Time only in HH:mm. This is a daily recurring shift time.
           pattern: "^\\d{2}:\\d{2}$"
@@ -677,7 +677,7 @@
         - nationality
         - shirt_type
         - shirt_number
-        - shift_no
+        - time_work
       properties:
         username:
           type: string
@@ -716,13 +716,13 @@
           format: date
           description: Optional first working date for the worker profile. If omitted, backend uses the current Bangkok date.
           example: 2026-07-03
-        shift_no:
-          type: integer
+        time_work:
+          type: string
           enum:
-            - 1
-            - 2
-          description: Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00.
-          example: 1
+            - Morning
+            - Evening
+          description: Required. Morning = shift preset 08:00-18:00, Evening = shift preset 18:00-08:00.
+          example: Morning
         status:
           type: string
           enum:
@@ -738,7 +738,7 @@
         - nationality
         - shirt_type
         - shirt_number
-        - shift_no
+        - time_work
       properties:
         image:
           type: string
@@ -777,13 +777,13 @@
           format: date
           description: Optional first working date for the worker profile. If omitted, backend uses the current Bangkok date.
           example: 2026-07-03
-        shift_no:
-          type: integer
+        time_work:
+          type: string
           enum:
-            - 1
-            - 2
-          description: Required. 1 = morning shift preset 08:00-18:00, 2 = evening shift preset 18:00-08:00.
-          example: 1
+            - Morning
+            - Evening
+          description: Required. Morning = shift preset 08:00-18:00, Evening = shift preset 18:00-08:00.
+          example: Morning
         status:
           type: string
           enum:
@@ -841,14 +841,14 @@
           format: date
           description: Optional first working date for the worker profile.
           example: 2026-07-03
-        shift_start_time:
+        time_in:
           type: string
-          description: Optional custom time for this worker. Must be sent together with shift_end_time. Time only in HH:mm. Backend derives ShiftNo and ShiftName from this start time.
+          description: Optional custom time for this worker. Must be sent together with time_out. Time only in HH:mm. Backend derives TimeWork and ShiftName from this start time.
           pattern: "^\\d{2}:\\d{2}$"
           example: "18:00"
-        shift_end_time:
+        time_out:
           type: string
-          description: Optional custom time for this worker. Must be sent together with shift_start_time. Time only in HH:mm.
+          description: Optional custom time for this worker. Must be sent together with time_in. Time only in HH:mm.
           pattern: "^\\d{2}:\\d{2}$"
           example: "08:00"
         profile:
@@ -911,18 +911,18 @@
     UserListSchedule:
       type: object
       properties:
-        shift_no:
-          type: integer
+        time_work:
+          type: string
           enum:
-            - 1
-            - 2
-          example: 1
-        shift_start_time:
+            - Morning
+            - Evening
+          example: Morning
+        time_in:
           type: string
           pattern: "^\\d{2}:\\d{2}$"
           description: Time only in HH:mm. This is a daily recurring shift time.
           example: "08:00"
-        shift_end_time:
+        time_out:
           type: string
           pattern: "^\\d{2}:\\d{2}$"
           description: Time only in HH:mm. This is a daily recurring shift time.
@@ -1012,19 +1012,19 @@
               format: date
               description: Optional first working date for the worker profile.
               example: 2026-07-03
-            shift_no:
-              type: integer
+            time_work:
+              type: string
               nullable: true
               enum:
-                - 1
-                - 2
-              example: 1
-            shift_start_time:
+                - Morning
+                - Evening
+              example: Morning
+            time_in:
               type: string
               nullable: true
               description: Time only in HH:mm. This is a daily recurring shift time.
               example: "08:00"
-            shift_end_time:
+            time_out:
               type: string
               nullable: true
               description: Time only in HH:mm. This is a daily recurring shift time.
@@ -3997,7 +3997,10 @@
           format: date-time
           nullable: true
         shift:
-          type: integer
+          type: string
+          enum:
+            - Morning
+            - Evening
           nullable: true
         ticket_no:
           type: string
@@ -4066,10 +4069,13 @@
         available_shifts:
           type: array
           items:
-            type: integer
-          example: [1, 2]
+            type: string
+            enum:
+              - Morning
+              - Evening
+          example: ["Morning", "Evening"]
           description: >-
-            Every distinct worker shift number under the current date range, search and
+            Every distinct worker shift under the current date range, search and
             status filters — same independence from workerCode/shift as
             available_worker_codes, for a shift dropdown.
         pagination:

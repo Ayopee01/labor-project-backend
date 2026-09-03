@@ -568,10 +568,10 @@ test("POST /api/gate/tickets dispatch skips a READY worker who is outside their 
   assert.ok(outsideShiftSchedule, "Worker fixture must seed a default work schedule.");
   state.schedules.set(outsideShiftWorker.id, {
     ...(outsideShiftSchedule as object),
-    shift_start_time: bangkokFormatter
+    time_in: bangkokFormatter
       .format(new Date(Date.now() + 2 * 60 * 60 * 1000))
       .replace(" ", ""),
-    shift_end_time: bangkokFormatter
+    time_out: bangkokFormatter
       .format(new Date(Date.now() + 3 * 60 * 60 * 1000))
       .replace(" ", ""),
   });
