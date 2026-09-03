@@ -64,6 +64,24 @@ export const DAILY_WORKER_INCOME_PAYMENT_STATUS = {
   WORKER_REJECT: "worker_reject",
 } as const;
 
+// Config ค่าสีเสื้อ snapshot ตอน finalize บน TicketProductFinancial (รายงานค่าลงสินค้าแผงค้ารายเดือน)
+// — NAVY/BLUE/GREEN ต้องตรงกับ MasterWorker.laborColor เป๊ะเท่านั้น (case-sensitive ไม่ normalize)
+// MIXED = worker หลายคนในแผง/สินค้านั้นมี laborColor ต่างกัน, UNKNOWN = ไม่มี snapshot (ข้อมูลเก่าก่อน
+// มีฟีเจอร์นี้) หรือค่าที่มีไม่ตรง NAVY/BLUE/GREEN เป๊ะสักคนเดียว
+export const SHIRT_COLOR_SNAPSHOT = {
+  NAVY: "NAVY",
+  BLUE: "BLUE",
+  GREEN: "GREEN",
+  MIXED: "MIXED",
+  UNKNOWN: "UNKNOWN",
+} as const;
+
+export const VALID_SHIRT_COLORS = [
+  SHIRT_COLOR_SNAPSHOT.NAVY,
+  SHIRT_COLOR_SNAPSHOT.BLUE,
+  SHIRT_COLOR_SNAPSHOT.GREEN,
+] as const;
+
 // Config สถานะกลางของ ticket/booth สำหรับ flow ส่งยอดและ vendor ยืนยัน
 export const TICKET_STATUS = {
   WAIT: "WAIT",

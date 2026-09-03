@@ -496,6 +496,107 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/vehicle-jobs/history/monthly-stall-fees:
+    get:
+      tags:
+        - Admin Jobs
+      summary: ดูรายงานค่าลงสินค้าแผงค้ารายเดือน
+      description: >
+        คืนรายงานค่าลงสินค้าแผงค้าแบบ group ต่อ market_code + booth_code + shirt_color (ต่างจาก
+        daily-stall-fees ที่ list ทีละแถว TicketProductFinancial ตรงๆ) — SUM(stall_fee_rounded) และ
+        COUNT ของ TicketProductFinancial ที่ finalize แล้วในช่วงวันที่เลือก ยอดต้อง reconcile กับผลรวม
+        ของ daily-stall-fees ในช่วงวันเดียวกันได้เสมอ เพราะใช้แหล่งข้อมูลเดียวกัน แค่ group ต่างกัน
+        shirt_color เป็น immutable snapshot ที่บันทึกไว้ตอน finalize (TicketProductFinancial.shirtColorSnapshot)
+        ไม่ใช่สีปัจจุบันของ MasterWorker: NAVY/BLUE/GREEN เมื่อ worker ทุกคนในแผงนั้นสีตรงกันเป๊ะ, MIXED
+        เมื่อมีมากกว่าหนึ่งสีปนกัน, UNKNOWN เมื่อไม่มี snapshot (ข้อมูลเก่าก่อนมีฟีเจอร์นี้) หรือค่าที่มีไม่ตรง
+        NAVY/BLUE/GREEN แม้แต่คนเดียว รองรับช่วงวันที่ข้ามเดือน/ปีได้ตามปกติ (ไม่บังคับเดือนเดียวเหมือน
+        daily-stall-fees) แค่ห้ามเกิน 6 เดือนปฏิทินนับจาก date_from — summary และ available_markets/
+        available_stalls/available_shirt_colors มาจาก filtered set ทั้งหมด ไม่เปลี่ยนตาม page/limit
+        เหมือน daily-stall-fees, available_stalls แต่ละแถวผูกกับ market_code ของมันเสมอ
+      operationId: listAdminMonthlyStallFees
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date_from
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2026-12-01"
+          description: Report date range start in YYYY-MM-DD, interpreted in Asia/Bangkok. Required.
+        - in: query
+          name: date_to
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2027-01-31"
+          description: >
+            Report date range end in YYYY-MM-DD, inclusive, interpreted in Asia/Bangkok. Required.
+            May cross months/years freely; range must not exceed 6 calendar months from date_from.
+        - in: query
+          name: market_search
+          schema:
+            type: string
+          description: >
+            Partial, case-insensitive match on MarketJob.marketCode or marketName — applies to
+            Data/summary/pagination, and narrows available_stalls (not available_markets, which
+            never narrows by its own dimension).
+        - in: query
+          name: booth_search
+          schema:
+            type: string
+          description: >
+            Partial, case-insensitive match on GateTicket.boothCode — applies to Data/summary/
+            pagination, and narrows available_markets (not available_stalls, which never narrows
+            by its own dimension).
+        - in: query
+          name: shirt_color
+          schema:
+            type: string
+            enum:
+              - NAVY
+              - BLUE
+              - GREEN
+              - MIXED
+              - UNKNOWN
+          description: >
+            Exact match on the shirt-color snapshot — applies to Data/summary/pagination, and
+            narrows available_markets/available_stalls (not available_shirt_colors, which never
+            narrows by its own dimension).
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: One row per distinct market_code + booth_code + shirt_color group within the date range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMonthlyStallFeeListResponse"
+        "400":
+          description: Missing/invalid date range (including exceeding the 6-month cap), or query validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Authenticated admin lacks jobs:read permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/admin/vehicle-jobs/{ticketNo}/financials:
     get:
       tags:

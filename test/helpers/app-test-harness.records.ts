@@ -246,6 +246,7 @@ export type TicketProductFinancialRecord = {
   worker_payout_total: string;
   fund_amount: string;
   finalized_at: string;
+  shirt_color_snapshot?: string | null;
 };
 
 export type TicketWorkerPaymentRecord = {

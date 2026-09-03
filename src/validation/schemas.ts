@@ -1,7 +1,7 @@
 // Import Library
 import { z } from "zod";
 import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS } from "../config/permission.config";
-import { VEHICLE_OPERATION_STATUS } from "../constants/job-status";
+import { SHIRT_COLOR_SNAPSHOT, VEHICLE_OPERATION_STATUS } from "../constants/job-status";
 import { ACCOUNT_ROLES } from "../types/admin-workers.type";
 import { GATE_CLIENT_STATUSES } from "../types/shared/gate-client.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
@@ -89,6 +89,20 @@ function countInclusiveCalendarDays(dateFrom: string, dateTo: string): number {
   const endAt = Date.parse(`${dateTo}T00:00:00.000Z`);
 
   return Math.floor((endAt - startAt) / (24 * 60 * 60 * 1000)) + 1;
+}
+
+// Function บวกจำนวนเดือนแบบปฏิทินจริงเข้ากับ date string (YYYY-MM-DD) — ใช้ตรวจ cap ช่วงวันที่แบบ
+// "ไม่เกิน N เดือน" ที่ต้องรองรับข้ามปี/ปีอธิกสุรทินได้ถูกต้อง ต่างจาก countInclusiveCalendarDays ที่
+// นับเป็นจำนวนวันคงที่ (ใช้ไม่ได้กับ cap แบบเดือนเพราะแต่ละเดือนยาวไม่เท่ากัน)
+function addCalendarMonthsToDateString(date: string, months: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1 + months, day));
+
+  return [
+    String(next.getUTCFullYear()),
+    String(next.getUTCMonth() + 1).padStart(2, "0"),
+    String(next.getUTCDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 // Function ตรวจว่า date_to ต้องไม่น้อยกว่า date_from
@@ -842,6 +856,49 @@ export const adminDailyStallFeeQuerySchema = z
         code: "custom",
         path: ["date_to"],
         message: "Date range must not exceed 31 calendar days.",
+      });
+    }
+  });
+
+// จำนวนเดือนสูงสุดที่ยอมให้เลือกช่วงวันที่ของรายงานค่าลงสินค้าแผงค้ารายเดือน — ตั้งไว้กว้างๆ กัน query
+// หนักเกินไป ปรับได้ทีหลังถ้าจำเป็น (ไม่ผูกกับ business rule ตายตัว)
+export const MONTHLY_STALL_FEE_MAX_RANGE_MONTHS = 6;
+
+// Format query ของรายงานค่าลงสินค้าแผงค้ารายเดือน (Admin) — date_from/date_to บังคับคู่กันเสมอ
+// รองรับช่วงข้ามเดือน/ปีได้ตามปกติ (ไม่บังคับเดือนเดียว ต่างจาก daily-stall-fees) แค่ห้ามเกิน
+// MONTHLY_STALL_FEE_MAX_RANGE_MONTHS เดือนนับจาก date_from แบบปฏิทินจริง ไม่ใช่นับวันคงที่
+export const adminMonthlyStallFeeQuerySchema = z
+  .object({
+    date_from: dateString,
+    date_to: dateString,
+    market_search: optionalTrimmedString,
+    booth_search: optionalTrimmedString,
+    shirt_color: z.preprocess(
+      emptyStringToUndefined,
+      z.enum([
+        SHIRT_COLOR_SNAPSHOT.NAVY,
+        SHIRT_COLOR_SNAPSHOT.BLUE,
+        SHIRT_COLOR_SNAPSHOT.GREEN,
+        SHIRT_COLOR_SNAPSHOT.MIXED,
+        SHIRT_COLOR_SNAPSHOT.UNKNOWN,
+      ]).optional()
+    ),
+    page: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).default(1)),
+    limit: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).max(100).default(20)),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    checkDateRangeOrder(input, context);
+
+    if (input.date_from > input.date_to) {
+      return;
+    }
+
+    if (input.date_to > addCalendarMonthsToDateString(input.date_from, MONTHLY_STALL_FEE_MAX_RANGE_MONTHS)) {
+      context.addIssue({
+        code: "custom",
+        path: ["date_to"],
+        message: `Date range must not exceed ${MONTHLY_STALL_FEE_MAX_RANGE_MONTHS} months.`,
       });
     }
   });

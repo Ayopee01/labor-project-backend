@@ -8096,6 +8096,7 @@ function addTicketProductFinancial(
     confirmed_quantity?: string;
     stall_fee_rounded?: string;
     finalized_at?: string;
+    shirt_color_snapshot?: string | null;
   } = {},
 ) {
   state.ticketProductFinancials.push({
@@ -8110,6 +8111,8 @@ function addTicketProductFinancial(
     worker_payout_total: "0.50",
     fund_amount: "0.0000",
     finalized_at: overrides.finalized_at ?? new Date().toISOString(),
+    shirt_color_snapshot:
+      overrides.shirt_color_snapshot === undefined ? "NAVY" : overrides.shirt_color_snapshot,
   });
 }
 
@@ -8501,6 +8504,422 @@ test("GET /api/admin/vehicle-jobs/history/daily-stall-fees reflects the real per
     assert.equal(row.boothCode, ticket.boothCode);
     assert.equal(row.ticket_no, market.ticket_no);
   }
+});
+
+/* -------------------------------------- Monthly Stall Fee Route Tests -------------------------------------- */
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees requires authentication", async () => {
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2027-01-31",
+  );
+
+  assert.equal(response.status, 401);
+});
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees requires jobs:read permission", async () => {
+  const passwordHash = await password.hashPassword("Admin@123456");
+  const admin = addAdmin(97300, passwordHash);
+  state.adminPermissions.set(admin.id, []);
+  const login = await server.request("POST", "/api/auth/login", {
+    body: { username: admin.username, password: "Admin@123456" },
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2027-01-31",
+    { token: login.body.access_token },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees validates date_from/date_to, but allows crossing months/years and rejects only when the range exceeds 6 calendar months", async () => {
+  const { token } = await loginJobAdmin(97301);
+
+  const missingDateTo = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01",
+    { token },
+  );
+  assert.equal(missingDateTo.status, 400);
+  assert.equal(missingDateTo.body.code, "VALIDATION_ERROR");
+
+  const badFormat = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026/12/01&date_to=2027-01-31",
+    { token },
+  );
+  assert.equal(badFormat.status, 400);
+  assert.equal(badFormat.body.code, "VALIDATION_ERROR");
+
+  const fromAfterTo = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2027-01-31&date_to=2026-12-01",
+    { token },
+  );
+  assert.equal(fromAfterTo.status, 400);
+  assert.equal(fromAfterTo.body.code, "VALIDATION_ERROR");
+
+  // ข้ามเดือน/ข้ามปีต้องผ่านได้ปกติ (ไม่ใช่ cap แบบ daily-stall-fees ที่บังคับเดือนเดียว)
+  const crossYear = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2027-01-31",
+    { token },
+  );
+  assert.equal(crossYear.status, 200, JSON.stringify(crossYear.body));
+
+  // ข้ามปีอธิกสุรทิน (2028 เป็นปีอธิกสุรทิน มี 29 ก.พ.) ต้องผ่านได้ปกติเช่นกัน
+  const leapYear = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2028-02-01&date_to=2028-02-29",
+    { token },
+  );
+  assert.equal(leapYear.status, 200, JSON.stringify(leapYear.body));
+
+  // เกิน 6 เดือนปฏิทินนับจาก date_from (2026-12-01 + 6 เดือน = 2027-06-01) ต้อง reject
+  const tooLong = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2027-06-02",
+    { token },
+  );
+  assert.equal(tooLong.status, 400);
+  assert.equal(tooLong.body.code, "VALIDATION_ERROR");
+  assert.equal(tooLong.body.validation_errors[0].field, "date_to");
+
+  // พอดี 6 เดือนเป๊ะต้องผ่าน (ขอบเขตต้อง inclusive)
+  const exactlySixMonths = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2027-06-01",
+    { token },
+  );
+  assert.equal(exactlySixMonths.status, 200, JSON.stringify(exactlySixMonths.body));
+});
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees uses Asia/Bangkok day boundaries for finalized_at, not UTC, across a month boundary", async () => {
+  const { token } = await loginJobAdmin(97302);
+  const job = addDispatchableJob(97302, 1);
+  const ticket = addTicketForVehicleJob(job.id, 197302);
+
+  // 2027-01-01 00:00 Asia/Bangkok = 2026-12-31 17:00 UTC — ต้องนับเป็นเดือน ม.ค. ตาม Bangkok ไม่ใช่
+  // ธ.ค. ตาม UTC
+  addTicketProductFinancial(973021, ticket.id * 10 + 1, {
+    finalized_at: bangkokDateToUtcIso("2027-01-01", 0),
+  });
+  // 2026-12-31 23:00 Asia/Bangkok — ก่อนช่วงเริ่มของ date_from=2027-01-01 ต้องไม่ถูกนับ
+  addTicketProductFinancial(973022, ticket.id * 10 + 2, {
+    finalized_at: bangkokDateToUtcIso("2026-12-31", 23),
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2027-01-01&date_to=2027-01-31",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.summary.financialItemCount, 1);
+});
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees groups by market_code+booth_code+shirt_color, summing stall_fee_rounded and counting financial_item_count, without merging across different markets", async () => {
+  const { token } = await loginJobAdmin(97303);
+  const job = addDispatchableJob(97303, 1);
+  const marketA = addMarketJobForVehicle(job.id, { id: 973031, marketCode: "MKT-A", ticket_no: "TICKET-97303-A" });
+  const marketB = addMarketJobForVehicle(job.id, { id: 973032, marketCode: "MKT-B", ticket_no: "TICKET-97303-B" });
+  const ticketA = addTicketForVehicleJob(job.id, 973033, marketA.id);
+  // แผงเลขเดียวกัน ("STALL-973033" ชื่อ auto จาก ticketId) แต่คนละ TicketNumber จึงคนละ GateTicket
+  // จริง — ทดสอบว่าคนละ market_code ต้องไม่ถูกรวมเข้าด้วยกันแม้ boothCode จะบังเอิญซ้ำ
+  const ticketB = addTicketForVehicleJob(job.id, 973034, marketB.id);
+  ticketB.boothCode = ticketA.boothCode;
+
+  // สอง product ของ ticketA (แผงเดียวกัน ตลาดเดียวกัน สีเดียวกัน) ต้องถูกรวมยอดเป็นกลุ่มเดียว
+  addTicketProductFinancial(973035, ticketA.id * 10 + 1, {
+    stall_fee_rounded: "100.00",
+    finalized_at: bangkokDateToUtcIso("2026-12-05", 10),
+    shirt_color_snapshot: "NAVY",
+  });
+  addTicketProductFinancial(973036, ticketA.id * 10 + 2, {
+    stall_fee_rounded: "50.00",
+    finalized_at: bangkokDateToUtcIso("2026-12-06", 10),
+    shirt_color_snapshot: "NAVY",
+  });
+  // ticketB บูธเลขเดียวกันแต่คนละตลาด ต้องแยกเป็นอีกแถวหนึ่งเสมอ
+  addTicketProductFinancial(973037, ticketB.id * 10 + 1, {
+    stall_fee_rounded: "30.00",
+    finalized_at: bangkokDateToUtcIso("2026-12-05", 10),
+    shirt_color_snapshot: "NAVY",
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2026-12-31",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.data.length, 2);
+
+  const rowA = response.body.data.find((row: { marketCode: string }) => row.marketCode === "MKT-A");
+  const rowB = response.body.data.find((row: { marketCode: string }) => row.marketCode === "MKT-B");
+
+  assert.ok(rowA);
+  assert.ok(rowB);
+  assert.equal(rowA.boothCode, ticketA.boothCode);
+  assert.equal(rowA.shirtColor, "NAVY");
+  assert.equal(rowA.financialItemCount, 2);
+  assert.equal(rowA.debitAmount, "150.00");
+  assert.equal(rowA.id, `2026-12-01:2026-12-31|MKT-A|${ticketA.boothCode}|NAVY`);
+  assert.equal(rowB.financialItemCount, 1);
+  assert.equal(rowB.debitAmount, "30.00");
+
+  assert.equal(response.body.summary.row_count, 2);
+  assert.equal(response.body.summary.stall_count, 2);
+  assert.equal(response.body.summary.financialItemCount, 3);
+  assert.equal(response.body.summary.debitAmountTotal, "180.00");
+  assert.deepEqual(response.body.period, { date_from: "2026-12-01", date_to: "2026-12-31" });
+});
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees classifies shirt_color as MIXED when workers on the same booth have different labor colors, and UNKNOWN for legacy rows with no snapshot", async () => {
+  const { token } = await loginJobAdmin(97304);
+  const job = addDispatchableJob(97304, 1);
+  const ticket = addTicketForVehicleJob(job.id, 197304);
+
+  addTicketProductFinancial(973041, ticket.id * 10 + 1, {
+    finalized_at: bangkokDateToUtcIso("2026-12-10", 10),
+    shirt_color_snapshot: "MIXED",
+  });
+  // แถวเก่าก่อนมีฟีเจอร์นี้ — ไม่มี shirt_color_snapshot เลย (null) ต้องแสดงเป็น UNKNOWN
+  addTicketProductFinancial(973042, ticket.id * 10 + 2, {
+    finalized_at: bangkokDateToUtcIso("2026-12-11", 10),
+    shirt_color_snapshot: null,
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2026-12-31",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const colors = response.body.data.map((row: { shirtColor: string }) => row.shirtColor).sort();
+  assert.deepEqual(colors, ["MIXED", "UNKNOWN"]);
+});
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees end-to-end: a genuine finalize with two workers of different labor_color classifies MIXED for real, and reconciles its total with daily-stall-fees for the same period", async () => {
+  const { token: adminToken } = await loginJobAdmin(97305);
+  const { token: worker1Token, worker: worker1 } = await loginWorker(97306);
+  const { token: worker2Token, worker: worker2 } = await loginWorker(97307);
+  worker1.labor_color = "NAVY";
+  worker2.labor_color = "BLUE";
+
+  const job = addDispatchableJob(97305, 2);
+  job.tickets_closed_at = new Date().toISOString();
+  const ticket = addTicketForVehicleJob(job.id, 197305);
+  const assignment1 = addPendingAssignment(197306, job.id, worker1.id);
+  assignment1.status = "SCANNED";
+  assignment1.accepted_at = new Date().toISOString();
+  assignment1.scanned_at = new Date().toISOString();
+  const assignment2 = addPendingAssignment(197307, job.id, worker2.id);
+  assignment2.status = "SCANNED";
+  assignment2.accepted_at = new Date().toISOString();
+  assignment2.scanned_at = new Date().toISOString();
+  state.connectedWorkers.add(worker1.id);
+  state.connectedWorkers.add(worker2.id);
+  await workerQueue.markWorkerAssigned(worker1.id);
+  await workerQueue.markWorkerAssigned(worker2.id);
+
+  const products = state.ticketProducts.filter((product) => product.ticket_id === ticket.id);
+  const market = state.marketJobs.find((item) => item.id === ticket.market_job_id)!;
+
+  const submitResponse = await server.request(
+    "POST",
+    "/api/workers/me/assignments/tickets/complete",
+    {
+      token: worker1Token,
+      body: {
+        ticket_no: market.ticket_no,
+        boothCode: ticket.boothCode,
+        items: products.map((product, index) => ({
+          productCode: product.productCode,
+          packageCode: product.packageCode,
+          confirmed_quantity: index === 0 ? 10 : 4,
+        })),
+      },
+    },
+  );
+  assert.equal(submitResponse.status, 200, JSON.stringify(submitResponse.body));
+  void worker2Token;
+
+  workerDispatch.startAssignmentTimeoutProcessing();
+  const queueName = process.env.BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE as string;
+  const processor = state.workerProcessors.get(queueName);
+  const submission = state.completionSubmissions.at(-1);
+  assert.ok(submission);
+
+  await processor!({
+    data: { ticketId: ticket.id, submissionId: submission.id, kind: "vendor_confirm" },
+  });
+
+  const financials = state.ticketProductFinancials.filter((item) =>
+    products.some((product) => product.id === item.ticket_product_id),
+  );
+  assert.equal(financials.length, 2);
+  // ยืนยันว่า finalize จริง (ไม่ใช่ fixture มือ) คำนวณ MIXED ให้เองจริงจาก labor_color ของ worker
+  // สองคนที่ต่างกัน
+  for (const financial of financials) {
+    assert.equal((financial as { shirt_color_snapshot?: string }).shirt_color_snapshot, "MIXED");
+  }
+
+  const today = bangkokDateKey();
+  const [monthlyResponse, dailyResponse] = await Promise.all([
+    server.request(
+      "GET",
+      `/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=${today}&date_to=${today}`,
+      { token: adminToken },
+    ),
+    server.request(
+      "GET",
+      `/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=${today}&date_to=${today}`,
+      { token: adminToken },
+    ),
+  ]);
+
+  assert.equal(monthlyResponse.status, 200, JSON.stringify(monthlyResponse.body));
+  assert.equal(dailyResponse.status, 200, JSON.stringify(dailyResponse.body));
+
+  const dailyTotalForThisBooth = dailyResponse.body.data
+    .filter((row: { id: number }) => financials.some((financial) => financial.id === row.id))
+    .reduce((sum: number, row: { stall_fee_rounded: string }) => sum + Number(row.stall_fee_rounded), 0);
+  const monthlyRow = monthlyResponse.body.data.find(
+    (row: { marketCode: string; boothCode: string }) =>
+      row.marketCode === market.marketCode && row.boothCode === ticket.boothCode,
+  );
+
+  assert.ok(monthlyRow);
+  assert.equal(monthlyRow.shirtColor, "MIXED");
+  assert.equal(Number(monthlyRow.debitAmount), dailyTotalForThisBooth);
+});
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees market_search/booth_search/shirt_color filters narrow Data, while available_markets/available_stalls/available_shirt_colors stay faceted (each narrows only by the other dimensions)", async () => {
+  const { token } = await loginJobAdmin(97308);
+  const job = addDispatchableJob(97308, 1);
+  const marketA = addMarketJobForVehicle(job.id, {
+    id: 973081,
+    marketCode: "MKT-ALPHA",
+    marketName: "ตลาดอัลฟา",
+    ticket_no: "TICKET-97308-A",
+  });
+  const marketB = addMarketJobForVehicle(job.id, {
+    id: 973082,
+    marketCode: "MKT-BETA",
+    marketName: "ตลาดเบตา",
+    ticket_no: "TICKET-97308-B",
+  });
+  const ticketA = addTicketForVehicleJob(job.id, 973083, marketA.id);
+  const ticketB = addTicketForVehicleJob(job.id, 973084, marketB.id);
+
+  addTicketProductFinancial(973085, ticketA.id * 10 + 1, {
+    finalized_at: bangkokDateToUtcIso("2026-12-05", 10),
+    shirt_color_snapshot: "NAVY",
+  });
+  addTicketProductFinancial(973086, ticketB.id * 10 + 1, {
+    finalized_at: bangkokDateToUtcIso("2026-12-05", 10),
+    shirt_color_snapshot: "BLUE",
+  });
+
+  const byMarket = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2026-12-31&market_search=alpha",
+    { token },
+  );
+  assert.equal(byMarket.status, 200, JSON.stringify(byMarket.body));
+  assert.equal(byMarket.body.data.length, 1);
+  assert.equal(byMarket.body.data[0].marketCode, "MKT-ALPHA");
+  // market_search ไม่ narrow available_markets ของตัวเอง (ยังเห็นทั้งสองตลาด)
+  assert.equal(byMarket.body.availableMarkets.length, 2);
+  // แต่ available_stalls ต้อง narrow ตาม market_search (เห็นแค่แผงของ MKT-ALPHA)
+  assert.deepEqual(
+    byMarket.body.availableStalls.map((item: { marketCode: string }) => item.marketCode),
+    ["MKT-ALPHA"],
+  );
+
+  const byBooth = await server.request(
+    "GET",
+    `/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2026-12-31&booth_search=${encodeURIComponent(ticketB.boothCode)}`,
+    { token },
+  );
+  assert.equal(byBooth.status, 200, JSON.stringify(byBooth.body));
+  assert.equal(byBooth.body.data.length, 1);
+  assert.equal(byBooth.body.data[0].boothCode, ticketB.boothCode);
+
+  const byShirtColor = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2026-12-31&shirt_color=BLUE",
+    { token },
+  );
+  assert.equal(byShirtColor.status, 200, JSON.stringify(byShirtColor.body));
+  assert.equal(byShirtColor.body.data.length, 1);
+  assert.equal(byShirtColor.body.data[0].shirtColor, "BLUE");
+  // shirt_color ไม่ narrow available_shirt_colors ของตัวเอง (ยังเห็นทั้ง NAVY และ BLUE)
+  assert.deepEqual([...byShirtColor.body.availableShirtColors].sort(), ["BLUE", "NAVY"]);
+});
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees summary reflects the full filtered set regardless of page/limit, and pagination totals count groups not raw financial rows", async () => {
+  const { token } = await loginJobAdmin(97309);
+  const job = addDispatchableJob(97309, 1);
+  const ticket = addTicketForVehicleJob(job.id, 197309);
+
+  addTicketProductFinancial(973091, ticket.id * 10 + 1, {
+    stall_fee_rounded: "20.00",
+    finalized_at: bangkokDateToUtcIso("2026-12-05", 9),
+    shirt_color_snapshot: "NAVY",
+  });
+  // แถวที่สองอยู่กลุ่มเดียวกับแถวแรก (booth/market/color เดียวกัน) ต้องรวมเป็น 1 แถวใน data แต่
+  // financial_item_count/summary ต้องยังนับ 2 รายการ
+  addTicketProductFinancial(973092, ticket.id * 10 + 2, {
+    stall_fee_rounded: "15.00",
+    finalized_at: bangkokDateToUtcIso("2026-12-06", 9),
+    shirt_color_snapshot: "NAVY",
+  });
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2026-12-31&page=1&limit=1",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.data.length, 1);
+  assert.equal(response.body.data[0].financialItemCount, 2);
+  assert.equal(response.body.data[0].debitAmount, "35.00");
+  assert.equal(response.body.summary.row_count, 1);
+  assert.equal(response.body.summary.stall_count, 1);
+  assert.equal(response.body.summary.financialItemCount, 2);
+  assert.equal(response.body.summary.debitAmountTotal, "35.00");
+  assert.equal(response.body.pagination.total, 1);
+  assert.equal(response.body.pagination.total_pages, 1);
+});
+
+test("GET /api/admin/vehicle-jobs/history/monthly-stall-fees returns 200 with empty Data and zero summary when nothing matches", async () => {
+  const { token } = await loginJobAdmin(97310);
+
+  const response = await server.request(
+    "GET",
+    "/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2020-01-01&date_to=2020-01-31",
+    { token },
+  );
+
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.deepEqual(response.body.data, []);
+  assert.equal(response.body.summary.row_count, 0);
+  assert.equal(response.body.summary.stall_count, 0);
+  assert.equal(response.body.summary.financialItemCount, 0);
+  assert.equal(response.body.summary.debitAmountTotal, "0.00");
+  assert.deepEqual(response.body.availableMarkets, []);
+  assert.deepEqual(response.body.availableStalls, []);
+  assert.deepEqual(response.body.availableShirtColors, []);
+  assert.equal(response.body.pagination.total, 0);
+  assert.equal(response.body.pagination.total_pages, 0);
 });
 
 /* -------------------------------------- Worker Queue Route Tests -------------------------------------- */

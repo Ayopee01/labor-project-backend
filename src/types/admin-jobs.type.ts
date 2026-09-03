@@ -972,3 +972,87 @@ export interface DailyStallFeeListResponse {
     total_pages: number;
   };
 }
+
+/* -------------------------------------- Monthly Stall Fee -------------------------------------- */
+
+export interface MonthlyStallFeeFilters {
+  startAt: Date;
+  endAt: Date;
+  marketSearch?: string;
+  boothSearch?: string;
+  shirtColor?: string;
+  page: number;
+  limit: number;
+}
+
+// Type แถวดิบจาก raw SQL aggregation (GROUP BY market_code + booth_code + shirt_color) — ต้องใช้ raw
+// SQL เพราะ Prisma groupBy ทำ GROUP BY ข้าม relation (TicketProductFinancial -> TicketProduct ->
+// GateTicket -> MarketJob) ไม่ได้ตรงๆ
+export interface MonthlyStallFeeGroupRow {
+  market_code: string;
+  market_name: string;
+  booth_code: string;
+  shirt_color: string;
+  financial_item_count: number;
+  debit_amount: Prisma.Decimal;
+}
+
+export interface MonthlyStallFeeSummary {
+  row_count: number;
+  stall_count: number;
+  financial_item_count: number;
+  debit_amount_total: Prisma.Decimal;
+}
+
+export interface MonthlyStallFeeMarketOption {
+  market_code: string;
+  market_name: string;
+}
+
+export interface MonthlyStallFeeStallOption {
+  market_code: string;
+  booth_code: string;
+}
+
+// Type ผลลัพธ์ดิบจาก repository — service เป็นคนแปลง Decimal เป็น string และประกอบ id ตาม response contract
+export interface MonthlyStallFeeQueryResult {
+  data: MonthlyStallFeeGroupRow[];
+  total: number;
+  summary: MonthlyStallFeeSummary;
+  available_markets: MonthlyStallFeeMarketOption[];
+  available_stalls: MonthlyStallFeeStallOption[];
+  available_shirt_colors: string[];
+}
+
+export interface MonthlyStallFeeItemResponse {
+  id: string;
+  market_code: string;
+  market_name: string;
+  booth_code: string;
+  shirt_color: string;
+  financial_item_count: number;
+  debit_amount: string;
+}
+
+export interface MonthlyStallFeeListResponse {
+  period: {
+    date_from: string;
+    date_to: string;
+  };
+  data: MonthlyStallFeeItemResponse[];
+  summary: {
+    row_count: number;
+    stall_count: number;
+    financial_item_count: number;
+    debit_amount_total: string;
+  };
+  available_markets: MonthlyStallFeeMarketOption[];
+  available_stalls: MonthlyStallFeeStallOption[];
+  available_shirt_colors: string[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    total_pages: number;
+  };
+}

@@ -14,7 +14,8 @@ import { client, requireDto } from "./shared/repository-utils";
 import type { DbConnection } from "../types/shared/common.type";
 import type { MasterWorkerDto } from "../types/admin-workers.type";
 import type { GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
-import type { AdminVehicleJobFinancialRecord, DailyStallFeeFilters, DailyStallFeeQueryResult, DailyWorkerIncomeFilters, DailyWorkerIncomeRecord, HistoryStatusFilter, VehicleJobHistoryListResult, VehicleJobListFilters, VehicleJobOperationFilters, VehicleJobOperationRecord } from "../types/admin-jobs.type";
+import type { AdminVehicleJobFinancialRecord, DailyStallFeeFilters, DailyStallFeeQueryResult, DailyWorkerIncomeFilters, DailyWorkerIncomeRecord, HistoryStatusFilter, MonthlyStallFeeFilters, MonthlyStallFeeQueryResult, VehicleJobHistoryListResult, VehicleJobListFilters, VehicleJobOperationFilters, VehicleJobOperationRecord } from "../types/admin-jobs.type";
+import { SHIRT_COLOR_SNAPSHOT } from "../constants/job-status";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -1486,5 +1487,194 @@ export async function listDailyStallFees(
     },
     available_products: availableProducts,
     available_packages: availablePackages,
+  };
+}
+
+/* -------------------------------------- Monthly Stall Fee -------------------------------------- */
+
+// Fragment FROM/JOIN ร่วมของทุก query รายงานค่าลงสินค้าแผงค้ารายเดือน — เดินสาย
+// ticket_product_financials -> ticket_products -> gate_tickets -> market_jobs
+const MONTHLY_STALL_FEE_FROM = Prisma.sql`
+  FROM ticket_product_financials tpf
+  JOIN ticket_products tp ON tp.id = tpf.ticket_product_id
+  JOIN gate_tickets gt ON gt.id = tp.ticket_id
+  JOIN market_jobs mj ON mj.id = gt.market_job_id
+`;
+
+// Function สร้าง WHERE fragment ของรายงานค่าลงสินค้าแผงค้ารายเดือน — แยก flag ต่อ filter ได้ เพื่อใช้
+// คำนวณ available_markets/available_stalls/available_shirt_colors แบบ faceted (ไม่ narrow ตาม
+// filter ของมิติตัวเอง) เหมือน buildDailyStallFeeWhere ด้านบน
+function buildMonthlyStallFeeWhere(
+  filters: MonthlyStallFeeFilters,
+  options: {
+    includeMarketSearch: boolean;
+    includeBoothSearch: boolean;
+    includeShirtColor: boolean;
+  },
+): Prisma.Sql {
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`tpf.finalized_at >= ${filters.startAt}`,
+    Prisma.sql`tpf.finalized_at < ${filters.endAt}`,
+  ];
+
+  if (options.includeMarketSearch && filters.marketSearch) {
+    const pattern = `%${filters.marketSearch}%`;
+
+    conditions.push(
+      Prisma.sql`(mj.market_code ILIKE ${pattern} OR mj.market_name ILIKE ${pattern})`,
+    );
+  }
+
+  if (options.includeBoothSearch && filters.boothSearch) {
+    conditions.push(Prisma.sql`gt.booth_code ILIKE ${`%${filters.boothSearch}%`}`);
+  }
+
+  if (options.includeShirtColor && filters.shirtColor) {
+    conditions.push(
+      Prisma.sql`COALESCE(tpf.shirt_color_snapshot, 'UNKNOWN') = ${filters.shirtColor}`,
+    );
+  }
+
+  return Prisma.join(conditions, " AND ");
+}
+
+// ลำดับ canonical ของสีเสื้อสำหรับ dropdown available_shirt_colors — อ่านง่ายกว่าเรียงตัวอักษรล้วน
+const SHIRT_COLOR_SORT_ORDER = [
+  SHIRT_COLOR_SNAPSHOT.NAVY,
+  SHIRT_COLOR_SNAPSHOT.BLUE,
+  SHIRT_COLOR_SNAPSHOT.GREEN,
+  SHIRT_COLOR_SNAPSHOT.MIXED,
+  SHIRT_COLOR_SNAPSHOT.UNKNOWN,
+] as const;
+
+// Function ดึงรายงานค่าลงสินค้าแผงค้ารายเดือนจาก DB — ต้องใช้ raw SQL เพราะ GROUP BY ข้าม relation
+// (market_code จาก MarketJob, booth_code จาก GateTicket) Prisma groupBy ทำไม่ได้ตรงๆ — aggregate,
+// facet filters และ pagination (LIMIT/OFFSET) ทั้งหมดทำที่ DB ชั้นนี้ ไม่โหลดมารวมใน memory
+export async function listMonthlyStallFees(
+  filters: MonthlyStallFeeFilters,
+  connection?: DbConnection,
+): Promise<MonthlyStallFeeQueryResult> {
+  const db = client(connection);
+
+  const dataWhere = buildMonthlyStallFeeWhere(filters, {
+    includeMarketSearch: true,
+    includeBoothSearch: true,
+    includeShirtColor: true,
+  });
+  const marketOptionsWhere = buildMonthlyStallFeeWhere(filters, {
+    includeMarketSearch: false,
+    includeBoothSearch: true,
+    includeShirtColor: true,
+  });
+  const stallOptionsWhere = buildMonthlyStallFeeWhere(filters, {
+    includeMarketSearch: true,
+    includeBoothSearch: false,
+    includeShirtColor: true,
+  });
+  const shirtColorOptionsWhere = buildMonthlyStallFeeWhere(filters, {
+    includeMarketSearch: true,
+    includeBoothSearch: true,
+    includeShirtColor: false,
+  });
+
+  const [dataRows, summaryRows, marketRows, stallRows, shirtColorRows] = await Promise.all([
+    db.$queryRaw<
+      Array<{
+        market_code: string;
+        market_name: string;
+        booth_code: string;
+        shirt_color: string;
+        financial_item_count: number;
+        debit_amount: Prisma.Decimal;
+      }>
+    >(Prisma.sql`
+      SELECT market_code, market_name, booth_code, shirt_color, financial_item_count, debit_amount
+      FROM (
+        SELECT
+          mj.market_code AS market_code,
+          MAX(mj.market_name) AS market_name,
+          gt.booth_code AS booth_code,
+          COALESCE(tpf.shirt_color_snapshot, 'UNKNOWN') AS shirt_color,
+          COUNT(*)::int AS financial_item_count,
+          COALESCE(SUM(tpf.stall_fee_rounded), 0) AS debit_amount
+        ${MONTHLY_STALL_FEE_FROM}
+        WHERE ${dataWhere}
+        GROUP BY mj.market_code, gt.booth_code, COALESCE(tpf.shirt_color_snapshot, 'UNKNOWN')
+      ) grouped
+      ORDER BY market_code, booth_code, shirt_color
+      LIMIT ${filters.limit} OFFSET ${(filters.page - 1) * filters.limit}
+    `),
+    db.$queryRaw<
+      Array<{
+        row_count: number;
+        stall_count: number;
+        financial_item_count: number;
+        debit_amount_total: Prisma.Decimal;
+      }>
+    >(Prisma.sql`
+      SELECT
+        COUNT(DISTINCT (mj.market_code, gt.booth_code, COALESCE(tpf.shirt_color_snapshot, 'UNKNOWN')))::int AS row_count,
+        COUNT(DISTINCT (mj.market_code, gt.booth_code))::int AS stall_count,
+        COUNT(*)::int AS financial_item_count,
+        COALESCE(SUM(tpf.stall_fee_rounded), 0) AS debit_amount_total
+      ${MONTHLY_STALL_FEE_FROM}
+      WHERE ${dataWhere}
+    `),
+    db.$queryRaw<Array<{ market_code: string; market_name: string }>>(Prisma.sql`
+      SELECT DISTINCT mj.market_code AS market_code, mj.market_name AS market_name
+      ${MONTHLY_STALL_FEE_FROM}
+      WHERE ${marketOptionsWhere}
+    `),
+    db.$queryRaw<Array<{ market_code: string; booth_code: string }>>(Prisma.sql`
+      SELECT DISTINCT mj.market_code AS market_code, gt.booth_code AS booth_code
+      ${MONTHLY_STALL_FEE_FROM}
+      WHERE ${stallOptionsWhere}
+    `),
+    db.$queryRaw<Array<{ shirt_color: string }>>(Prisma.sql`
+      SELECT DISTINCT COALESCE(tpf.shirt_color_snapshot, 'UNKNOWN') AS shirt_color
+      ${MONTHLY_STALL_FEE_FROM}
+      WHERE ${shirtColorOptionsWhere}
+    `),
+  ]);
+
+  const summary = summaryRows[0] ?? {
+    row_count: 0,
+    stall_count: 0,
+    financial_item_count: 0,
+    debit_amount_total: new Prisma.Decimal(0),
+  };
+
+  const availableMarkets = marketRows
+    .map((row) => ({ market_code: row.market_code, market_name: row.market_name }))
+    .sort(
+      (a, b) =>
+        a.market_name.localeCompare(b.market_name, "th") ||
+        a.market_code.localeCompare(b.market_code, "th"),
+    );
+  const availableStalls = stallRows
+    .map((row) => ({ market_code: row.market_code, booth_code: row.booth_code }))
+    .sort(
+      (a, b) =>
+        a.market_code.localeCompare(b.market_code, "th") ||
+        a.booth_code.localeCompare(b.booth_code, "th"),
+    );
+  const availableShirtColors = shirtColorRows
+    .map((row) => row.shirt_color)
+    .sort(
+      (a, b) => SHIRT_COLOR_SORT_ORDER.indexOf(a as never) - SHIRT_COLOR_SORT_ORDER.indexOf(b as never),
+    );
+
+  return {
+    data: dataRows,
+    total: summary.row_count,
+    summary: {
+      row_count: summary.row_count,
+      stall_count: summary.stall_count,
+      financial_item_count: summary.financial_item_count,
+      debit_amount_total: new Prisma.Decimal(summary.debit_amount_total),
+    },
+    available_markets: availableMarkets,
+    available_stalls: availableStalls,
+    available_shirt_colors: availableShirtColors,
   };
 }

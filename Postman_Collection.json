@@ -1428,6 +1428,72 @@
           "response": []
         },
         {
+          "name": "GET /api/admin/vehicle-jobs/history/monthly-stall-fees",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/history/monthly-stall-fees?date_from=2026-12-01&date_to=2027-01-31&market_search=&booth_search=&shirt_color=&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "history",
+                "monthly-stall-fees"
+              ],
+              "query": [
+                {
+                  "key": "date_from",
+                  "value": "2026-12-01",
+                  "description": "Required date range start in YYYY-MM-DD, interpreted in Asia/Bangkok."
+                },
+                {
+                  "key": "date_to",
+                  "value": "2027-01-31",
+                  "description": "Required date range end in YYYY-MM-DD, inclusive. May cross months/years freely; must not exceed 6 calendar months from date_from."
+                },
+                {
+                  "key": "market_search",
+                  "value": "",
+                  "description": "Optional partial match on MarketCode or MarketName."
+                },
+                {
+                  "key": "booth_search",
+                  "value": "",
+                  "description": "Optional partial match on BoothCode."
+                },
+                {
+                  "key": "shirt_color",
+                  "value": "",
+                  "description": "Optional exact filter: NAVY, BLUE, GREEN, MIXED, or UNKNOWN."
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/history/monthly-stall-fees\nAuth: Admin access token with jobs:read permission\nQuery: date_from/date_to (required), market_search, booth_search, shirt_color, page, limit.\nNotes: One row per distinct MarketCode+BoothCode+ShirtColor group, not per TicketProductFinancial like daily-stall-fees. DebitAmount is SUM(TicketProductFinancial.StallFeeRounded) already persisted at finalize time, never recomputed from the current rate. ShirtColor is an immutable snapshot taken at finalize time (TicketProductFinancial.ShirtColorSnapshot), not the worker's current MasterWorker color: NAVY/BLUE/GREEN when every worker on that booth/product matched exactly, MIXED when more than one color was involved, UNKNOWN when there is no snapshot (legacy rows from before this feature existed) or the value on file did not match NAVY/BLUE/GREEN exactly. The totals here must reconcile with the sum of daily-stall-fees over the same date range, since both read the same finalized TicketProductFinancial rows.\nResponse: Period echoing the effective date range, Data[] of {Id, MarketCode, MarketName, BoothCode, ShirtColor, FinancialItemCount, DebitAmount}, Summary ({RowCount, StallCount, FinancialItemCount, DebitAmountTotal} over the full filtered set, independent of page/limit), AvailableMarkets[]/AvailableStalls[]/AvailableShirtColors[] (each faceted: narrowed by the OTHER filters only, never by its own dimension, and independent of page/limit — AvailableStalls entries each carry their own MarketCode), and Pagination."
+          },
+          "response": []
+        },
+        {
           "name": "GET /api/admin/vehicle-jobs/:ticketNo/financials",
           "request": {
             "method": "GET",

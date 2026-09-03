@@ -122,6 +122,21 @@ router.get(
   }
 );
 
+// Route รายงานค่าลงสินค้าแผงค้ารายเดือน — group ด้วย market_code+booth_code+shirt_color ต่างจาก
+// daily-stall-fees ด้านบนที่ list ทีละแถว TicketProductFinancial ตรงๆ
+router.get(
+  "/vehicle-jobs/history/monthly-stall-fees",
+  permissionMiddleware(["jobs:read"]),
+  async (req, res, next) => {
+    try {
+      const result = await adminJobsService.listMonthlyStallFees(req.query);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.get(
   "/vehicle-jobs/:ticketNumber/financials",
   permissionMiddleware(["jobs:read"]),

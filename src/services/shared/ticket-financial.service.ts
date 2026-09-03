@@ -9,7 +9,7 @@ import type { DbConnection } from "../../types/shared/common.type";
 import type { TicketFinancializationResult } from "../../types/shared/ticket-financial.type";
 
 // Import Config
-import { TICKET_STATUS, TICKET_WORKER_STATUS, TERMINAL_TICKET_STATUSES } from "../../constants/job-status";
+import { SHIRT_COLOR_SNAPSHOT, TICKET_STATUS, TICKET_WORKER_STATUS, TERMINAL_TICKET_STATUSES, VALID_SHIRT_COLORS } from "../../constants/job-status";
 
 // Import Utils
 import ApiError from "../../utils/api-error";
@@ -55,6 +55,26 @@ function hasCompleteRateSnapshot(product: {
     product.laborRateSnapshot !== null &&
     product.rateSnapshotAt !== null
   );
+}
+
+// Function คำนวณ shirt_color_snapshot ของ worker ทุกคนที่หารเงินแผง/สินค้าหนึ่งรายการ — ใช้
+// MasterWorker.laborColor ตรงตัวเป๊ะเท่านั้น (case-sensitive ห้าม normalize) เทียบกับ
+// NAVY/BLUE/GREEN: สีเดียวกันทุกคนและตรง 1 ใน 3 ค่านี้ -> ใช้สีนั้น, สีต่างกัน (ไม่ว่าจะถูกต้องกี่สี
+// ปนกัน) -> MIXED, ค่าไม่ตรง/ไม่มีเลยแม้แต่คนเดียว (null หรือสะกดไม่ตรง) -> UNKNOWN
+function resolveShirtColorSnapshot(
+  boothWorkers: Array<{ worker: { laborColor: string | null } }>,
+): string {
+  const distinctColors = new Set(boothWorkers.map((worker) => worker.worker.laborColor));
+
+  if (distinctColors.size !== 1) {
+    return SHIRT_COLOR_SNAPSHOT.MIXED;
+  }
+
+  const [color] = distinctColors;
+
+  return (VALID_SHIRT_COLORS as readonly (string | null)[]).includes(color)
+    ? (color as string)
+    : SHIRT_COLOR_SNAPSHOT.UNKNOWN;
 }
 
 // Function Finalize เงินทั้งหมดของ Business Ticket (market job) ทั้งใบ
@@ -373,6 +393,8 @@ export async function finalizeMarketJobFinancials(
           fundAmount,
 
           finalizedAt,
+
+          shirtColorSnapshot: resolveShirtColorSnapshot(boothWorkers),
 
           workerPayments,
         },

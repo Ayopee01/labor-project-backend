@@ -52,6 +52,12 @@ export async function findMarketJobFinancializationContext(
         orderBy: {
           id: "asc",
         },
+        // ต้องมี worker.laborColor เพื่อคำนวณ shirt_color_snapshot ตอน finalize (ดู
+        // resolveShirtColorSnapshot ใน ticket-financial.service.ts) — ห้ามอ่านค่านี้ย้อนหลังจาก
+        // MasterWorker ตรงๆ ตอน query รายงาน เพราะ laborColor แก้ทีหลังได้
+        include: {
+          worker: true,
+        },
       },
     },
   });
@@ -110,6 +116,7 @@ export async function createTicketProductFinancial(
     workerPayoutTotal: Prisma.Decimal;
     fundAmount: Prisma.Decimal;
     finalizedAt: Date;
+    shirtColorSnapshot: string;
     workerPayments: Array<{
       ticketWorkerId: number;
       rawAmount: Prisma.Decimal;
@@ -133,6 +140,7 @@ export async function createTicketProductFinancial(
       workerPayoutTotal: input.workerPayoutTotal,
       fundAmount: input.fundAmount,
       finalizedAt: input.finalizedAt,
+      shirtColorSnapshot: input.shirtColorSnapshot,
       workerPayments: {
         create:
           input.workerPayments.map(

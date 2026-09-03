@@ -1418,6 +1418,12 @@ export const workerApplicationRepositoryMock = {
       .sort((left, right) => left.id - right.id)
       .map((worker) => ({
         ...worker,
+        // ต้องมี worker.laborColor ให้ resolveShirtColorSnapshot ใน ticket-financial.service.ts ใช้
+        // คำนวณ shirt_color_snapshot ตอน finalize (ดู include: { worker: true } ใน repository จริง) —
+        // แปลง MasterWorkerRecord (snake_case) เป็น shape camelCase แบบเดียวกับที่ Prisma จริงคืนกลับมา
+        worker: {
+          laborColor: state.workers.get(worker.worker_id)?.labor_color ?? null,
+        },
         finalEarningAmount:
           worker.final_earning_amount === undefined ||
           worker.final_earning_amount === null
@@ -1481,6 +1487,7 @@ export const workerApplicationRepositoryMock = {
     workerPayoutTotal: Prisma.Decimal;
     fundAmount: Prisma.Decimal;
     finalizedAt: Date;
+    shirtColorSnapshot: string;
 
     workerPayments: Array<{
       ticketWorkerId: number;
@@ -1509,6 +1516,7 @@ export const workerApplicationRepositoryMock = {
       worker_payout_total: input.workerPayoutTotal.toString(),
       fund_amount: input.fundAmount.toString(),
       finalized_at: input.finalizedAt.toISOString(),
+      shirt_color_snapshot: input.shirtColorSnapshot,
     };
 
     state.ticketProductFinancials.push(financial);
@@ -5033,6 +5041,162 @@ export const adminJobsRepositoryMock = {
       },
       available_products: availableProducts,
       available_packages: availablePackages,
+    };
+  },
+
+  // Function mock ของรายงานค่าลงสินค้าแผงค้ารายเดือน — จำลอง GROUP BY market_code+booth_code+
+  // shirt_color แบบเดียวกับ raw SQL ของจริงใน admin-jobs.repository.ts ด้วย JS array grouping แทน
+  // (mock ไม่มี Postgres ให้ query จริง) shirt_color อ่านจาก financial.shirt_color_snapshot ที่
+  // createTicketProductFinancial mock เก็บไว้แล้วตอน finalize ตรงๆ ไม่ต้องคำนวณซ้ำ
+  listMonthlyStallFees: async (filters: {
+    startAt: Date;
+    endAt: Date;
+    marketSearch?: string;
+    boothSearch?: string;
+    shirtColor?: string;
+    page: number;
+    limit: number;
+  }) => {
+    let base = state.ticketProductFinancials
+      .map((financial) => ({ financial, chain: resolveDailyStallFeeChain(financial) }))
+      .filter(
+        (entry): entry is { financial: (typeof state.ticketProductFinancials)[number]; chain: NonNullable<ReturnType<typeof resolveDailyStallFeeChain>> } =>
+          entry.chain !== null,
+      );
+
+    base = base.filter(({ financial }) => {
+      const finalizedAtMs = new Date(financial.finalized_at).getTime();
+
+      return finalizedAtMs >= filters.startAt.getTime() && finalizedAtMs < filters.endAt.getTime();
+    });
+
+    const shirtColorOf = (financial: (typeof state.ticketProductFinancials)[number]) =>
+      (financial as { shirt_color_snapshot?: string | null }).shirt_color_snapshot ?? "UNKNOWN";
+
+    const applyMarketSearch = (
+      list: typeof base,
+    ) =>
+      filters.marketSearch
+        ? list.filter(({ chain }) => {
+          const needle = filters.marketSearch!.toLowerCase();
+
+          return (
+            chain.marketJob.marketCode.toLowerCase().includes(needle) ||
+            chain.marketJob.marketName.toLowerCase().includes(needle)
+          );
+        })
+        : list;
+    const applyBoothSearch = (list: typeof base) =>
+      filters.boothSearch
+        ? list.filter(({ chain }) =>
+          chain.ticket.boothCode.toLowerCase().includes(filters.boothSearch!.toLowerCase()),
+        )
+        : list;
+    const applyShirtColor = (list: typeof base) =>
+      filters.shirtColor
+        ? list.filter(({ financial }) => shirtColorOf(financial) === filters.shirtColor)
+        : list;
+
+    // available_markets/available_stalls/available_shirt_colors เป็น faceted filter คนละมิติ —
+    // แต่ละตัวคำนวณจาก base ที่ apply filter ของมิติ "อื่น" เท่านั้น ไม่ narrow ตามมิติของตัวเอง
+    const baseForMarketOptions = applyShirtColor(applyBoothSearch(base));
+    const baseForStallOptions = applyShirtColor(applyMarketSearch(base));
+    const baseForShirtColorOptions = applyBoothSearch(applyMarketSearch(base));
+
+    const availableMarkets = Array.from(
+      new Map(
+        baseForMarketOptions.map(({ chain }) => [
+          chain.marketJob.marketCode,
+          { market_code: chain.marketJob.marketCode, market_name: chain.marketJob.marketName },
+        ]),
+      ).values(),
+    ).sort(
+      (left, right) =>
+        left.market_name.localeCompare(right.market_name, "th") ||
+        left.market_code.localeCompare(right.market_code, "th"),
+    );
+    const availableStalls = Array.from(
+      new Map(
+        baseForStallOptions.map(({ chain }) => [
+          `${chain.marketJob.marketCode}::${chain.ticket.boothCode}`,
+          { market_code: chain.marketJob.marketCode, booth_code: chain.ticket.boothCode },
+        ]),
+      ).values(),
+    ).sort(
+      (left, right) =>
+        left.market_code.localeCompare(right.market_code, "th") ||
+        left.booth_code.localeCompare(right.booth_code, "th"),
+    );
+    const SHIRT_COLOR_SORT_ORDER = ["NAVY", "BLUE", "GREEN", "MIXED", "UNKNOWN"];
+    const availableShirtColors = Array.from(
+      new Set(baseForShirtColorOptions.map(({ financial }) => shirtColorOf(financial))),
+    ).sort((left, right) => SHIRT_COLOR_SORT_ORDER.indexOf(left) - SHIRT_COLOR_SORT_ORDER.indexOf(right));
+
+    base = applyShirtColor(applyBoothSearch(applyMarketSearch(base)));
+
+    const groups = new Map<
+      string,
+      {
+        market_code: string;
+        market_name: string;
+        booth_code: string;
+        shirt_color: string;
+        financial_item_count: number;
+        debit_amount: InstanceType<typeof Prisma.Decimal>;
+      }
+    >();
+
+    for (const { financial, chain } of base) {
+      const shirtColor = shirtColorOf(financial);
+      const key = `${chain.marketJob.marketCode}::${chain.ticket.boothCode}::${shirtColor}`;
+      const existing = groups.get(key);
+      const stallFee = new Prisma.Decimal(financial.stall_fee_rounded);
+
+      if (existing) {
+        existing.financial_item_count += 1;
+        existing.debit_amount = existing.debit_amount.plus(stallFee);
+      } else {
+        groups.set(key, {
+          market_code: chain.marketJob.marketCode,
+          market_name: chain.marketJob.marketName,
+          booth_code: chain.ticket.boothCode,
+          shirt_color: shirtColor,
+          financial_item_count: 1,
+          debit_amount: stallFee,
+        });
+      }
+    }
+
+    const rows = Array.from(groups.values()).sort(
+      (left, right) =>
+        left.market_code.localeCompare(right.market_code) ||
+        left.booth_code.localeCompare(right.booth_code) ||
+        left.shirt_color.localeCompare(right.shirt_color),
+    );
+
+    const rowCount = rows.length;
+    const stallCount = new Set(rows.map((row) => `${row.market_code}::${row.booth_code}`)).size;
+    const financialItemCountTotal = base.length;
+    const debitAmountTotal = base.reduce(
+      (sum, { financial }) => sum.plus(new Prisma.Decimal(financial.stall_fee_rounded)),
+      new Prisma.Decimal(0),
+    );
+
+    const start = (filters.page - 1) * filters.limit;
+    const paged = rows.slice(start, start + filters.limit);
+
+    return {
+      data: paged,
+      total: rowCount,
+      summary: {
+        row_count: rowCount,
+        stall_count: stallCount,
+        financial_item_count: financialItemCountTotal,
+        debit_amount_total: debitAmountTotal,
+      },
+      available_markets: availableMarkets,
+      available_stalls: availableStalls,
+      available_shirt_colors: availableShirtColors,
     };
   },
 };

@@ -25,13 +25,13 @@ import { buildVehicleOperationSummary, formatVehicleOperationItem } from "../uti
 import { isTimeInWorkSchedule } from "../utils/shift";
 import { logger } from "../utils/logger";
 // Import Types
-import type { AdminVehicleJobFinancialResponse, AdminVehicleJobFinancialRecord, AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelTicketWorkerFromBoothResponse, AdminCancelTicketWorkerResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminHistoryCancellationResponse, AdminHistoryRejectionResponse, AdminHistoryBoothResponse, AdminHistoryProductResponse, AdminHistoryTimelineItemResponse, AdminHistoryWorkerResponse, AdminVehicleJobAssignmentCancelResponse, HistoryStatusValue, HistoryFlagValue, DailyStallFeeItemResponse, DailyStallFeeListResponse, DailyStallFeeRecord, DailyWorkerIncomeItemResponse, DailyWorkerIncomePaymentStatus, DailyWorkerIncomeRecord, AdminMarketJobActionResponse, AdminOverrideCountResponse, AdminReleaseWorkersResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobHistoryRecord, AdminVehicleJobOperationListResponse, AdminVehicleWaitResponse } from "../types/admin-jobs.type";
+import type { AdminVehicleJobFinancialResponse, AdminVehicleJobFinancialRecord, AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelTicketWorkerFromBoothResponse, AdminCancelTicketWorkerResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminHistoryCancellationResponse, AdminHistoryRejectionResponse, AdminHistoryBoothResponse, AdminHistoryProductResponse, AdminHistoryTimelineItemResponse, AdminHistoryWorkerResponse, AdminVehicleJobAssignmentCancelResponse, HistoryStatusValue, HistoryFlagValue, DailyStallFeeItemResponse, DailyStallFeeListResponse, DailyStallFeeRecord, DailyWorkerIncomeItemResponse, DailyWorkerIncomePaymentStatus, DailyWorkerIncomeRecord, MonthlyStallFeeGroupRow, MonthlyStallFeeItemResponse, MonthlyStallFeeListResponse, AdminMarketJobActionResponse, AdminOverrideCountResponse, AdminReleaseWorkersResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobHistoryRecord, AdminVehicleJobOperationListResponse, AdminVehicleWaitResponse } from "../types/admin-jobs.type";
 import { HISTORY_FLAG_VALUES } from "../types/admin-jobs.type";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { CompletedVehicleJobResult, GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
-import { adminAssignWorkersBodySchema, adminCancelAssignmentBodySchema, adminCancelBodySchema, adminDailyStallFeeQuerySchema, adminDailyWorkerIncomeQuerySchema, adminExtendScanDeadlineBodySchema, adminOverrideCountBodySchema, adminReleaseWorkersBodySchema, adminVehicleJobAssignmentCancelBodySchema, adminVehicleJobListQuerySchema, adminVehicleJobOperationsQuerySchema, adminVehicleWaitBodySchema } from "../validation/schemas";
+import { adminAssignWorkersBodySchema, adminCancelAssignmentBodySchema, adminCancelBodySchema, adminDailyStallFeeQuerySchema, adminDailyWorkerIncomeQuerySchema, adminExtendScanDeadlineBodySchema, adminMonthlyStallFeeQuerySchema, adminOverrideCountBodySchema, adminReleaseWorkersBodySchema, adminVehicleJobAssignmentCancelBodySchema, adminVehicleJobListQuerySchema, adminVehicleJobOperationsQuerySchema, adminVehicleWaitBodySchema } from "../validation/schemas";
 // Import Utils
 import { requireActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
@@ -3575,6 +3575,68 @@ export async function listDailyStallFees(query: unknown): Promise<DailyStallFeeL
     },
     available_products: result.available_products,
     available_packages: result.available_packages,
+    pagination: {
+      page: filters.page,
+      limit: filters.limit,
+      total: result.total,
+      total_pages: Math.ceil(result.total / filters.limit),
+    },
+  };
+}
+
+// Function format หนึ่งแถวรายงานค่าลงสินค้าแผงค้ารายเดือนสำหรับ Admin — id ประกอบจาก
+// date_from/date_to/market_code/booth_code/shirt_color ตรงๆ (deterministic อยู่แล้วเพราะ group key
+// unique ต่อแถว ไม่ต้องมี numeric tie-breaker เพิ่ม)
+function formatMonthlyStallFeeItem(
+  row: MonthlyStallFeeGroupRow,
+  dateFrom: string,
+  dateTo: string,
+): MonthlyStallFeeItemResponse {
+  return {
+    id: `${dateFrom}:${dateTo}|${row.market_code}|${row.booth_code}|${row.shirt_color}`,
+    market_code: row.market_code,
+    market_name: row.market_name,
+    booth_code: row.booth_code,
+    shirt_color: row.shirt_color,
+    financial_item_count: row.financial_item_count,
+    debit_amount: new Prisma.Decimal(row.debit_amount).toFixed(2),
+  };
+}
+
+// Function ดึงรายงานค่าลงสินค้าแผงค้ารายเดือนสำหรับ Admin ใน service flow — group ด้วย
+// market_code+booth_code+shirt_color ที่ DB ชั้นเดียว (adminJobsRepository.listMonthlyStallFees ใช้
+// raw SQL เพราะ Prisma groupBy ทำ GROUP BY ข้าม relation ไม่ได้) summary/facet filter/pagination มา
+// จาก DB ทั้งหมด ไม่โหลดมารวมใน memory
+export async function listMonthlyStallFees(query: unknown): Promise<MonthlyStallFeeListResponse> {
+  const filters = parseWithSchema(adminMonthlyStallFeeQuerySchema, query);
+  const dateRange = buildBangkokDateSpanRange(filters.date_from, filters.date_to);
+  // date_from/date_to บังคับใน adminMonthlyStallFeeQuerySchema แล้ว การันตีได้ว่า
+  // buildBangkokDateSpanRange คืน startAt/endAt เสมอ ไม่มีทางเป็น undefined ที่นี่
+  const result = await adminJobsRepository.listMonthlyStallFees({
+    startAt: dateRange.startAt as Date,
+    endAt: dateRange.endAt as Date,
+    marketSearch: filters.market_search,
+    boothSearch: filters.booth_search,
+    shirtColor: filters.shirt_color,
+    page: filters.page,
+    limit: filters.limit,
+  });
+
+  return {
+    period: {
+      date_from: filters.date_from,
+      date_to: filters.date_to,
+    },
+    data: result.data.map((row) => formatMonthlyStallFeeItem(row, filters.date_from, filters.date_to)),
+    summary: {
+      row_count: result.summary.row_count,
+      stall_count: result.summary.stall_count,
+      financial_item_count: result.summary.financial_item_count,
+      debit_amount_total: result.summary.debit_amount_total.toFixed(2),
+    },
+    available_markets: result.available_markets,
+    available_stalls: result.available_stalls,
+    available_shirt_colors: result.available_shirt_colors,
     pagination: {
       page: filters.page,
       limit: filters.limit,
