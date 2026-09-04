@@ -138,6 +138,7 @@ export interface MasterWorkerCreateInput {
   labor_color: string;
   work_start_date?: string | null;
   work_code?: number | null;
+  coat_no?: string | null;
   time_work?: string | null;
   time_in?: string | null;
   time_out?: string | null;

@@ -139,6 +139,7 @@ export async function create(
       laborColor: input.labor_color,
       workStartDate: input.work_start_date ? new Date(input.work_start_date) : null,
       workCode: input.work_code ?? null,
+      coatNo: input.coat_no ?? null,
       timeWork: input.time_work ?? null,
       timeIn: input.time_in ?? null,
       timeOut: input.time_out ?? null,

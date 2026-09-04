@@ -329,6 +329,7 @@ export async function createUser(
         labor_color: shirtType,
         work_start_date: initialWorkStartDate,
         work_code: workCode,
+        coat_no: shirtNumber,
         time_work: timeWorkPreset.time_work,
         time_in: timeWorkPreset.time_in,
         time_out: timeWorkPreset.time_out,
