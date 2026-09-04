@@ -253,9 +253,66 @@ function transformSchemaKeys(schema: unknown, seen = new Set<unknown>()): void {
   }
 }
 
+// Config schema ของ server_time/server_time_unix_ms ที่ pascalCaseApiResponse (api-case.middleware.ts)
+// แปะเข้าไปใน response ทุกเส้นจริงตอน runtime — ประกาศไว้จุดเดียวแล้ว allOf เข้าไปแทนการแก้ทีละไฟล์ YAML
+const SERVER_TIME_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    server_time: {
+      type: "string",
+      format: "date-time",
+      description: "current server time (ISO 8601), present on every response.",
+    },
+    server_time_unix_ms: {
+      type: "integer",
+      description: "current server time in epoch milliseconds, present on every response.",
+    },
+  },
+};
+
+// Function ห่อ response schema ทุกจุดใน spec ด้วย allOf + SERVER_TIME_RESPONSE_SCHEMA แบบ recursive ผ่าน
+// paths.*.*.responses.*.content["application/json"].schema เท่านั้น (ไม่แตะ requestBody) ครอบคลุมทั้ง
+// response ที่เขียน schema ตรงๆ และที่ใช้ $ref ไปยัง component กลาง โดยไม่ต้องแก้ทีละไฟล์ YAML
+function addServerTimeToResponseSchemas(spec: Record<string, unknown>): void {
+  const paths = spec.paths;
+
+  if (!isObject(paths)) {
+    return;
+  }
+
+  for (const pathItem of Object.values(paths)) {
+    if (!isObject(pathItem)) {
+      continue;
+    }
+
+    for (const operation of Object.values(pathItem)) {
+      if (!isObject(operation) || !isObject(operation.responses)) {
+        continue;
+      }
+
+      for (const response of Object.values(operation.responses)) {
+        if (!isObject(response) || !isObject(response.content)) {
+          continue;
+        }
+
+        const jsonContent = response.content["application/json"];
+
+        if (!isObject(jsonContent) || !("schema" in jsonContent)) {
+          continue;
+        }
+
+        jsonContent.schema = {
+          allOf: [jsonContent.schema, SERVER_TIME_RESPONSE_SCHEMA],
+        };
+      }
+    }
+  }
+}
+
 // Function สร้าง external open API spec สำหรับ Swagger/OpenAPI
 function buildExternalOpenApiSpec(): Record<string, unknown> {
   const externalOpenapi = JSON.parse(JSON.stringify(openapi)) as Record<string, unknown>;
+  addServerTimeToResponseSchemas(externalOpenapi);
   transformSchemaKeys(externalOpenapi);
 
   return externalOpenapi;
