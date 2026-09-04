@@ -1,0 +1,20 @@
+name: Deploy to Render
+
+# ทดลอง deploy ชั่วคราวขึ้น Render — แยก branch/workflow ออกจาก ci.yml (ที่ deploy ขึ้น DigitalOcean
+# droplet บน develop/main) โดยตั้งใจ เพื่อไม่ให้กระทบ production pipeline เดิมเลย ลบไฟล์นี้ทิ้งไฟล์เดียว
+# (พร้อม secret RENDER_DEPLOY_HOOK_URL) ก็กลับไปใช้ DigitalOcean อย่างเดียวได้ทันที
+on:
+  push:
+    branches:
+      - render
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Trigger Render deploy hook
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Call Render deploy hook
+        run: curl --fail -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
