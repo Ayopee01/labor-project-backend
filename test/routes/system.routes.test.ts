@@ -48,10 +48,13 @@ test("GET /health is not exposed because /ready is the single health check", asy
   assert.equal(response.status, 404);
 });
 
-test("GET / is not exposed because /ready is the single health check", async () => {
+test("GET / behaves the same as /ready", async () => {
   const response = await server.request("GET", "/");
 
-  assert.equal(response.status, 404);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "ready");
+  assert.equal(response.body.checks.database.status, "ok");
+  assert.equal(response.body.checks.redis.status, "ok");
 });
 
 test("GET /ready returns ready when DB and Redis checks pass", async () => {
