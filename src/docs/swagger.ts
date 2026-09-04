@@ -309,10 +309,46 @@ function addServerTimeToResponseSchemas(spec: Record<string, unknown>): void {
   }
 }
 
+// Config header parameter (log/observability) ที่ optional บนทุก endpoint — ดู components.yaml
+const OBSERVABILITY_HEADER_PARAMETERS = [
+  { $ref: "#/components/parameters/RequestIdHeader" },
+  { $ref: "#/components/parameters/ClientTypeHeader" },
+  { $ref: "#/components/parameters/ClientVersionHeader" },
+];
+
+// Function แนบ header parameter (log/observability) เข้าทุก operation ใน spec แบบ recursive โดยไม่ต้อง
+// แก้ทีละไฟล์ YAML — ถ้า operation มี parameters อยู่แล้วจะต่อท้ายให้ ไม่ทับของเดิม
+function addObservabilityHeaderParameters(spec: Record<string, unknown>): void {
+  const paths = spec.paths;
+
+  if (!isObject(paths)) {
+    return;
+  }
+
+  for (const pathItem of Object.values(paths)) {
+    if (!isObject(pathItem)) {
+      continue;
+    }
+
+    for (const operation of Object.values(pathItem)) {
+      if (!isObject(operation)) {
+        continue;
+      }
+
+      const existingParameters = Array.isArray(operation.parameters)
+        ? operation.parameters
+        : [];
+
+      operation.parameters = [...existingParameters, ...OBSERVABILITY_HEADER_PARAMETERS];
+    }
+  }
+}
+
 // Function สร้าง external open API spec สำหรับ Swagger/OpenAPI
 function buildExternalOpenApiSpec(): Record<string, unknown> {
   const externalOpenapi = JSON.parse(JSON.stringify(openapi)) as Record<string, unknown>;
   addServerTimeToResponseSchemas(externalOpenapi);
+  addObservabilityHeaderParameters(externalOpenapi);
   transformSchemaKeys(externalOpenapi);
 
   return externalOpenapi;

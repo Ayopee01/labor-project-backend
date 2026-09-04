@@ -8,6 +8,34 @@
       type: http
       scheme: basic
       description: Gate Client Credentials. Username is client_id and password is client_secret.
+  parameters:
+    RequestIdHeader:
+      in: header
+      name: X-Request-Id
+      required: false
+      schema:
+        type: string
+      description: Optional correlation id for this request. If omitted, the server generates one. Echoed back in the X-Request-Id response header and every error response body — send your own value (or reuse the one from a prior response) to make it easier to find the matching log line when reporting an issue.
+    ClientTypeHeader:
+      in: header
+      name: X-Client-Type
+      required: false
+      schema:
+        type: string
+        enum:
+          - worker_app
+          - admin_webapp
+          - driver_webapp
+          - gate
+          - line_oa
+      description: Optional client identifier used only as a fallback for logging when the server cannot detect the client type from the request path or the authenticated account's role (e.g. on shared, not-yet-authenticated routes such as /api/auth/login). Not required on routes where the path or role already identifies the client.
+    ClientVersionHeader:
+      in: header
+      name: X-Client-Version
+      required: false
+      schema:
+        type: string
+      description: Optional version string of the calling client app, recorded in server logs for debugging.
   schemas:
     ErrorResponse:
       type: object
