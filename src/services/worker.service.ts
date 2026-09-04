@@ -26,7 +26,7 @@ import { buildWorkerDailySummary, closeWorkerAttendanceShift, markWorkerAttendan
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { MasterWorkerDto } from "../types/admin-workers.type";
-import type { GateTicketDto, TicketCompletionResponse, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleWorkReadinessDto, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerProductPackageOptionsResponse, WorkerQueueEntryDto, WorkerShiftCloseReason, WorkerStatusResponse } from "../types/worker.type";
+import type { GateTicketDto, TicketCompletionResponse, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerProductPackageOptionsResponse, WorkerQueueEntryDto, WorkerShiftCloseReason, WorkerStatusResponse } from "../types/worker.type";
 import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import type { DbConnection } from "../types/shared/common.type";
@@ -276,6 +276,49 @@ function sendAssignmentTeamUpdatedSocketEvents(
       },
     );
   }
+}
+
+// Function sync team-scan readiness ให้ทุกคนในทีมของ vehicle job นี้ผ่าน ASSIGNMENT_TEAM_UPDATED
+// เสมอ (push: false, ไว้ sync ระหว่างที่ยังรอทีมอยู่) และถ้า readiness เพิ่งเปลี่ยนเป็นครบพอดี
+// (is_ready) ยิง TEAM_READY เพิ่ม (push จริง) ให้ worker ที่ปิดแอพ/ไม่ได้ต่อ socket อยู่ก็รู้ว่าเริ่ม
+// งานได้แล้ว — ใช้ร่วมกันทั้งตอน worker สแกนเข้างานเอง (scanWorkerAssignment) และตอน Admin ยกเลิก
+// assignment ของเพื่อนร่วมทีมจนทีมที่เหลือพร้อมพอดี (cancelAssignment ใน admin-jobs.service.ts) —
+// ไม่งั้นทีมที่เหลือจะไม่รู้ตัวว่าเริ่มงานได้แล้วจนกว่าจะ reconnect socket หรือ refresh เอง
+export async function notifyVehicleJobTeamScanReadiness(
+  vehicleJob: VehicleJobDto,
+  teamScan: VehicleWorkReadinessDto,
+): Promise<void> {
+  const team = await assignmentRepository.listVehicleJobAssignmentTeam(
+    vehicleJob.id,
+  );
+
+  sendAssignmentTeamUpdatedSocketEvents(vehicleJob.ticket_number, team, teamScan);
+
+  if (!teamScan.is_ready) {
+    return;
+  }
+
+  const teamWorkerAccountIds = team
+    .map((member) => member.worker_id)
+    .filter((value): value is number => typeof value === "number");
+  const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+    vehicleJob.id,
+  );
+
+  publishRealtimeEvent({
+    type: "TEAM_READY",
+    title: "Team ready",
+    message: `The whole team has checked in for vehicle job ${vehicleJob.ticket_number}. Work can start now.`,
+    payload: {
+      ticketNumber: vehicleJob.ticket_number,
+      ticketNos,
+    },
+    worker_payload: {
+      ticketNumber: vehicleJob.ticket_number,
+      ticketNos,
+    },
+    worker_ids: teamWorkerAccountIds,
+  });
 }
 
 function toBangkokDateKey(value: Date | string): string {
@@ -626,6 +669,13 @@ export async function workerOnline(
   const latestQueueEntry = await getWorkerQueueStatus(account.id);
   const latestAssignment =
     await assignmentRepository.findCurrentAssignmentByWorker(account.id);
+  // ต้องเช็ค teamScan ด้วย ไม่งั้น resolveWorkerWorkStatus (เรียกใน buildWorkerQueueSocketPayload)
+  // จะ default เป็น WORKING ทันทีที่ assignment ของ worker คนนี้ scan แล้ว ทั้งที่ทีมยังมาไม่ครบ
+  const latestTeamScan = latestAssignment
+    ? await assignmentRepository.getVehicleJobTeamScanReadiness(
+        latestAssignment.vehicle_job_id,
+      )
+    : null;
 
   if (!latestQueueEntry) {
     throw new ApiError(
@@ -646,6 +696,7 @@ export async function workerOnline(
       latestQueueEntry,
       workerCode,
       latestAssignment,
+      latestTeamScan,
     ),
   });
   publishAdminWorkerStatusChanged({
@@ -654,6 +705,7 @@ export async function workerOnline(
     workerCode,
     queue: latestQueueEntry,
     assignment: latestAssignment,
+    team_scan_readiness: latestTeamScan,
     reason: "worker_online",
   });
 
@@ -671,6 +723,13 @@ export async function performWorkerOfflineCascade(
       getWorkerQueueStatus(account.id),
       assignmentRepository.findCurrentAssignmentByWorker(account.id),
     ]);
+  // ต้องเช็ค teamScan ด้วย ไม่งั้น resolveWorkerWorkStatus (เรียกใน buildWorkerQueueSocketPayload)
+  // จะ default เป็น WORKING ทันทีที่ assignment ของ worker คนนี้ scan แล้ว ทั้งที่ทีมยังมาไม่ครบ
+  const currentTeamScan = currentAssignment
+    ? await assignmentRepository.getVehicleJobTeamScanReadiness(
+        currentAssignment.vehicle_job_id,
+      )
+    : null;
 
   if (
     currentQueueEntry?.status === WORKER_WORK_STATUS.BREAK &&
@@ -702,6 +761,7 @@ export async function performWorkerOfflineCascade(
       queueEntry,
       workerCode,
       currentAssignment,
+      currentTeamScan,
     ),
   });
   publishAdminWorkerStatusChanged({
@@ -710,6 +770,7 @@ export async function performWorkerOfflineCascade(
     workerCode,
     queue: queueEntry,
     assignment: currentAssignment,
+    team_scan_readiness: currentTeamScan,
     reason: "worker_open_app",
   });
 
@@ -1522,38 +1583,7 @@ export async function scanWorkerAssignment(
       ),
     });
   }
-  const team = await assignmentRepository.listVehicleJobAssignmentTeam(
-    scannedAssignment.vehicle_job_id,
-  );
-
-  sendAssignmentTeamUpdatedSocketEvents(vehicleJob.ticket_number, team, teamScan);
-
-  // แจ้งเตือนทั้งทีมตอนคนสุดท้าย scan ครบพอดี (waiting_team -> working) — แยกจาก
-  // ASSIGNMENT_TEAM_UPDATED เดิม (push: false, ไว้ sync ระหว่างที่ยังรอทีมอยู่) เพราะจุดนี้คือจังหวะ
-  // สำคัญที่ worker ที่ปิดแอพ/ไม่ได้ต่อ socket อยู่ก็ต้องรู้ว่าเริ่มงานได้แล้ว
-  if (teamScan.is_ready) {
-    const teamWorkerAccountIds = team
-      .map((member) => member.worker_id)
-      .filter((value): value is number => typeof value === "number");
-    const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
-      vehicleJob.id,
-    );
-
-    publishRealtimeEvent({
-      type: "TEAM_READY",
-      title: "Team ready",
-      message: `The whole team has checked in for vehicle job ${vehicleJob.ticket_number}. Work can start now.`,
-      payload: {
-        ticketNumber: vehicleJob.ticket_number,
-        ticketNos,
-      },
-      worker_payload: {
-        ticketNumber: vehicleJob.ticket_number,
-        ticketNos,
-      },
-      worker_ids: teamWorkerAccountIds,
-    });
-  }
+  await notifyVehicleJobTeamScanReadiness(vehicleJob, teamScan);
 
   publishNotification({
     type: "ASSIGNMENT_CHECKED_IN",

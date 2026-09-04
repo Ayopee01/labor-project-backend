@@ -21,6 +21,7 @@ import { publishRealtimeEvent } from "./shared/realtime-notification.service";
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
 import * as vehicleJobLifecycleService from "./shared/vehicle-job-lifecycle.service";
 import * as ticketCompletionService from "./shared/ticket-completion.service";
+import { notifyVehicleJobTeamScanReadiness } from "./worker.service";
 import { buildVehicleOperationSummary, formatVehicleOperationItem } from "../utils/admin-job-operations.formatter";
 import { isTimeInWorkSchedule } from "../utils/shift";
 import { logger } from "../utils/logger";
@@ -2004,7 +2005,7 @@ async function cancelAssignment(
   const vehicleJob = await vehicleJobRepository.findVehicleJobById(
     assignment.vehicle_job_id,
   );
-  const cancelledAssignment = await withTransaction(async (transaction) =>
+  const { cancelledAssignment, teamScan } = await withTransaction(async (transaction) =>
     {
       const result = await adminJobsRepository.cancelAssignment(
         assignment.id,
@@ -2051,7 +2052,7 @@ async function cancelAssignment(
         transaction,
       );
 
-      return result;
+      return { cancelledAssignment: result, teamScan };
     },
   );
 
@@ -2068,6 +2069,13 @@ async function cancelAssignment(
     ticketNos,
     reason: "admin_cancel_assignment",
   });
+
+  // แจ้งทีมที่เหลือด้วยถ้าการยกเลิกคนนี้ทำให้ทีมพร้อมพอดี (ตัวหาร workers_required ลดลงจากการยกเลิก
+  // จนทีมที่เหลือ scan ครบอยู่แล้ว) — ไม่งั้นทีมที่เหลือจะไม่รู้ตัวว่าเริ่มงานได้แล้วจนกว่าจะ reconnect
+  // socket หรือ refresh เอง (ดู notifyVehicleJobTeamScanReadiness ใน worker.service.ts)
+  if (vehicleJob) {
+    await notifyVehicleJobTeamScanReadiness(vehicleJob, teamScan);
+  }
   publishNotification({
     type: "ASSIGNMENT_CANCELLED",
     title: "Assignment cancelled",

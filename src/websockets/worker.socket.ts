@@ -7,7 +7,7 @@ import { WebSocket, WebSocketServer } from "ws";
 // Import Dependencies
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import { findActiveById as findActiveWorkerSessionById } from "../repositories/shared/worker-session.repository";
-import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
+import { findCurrentAssignmentByWorker, getVehicleJobTeamScanReadiness } from "../repositories/shared/vehicle-job-assignment.repository";
 import { clearWorkerPresence, getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";
 import { buildWorkerNotification, persistWorkerNotification, publishNotification } from "../services/notifications.service";
 import { sendWorkerPushNotificationByWorkerIds } from "../services/shared/worker-push.service";
@@ -195,6 +195,11 @@ async function publishWorkerConnectionChanged(
       return null;
     }),
   ]);
+  // ต้องเช็ค teamScan ด้วย ไม่งั้น resolveWorkerWorkStatus (เรียกใน buildWorkerQueueSocketPayload)
+  // จะ default เป็น WORKING ทันทีที่ assignment ของ worker คนนี้ scan แล้ว ทั้งที่ทีมยังมาไม่ครบ
+  const teamScanReadiness = assignment
+    ? await getVehicleJobTeamScanReadiness(assignment.vehicle_job_id)
+    : null;
 
   const workerCode = worker?.labor_code ?? null;
 
@@ -205,7 +210,9 @@ async function publishWorkerConnectionChanged(
     payload: {
       worker_code: workerCode,
       socket_connected: connected,
-      queue: queueEntry ? buildWorkerQueueSocketPayload(queueEntry, workerCode, assignment) : null,
+      queue: queueEntry
+        ? buildWorkerQueueSocketPayload(queueEntry, workerCode, assignment, teamScanReadiness)
+        : null,
       assignment_status: assignment?.status ?? null,
       reason,
     },

@@ -228,6 +228,13 @@ async function revokeWorkerSessions(
     getWorkerQueueStatus(worker.id),
     assignmentRepository.findCurrentAssignmentByWorker(worker.id),
   ]);
+  // ต้องเช็ค teamScan ด้วย ไม่งั้น resolveWorkerWorkStatus (เรียกใน buildWorkerQueueSocketPayload)
+  // จะ default เป็น WORKING ทันทีที่ assignment ของ worker คนนี้ scan แล้ว ทั้งที่ทีมยังมาไม่ครบ
+  const currentTeamScan = currentAssignment
+    ? await assignmentRepository.getVehicleJobTeamScanReadiness(
+        currentAssignment.vehicle_job_id
+      )
+    : null;
 
   if (
     currentQueueEntry &&
@@ -257,7 +264,8 @@ async function revokeWorkerSessions(
       queue: buildWorkerQueueSocketPayload(
         queueEntry,
         worker.labor_code,
-        currentAssignment
+        currentAssignment,
+        currentTeamScan
       ),
       reason: "admin_session_revoked",
     });
@@ -267,6 +275,7 @@ async function revokeWorkerSessions(
       workerCode: worker.labor_code,
       queue: queueEntry,
       assignment: currentAssignment,
+      team_scan_readiness: currentTeamScan,
       reason: "admin_session_revoked",
     });
   }
@@ -1100,11 +1109,19 @@ export async function forceAdminWorkerStatus(
   const latestAssignmentPayload = await buildWorkerAssignmentSocketPayload(
     latestAssignment
   );
+  // ต้องเช็ค teamScan ด้วย ไม่งั้น resolveWorkerWorkStatus (เรียกใน buildWorkerQueueSocketPayload)
+  // จะ default เป็น WORKING ทันทีที่ assignment ของ worker คนนี้ scan แล้ว ทั้งที่ทีมยังมาไม่ครบ
+  const latestTeamScan = latestAssignment
+    ? await assignmentRepository.getVehicleJobTeamScanReadiness(
+        latestAssignment.vehicle_job_id
+      )
+    : null;
   sendWorkerSocketEvent(worker.id, "WORKER_STATUS_CHANGED", {
     queue: buildWorkerQueueSocketPayload(
       latestQueue,
       latest.worker_code,
-      latestAssignment
+      latestAssignment,
+      latestTeamScan
     ),
     current_assignment: latestAssignmentPayload,
     reason: "admin_force_status",
@@ -1115,6 +1132,7 @@ export async function forceAdminWorkerStatus(
     workerCode: latest.worker_code,
     queue: latestQueue,
     assignment: latestAssignment,
+    team_scan_readiness: latestTeamScan,
     reason: "admin_force_status",
     extraPayload: {
       current_assignment: latestAssignmentPayload,

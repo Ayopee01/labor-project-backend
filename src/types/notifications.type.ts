@@ -1,6 +1,6 @@
 import type { Response } from "express";
 import type { AccessTokenPayload } from "./auth.type";
-import type { VehicleJobAssignmentDto, WorkerQueueEntryDto, WorkerSocketEventType } from "./worker.type";
+import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerQueueEntryDto, WorkerSocketEventType } from "./worker.type";
 
 export type NotificationAudience = {
   account_ids?: number[];
@@ -144,5 +144,6 @@ export type WorkerStatusChangedInput = {
   queue: WorkerQueueEntryDto | null | undefined;
   reason: string;
   assignment?: VehicleJobAssignmentDto | null;
+  team_scan_readiness?: Pick<VehicleWorkReadinessDto, "is_ready"> | null;
   extraPayload?: Record<string, unknown>;
 };

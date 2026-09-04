@@ -11,7 +11,7 @@ import { buildLocalizedNotification } from "../utils/notification-localization";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { NotificationAudience, NotificationClient, RealtimeNotificationEvent, WorkerNotificationListResponse, WorkerStatusChangedInput } from "../types/notifications.type";
-import type { VehicleJobAssignmentDto, WorkerQueueEntryDto } from "../types/worker.type";
+import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerQueueEntryDto } from "../types/worker.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -233,6 +233,7 @@ function buildWorkerStatusChangedPayload(input: {
   queue: WorkerQueueEntryDto | null | undefined;
   reason: string;
   assignment?: VehicleJobAssignmentDto | null;
+  team_scan_readiness?: Pick<VehicleWorkReadinessDto, "is_ready"> | null;
   extraPayload?: Record<string, unknown>;
 }): Record<string, unknown> {
   return {
@@ -240,7 +241,8 @@ function buildWorkerStatusChangedPayload(input: {
     queue: buildWorkerQueueSocketPayload(
       input.queue,
       input.workerCode,
-      input.assignment ?? null
+      input.assignment ?? null,
+      input.team_scan_readiness ?? null
     ),
     reason: input.reason,
     ...(input.extraPayload ?? {}),

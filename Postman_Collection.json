@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "0f55f6b6-4a4f-4f5f-8b75-9f5d37a07f38",
     "name": "Labor Project Backend",
-    "description": "Postman collection for Labor Project Backend. baseUrl defaults to http://localhost:8080 for local development — change the baseUrl/wsBaseUrl variables to the shared droplet's domain (see README > Deploying to DigitalOcean) to test against the shared dev/test deployment instead.\nEvery request shows its contract explicitly in that request: method, URL, required headers, query params, and body.\nProtected requests use Header: Authorization: Bearer {{accessToken}}.\nRun Auth > POST /api/auth/login first to get AccessToken and RefreshToken.",
+    "description": "Postman collection for Labor Project Backend. baseUrl defaults to http://localhost:8080 for local development — change the baseUrl/wsBaseUrl variables to the shared droplet's domain (see README > Deploying to DigitalOcean) to test against the shared dev/test deployment instead.\nEvery request shows its contract explicitly in that request: method, URL, required headers, query params, and body.\nProtected requests use Header: Authorization: Bearer {{accessToken}}.\nRun Auth > POST /api/auth/login first to get AccessToken and RefreshToken.\nEvery request also accepts optional X-Request-Id and X-Client-Version headers for log correlation/debugging (added automatically below). X-Client-Type is required only on the /api/auth endpoints that run before an access token exists (login, login/confirm-force, refresh) — see each request's Headers line.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -212,6 +212,18 @@
     {
       "key": "mobileAppVersionId",
       "value": ""
+    },
+    {
+      "key": "clientVersion",
+      "value": "1.0.0",
+      "type": "string",
+      "description": "Example app version sent via the X-Client-Version header (log/debugging only, not required)."
+    },
+    {
+      "key": "clientType",
+      "value": "worker_app",
+      "type": "string",
+      "description": "X-Client-Type value for endpoints where the role isn't known yet (e.g. POST /api/auth/refresh). Switch to admin_webapp when testing an Admin refresh."
     }
   ],
   "item": [
@@ -247,6 +259,24 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "admin_webapp",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -269,7 +299,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Admin username/password only.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. Call GET /api/auth/me after login to fetch admin profile data, permissions, and latest activity."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, admin_webapp), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: Admin username/password only.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. Call GET /api/auth/me after login to fetch admin profile data, permissions, and latest activity."
           },
           "response": []
         },
@@ -302,6 +332,24 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "worker_app",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -324,7 +372,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker CG000004 (กะเช้า 06:00-18:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, worker_app), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: Worker CG000004 (กะเช้า 06:00-18:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
           "response": []
         },
@@ -357,6 +405,24 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "worker_app",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -379,7 +445,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker CG000005 (กะเช้า 06:00-18:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, worker_app), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: Worker CG000005 (กะเช้า 06:00-18:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
           "response": []
         },
@@ -412,6 +478,24 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "worker_app",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -434,7 +518,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker CB000007 (กะเย็น 18:00-06:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, worker_app), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: Worker CB000007 (กะเย็น 18:00-06:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
           "response": []
         },
@@ -467,6 +551,24 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "worker_app",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -489,7 +591,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker CB000144 (กะเย็น 18:00-06:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, worker_app), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: Worker CB000144 (กะเย็น 18:00-06:00 จาก seed) — Password คือเบอร์โทรจาก seed. DeviceId, DeviceName, optional FcmToken, and optional Platform.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn. FcmToken is not returned.\nNotes: Saves AccessToken and RefreshToken into collection variables when login succeeds. If another worker session exists on a different device, saves LoginChallengeToken for POST /api/auth/login/confirm-force. When FcmToken is sent by a worker, backend stores it by WorkerCode + DeviceId + Platform for push notifications. If Mobile does not have an FCM token yet, omit FcmToken here and call POST /api/auth/push-token after Firebase SDK returns the token. Call GET /api/auth/me after login to fetch worker profile data. After successful worker login, open WS /ws/workers, then call POST /api/workers/me/online."
           },
           "response": []
         },
@@ -522,6 +624,24 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "worker_app",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -544,7 +664,7 @@
                 "login"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: Worker username plus password=phone, DeviceId, and DeviceName. FcmToken is intentionally omitted in this example.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Use this when Mobile has not received an FCM token from Firebase SDK yet. After login succeeds and Firebase SDK returns the token, call POST /api/auth/push-token with FcmToken and Platform."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, worker_app), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: Worker username plus password=phone, DeviceId, and DeviceName. FcmToken is intentionally omitted in this example.\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Use this when Mobile has not received an FCM token from Firebase SDK yet. After login succeeds and Firebase SDK returns the token, call POST /api/auth/push-token with FcmToken and Platform."
           },
           "response": []
         },
@@ -575,6 +695,24 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "worker_app",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -598,7 +736,7 @@
                 "confirm-force"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName, optional FcmToken, optional Platform\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken. If FcmToken is sent, backend revokes the old session push token and stores the new token for this WorkerCode. If Mobile does not have an FCM token yet, omit it here and call POST /api/auth/push-token after Firebase SDK returns the token. The push notification sent to the old device (telling it it was signed out) is best-effort only: if it fails for any reason (Firebase/network issues, invalid credential, expired token, etc.), this request still returns 200 and still revokes the old session and creates the new one."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login/confirm-force\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, worker_app), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: JSON: LoginChallengeToken, DeviceId, DeviceName, optional FcmToken, optional Platform\nNotes: Use only after login returns ACTIVE_SESSION_EXISTS with a LoginChallengeToken. If FcmToken is sent, backend revokes the old session push token and stores the new token for this WorkerCode. If Mobile does not have an FCM token yet, omit it here and call POST /api/auth/push-token after Firebase SDK returns the token. The push notification sent to the old device (telling it it was signed out) is best-effort only: if it fails for any reason (Firebase/network issues, invalid credential, expired token, etc.), this request still returns 200 and still revokes the old session and creates the new one."
           },
           "response": []
         },
@@ -629,6 +767,24 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "{{clientType}}",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -651,7 +807,7 @@
                 "refresh"
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/refresh\nAuth: No auth required\nHeaders: Content-Type: application/json\nQuery: None\nBody: JSON: RefreshToken\nNotes: Returns a new AccessToken and RefreshToken."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/refresh\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, {{clientType}}), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: JSON: RefreshToken\nNotes: Returns a new AccessToken and RefreshToken."
           },
           "response": []
         },
@@ -665,6 +821,18 @@
                 "value": "Bearer {{accessToken}}",
                 "type": "text",
                 "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -681,7 +849,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/logout\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Backend reads session_id from access token and revokes that session."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/logout\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: None\nNotes: Backend reads session_id from access token and revokes that session."
           },
           "response": []
         },
@@ -700,6 +868,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -739,6 +919,18 @@
                 "value": "Bearer {{accessToken}}",
                 "type": "text",
                 "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -755,7 +947,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/auth/me\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Returns current account from access token. Response includes role, FullName, and EmployeeCode for both admin and worker. Admin keeps AdminCode/PermissionLevel/permissions. Worker keeps WorkerCode/profile fields. Worker also gets ShiftActive (boolean): true when the worker is currently inside their assigned shift — the same condition POST /api/workers/me/online checks before throwing 403 OutsideWorkShift — so the app can enable/disable the Online button without recomputing the shift-time comparison itself."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/auth/me\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: None\nNotes: Returns current account from access token. Response includes role, FullName, and EmployeeCode for both admin and worker. Admin keeps AdminCode/PermissionLevel/permissions. Worker keeps WorkerCode/profile fields. Worker also gets ShiftActive (boolean): true when the worker is currently inside their assigned shift — the same condition POST /api/workers/me/online checks before throwing 403 OutsideWorkShift — so the app can enable/disable the Online button without recomputing the shift-time comparison itself."
           },
           "response": []
         },
@@ -774,6 +966,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -800,7 +1004,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/auth/me/password\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: CurrentPassword and NewPassword\nNotes: Works for both Admin and Worker. Backend verifies CurrentPassword, hashes NewPassword, keeps the current session active, and revokes other active sessions for the same account."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/auth/me/password\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: CurrentPassword and NewPassword\nNotes: Works for both Admin and Worker. Backend verifies CurrentPassword, hashes NewPassword, keeps the current session active, and revokes other active sessions for the same account."
           },
           "response": []
         }
@@ -819,6 +1023,18 @@
                 "value": "Bearer {{accessToken}}",
                 "type": "text",
                 "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -854,7 +1070,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: WorkerCode, ShirtNumber, FullName, Phone, WorkStartDate, WorkSchedule, Status, UpdatedAt. Shift availability uses only TimeIn and TimeOut; WorkSchedule does not return WorkDate."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users?page=1&limit=20&search=&status=\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: page, limit, search, status\nBody: None\nNotes: Admin only. Lists worker accounts newest first. Response item is trimmed for worker table UI only: WorkerCode, ShirtNumber, FullName, Phone, WorkStartDate, WorkSchedule, Status, UpdatedAt. Shift availability uses only TimeIn and TimeOut; WorkSchedule does not return WorkDate."
           },
           "response": []
         },
@@ -868,6 +1084,18 @@
                 "value": "Bearer {{accessToken}}",
                 "type": "text",
                 "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -885,7 +1113,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}\nQuery: None\nBody: None\nNotes: Admin only. {{workerCode}} must be WorkerCode, for example MN000012. Response is trimmed for worker edit UI: ImageUrl, WorkerCode, FullName, Status, and Details. Details includes Phone, Position, Nationality, ShirtNumber, ShirtType, WorkStartDate, TimeWork, TimeIn, TimeOut, and ShiftName."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: None\nNotes: Admin only. {{workerCode}} must be WorkerCode, for example MN000012. Response is trimmed for worker edit UI: ImageUrl, WorkerCode, FullName, Status, and Details. Details includes Phone, Position, Nationality, ShirtNumber, ShirtType, WorkStartDate, TimeWork, TimeIn, TimeOut, and ShiftName."
           },
           "response": []
         },
@@ -899,6 +1127,18 @@
                 "value": "Bearer {{accessToken}}",
                 "type": "text",
                 "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -968,7 +1208,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary.\nQuery: None\nBody: multipart/form-data. ImageUrl (text, optional) — leave blank or omit entirely for null; the frontend passes a URL string here (e.g. a pre-uploaded CDN link), not a file. Text fields: FullName, Phone, Nationality, ShirtType, ShirtNumber, TimeWork, optional WorkStartDate, Status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. TimeWork Morning uses preset 08:00-18:00 and TimeWork Evening uses preset 18:00-08:00. WorkStartDate is optional; if omitted, backend uses the current Bangkok date. ImageUrl is saved as-is to accounts.image_url — no upload/processing happens server-side for this field. A real binary file upload is still accepted too, via a separate multipart file field named Image (not shown in this example) which the backend saves under /uploads/workers and uses instead of ImageUrl if both are sent."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/admin/users\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}. Do not set Content-Type manually for multipart/form-data; Postman sets the boundary., X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: multipart/form-data. ImageUrl (text, optional) — leave blank or omit entirely for null; the frontend passes a URL string here (e.g. a pre-uploaded CDN link), not a file. Text fields: FullName, Phone, Nationality, ShirtType, ShirtNumber, TimeWork, optional WorkStartDate, Status.\nResponse: message only, Worker created successfully.\nNotes: Admin only. username defaults to WorkerCode generated from nationality + ShirtType + ShirtNumber, such as MN000012. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. Worker password is always the hashed value of phone, and phone is saved to accounts.phone. TimeWork Morning uses preset 08:00-18:00 and TimeWork Evening uses preset 18:00-08:00. WorkStartDate is optional; if omitted, backend uses the current Bangkok date. ImageUrl is saved as-is to accounts.image_url — no upload/processing happens server-side for this field. A real binary file upload is still accepted too, via a separate multipart file field named Image (not shown in this example) which the backend saves under /uploads/workers and uses instead of ImageUrl if both are sent."
           },
           "response": []
         },
@@ -988,6 +1228,18 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -1014,7 +1266,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON fields from worker edit UI: ImageUrl/img, WorkerCode, FullName, Phone, Nationality, Status, Position, ShirtNumber, ShirtType, optional WorkStartDate, TimeIn, TimeOut. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. TimeWork cannot be updated in this body. Admin edits only TimeIn and TimeOut; backend derives TimeWork and ShiftName from TimeIn. TimeIn and TimeOut must be time only in HH:mm and must be sent together.\nNotes: Admin only. {{workerCode}} must be WorkerCode. If nationality, ShirtType, or ShirtNumber is sent without WorkerCode, backend regenerates WorkerCode/username from nationality + ShirtType + ShirtNumber, using existing profile values for fields omitted from the request. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{workerCode}}/password."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: JSON fields from worker edit UI: ImageUrl/img, WorkerCode, FullName, Phone, Nationality, Status, Position, ShirtNumber, ShirtType, optional WorkStartDate, TimeIn, TimeOut. nationality accepts Myanmar or Cambodia. ShirtType accepts Navy, Blue, or Green. ShirtNumber is unique and cannot be reused. TimeWork cannot be updated in this body. Admin edits only TimeIn and TimeOut; backend derives TimeWork and ShiftName from TimeIn. TimeIn and TimeOut must be time only in HH:mm and must be sent together.\nNotes: Admin only. {{workerCode}} must be WorkerCode. If nationality, ShirtType, or ShirtNumber is sent without WorkerCode, backend regenerates WorkerCode/username from nationality + ShirtType + ShirtNumber, using existing profile values for fields omitted from the request. status inactive revokes active worker sessions. Password reset remains separate at PATCH /api/admin/users/{{workerCode}}/password."
           },
           "response": []
         },
@@ -1034,6 +1286,18 @@
                 "value": "application/json",
                 "type": "text",
                 "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -1061,7 +1325,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}/password\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json\nQuery: None\nBody: JSON: NewPassword\nNotes: Admin only. {{workerCode}} must be WorkerCode. Resets worker password and revokes worker sessions."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/users/{{workerCode}}/password\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: JSON: NewPassword\nNotes: Admin only. {{workerCode}} must be WorkerCode. Resets worker password and revokes worker sessions."
           },
           "response": []
         }
@@ -1079,6 +1343,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -1115,6 +1391,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -1162,6 +1450,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -1220,6 +1520,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -1305,6 +1617,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -1370,6 +1694,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -1436,6 +1772,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -1502,6 +1850,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -1550,6 +1910,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -1595,6 +1967,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -1641,6 +2025,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -1690,6 +2086,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -1735,6 +2143,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -1780,6 +2200,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "description": "Admin Audit worker performance for today using Asia/Bangkok business date.",
@@ -1811,6 +2243,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "description": "Admin Audit worker performance for one worker today.",
@@ -1848,6 +2292,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "description": "Admin Audit worker performance for a Bangkok date range.",
@@ -1889,6 +2345,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "description": "Admin Audit worker performance for one worker in a Bangkok date range.",
@@ -1939,6 +2407,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -1973,6 +2453,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -2011,6 +2503,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2057,6 +2561,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -2100,6 +2616,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -2139,6 +2667,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2168,6 +2708,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2204,6 +2756,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -2244,6 +2808,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2278,6 +2854,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -2334,6 +2922,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -2390,6 +2990,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -2440,6 +3052,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2482,6 +3106,18 @@
                 "key": "Accept",
                 "value": "text/event-stream",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2498,7 +3134,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/events\nAuth: Admin access token\nPermission: jobs:read\nHeaders: Authorization: Bearer {{accessToken}}, Accept: text/event-stream\nBody: None\nNotes: Admin-only SSE stream. It stays open and receives realtime dashboard events. Snapshot/latest state should still be loaded from Admin REST APIs."
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/events\nAuth: Admin access token\nPermission: jobs:read\nHeaders: Authorization: Bearer {{accessToken}}, Accept: text/event-stream, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nBody: None\nNotes: Admin-only SSE stream. It stays open and receives realtime dashboard events. Snapshot/latest state should still be loaded from Admin REST APIs."
           },
           "response": []
         }
@@ -2564,7 +3200,20 @@
           ],
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/gate/options",
               "host": [
@@ -2643,6 +3292,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -2680,7 +3341,7 @@
                 }
               ]
             },
-            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create credentials with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json\nBody: One request per Business Ticket (TicketNo), always against exactly one MarketCode. TicketNumber and TicketNo must both be exactly 14 digits, numbers only. A vehicle (TicketNumber) may generate multiple Business Tickets over time as it unloads at different markets — send the same TicketNumber again with a new TicketNo; no duplicate vehicle job is created. TicketNo is scoped to one market: sending the same TicketNo again under the same TicketNumber and the same MarketCode (while that Ticket is still active) appends the new Booths/Products into the existing Business Ticket instead of creating a new one. Appending a BoothCode that already exists in that Ticket is rejected with GATE_BOOTH_ALREADY_EXISTS_IN_TICKET, and appending after that Ticket's worker roster is already locked is rejected with GATE_TICKET_ROSTER_LOCKED. Sending the same TicketNo again for a *different* MarketCode is always rejected with GATE_TICKET_ALREADY_EXISTS. If a Ticket was created with wrong data (wrong market, needs a full redo), an Admin must cancel it first (POST /api/admin/vehicle-jobs/assignment/cancel with TicketNumber+TicketNo); once cancelled, that exact TicketNo becomes free again and Gate can resend it under the same TicketNumber (any MarketCode) to create a brand-new Business Ticket — the cancelled Ticket is kept untouched as history. WorkerCount for a Ticket is the MAX (not sum) across every product in every booth of that Ticket, recomputed as the MAX between the Ticket's current value and this request's own MAX. Required root fields: TicketNumber, TicketNo, TicketCreatedAt, BoothCount, MarketCode, LicensePlate, LicensePlateProvince, VehicleTypeCode, VehicleTypeName, Booths, Dispatch. Gate does not send a ticket count — the number of active Business Tickets under a TicketNumber is simply however many active markets have a Ticket. Each Booth requires BoothCode and Products. Each Product requires ProductCode, PackageCode, Quantity. BoothCount must equal Booths.length. BoothCode cannot be duplicated in the same request. ProductCode + PackageCode cannot be duplicated inside the same booth.\nFinancial boundary: Gate Quantity is operational/dispatch quantity only. The backend may snapshot the applicable Master rate internally at Gate Create, but Gate Create does not calculate or expose StallPayment, WorkerPayment, OrderRemainder, Fund, or final financial amounts. Financialization happens only after worker-confirmed quantities are vendor-confirmed or auto-confirmed.\nResponse: Result, TicketNumber, Ticket, Market, Booths with operational product data, WorkerCount for dispatch, and Qr (DriverQrToken only, shared across the whole vehicle). Workers check in by scanning the barcode already printed on the physical Gate paper ticket (Ticket.TicketNo) — no separate QR field is generated. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload.\nIdempotency: Gate transaction ref is derived from the full request payload (not just TicketNumber+TicketNo), because the same TicketNumber+TicketNo+MarketCode can legitimately be sent again with different content to append. Same payload returns REPLAYED. Same TicketNumber+TicketNo+MarketCode with different content is appended rather than rejected.\nVehicle closing: since Gate never signals \"more Tickets coming,\" intake for a vehicle closes automatically as soon as its first Business Ticket is created. Once every known Business Ticket's booths are terminal, the vehicle job completes and its workers return to queue automatically. There is no separate close endpoint.\nNotes: Saves gateResult, ticketNumber, ticketNo, marketCode, first BoothCode, first ProductCode, first PackageCode, workerCount, and driverQrToken into collection variables."
+            "description": "Method: POST\nURL: {{baseUrl}}/api/gate/tickets\nAuth: Gate Basic Auth using {{gateClientId}} / {{gateClientSecret}}. Create credentials with Admin Settings > POST /api/admin/gate-clients first.\nHeaders: Content-Type: application/json, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nBody: One request per Business Ticket (TicketNo), always against exactly one MarketCode. TicketNumber and TicketNo must both be exactly 14 digits, numbers only. A vehicle (TicketNumber) may generate multiple Business Tickets over time as it unloads at different markets — send the same TicketNumber again with a new TicketNo; no duplicate vehicle job is created. TicketNo is scoped to one market: sending the same TicketNo again under the same TicketNumber and the same MarketCode (while that Ticket is still active) appends the new Booths/Products into the existing Business Ticket instead of creating a new one. Appending a BoothCode that already exists in that Ticket is rejected with GATE_BOOTH_ALREADY_EXISTS_IN_TICKET, and appending after that Ticket's worker roster is already locked is rejected with GATE_TICKET_ROSTER_LOCKED. Sending the same TicketNo again for a *different* MarketCode is always rejected with GATE_TICKET_ALREADY_EXISTS. If a Ticket was created with wrong data (wrong market, needs a full redo), an Admin must cancel it first (POST /api/admin/vehicle-jobs/assignment/cancel with TicketNumber+TicketNo); once cancelled, that exact TicketNo becomes free again and Gate can resend it under the same TicketNumber (any MarketCode) to create a brand-new Business Ticket — the cancelled Ticket is kept untouched as history. WorkerCount for a Ticket is the MAX (not sum) across every product in every booth of that Ticket, recomputed as the MAX between the Ticket's current value and this request's own MAX. Required root fields: TicketNumber, TicketNo, TicketCreatedAt, BoothCount, MarketCode, LicensePlate, LicensePlateProvince, VehicleTypeCode, VehicleTypeName, Booths, Dispatch. Gate does not send a ticket count — the number of active Business Tickets under a TicketNumber is simply however many active markets have a Ticket. Each Booth requires BoothCode and Products. Each Product requires ProductCode, PackageCode, Quantity. BoothCount must equal Booths.length. BoothCode cannot be duplicated in the same request. ProductCode + PackageCode cannot be duplicated inside the same booth.\nFinancial boundary: Gate Quantity is operational/dispatch quantity only. The backend may snapshot the applicable Master rate internally at Gate Create, but Gate Create does not calculate or expose StallPayment, WorkerPayment, OrderRemainder, Fund, or final financial amounts. Financialization happens only after worker-confirmed quantities are vendor-confirmed or auto-confirmed.\nResponse: Result, TicketNumber, Ticket, Market, Booths with operational product data, WorkerCount for dispatch, and Qr (DriverQrToken only, shared across the whole vehicle). Workers check in by scanning the barcode already printed on the physical Gate paper ticket (Ticket.TicketNo) — no separate QR field is generated. Ticket.Status is derived from Dispatch only: true = unload_now, false = waiting_unload.\nIdempotency: Gate transaction ref is derived from the full request payload (not just TicketNumber+TicketNo), because the same TicketNumber+TicketNo+MarketCode can legitimately be sent again with different content to append. Same payload returns REPLAYED. Same TicketNumber+TicketNo+MarketCode with different content is appended rather than rejected.\nVehicle closing: since Gate never signals \"more Tickets coming,\" intake for a vehicle closes automatically as soon as its first Business Ticket is created. Once every known Business Ticket's booths are terminal, the vehicle job completes and its workers return to queue automatically. There is no separate close endpoint.\nNotes: Saves gateResult, ticketNumber, ticketNo, marketCode, first BoothCode, first ProductCode, first PackageCode, workerCount, and driverQrToken into collection variables."
           },
           "response": []
         }
@@ -2711,6 +3372,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -2749,6 +3422,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{driverSessionToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2779,6 +3464,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{driverSessionToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2811,7 +3508,20 @@
           "name": "GET Worker App Version Check",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/workers/app-version/check?platform=android&version=1.3.0&build_number=10300",
               "host": [
@@ -2854,6 +3564,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2885,6 +3607,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2924,6 +3658,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2953,6 +3699,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -2983,6 +3741,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -3013,6 +3783,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -3061,6 +3843,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{accessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -3098,6 +3892,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -3138,6 +3944,18 @@
                 "key": "Authorization",
                 "value": "Bearer {{workerAccessToken}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "url": {
@@ -3185,6 +4003,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -3231,6 +4061,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -3269,6 +4111,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -3307,6 +4161,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -3340,7 +4206,20 @@
           "name": "GET /api/line/dev",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/line/dev",
               "host": [
@@ -3363,7 +4242,20 @@
           "name": "GET /api/line/dev/submissions",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/line/dev/submissions",
               "host": [
@@ -3392,6 +4284,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
@@ -3433,6 +4337,18 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
               }
             ],
             "body": {
