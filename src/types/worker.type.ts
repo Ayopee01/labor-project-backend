@@ -72,6 +72,8 @@ export type WorkerSocketEventOptions = {
 // Type ค่า reason สำหรับปิด attendance ของ worker
 export type WorkerShiftCloseReason =
   | "worker_offline"
+  | "worker_logout"
+  | "admin_session_revoked"
   | "shift_ended"
   | "assignment_timeout_limit_reached"
   | "ticket_delivered_after_shift_end";

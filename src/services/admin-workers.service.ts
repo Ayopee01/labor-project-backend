@@ -8,6 +8,7 @@ import * as vehicleJobRepository from "../repositories/shared/vehicle-job.reposi
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
+import { closeWorkerAttendanceShift } from "./shared/worker-attendance.service";
 import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import { writeSecurityAuditLog, diffChangedFields } from "./shared/security-audit-log.service";
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
@@ -213,12 +214,63 @@ function assertNormalizedPhoneHasDigits(normalizedPhone: string): void {
   }
 }
 
-// Function เพิกถอน worker sessions ใน service flow
+// Function เพิกถอน worker sessions ใน service flow — พร้อมล้างสถานะคิว/ปิด shift ให้กลับเป็น open_app
+// ไปด้วยถ้า worker ยังอยู่ในคิว online อยู่ (ready/assigned/waiting_team/working/break) กัน worker ค้าง
+// โชว์เป็น online ใน dashboard ต่อไปทั้งที่ session ถูก revoke ไปแล้ว
 async function revokeWorkerSessions(
-  workerId: number,
+  worker: MasterWorkerDto,
   connection?: DbConnection
 ): Promise<void> {
-  await workerSessionRepository.revokeActiveByWorkerId(workerId, connection);
+  await workerSessionRepository.revokeActiveByWorkerId(worker.id, connection);
+
+  const [currentQueueEntry, currentAssignment] = await Promise.all([
+    getWorkerQueueStatus(worker.id),
+    assignmentRepository.findCurrentAssignmentByWorker(worker.id),
+  ]);
+
+  if (
+    !currentQueueEntry ||
+    currentQueueEntry.status === WORKER_WORK_STATUS.OPEN_APP
+  ) {
+    return;
+  }
+
+  const currentSchedule = scheduleFromWorker(worker);
+
+  if (currentQueueEntry.status === WORKER_WORK_STATUS.BREAK && currentSchedule) {
+    await removeWorkerBreakReturn(worker.id, currentSchedule.id);
+  }
+
+  if (currentSchedule) {
+    const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
+
+    await closeWorkerAttendanceShift(
+      worker,
+      currentSchedule,
+      shiftInstanceKey,
+      "admin_session_revoked",
+      connection
+    );
+  }
+
+  const queueEntry = await markWorkerOpenApp(worker.id);
+
+  sendWorkerSocketEvent(worker.id, "WORKER_STATUS_CHANGED", {
+    queue: buildWorkerQueueSocketPayload(
+      queueEntry,
+      worker.labor_code,
+      currentAssignment
+    ),
+    reason: "admin_session_revoked",
+  });
+  publishAdminWorkerStatusChanged({
+    title: "Worker session revoked",
+    message: `Worker ${worker.full_name} was moved to open_app after admin revoked their session.`,
+    workerCode: worker.labor_code,
+    queue: queueEntry,
+    assignment: currentAssignment,
+    reason: "admin_session_revoked",
+  });
 }
 
 // Function สร้าง user ใน service flow
@@ -436,7 +488,7 @@ export async function updateUser(
       );
 
       if (status === "inactive") {
-        await revokeWorkerSessions(worker.id, transaction);
+        await revokeWorkerSessions(worker, transaction);
       }
     }
 
@@ -531,7 +583,7 @@ export async function resetPassword(
       await hashPassword(newPassword),
       transaction
     );
-    await revokeWorkerSessions(worker.id, transaction);
+    await revokeWorkerSessions(worker, transaction);
 
     await writeSecurityAuditLog(
       {

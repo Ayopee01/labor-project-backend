@@ -1,8 +1,10 @@
 import { accountRepository, sessionRepository } from "../repositories/auth.repository";
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import * as workerSessionRepository from "../repositories/shared/worker-session.repository";
+import { getWorkerQueueStatus } from "../queues/worker-queue";
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
 import { getAccountPermissions } from "./shared/account-permission.service";
+import { performWorkerOfflineCascade } from "./worker.service";
 import { registerWorkerPushToken as registerWorkerPushTokenForSession, registerWorkerPushTokenForAccount, revokeWorkerPushTokensBySession, sendWorkerPushNotificationToSession } from "./shared/worker-push.service";
 import { diffChangedFields, writeSecurityAuditLog, writeSecurityAuditLogBestEffort } from "./shared/security-audit-log.service";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
@@ -12,6 +14,7 @@ import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shar
 import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto, UpdateLangResponse } from "../types/auth.type";
 import type { DbConnection } from "../types/shared/common.type";
 import type { AccountDto, MasterWorkerDto } from "../types/admin-workers.type";
+import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
 import { parseWithSchema } from "../validation/parser";
 import { changeOwnPasswordBodySchema, confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema, updateOwnLangBodySchema, updateOwnProfileBodySchema } from "../validation/schemas";
@@ -836,6 +839,28 @@ export async function logout(
 
   if (auth.role === WORKER_ROLE) {
     const worker = await masterWorkerRepository.findById(auth.account_id);
+    const currentQueueEntry = await getWorkerQueueStatus(auth.account_id);
+
+    if (
+      worker &&
+      currentQueueEntry &&
+      currentQueueEntry.status !== WORKER_WORK_STATUS.OPEN_APP
+    ) {
+      try {
+        await performWorkerOfflineCascade(worker, "worker_logout");
+      } catch (error) {
+        logger.error(
+          "Failed to auto go-offline during worker logout.",
+          { error, accountId: worker.id },
+        );
+
+        throw new ApiError(
+          409,
+          "WORKER_STILL_ONLINE",
+          "Worker must go offline before logging out.",
+        );
+      }
+    }
 
     await withTransaction(async (transaction) => {
       await workerSessionRepository.revoke(auth.session_id, transaction);

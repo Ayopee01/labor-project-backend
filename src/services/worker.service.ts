@@ -25,7 +25,8 @@ import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import { buildWorkerDailySummary, closeWorkerAttendanceShift, markWorkerAttendanceOnline, scheduleWorkerShiftEndIfNeeded } from "./shared/worker-attendance.service";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { GateTicketDto, TicketCompletionResponse, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleWorkReadinessDto, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerProductPackageOptionsResponse, WorkerQueueEntryDto, WorkerStatusResponse } from "../types/worker.type";
+import type { MasterWorkerDto } from "../types/admin-workers.type";
+import type { GateTicketDto, TicketCompletionResponse, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleWorkReadinessDto, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerProductPackageOptionsResponse, WorkerQueueEntryDto, WorkerShiftCloseReason, WorkerStatusResponse } from "../types/worker.type";
 import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import type { DbConnection } from "../types/shared/common.type";
@@ -659,11 +660,11 @@ export async function workerOnline(
   return response;
 }
 
-// Function จัดการ worker offline ใน service flow
-export async function workerOffline(
-  auth?: AccessTokenPayload,
+// Function รวมตรรกะปิดกะ/อัปเดตคิว/แจ้งเตือน admin เมื่อ worker ออกจากสถานะ online (ใช้ซ้ำได้ทั้งจาก workerOffline และ auto-cascade ตอน logout)
+export async function performWorkerOfflineCascade(
+  account: MasterWorkerDto,
+  reason: WorkerShiftCloseReason = "worker_offline",
 ): Promise<WorkerOnlineResponse> {
-  const account = await requireWorker(auth);
   const [currentSchedule, currentQueueEntry, currentAssignment] =
     await Promise.all([
       workScheduleRepository.findCurrentByAccountId(account.id),
@@ -685,7 +686,7 @@ export async function workerOffline(
       account,
       currentSchedule,
       shiftInstanceKey,
-      "worker_offline",
+      reason,
     );
   }
 
@@ -713,6 +714,15 @@ export async function workerOffline(
   });
 
   return response;
+}
+
+// Function จัดการ worker offline ใน service flow
+export async function workerOffline(
+  auth?: AccessTokenPayload,
+): Promise<WorkerOnlineResponse> {
+  const account = await requireWorker(auth);
+
+  return performWorkerOfflineCascade(account, "worker_offline");
 }
 
 // Function จัดการ worker break ใน service flow
