@@ -132,6 +132,8 @@ const requestKeyMap: Record<string, string> = {
   ScannedAt: "scanned_at",
   ScannedTicketNo: "scanned_ticket_no",
   ScanStatus: "scan_status",
+  ServerTime: "server_time",
+  ServerTimeUnixMs: "server_time_unix_ms",
   ShiftActive: "shift_active",
   ShirtNumber: "shirt_number",
   ShirtType: "shirt_type",
@@ -317,6 +319,25 @@ export function toPascalCasePayload(value: unknown): unknown {
   return transformObjectKeys(value, toPascalCaseKey);
 }
 
+// Function แปะเวลาปัจจุบันของ server ลงใน response — ให้ frontend เอาไปคำนวณ offset เทียบกับเวลา
+// เครื่อง(Device) เอง แก้ปัญหา countdown เพี้ยนตอน Device เวลาไม่ตรงกับ server ทำที่จุดนี้จุดเดียวเพราะ
+// pascalCaseApiResponse ครอบ res.json ของทุก route (รวม error response) อยู่แล้ว ไม่ต้องไปเติมทีละ
+// endpoint — ใส่เฉพาะตอน body เป็น plain object เท่านั้น (ไม่แตะ array/primitive เพราะไม่มีที่ให้แปะ
+// โดยไม่เปลี่ยนรูปร่าง response เดิม)
+function withServerTime(body: unknown): unknown {
+  if (!isPlainObject(body)) {
+    return body;
+  }
+
+  const now = new Date();
+
+  return {
+    ...body,
+    server_time: now.toISOString(),
+    server_time_unix_ms: now.getTime(),
+  };
+}
+
 // Function ข้าม casing middleware สำหรับ Swagger และ route static upload
 function shouldSkipCaseMiddleware(req: Request): boolean {
   return req.path.startsWith("/api-docs") || req.path.startsWith("/uploads") || req.path.startsWith("/storage");
@@ -351,6 +372,7 @@ export function pascalCaseApiResponse(
 
   const originalJson = res.json.bind(res);
 
-  res.json = ((body: unknown) => originalJson(toPascalCasePayload(body))) as Response["json"];
+  res.json = ((body: unknown) =>
+    originalJson(toPascalCasePayload(withServerTime(body)))) as Response["json"];
   next();
 }

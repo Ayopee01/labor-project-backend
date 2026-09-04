@@ -314,11 +314,17 @@ export function sendWorkerSocketEvent(
       return;
     }
 
+    const now = new Date();
+    // server_time/server_time_unix_ms คู่กับ occurred_at เดิม (ค่าเดียวกัน) เพื่อให้ชื่อ field ตรงกับ
+    // REST response (api-case.middleware.ts) — frontend ใช้คำนวณ offset เทียบเวลาเครื่องได้แบบเดียวกัน
+    // ไม่ว่าจะรับข้อมูลผ่าน REST หรือ WebSocket
     const event = toPascalCasePayload({
       type,
       notification,
       payload,
-      occurred_at: new Date().toISOString(),
+      occurred_at: now.toISOString(),
+      server_time: now.toISOString(),
+      server_time_unix_ms: now.getTime(),
     });
     const message = JSON.stringify(event);
 

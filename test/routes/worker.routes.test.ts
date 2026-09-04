@@ -274,7 +274,13 @@ test("POST /api/workers/me/online puts worker into queue", async () => {
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(Object.keys(response.body).sort(), ["code", "message", "statusCode"]);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "code",
+    "message",
+    "server_time",
+    "server_time_unix_ms",
+    "statusCode",
+  ]);
   assert.equal(response.body.statusCode, 200);
   assert.equal(response.body.code, "WORKER_ONLINE_SUCCESS");
   assert.equal(response.body.message, "Worker entered queue successfully.");
@@ -294,7 +300,13 @@ test("POST /api/workers/me/online dispatches an existing ready job when queue wa
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(Object.keys(response.body).sort(), ["code", "message", "statusCode"]);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "code",
+    "message",
+    "server_time",
+    "server_time_unix_ms",
+    "statusCode",
+  ]);
   assert.equal(response.body.statusCode, 200);
   assert.equal(response.body.code, "WORKER_ONLINE_SUCCESS");
   assert.equal(response.body.message, "Worker entered queue successfully.");
@@ -471,7 +483,13 @@ test("GET /api/workers/me/assignments/history filters by inclusive Bangkok date 
   );
 
   assert.equal(response.status, 200);
-  assert.deepEqual(Object.keys(response.body).sort(), ["data", "date", "summary"]);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "data",
+    "date",
+    "server_time",
+    "server_time_unix_ms",
+    "summary",
+  ]);
   assert.equal(response.body.date, "2026-08-01");
   assert.deepEqual(
     response.body.data.map((item: { ticket_number: string }) => item.ticket_number),
@@ -849,7 +867,13 @@ test("POST /api/workers/me/offline returns queue exit success status", async () 
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(Object.keys(response.body).sort(), ["code", "message", "statusCode"]);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "code",
+    "message",
+    "server_time",
+    "server_time_unix_ms",
+    "statusCode",
+  ]);
   assert.equal(response.body.statusCode, 200);
   assert.equal(response.body.code, "WORKER_OFFLINE_SUCCESS");
   assert.equal(response.body.message, "Worker left queue successfully.");
@@ -911,6 +935,8 @@ test("POST /api/workers/me/break returns worker break summary", async () => {
     "break_count_limit",
     "break_count_used",
     "full_name",
+    "server_time",
+    "server_time_unix_ms",
     "status",
     "worker_code",
   ]);
@@ -970,7 +996,13 @@ test("POST /api/workers/me/online ends break early and removes pending break ret
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(Object.keys(response.body).sort(), ["code", "message", "statusCode"]);
+  assert.deepEqual(Object.keys(response.body).sort(), [
+    "code",
+    "message",
+    "server_time",
+    "server_time_unix_ms",
+    "statusCode",
+  ]);
   assert.equal(response.body.statusCode, 200);
   assert.equal(response.body.code, "WORKER_ONLINE_SUCCESS");
   assert.equal(response.body.message, "Worker entered queue successfully.");
@@ -1101,6 +1133,8 @@ test("GET /api/workers/me/status returns worker profile and shift", async () => 
     "image_url",
     "nationality",
     "phone",
+    "server_time",
+    "server_time_unix_ms",
     "shift",
     "shift_active",
     "status",
@@ -1549,6 +1583,8 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     "markets",
     "scan_deadline_at",
     "scan_deadline_unix_ms",
+    "server_time",
+    "server_time_unix_ms",
     "shirt_number",
     "team",
     "ticket_number",
@@ -1784,6 +1820,8 @@ test("POST /api/workers/me/assignments/check-in-barcode scans correct barcode", 
 
   assert.equal(response.status, 200);
   assert.deepEqual(Object.keys(response.body).sort(), [
+    "server_time",
+    "server_time_unix_ms",
     "status",
     "teamScan",
     "ticket_number",
@@ -2296,6 +2334,8 @@ test("POST /api/workers/me/assignments/tickets/complete submits quantities for v
     "marketName",
     "message",
     "rejectedAt",
+    "server_time",
+    "server_time_unix_ms",
     "status",
     "submission_status",
     "ticketCompletedAt",

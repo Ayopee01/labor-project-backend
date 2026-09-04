@@ -50,8 +50,16 @@ function writeSseEvent(
   data: unknown
 ): void {
   try {
+    const now = new Date();
+    // server_time/server_time_unix_ms ให้ frontend คำนวณ offset เทียบเวลาเครื่องได้เหมือนฝั่ง REST/
+    // WebSocket (api-case.middleware.ts, worker.socket.ts) — ใส่เฉพาะตอน data เป็น plain object
+    const eventData =
+      data && typeof data === "object" && !Array.isArray(data)
+        ? { ...data, server_time: now.toISOString(), server_time_unix_ms: now.getTime() }
+        : data;
+
     response.write(`event: ${eventName}\n`);
-    response.write(`data: ${JSON.stringify(toPascalCasePayload(data))}\n\n`);
+    response.write(`data: ${JSON.stringify(toPascalCasePayload(eventData))}\n\n`);
   } catch (error) {
     logger.error("Failed to write SSE event.", { error });
   }

@@ -243,6 +243,8 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force allows connected wor
   assert.deepEqual(Object.keys(response.body).sort(), [
     "full_name",
     "message",
+    "server_time",
+    "server_time_unix_ms",
     "status",
     "worker_code",
   ]);

@@ -54,6 +54,8 @@ test("POST /api/auth/login allows admin login without device fields", async () =
     "access_token",
     "expires_in",
     "refresh_token",
+    "server_time",
+    "server_time_unix_ms",
     "token_type",
   ]);
   assert.equal(response.body.account, undefined);
@@ -165,6 +167,8 @@ test("GET /api/auth/me returns only the admin profile fields", async () => {
     "phone",
     "position",
     "role",
+    "server_time",
+    "server_time_unix_ms",
     "status",
   ]);
   assert.equal(response.body.full_name, admin.full_name);
@@ -216,6 +220,8 @@ test("GET /api/auth/me returns current worker account from access token", async 
     "access_token",
     "expires_in",
     "refresh_token",
+    "server_time",
+    "server_time_unix_ms",
     "token_type",
   ]);
   assert.equal(login.body.account, undefined);
@@ -231,6 +237,8 @@ test("GET /api/auth/me returns current worker account from access token", async 
     "nationality",
     "phone",
     "role",
+    "server_time",
+    "server_time_unix_ms",
     "shift",
     "shirt_number",
     "shirt_type",
@@ -269,10 +277,14 @@ test("PATCH /api/auth/me/lang updates current account language", async () => {
   });
 
   assert.equal(update.status, 200);
-  assert.deepEqual(update.body, {
-    message: "Language updated successfully.",
-    lang: "EN",
-  });
+  assert.deepEqual(Object.keys(update.body).sort(), [
+    "lang",
+    "message",
+    "server_time",
+    "server_time_unix_ms",
+  ]);
+  assert.equal(update.body.message, "Language updated successfully.");
+  assert.equal(update.body.lang, "EN");
 
   const me = await server.request("GET", "/api/auth/me", {
     token: login.body.access_token,
