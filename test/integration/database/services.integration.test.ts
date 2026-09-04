@@ -146,6 +146,51 @@ test(
       });
 
       assert.equal(list.pagination.total, 1);
+
+      const byWorkerCode = await userService.listUsers({
+        page: 1,
+        limit: 20,
+        worker_code: workerCode.slice(0, 4).toLowerCase(),
+      });
+
+      assert.equal(byWorkerCode.pagination.total, 1);
+      assert.equal(byWorkerCode.data[0].worker_code, workerCode);
+
+      const byFullName = await userService.listUsers({
+        page: 1,
+        limit: 20,
+        full_name: "service worker",
+      });
+
+      assert.ok(byFullName.data.some((item) => item.worker_code === workerCode));
+
+      const byShirtNumber = await userService.listUsers({
+        page: 1,
+        limit: 20,
+        shirt_number: shirtNumber,
+      });
+
+      assert.equal(byShirtNumber.pagination.total, 1);
+      assert.equal(byShirtNumber.data[0].worker_code, workerCode);
+
+      const byShiftMatch = await userService.listUsers({
+        page: 1,
+        limit: 20,
+        worker_code: workerCode,
+        shift: "MORNING",
+      });
+
+      assert.equal(byShiftMatch.pagination.total, 1);
+
+      const byShiftMismatch = await userService.listUsers({
+        page: 1,
+        limit: 20,
+        worker_code: workerCode,
+        shift: "EVENING",
+      });
+
+      assert.equal(byShiftMismatch.pagination.total, 0);
+
       const createdUser = list.data[0];
       assert.equal(createdUser.worker_code, workerCode);
       assert.equal((createdUser as { id?: number }).id, undefined);

@@ -7,7 +7,7 @@ import { getAccountPermissions } from "./shared/account-permission.service";
 import { performWorkerOfflineCascade } from "./worker.service";
 import { registerWorkerPushToken as registerWorkerPushTokenForSession, registerWorkerPushTokenForAccount, revokeWorkerPushTokensBySession, sendWorkerPushNotificationToSession } from "./shared/worker-push.service";
 import { diffChangedFields, writeSecurityAuditLog, writeSecurityAuditLogBestEffort } from "./shared/security-audit-log.service";
-import { sendWorkerSocketEvent } from "../websockets/worker.socket";
+import { disconnectWorkerSocket, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import { deleteAdminProfileImageLocal as deleteAdminProfileImageByUrl } from "../config/local-storage";
 import { withTransaction } from "../db/prisma";
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
@@ -882,6 +882,15 @@ export async function logout(
         transaction
       );
     });
+
+    try {
+      await disconnectWorkerSocket(auth.account_id, "worker_logout");
+    } catch (error) {
+      logger.error(
+        "Failed to disconnect worker socket after logout.",
+        { error, accountId: auth.account_id },
+      );
+    }
 
     return {
       message: "Logged out successfully.",

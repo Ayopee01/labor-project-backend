@@ -8,7 +8,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import { findActiveById as findActiveWorkerSessionById } from "../repositories/shared/worker-session.repository";
 import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
-import { getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";
+import { clearWorkerPresence, getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";
 import { buildWorkerNotification, persistWorkerNotification, publishNotification } from "../services/notifications.service";
 import { sendWorkerPushNotificationByWorkerIds } from "../services/shared/worker-push.service";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
@@ -180,19 +180,18 @@ function unregisterWorkerSocket(socket: WorkerSocket): void {
   disconnectTimers.set(accountId, timer);
 }
 
-// Function จัดการ socket worker หลุดหลังหมด grace โดยไม่เปลี่ยนสถานะคิวงาน
-async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> {
-  disconnectTimers.delete(accountId);
-
-  if (isWorkerSocketConnected(accountId)) {
-    return;
-  }
-
+// Function สร้าง + กระจาย WORKER_CONNECTION_CHANGED ไปหา admin ใน service flow — ใช้ร่วมกันทั้งตอน
+// connect, disconnect ตามธรรมชาติ (หลัง grace period), และ force-disconnect (logout/admin revoke)
+async function publishWorkerConnectionChanged(
+  accountId: number,
+  connected: boolean,
+  reason: string,
+): Promise<void> {
   const [assignment, queueEntry, worker] = await Promise.all([
     findCurrentAssignmentByWorker(accountId),
     getWorkerQueueStatus(accountId),
     masterWorkerRepository.findById(accountId).catch((error: unknown) => {
-      logger.error("Failed to load worker profile for disconnect event.", { error });
+      logger.error("Failed to load worker profile for WebSocket connection event.", { error });
       return null;
     }),
   ]);
@@ -201,19 +200,60 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
 
   publishNotification({
     type: "WORKER_CONNECTION_CHANGED",
-    title: "Worker socket disconnected",
-    message: `Worker ${workerCode ?? accountId} socket disconnected.`,
+    title: connected ? "Worker socket connected" : "Worker socket disconnected",
+    message: `Worker ${workerCode ?? accountId} socket ${connected ? "connected" : "disconnected"}.`,
     payload: {
       worker_code: workerCode,
-      socket_connected: false,
+      socket_connected: connected,
       queue: queueEntry ? buildWorkerQueueSocketPayload(queueEntry, workerCode, assignment) : null,
       assignment_status: assignment?.status ?? null,
-      reason: "socket_disconnected",
+      reason,
     },
     audience: {
       roles: ["admin"],
     },
   });
+}
+
+// Function จัดการ socket worker หลุดหลังหมด grace โดยไม่เปลี่ยนสถานะคิวงาน
+async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> {
+  disconnectTimers.delete(accountId);
+
+  if (isWorkerSocketConnected(accountId)) {
+    return;
+  }
+
+  await publishWorkerConnectionChanged(accountId, false, "socket_disconnected");
+}
+
+// Function ตัดการเชื่อมต่อ socket ของ worker คนหนึ่งจากฝั่ง server ทันที ใน Worker WebSocket — ใช้ตอน
+// session ถูก revoke แบบชัดเจน (logout/admin revoke) เพื่อให้ admin เห็นว่า worker หลุดการเชื่อมต่อทันที
+// ไม่ต้องรอ grace period 15 วิที่ออกแบบไว้กันกรณีเน็ตกระตุกเท่านั้น
+export async function disconnectWorkerSocket(
+  accountId: number,
+  reason: string,
+): Promise<void> {
+  const sockets = workerSockets.get(accountId);
+
+  if (sockets && sockets.size > 0) {
+    for (const socket of sockets) {
+      // เคลียร์ workerId ก่อนปิด กัน close handler เดิม (unregisterWorkerSocket) ไปตั้ง grace timer ซ้ำ
+      // ซึ่งจะ publish WORKER_CONNECTION_CHANGED ซ้ำอีกรอบตอน 15 วิให้หลัง
+      socket.workerId = undefined;
+      socket.close();
+    }
+    workerSockets.delete(accountId);
+  }
+
+  const timer = disconnectTimers.get(accountId);
+
+  if (timer) {
+    clearTimeout(timer);
+    disconnectTimers.delete(accountId);
+  }
+
+  await clearWorkerPresence(accountId);
+  await publishWorkerConnectionChanged(accountId, false, reason);
 }
 
 // Function ส่ง worker socket event ใน Worker WebSocket
@@ -376,35 +416,17 @@ export function isWorkerSocketConnected(accountId: number): boolean {
 async function handleWorkerSocketConnected(accountId: number): Promise<void> {
   await recordWorkerHeartbeat(accountId);
 
-  const [assignment, queueEntry, worker] = await Promise.all([
-    findCurrentAssignmentByWorker(accountId),
-    getWorkerQueueStatus(accountId),
-    masterWorkerRepository.findById(accountId).catch((error: unknown) => {
-      logger.error("Failed to load worker profile for WebSocket connection.", { error });
-      return null;
-    }),
-  ]);
+  const worker = await masterWorkerRepository.findById(accountId).catch((error: unknown) => {
+    logger.error("Failed to load worker profile for WebSocket connection.", { error });
+    return null;
+  });
   const workerCode = worker?.labor_code ?? null;
 
   sendWorkerSocketEvent(accountId, "WORKER_CONNECTED", {
     worker_code: workerCode,
   });
 
-  publishNotification({
-    type: "WORKER_CONNECTION_CHANGED",
-    title: "Worker socket connected",
-    message: `Worker ${workerCode ?? accountId} socket connected.`,
-    payload: {
-      worker_code: workerCode,
-      socket_connected: true,
-      queue: queueEntry ? buildWorkerQueueSocketPayload(queueEntry, workerCode, assignment) : null,
-      assignment_status: assignment?.status ?? null,
-      reason: "socket_connected",
-    },
-    audience: {
-      roles: ["admin"],
-    },
-  });
+  await publishWorkerConnectionChanged(accountId, true, "socket_connected");
 }
 
 // Function ตั้งค่า worker web socket ใน Worker WebSocket

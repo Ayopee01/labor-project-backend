@@ -85,6 +85,29 @@ paths:
               - active
               - inactive
           description: Filter by account status.
+        - in: query
+          name: worker_code
+          schema:
+            type: string
+          description: Filter by partial, case-insensitive match on worker code.
+        - in: query
+          name: full_name
+          schema:
+            type: string
+          description: Filter by partial, case-insensitive match on full name.
+        - in: query
+          name: shirt_number
+          schema:
+            type: string
+          description: Filter by partial, case-insensitive match on shirt number.
+        - in: query
+          name: shift
+          schema:
+            type: string
+            enum:
+              - MORNING
+              - EVENING
+          description: Filter by work shift.
       responses:
         "200":
           description: Paginated worker list.
@@ -92,6 +115,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserListResponse"
+        "400":
+          description: Invalid query parameters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Missing or invalid access token.
           content:

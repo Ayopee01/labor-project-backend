@@ -5,11 +5,19 @@ import { client, requireMapped, toId } from "./shared/repository-utils";
 
 import type { Prisma } from "@prisma/client";
 import type { DbConnection } from "../types/shared/common.type";
-import type { MasterWorkerCreateInput, MasterWorkerDto, MasterWorkerUpdateInput, UserListFilters } from "../types/admin-workers.type";
+import type { MasterWorkerCreateInput, MasterWorkerDto, MasterWorkerUpdateInput, UserListFilters, UserListShift } from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
 const SEARCH_MODE = "insensitive" as const;
+
+// ค่า timeWork จริงบน MasterWorker ที่ query shift MORNING/EVENING ต้อง map ไปหา — ใช้ค่าเดียวกับ
+// TIME_WORK_PRESETS ใน utils/shift.ts ที่กำหนดตอนสร้าง/แก้ไข worker เพื่อให้ filter ตรงกับ shift_name
+// ที่ response แสดงผลจริงเสมอ
+const USER_LIST_SHIFT_TO_TIME_WORK: Record<UserListShift, "Morning" | "Evening"> = {
+  MORNING: "Morning",
+  EVENING: "Evening",
+};
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -58,6 +66,31 @@ function buildWorkerWhere(filters: Partial<UserListFilters> = {}): Prisma.Master
 
   if (filters.search) {
     where.OR = buildWorkerSearchWhere(filters.search);
+  }
+
+  if (filters.worker_code) {
+    where.laborCode = {
+      contains: filters.worker_code,
+      mode: SEARCH_MODE,
+    };
+  }
+
+  if (filters.full_name) {
+    where.fullName = {
+      contains: filters.full_name,
+      mode: SEARCH_MODE,
+    };
+  }
+
+  if (filters.shirt_number) {
+    where.coatNo = {
+      contains: filters.shirt_number,
+      mode: SEARCH_MODE,
+    };
+  }
+
+  if (filters.shift) {
+    where.timeWork = USER_LIST_SHIFT_TO_TIME_WORK[filters.shift];
   }
 
   return where;

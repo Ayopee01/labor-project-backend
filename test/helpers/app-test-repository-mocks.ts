@@ -2866,6 +2866,65 @@ function matchesWorkerStatusFilter(worker: MasterWorkerRecord, status?: string):
   return status === "active" ? worker.status === 1 : worker.status !== 1;
 }
 
+const USER_LIST_SHIFT_TO_TIME_WORK: Record<string, string> = {
+  MORNING: "Morning",
+  EVENING: "Evening",
+};
+
+function matchesUserListFilters(
+  worker: MasterWorkerRecord,
+  filters: {
+    status?: string;
+    search?: string;
+    worker_code?: string;
+    full_name?: string;
+    shirt_number?: string;
+    shift?: string;
+  },
+): boolean {
+  if (!matchesWorkerStatusFilter(worker, filters.status)) {
+    return false;
+  }
+
+  if (filters.search) {
+    const needle = filters.search.toLowerCase();
+
+    if (
+      !worker.labor_code.toLowerCase().includes(needle) &&
+      !(worker.full_name ?? "").toLowerCase().includes(needle)
+    ) {
+      return false;
+    }
+  }
+
+  if (
+    filters.worker_code &&
+    !worker.labor_code.toLowerCase().includes(filters.worker_code.toLowerCase())
+  ) {
+    return false;
+  }
+
+  if (
+    filters.full_name &&
+    !(worker.full_name ?? "").toLowerCase().includes(filters.full_name.toLowerCase())
+  ) {
+    return false;
+  }
+
+  if (
+    filters.shirt_number &&
+    !(worker.coat_no ?? "").toLowerCase().includes(filters.shirt_number.toLowerCase())
+  ) {
+    return false;
+  }
+
+  if (filters.shift && worker.time_work !== USER_LIST_SHIFT_TO_TIME_WORK[filters.shift]) {
+    return false;
+  }
+
+  return true;
+}
+
 const baseMasterWorkerRepositoryMock = {
   findById: async (workerId: number | string) =>
     state.workers.get(Number(workerId)) ?? null,
@@ -3064,46 +3123,33 @@ export const adminWorkersRepositoryMock = {
     listUsers: async (filters: {
       status?: string;
       search?: string;
+      worker_code?: string;
+      full_name?: string;
+      shirt_number?: string;
+      shift?: string;
       offset?: number;
       limit?: number;
     }) => {
-      let workers = Array.from(state.workers.values()).sort(
-        (left, right) => right.id - left.id,
-      );
-
-      workers = workers.filter((worker) =>
-        matchesWorkerStatusFilter(worker, filters.status),
-      );
-
-      if (filters.search) {
-        const needle = filters.search.toLowerCase();
-
-        workers = workers.filter(
-          (worker) =>
-            worker.labor_code.toLowerCase().includes(needle) ||
-            (worker.full_name ?? "").toLowerCase().includes(needle),
-        );
-      }
+      const workers = Array.from(state.workers.values())
+        .sort((left, right) => right.id - left.id)
+        .filter((worker) => matchesUserListFilters(worker, filters));
 
       const offset = filters.offset ?? 0;
       const limit = filters.limit ?? workers.length;
 
       return workers.slice(offset, offset + limit);
     },
-    countUsers: async (filters: { status?: string; search?: string }) => {
-      let workers = Array.from(state.workers.values()).filter((worker) =>
-        matchesWorkerStatusFilter(worker, filters.status),
+    countUsers: async (filters: {
+      status?: string;
+      search?: string;
+      worker_code?: string;
+      full_name?: string;
+      shirt_number?: string;
+      shift?: string;
+    }) => {
+      const workers = Array.from(state.workers.values()).filter((worker) =>
+        matchesUserListFilters(worker, filters),
       );
-
-      if (filters.search) {
-        const needle = filters.search.toLowerCase();
-
-        workers = workers.filter(
-          (worker) =>
-            worker.labor_code.toLowerCase().includes(needle) ||
-            (worker.full_name ?? "").toLowerCase().includes(needle),
-        );
-      }
 
       return workers.length;
     },

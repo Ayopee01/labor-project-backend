@@ -84,6 +84,61 @@ test("GET /api/admin/users returns Phone alongside existing fields for every wor
   assert.equal(item.status, worker.status === 1 ? "active" : "inactive");
 });
 
+test("GET /api/admin/users filters by worker_code, full_name, shirt_number, and shift", async () => {
+  const { token } = await loginJobAdmin(9720);
+  const morningWorker = addWorker(9721);
+  const eveningWorker = addWorker(9722);
+  eveningWorker.time_work = "Evening";
+
+  const byWorkerCode = await server.request(
+    "GET",
+    `/api/admin/users?worker_code=${morningWorker.labor_code.toLowerCase()}`,
+    { token },
+  );
+
+  assert.equal(byWorkerCode.status, 200);
+  assert.equal(byWorkerCode.body.data.length, 1);
+  assert.equal(byWorkerCode.body.data[0].worker_code, morningWorker.labor_code);
+
+  const byFullName = await server.request(
+    "GET",
+    `/api/admin/users?full_name=${encodeURIComponent(morningWorker.full_name ?? "")}`,
+    { token },
+  );
+
+  assert.equal(byFullName.status, 200);
+  assert.equal(byFullName.body.data.length, 1);
+  assert.equal(byFullName.body.data[0].worker_code, morningWorker.labor_code);
+
+  const byShirtNumber = await server.request(
+    "GET",
+    `/api/admin/users?shirt_number=${morningWorker.coat_no}`,
+    { token },
+  );
+
+  assert.equal(byShirtNumber.status, 200);
+  assert.equal(byShirtNumber.body.data.length, 1);
+  assert.equal(byShirtNumber.body.data[0].worker_code, morningWorker.labor_code);
+
+  const byShift = await server.request("GET", "/api/admin/users?shift=EVENING", {
+    token,
+  });
+
+  assert.equal(byShift.status, 200);
+  assert.equal(byShift.body.data.length, 1);
+  assert.equal(byShift.body.data[0].worker_code, eveningWorker.labor_code);
+});
+
+test("GET /api/admin/users returns 400 for an invalid shift value", async () => {
+  const { token } = await loginJobAdmin(9730);
+
+  const response = await server.request("GET", "/api/admin/users?shift=NIGHT", {
+    token,
+  });
+
+  assert.equal(response.status, 400);
+});
+
 test("GET /api/admin/users returns Phone as null when the worker has none on file", async () => {
   const { token } = await loginJobAdmin(9710);
   const worker = addWorker(9711);

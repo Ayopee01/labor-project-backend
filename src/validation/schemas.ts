@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS } from "../config/permission.config";
 import { SHIRT_COLOR_SNAPSHOT, VEHICLE_OPERATION_STATUS } from "../constants/job-status";
-import { ACCOUNT_ROLES } from "../types/admin-workers.type";
+import { ACCOUNT_ROLES, USER_LIST_SHIFTS } from "../types/admin-workers.type";
 import { GATE_CLIENT_STATUSES } from "../types/shared/gate-client.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import { WORKER_NATIONALITIES, WORKER_SHIRT_TYPES } from "../utils/worker-code";
@@ -1113,11 +1113,20 @@ const limitQuerySchema = z.preprocess(
   z.coerce.number().int().min(1).max(100).default(20)
 );
 
+const optionalUserListShiftSchema = z.preprocess(
+  emptyStringToUndefined,
+  z.enum(USER_LIST_SHIFTS).optional()
+);
+
 export const paginationQuerySchema = z.object({
   page: pageQuerySchema,
   limit: limitQuerySchema,
   search: optionalLowercaseString,
   status: optionalActiveStatusSchema,
+  worker_code: optionalTrimmedString,
+  full_name: optionalTrimmedString,
+  shirt_number: optionalTrimmedString,
+  shift: optionalUserListShiftSchema,
 });
 
 /* -------------------------------------- Token Schemas -------------------------------------- */

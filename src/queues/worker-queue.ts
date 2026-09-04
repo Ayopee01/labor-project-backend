@@ -341,6 +341,12 @@ export async function recordWorkerHeartbeat(
   }, staleAfterSeconds);
 }
 
+// Function ล้าง worker presence ใน Redis/BullMQ queue — ใช้ตอน session ถูก revoke แบบชัดเจน (logout/admin
+// revoke) กันไม่ให้ presence ค้างเป็น online ต่อจนกว่า TTL จะหมดอายุเอง
+export async function clearWorkerPresence(accountId: number): Promise<void> {
+  await redis.del(buildWorkerPresenceKey(accountId));
+}
+
 // Function ดึง worker presence ใน Redis/BullMQ queue
 export async function getWorkerPresence(
   accountId: number

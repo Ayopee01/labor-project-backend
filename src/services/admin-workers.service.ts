@@ -6,7 +6,7 @@ import * as adminActionLogRepository from "../repositories/shared/admin-action-l
 import * as assignmentRepository from "../repositories/shared/vehicle-job-assignment.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
-import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
+import { disconnectWorkerSocket, isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
 import { closeWorkerAttendanceShift } from "./shared/worker-attendance.service";
 import { publishAdminWorkerStatusChanged } from "./notifications.service";
@@ -21,6 +21,7 @@ import { parseWithSchema } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
 import { requireActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
+import { logger } from "../utils/logger";
 import { hashPassword, normalizePhoneDigits } from "../utils/password";
 import { buildShiftWaitInfo, buildWorkScheduleShiftInstanceKey, formatScheduleWithShift, isTimeInWorkSchedule, resolveTimeWorkFromTimeIn, resolveTimeWorkPreset } from "../utils/shift";
 import { buildDeadline, formatBangkokDate, toUnixMs } from "../utils/time";
@@ -229,48 +230,57 @@ async function revokeWorkerSessions(
   ]);
 
   if (
-    !currentQueueEntry ||
-    currentQueueEntry.status === WORKER_WORK_STATUS.OPEN_APP
+    currentQueueEntry &&
+    currentQueueEntry.status !== WORKER_WORK_STATUS.OPEN_APP
   ) {
-    return;
+    const currentSchedule = scheduleFromWorker(worker);
+
+    if (currentQueueEntry.status === WORKER_WORK_STATUS.BREAK && currentSchedule) {
+      await removeWorkerBreakReturn(worker.id, currentSchedule.id);
+    }
+
+    if (currentSchedule) {
+      const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
+
+      await closeWorkerAttendanceShift(
+        worker,
+        currentSchedule,
+        shiftInstanceKey,
+        "admin_session_revoked",
+        connection
+      );
+    }
+
+    const queueEntry = await markWorkerOpenApp(worker.id);
+
+    sendWorkerSocketEvent(worker.id, "WORKER_STATUS_CHANGED", {
+      queue: buildWorkerQueueSocketPayload(
+        queueEntry,
+        worker.labor_code,
+        currentAssignment
+      ),
+      reason: "admin_session_revoked",
+    });
+    publishAdminWorkerStatusChanged({
+      title: "Worker session revoked",
+      message: `Worker ${worker.full_name} was moved to open_app after admin revoked their session.`,
+      workerCode: worker.labor_code,
+      queue: queueEntry,
+      assignment: currentAssignment,
+      reason: "admin_session_revoked",
+    });
   }
 
-  const currentSchedule = scheduleFromWorker(worker);
-
-  if (currentQueueEntry.status === WORKER_WORK_STATUS.BREAK && currentSchedule) {
-    await removeWorkerBreakReturn(worker.id, currentSchedule.id);
-  }
-
-  if (currentSchedule) {
-    const shiftInstanceKey = buildWorkScheduleShiftInstanceKey(currentSchedule);
-
-    await closeWorkerAttendanceShift(
-      worker,
-      currentSchedule,
-      shiftInstanceKey,
-      "admin_session_revoked",
-      connection
+  // ปิด socket + ล้าง presence เสมอไม่ว่า queue status จะเป็น open_app อยู่แล้วหรือไม่ — worker อาจ
+  // open_app ในคิวแต่ socket ยังเชื่อมต่ออยู่ก็ได้ คนละสถานะกัน
+  try {
+    await disconnectWorkerSocket(worker.id, "admin_session_revoked");
+  } catch (error) {
+    logger.error(
+      "Failed to disconnect worker socket after admin revoked session.",
+      { error, accountId: worker.id },
     );
   }
-
-  const queueEntry = await markWorkerOpenApp(worker.id);
-
-  sendWorkerSocketEvent(worker.id, "WORKER_STATUS_CHANGED", {
-    queue: buildWorkerQueueSocketPayload(
-      queueEntry,
-      worker.labor_code,
-      currentAssignment
-    ),
-    reason: "admin_session_revoked",
-  });
-  publishAdminWorkerStatusChanged({
-    title: "Worker session revoked",
-    message: `Worker ${worker.full_name} was moved to open_app after admin revoked their session.`,
-    workerCode: worker.labor_code,
-    queue: queueEntry,
-    assignment: currentAssignment,
-    reason: "admin_session_revoked",
-  });
 }
 
 // Function สร้าง user ใน service flow
@@ -372,13 +382,17 @@ export async function listUsers(
   query: Record<string, unknown> = {},
   _auth?: AccessTokenPayload
 ) {
-  const { page, limit, search, status } = parseWithSchema(
+  const { page, limit, search, status, worker_code, full_name, shirt_number, shift } = parseWithSchema(
     paginationQuerySchema,
     query
   );
   const filters: UserListFilters = {
     status,
     search,
+    worker_code,
+    full_name,
+    shirt_number,
+    shift,
     offset: (page - 1) * limit,
     limit,
   };

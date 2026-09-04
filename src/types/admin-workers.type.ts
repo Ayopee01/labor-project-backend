@@ -159,9 +159,17 @@ interface PaginationFilters {
   limit: number;
 }
 
+export const USER_LIST_SHIFTS = ["MORNING", "EVENING"] as const;
+
+export type UserListShift = (typeof USER_LIST_SHIFTS)[number];
+
 export interface UserListFilters extends PaginationFilters {
   search?: string;
   status?: AccountStatus;
+  worker_code?: string;
+  full_name?: string;
+  shirt_number?: string;
+  shift?: UserListShift;
 }
 
 export interface PaginationMeta {
