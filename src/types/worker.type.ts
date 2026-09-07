@@ -449,6 +449,14 @@ export interface WorkerCurrentJobTeamScanResponse {
   is_ready: boolean;
 }
 
+// Type สรุปว่าตอนนี้มีคน Accept งานนี้แล้วกี่คนจากที่ต้องการทั้งหมด (ก่อนจะถึงขั้นตอน scan QR)
+export interface WorkerCurrentJobTeamAcceptResponse {
+  workers_required: number;
+  accepted_count: number;
+  remaining_count: number;
+  is_ready: boolean;
+}
+
 export interface WorkerCurrentJobResponse {
   // Type Business Ticket ที่ Worker คนนี้ scan เข้างานจริง
   scanned_ticket_no: string | null;
@@ -466,6 +474,7 @@ export interface WorkerCurrentJobResponse {
   work_started_at: string | null;
   work_started_at_unix_ms: number | null;
   vehicle_type: string | null;
+  team_accept: WorkerCurrentJobTeamAcceptResponse;
   team_scan: WorkerCurrentJobTeamScanResponse;
   markets: WorkerCurrentJobMarketResponse[];
   team: WorkerCurrentJobTeamMemberResponse[];
@@ -507,6 +516,7 @@ export interface WorkerAssignmentAcceptResponse {
   license_plate_province: string | null;
   scan_deadline_at: string | null;
   scan_deadline_unix_ms: number | null;
+  team_accept: WorkerCurrentJobTeamAcceptResponse;
   team: WorkerAssignmentTeamMemberResponse[];
   markets: WorkerAssignmentMarketDto[];
 }

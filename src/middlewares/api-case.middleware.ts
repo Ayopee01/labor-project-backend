@@ -194,6 +194,7 @@ const requestKeyMap: Record<string, string> = {
   WorkerScanWarningBeforeMinutes: "worker_scan_warning_before_minutes",
   WorkersRequired: "workers_required",
   CheckedInCount: "checked_in_count",
+  AcceptedCount: "accepted_count",
   VendorConfirmTimeoutHours: "vendor_confirm_timeout_hours",
   VendorReconfirmTimeoutHours: "vendor_reconfirm_timeout_hours",
   WorkDate: "work_date",

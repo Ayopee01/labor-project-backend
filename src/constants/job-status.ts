@@ -140,6 +140,20 @@ export const SCANNED_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.RELEASED,
 ];
 
+// Config สถานะ assignment ที่นับว่า worker กด Accept งานนี้แล้ว (ไม่ว่าจะ scan ต่อหรือยัง) — ใช้เทียบ
+// กับ workers_required เพื่อบอกว่าตอนนี้มีคน Accept มาแล้วกี่คนจากที่ต้องการทั้งหมด ไม่รวม PENDING
+// (ยังไม่กด Accept) และต้องมี COMPLETED/RELEASED คู่กันเสมอด้วยเหตุผลเดียวกับ SCANNED_ASSIGNMENT_STATUSES
+// ไม่งั้นพอทีมทำงานจนจบและถูก release/complete ไปแล้ว accepted_count จะตกลงย้อนหลังทำให้ readiness ผิด
+export const ACCEPTED_ASSIGNMENT_STATUSES: string[] = [
+  ASSIGNMENT_STATUS.ACCEPTED,
+  ASSIGNMENT_STATUS.SCANNED,
+  ASSIGNMENT_STATUS.WORKING,
+  ASSIGNMENT_STATUS.DELIVERED,
+  ASSIGNMENT_STATUS.REJECT,
+  ASSIGNMENT_STATUS.COMPLETED,
+  ASSIGNMENT_STATUS.RELEASED,
+];
+
 // Config สถานะ assignment ที่ยังเก็บไว้ในหน้าจบงานและประวัติหลัง dispatch สิ้นสุด
 export const FINISHED_ASSIGNMENT_STATUSES: string[] = [
   ASSIGNMENT_STATUS.PENDING,

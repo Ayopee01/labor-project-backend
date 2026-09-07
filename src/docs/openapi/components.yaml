@@ -4962,6 +4962,8 @@
           nullable: true
           description: Same deadline as scan_deadline_at, represented as Unix timestamp in milliseconds for countdown timers.
           example: 1786681800000
+        team_accept:
+          $ref: "#/components/schemas/WorkerTeamAccept"
         team:
           type: array
           items:
@@ -5259,6 +5261,22 @@
         is_ready:
           type: boolean
           example: false
+    WorkerTeamAccept:
+      type: object
+      description: How many of the required workers have pressed Accept so far (independent of whether they have gone on to scan QR check-in yet).
+      properties:
+        workers_required:
+          type: integer
+          example: 3
+        accepted_count:
+          type: integer
+          example: 2
+        remaining_count:
+          type: integer
+          example: 1
+        is_ready:
+          type: boolean
+          example: false
     WorkerCurrentJob:
       type: object
       properties:
@@ -5318,6 +5336,8 @@
           type: string
           nullable: true
           example: Truck
+        team_accept:
+          $ref: "#/components/schemas/WorkerTeamAccept"
         team_scan:
           $ref: "#/components/schemas/WorkerTeamScan"
         markets:

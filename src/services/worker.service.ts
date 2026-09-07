@@ -26,7 +26,7 @@ import { buildWorkerDailySummary, closeWorkerAttendanceShift, markWorkerAttendan
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { MasterWorkerDto } from "../types/admin-workers.type";
-import type { GateTicketDto, TicketCompletionResponse, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerProductPackageOptionsResponse, WorkerQueueEntryDto, WorkerShiftCloseReason, WorkerStatusResponse } from "../types/worker.type";
+import type { GateTicketDto, TicketCompletionResponse, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerCurrentJobTeamAcceptResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerProductPackageOptionsResponse, WorkerQueueEntryDto, WorkerShiftCloseReason, WorkerStatusResponse } from "../types/worker.type";
 import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import type { DbConnection } from "../types/shared/common.type";
@@ -88,6 +88,7 @@ function buildWorkerAssignmentAcceptResponse(
   assignment: VehicleJobAssignmentDto,
   workerCode: string | null,
   coatNo: string | null,
+  acceptedCount: number,
 ): WorkerAssignmentAcceptResponse {
   return {
     ticket_number: detail.vehicle_job.ticket_number,
@@ -98,6 +99,10 @@ function buildWorkerAssignmentAcceptResponse(
     license_plate_province: detail.vehicle_job.license_plate_province,
     scan_deadline_at: assignment.scan_deadline_at,
     scan_deadline_unix_ms: toUnixMs(assignment.scan_deadline_at),
+    team_accept: buildWorkerTeamAcceptResponse(
+      detail.vehicle_job.workers_required,
+      acceptedCount,
+    ),
     team: team.map((member) => ({
       full_name: member.full_name,
       worker_code: member.worker_code,
@@ -150,6 +155,7 @@ function buildWorkerCurrentJobResponse(
   assignment: VehicleJobAssignmentDto,
   teamScan: VehicleWorkReadinessDto,
   scannedTicketNo: string | null,
+  acceptedCount: number,
 ): WorkerCurrentJobResponse {
   return {
     scanned_ticket_no: scannedTicketNo,
@@ -177,6 +183,10 @@ function buildWorkerCurrentJobResponse(
     work_started_at_unix_ms:
       toUnixMs(detail.vehicle_job.work_started_at),
     vehicle_type: detail.vehicle_job.vehicle_type,
+    team_accept: buildWorkerTeamAcceptResponse(
+      detail.vehicle_job.workers_required,
+      acceptedCount,
+    ),
     team_scan: buildWorkerTeamScanResponse(teamScan),
     markets: detail.markets.map((market) => ({
       ticket_no: market.ticket_no,
@@ -213,6 +223,20 @@ function buildWorkerTeamScanResponse(readiness: VehicleWorkReadinessDto) {
     checked_in_count: readiness.checked_in_count,
     remaining_count: readiness.remaining_count,
     is_ready: readiness.is_ready,
+  };
+}
+
+// Function สร้าง response สรุปว่าตอนนี้มีคน Accept งานนี้แล้วกี่คนจากที่ต้องการทั้งหมด
+function buildWorkerTeamAcceptResponse(
+  workersRequired: number,
+  acceptedCount: number,
+): WorkerCurrentJobTeamAcceptResponse {
+  const remainingCount = Math.max(0, workersRequired - acceptedCount);
+  return {
+    workers_required: workersRequired,
+    accepted_count: acceptedCount,
+    remaining_count: remainingCount,
+    is_ready: workersRequired > 0 && acceptedCount >= workersRequired,
   };
 }
 
@@ -964,23 +988,27 @@ export async function getWorkerStatus(
       status === WORKER_WORK_STATUS.WAITING_TEAM ||
       status === WORKER_WORK_STATUS.WORKING)
   ) {
-    const [detail, team, teamScan, scannedEventMetadata] = await Promise.all([
-      vehicleJobRepository.getVehicleJobDetail(
-        currentAssignment.vehicle_job_id,
-      ),
-      assignmentRepository.listVehicleJobAssignmentTeam(
-        currentAssignment.vehicle_job_id,
-      ),
-      assignmentRepository.getVehicleJobTeamScanReadiness(
-        currentAssignment.vehicle_job_id,
-      ),
-      // ดึง TicketNo ที่ worker คนนี้ Scan ไว้กลับมา (บันทึกไว้ตอน scanWorkerAssignment) เพื่อให้
-      // UI แสดงกลับได้ถูกต้องแม้ปิดเปิดแอพใหม่ — คืน null ถ้ายังไม่เคย Scan
-      workerAssignmentEventRepository.findMetadataByAssignmentAndType(
-        currentAssignment.id,
-        WORKER_ASSIGNMENT_EVENT_TYPE.SCANNED,
-      ),
-    ]);
+    const [detail, team, teamScan, scannedEventMetadata, acceptedCount] =
+      await Promise.all([
+        vehicleJobRepository.getVehicleJobDetail(
+          currentAssignment.vehicle_job_id,
+        ),
+        assignmentRepository.listVehicleJobAssignmentTeam(
+          currentAssignment.vehicle_job_id,
+        ),
+        assignmentRepository.getVehicleJobTeamScanReadiness(
+          currentAssignment.vehicle_job_id,
+        ),
+        // ดึง TicketNo ที่ worker คนนี้ Scan ไว้กลับมา (บันทึกไว้ตอน scanWorkerAssignment) เพื่อให้
+        // UI แสดงกลับได้ถูกต้องแม้ปิดเปิดแอพใหม่ — คืน null ถ้ายังไม่เคย Scan
+        workerAssignmentEventRepository.findMetadataByAssignmentAndType(
+          currentAssignment.id,
+          WORKER_ASSIGNMENT_EVENT_TYPE.SCANNED,
+        ),
+        assignmentRepository.countAcceptedAssignments(
+          currentAssignment.vehicle_job_id,
+        ),
+      ]);
     status = resolveWorkerWorkStatus(queueEntry, currentAssignment, teamScan);
     response.status = status;
 
@@ -993,6 +1021,7 @@ export async function getWorkerStatus(
         typeof scannedEventMetadata?.ticket_no === "string"
           ? scannedEventMetadata.ticket_no
           : null,
+        acceptedCount,
       );
     }
   }
@@ -1271,12 +1300,15 @@ export async function acceptWorkerAssignment(
     acceptedAssignment.worker_id,
     acceptedAssignment.scan_deadline_at,
   );
-  const [vehicleJobDetail, team, teamScan] = await Promise.all([
+  const [vehicleJobDetail, team, teamScan, acceptedCount] = await Promise.all([
     vehicleJobRepository.getVehicleJobDetail(acceptedAssignment.vehicle_job_id),
     assignmentRepository.listVehicleJobAssignmentTeam(
       acceptedAssignment.vehicle_job_id,
     ),
     assignmentRepository.getVehicleJobTeamScanReadiness(
+      acceptedAssignment.vehicle_job_id,
+    ),
+    assignmentRepository.countAcceptedAssignments(
       acceptedAssignment.vehicle_job_id,
     ),
   ]);
@@ -1291,6 +1323,7 @@ export async function acceptWorkerAssignment(
     acceptedAssignment,
     account.labor_code,
     account.coat_no,
+    acceptedCount,
   );
   const workerCode = account.labor_code;
 

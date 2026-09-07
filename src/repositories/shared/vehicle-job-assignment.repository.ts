@@ -1,5 +1,5 @@
 // Import Dependencies
-import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, RELEASABLE_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, WORKING_ASSIGNMENT_STATUSES } from "../../constants/job-status";
+import { ACCEPTED_ASSIGNMENT_STATUSES, ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, RELEASABLE_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, WORKING_ASSIGNMENT_STATUSES } from "../../constants/job-status";
 import { withTransaction } from "../../db/prisma";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../../types/shared/worker-assignment-event.type";
 import * as workerAssignmentEventRepository from "./worker-assignment-event.repository";
@@ -166,18 +166,38 @@ export async function countScannedAssignments(
   });
 }
 
+// Function นับ assignment ที่ worker กด Accept งานแล้ว (ไม่ว่าจะ scan ต่อหรือยัง)
+export async function countAcceptedAssignments(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<number> {
+  const db = client(connection);
+  return db.vehicleJobAssignment.count({
+    where: {
+      vehicleJobId,
+      status: {
+        in: ACCEPTED_ASSIGNMENT_STATUSES,
+      },
+    },
+  });
+}
+
 export async function getVehicleJobTeamScanReadiness(
   vehicleJobId: number,
   connection?: DbConnection,
 ): Promise<VehicleWorkReadinessDto> {
   const db = client(connection);
-  const [eligibleCount, checkedInCount] = await Promise.all([
-    db.vehicleJobAssignment.count({
+  // ต้องเทียบกับ vehicleJob.workersRequired (จำนวนที่ต้องการจริง) ไม่ใช่จำนวน assignment
+  // record ที่ถูกสร้างไว้แล้ว (FINISHED_ASSIGNMENT_STATUSES) — ไม่งั้นถ้า dispatch ยัง backfill
+  // worker ไม่ครบตามที่ต้องการ (เช่น ต้องการ 3 คน แต่คิวหาได้แค่ 2) พอ 2 คนที่มี scan ครบ
+  // ระบบจะเข้าใจผิดว่าทีมพร้อมแล้ว ทั้งที่ยังขาดคนตามที่งานต้องการจริง
+  const [vehicleJob, checkedInCount] = await Promise.all([
+    db.vehicleJob.findUnique({
       where: {
-        vehicleJobId,
-        status: {
-          in: FINISHED_ASSIGNMENT_STATUSES,
-        },
+        id: vehicleJobId,
+      },
+      select: {
+        workersRequired: true,
       },
     }),
     db.vehicleJobAssignment.count({
@@ -189,13 +209,14 @@ export async function getVehicleJobTeamScanReadiness(
       },
     }),
   ]);
-  const remainingCount = Math.max(0, eligibleCount - checkedInCount);
+  const workersRequired = vehicleJob?.workersRequired ?? 0;
+  const remainingCount = Math.max(0, workersRequired - checkedInCount);
 
   return {
-    workers_required: eligibleCount,
+    workers_required: workersRequired,
     checked_in_count: checkedInCount,
     remaining_count: remainingCount,
-    is_ready: eligibleCount > 0 && remainingCount === 0,
+    is_ready: workersRequired > 0 && checkedInCount >= workersRequired,
   };
 }
 

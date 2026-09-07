@@ -1587,6 +1587,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
     "server_time_unix_ms",
     "shirt_number",
     "team",
+    "teamAccept",
     "ticket_number",
     "worker_code",
   ]);
@@ -1598,6 +1599,12 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
   assert.equal(response.body.license_plate_province, job.license_plate_province);
   assert.ok(response.body.scan_deadline_at);
   assert.equal(response.body.scan_deadline_unix_ms, Date.parse(response.body.scan_deadline_at));
+  assert.deepEqual(response.body.teamAccept, {
+    workers_required: 1,
+    accepted_count: 1,
+    remainingCount: 0,
+    isReady: true,
+  });
   assert.equal(response.body.team.length, 1);
   assert.deepEqual(Object.keys(response.body.team[0]).sort(), [
     "full_name",

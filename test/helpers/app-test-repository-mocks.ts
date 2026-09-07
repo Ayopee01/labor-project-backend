@@ -45,6 +45,15 @@ const FINISHED_ASSIGNMENT_STATUSES = [
   "COMPLETED",
   "RELEASED",
 ];
+const ACCEPTED_ASSIGNMENT_STATUSES = [
+  "ACCEPTED",
+  "SCANNED",
+  "WORKING",
+  "DELIVERED",
+  "REJECT",
+  "COMPLETED",
+  "RELEASED",
+];
 const RELEASABLE_ASSIGNMENT_STATUSES = ["SCANNED", "WORKING", "DELIVERED"];
 
 /* -------------------------------------- Repository Mocks -------------------------------------- */
@@ -493,6 +502,12 @@ export const workerApplicationRepositoryMock = {
         assignment.vehicle_job_id === vehicleJobId &&
         WORKING_ASSIGNMENT_STATUSES.includes(assignment.status),
     ).length,
+  countAcceptedAssignments: async (vehicleJobId: number) =>
+    state.assignments.filter(
+      (assignment) =>
+        assignment.vehicle_job_id === vehicleJobId &&
+        ACCEPTED_ASSIGNMENT_STATUSES.includes(assignment.status),
+    ).length,
   listVehicleJobAssignmentTeam: async (vehicleJobId: number) =>
     state.assignments
       .filter(
@@ -684,22 +699,19 @@ export const workerApplicationRepositoryMock = {
     };
   },
   getVehicleJobTeamScanReadiness: async (vehicleJobId: number) => {
-    const eligibleAssignments = state.assignments.filter(
+    const job = state.vehicleJobs.find((item) => item.id === vehicleJobId);
+    const workersRequired = job?.workers_required ?? 0;
+    const checkedInCount = state.assignments.filter(
       (assignment) =>
         assignment.vehicle_job_id === vehicleJobId &&
-        FINISHED_ASSIGNMENT_STATUSES.includes(assignment.status),
-    );
-    const checkedInCount = eligibleAssignments.filter((assignment) =>
-      SCANNED_ASSIGNMENT_STATUSES.includes(assignment.status),
+        SCANNED_ASSIGNMENT_STATUSES.includes(assignment.status),
     ).length;
 
     return {
-      workers_required: eligibleAssignments.length,
+      workers_required: workersRequired,
       checked_in_count: checkedInCount,
-      remaining_count: Math.max(0, eligibleAssignments.length - checkedInCount),
-      is_ready:
-        eligibleAssignments.length > 0 &&
-        checkedInCount >= eligibleAssignments.length,
+      remaining_count: Math.max(0, workersRequired - checkedInCount),
+      is_ready: workersRequired > 0 && checkedInCount >= workersRequired,
     };
   },
   activateNextTicketIfReady: async (vehicleJobId: number) =>
@@ -1772,6 +1784,7 @@ const {
   acceptAssignment,
   completeAssignments,
   countActiveAssignments,
+  countAcceptedAssignments,
   countScannedAssignments,
   createAssignment,
   createTicketCompletionSubmission,
@@ -1901,6 +1914,7 @@ export const vehicleJobAssignmentRepositoryMock = {
   findCurrentAssignmentByWorker,
   findAssignmentById,
   countScannedAssignments,
+  countAcceptedAssignments,
   getVehicleJobTeamScanReadiness,
   listVehicleJobAssignmentTeam,
   findCurrentAssignmentByVehicleJobRefAndWorker,
