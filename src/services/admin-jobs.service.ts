@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { withTransaction } from "../db/prisma";
 import { enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning } from "../queues/worker-queue";
-import { dispatchReadyWorkers, returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
+import { autoReleaseVehicleJobWorkersIfShiftEnded, dispatchReadyWorkers, returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as adminActionLogRepository from "../repositories/shared/admin-action-log.repository";
 import * as adminJobsRepository from "../repositories/admin-jobs.repository";
@@ -2912,6 +2912,17 @@ export async function overrideTicketProductCounts(
     logger.error("Failed to notify vendor after admin submitted ticket completion.", {
       ticketId: result.ticket.id,
       submissionId: result.submission.id,
+      error,
+    });
+  }
+
+  // Best-effort เช่นกัน — ถ้ามี Worker คนไหนในทีมของ VehicleJob นี้หมดกะไปแล้ว และทุก Booth ถูกส่งยอด/
+  // ยืนยัน/ยกเลิกครบแล้ว ให้ปล่อยทั้งทีมกลับคิวทันทีโดยไม่ต้องให้ Admin กด release-workers เพิ่มอีกขั้น
+  try {
+    await autoReleaseVehicleJobWorkersIfShiftEnded(vehicleJob, actorId);
+  } catch (error) {
+    logger.error("Failed to auto-release vehicle job workers after admin override count.", {
+      vehicleJobId: vehicleJob.id,
       error,
     });
   }

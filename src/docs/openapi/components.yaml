@@ -5821,6 +5821,10 @@
             - working
             - break
           example: ready
+        is_overtime:
+          type: boolean
+          description: True when the worker's shift schedule has already ended but they still have an active assignment. The worker is kept visible in this list (bypassing the normal in-shift filter) so an admin can intervene manually; the backend does not auto-reset their status in this case.
+          example: false
         assignment:
           type: object
           nullable: true

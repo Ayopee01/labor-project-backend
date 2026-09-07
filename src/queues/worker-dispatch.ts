@@ -1,4 +1,5 @@
 import { withTransaction } from "../db/prisma";
+import * as adminActionLogRepository from "../repositories/shared/admin-action-log.repository";
 import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
 import * as profileRepository from "../repositories/shared/profile.repository";
@@ -15,14 +16,15 @@ import { sendMobileAppForceUpdateNotification, sendMobileAppReleaseNotification 
 import { enqueueWorker, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerShiftEnd, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import type { DbConnection } from "../types/shared/common.type";
-import type { AssignmentAcceptTimeoutResult, CompletedWorkerQueueResult, VehicleJobAssignmentDto } from "../types/worker.type";
+import type { AssignmentAcceptTimeoutResult, CompletedWorkerQueueResult, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 import type { WorkScheduleDto } from "../types/admin-workers.type";
 import { buildWorkScheduleShiftInstanceKey, getWorkScheduleShiftEndDelayMs, isTimeInWorkSchedule } from "../utils/shift";
 import { buildWorkerTicketPayload } from "../utils/ticket-payload";
 import { logger } from "../utils/logger";
 import { buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload, buildWorkerQueueSocketPayload } from "../utils/worker-payload";
-import { ASSIGNMENT_STATUS, TICKET_STATUS } from "../constants/job-status";
+import { ASSIGNMENT_STATUS, SUBMITTED_TICKET_STATUSES, TERMINAL_JOB_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 
@@ -467,6 +469,149 @@ export async function returnCompletedWorkersToQueue(
   return requeuedWorkerCodes;
 }
 
+// Function เรียง assignments ตาม accepted_at (fallback created_at) ให้เป็นลำดับเดียวกับตอนเข้าคิว
+// ครั้งแรก — ใช้เฉพาะตอนปล่อย Worker กลับคิวจาก autoReleaseVehicleJobWorkersIfShiftEnded ด้านล่าง
+function sortAssignmentsByAcceptedAt(
+  assignments: VehicleJobAssignmentDto[]
+): VehicleJobAssignmentDto[] {
+  const priorityAt = (assignment: VehicleJobAssignmentDto): number => {
+    const value = assignment.accepted_at ?? assignment.created_at;
+    const timestamp = value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+
+    return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
+  };
+
+  return [...assignments].sort((left, right) => {
+    const leftPriorityAt = priorityAt(left);
+    const rightPriorityAt = priorityAt(right);
+
+    if (leftPriorityAt !== rightPriorityAt) {
+      return leftPriorityAt - rightPriorityAt;
+    }
+
+    return left.id - right.id;
+  });
+}
+
+// Function พยายามปล่อย Worker ทั้งทีมของ VehicleJob กลับคิวอัตโนมัติหลัง Worker หรือ Admin ส่งยอด ถ้า
+// Worker ทั้งทีมหมดกะไปแล้วทุกคน — ใช้เงื่อนไข eligibility เดียวกับ releaseVehicleJobWorkers (ทุก Booth
+// ต้อง submitted/confirmed/cancelled หมดก่อน) แต่ไม่ throw เมื่อยังไม่พร้อม เพราะเป็น best-effort ต่อท้าย
+// การส่งยอด ไม่ใช่ action ที่ผู้ใช้เรียกตรงๆ — ถ้ามีแค่บางคนในทีมหมดกะ (ไม่ใช่ทั้งทีม) จะไม่ทำอะไรเลย
+// ต้องรอ Admin กด release-workers เองเพื่อปล่อยทั้งทีม (คนหมดกะจะ reset เป็น open_app ส่วนคนที่ยังไม่
+// หมดกะจะกลับเข้า ready queue ตามปกติ) — เรียกได้จากทั้ง admin-jobs.service.ts (Admin ส่งยอดแทน) และ
+// worker.service.ts (Worker ส่งยอดเอง)
+export async function autoReleaseVehicleJobWorkersIfShiftEnded(
+  vehicleJob: Pick<VehicleJobDto, "id" | "ticket_number" | "status">,
+  actorId: number,
+): Promise<void> {
+  if (TERMINAL_JOB_STATUSES.includes(vehicleJob.status)) {
+    return;
+  }
+
+  const releasableAssignments = await withTransaction(async (transaction) => {
+    const lifecycleState = await vehicleJobRepository.findVehicleJobLifecycleState(
+      vehicleJob.id,
+      transaction,
+    );
+    const tickets = (lifecycleState?.marketJobs ?? []).flatMap(
+      (market) => market.tickets,
+    );
+
+    if (tickets.length === 0) {
+      return null;
+    }
+
+    const hasUnresolvedBooth = tickets.some(
+      (ticket) => !SUBMITTED_TICKET_STATUSES.includes(ticket.status),
+    );
+
+    if (hasUnresolvedBooth) {
+      return null;
+    }
+
+    const releasable = sortAssignmentsByAcceptedAt(
+      await assignmentRepository.listReleasableAssignmentsByVehicleJob(
+        vehicleJob.id,
+        transaction,
+      ),
+    );
+
+    if (releasable.length === 0) {
+      return null;
+    }
+
+    const schedules = await Promise.all(
+      releasable.map((assignment) =>
+        workScheduleRepository.findCurrentByAccountId(assignment.worker_id, transaction),
+      ),
+    );
+    // ต้องหมดกะทั้งทีมถึงจะปล่อยอัตโนมัติ — ถ้ามีแค่บางคนหมดกะ ต้องรอ Admin กด release-workers เอง
+    // เพื่อปล่อยทั้งทีม (คนหมดกะจะ reset เป็น open_app ส่วนคนที่ยังไม่หมดกะจะกลับเข้า ready queue ตาม
+    // canReturnToQueue ใน returnCompletedWorkersToQueue อยู่แล้ว)
+    const isWholeTeamShiftEnded = schedules.every(
+      (schedule) => !schedule || !isTimeInWorkSchedule(schedule),
+    );
+
+    if (!isWholeTeamShiftEnded) {
+      return null;
+    }
+
+    await assignmentRepository.releaseAssignments(
+      releasable.map((assignment) => assignment.id),
+      new Date(),
+      transaction,
+    );
+
+    await vehicleJobRepository.updateVehicleJobStatus(
+      vehicleJob.id,
+      VEHICLE_JOB_STATUS.RELEASED,
+      transaction,
+    );
+
+    await adminActionLogRepository.create(
+      {
+        vehicle_job_id: vehicleJob.id,
+        action_type: ADMIN_ACTION_TYPE.WORKERS_RELEASED,
+        reason_code: "auto_released_shift_ended",
+        reason_text: "Auto-released after ticket completion submission because a team member's shift already ended.",
+        actor_account_id: actorId,
+        metadata: {
+          worker_ids: releasable.map((assignment) => assignment.worker_id),
+        },
+      },
+      transaction,
+    );
+
+    return releasable;
+  });
+
+  if (!releasableAssignments) {
+    return;
+  }
+
+  const releasedWorkerAccountIds = releasableAssignments.map(
+    (assignment) => assignment.worker_id,
+  );
+  const releasedWorkerCodes = await returnCompletedWorkersToQueue({
+    vehicle_job: {
+      ticket_number: vehicleJob.ticket_number,
+    },
+    completed_worker_ids: releasedWorkerAccountIds,
+  });
+
+  publishRealtimeEvent({
+    type: "VEHICLE_JOB_WORKERS_RELEASED",
+    title: "Workers released automatically",
+    message: `${releasedWorkerAccountIds.length} worker(s) were auto-released from vehicle job ${vehicleJob.ticket_number} after shift end.`,
+    payload: {
+      ticketNumber: vehicleJob.ticket_number,
+      reason_code: "auto_released_shift_ended",
+      released_worker_codes: releasedWorkerCodes,
+    },
+    admin: true,
+  });
+}
+
 // Function ยืนยัน ticket อัตโนมัติเมื่อส่งยอดแล้วแต่ vendor ไม่ยืนยันภายในเวลาจาก config
 async function handleVendorConfirmationTimeout(input: {
   ticketId?: number;
@@ -628,6 +773,17 @@ async function ejectWorkerForShiftEnd(
   );
 
   if (currentAssignment) {
+    const queue = await getWorkerQueueStatus(workerId);
+
+    publishAdminWorkerStatusChanged({
+      title: "Worker overtime",
+      message: `Worker ${workerCode ?? workerId} shift ended but still has an active assignment.`,
+      workerCode,
+      queue,
+      assignment: currentAssignment,
+      reason: "shift_ended_overtime",
+    });
+
     return;
   }
 

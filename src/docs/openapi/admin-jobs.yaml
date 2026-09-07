@@ -776,6 +776,7 @@
       summary: ส่งยอดสินค้าแทน Worker
       description: >
         Admin ส่งจำนวนสินค้าของ Booth ตาม ticketNumber, ticketNo และ stallCode เมื่อ Worker ส่งเองไม่ได้ ระบบส่งเข้า flow ยืนยันจาก Vendor เหมือนการส่งยอดปกติ
+        หลังส่งสำเร็จ ถ้าทุก Booth ของ VehicleJob นี้ถูกส่งยอด/ยืนยัน/ยกเลิกครบแล้ว และ Worker ทั้งทีมหมดกะไปแล้วทุกคน ระบบจะปล่อยทั้งทีมกลับคิว (เทียบเท่า release-workers) ให้อัตโนมัติโดยไม่ต้องรอ Admin กดแยก — ถ้ามีแค่บางคนในทีมหมดกะ ยังต้องให้ Admin กด release-workers เองเพื่อปล่อยทั้งทีม
       operationId: overrideAdminTicketProductCounts
       security:
         - bearerAuth: []

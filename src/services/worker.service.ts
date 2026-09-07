@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 // Import Dependencies
 import { withTransaction } from "../db/prisma";
 import { decrementWorkerBreakCount, enqueueWorker, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, removeWorkerBreakReturn, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerBreakReturn } from "../queues/worker-queue";
-import { dispatchReadyWorkers, handleAssignmentAcceptTimeout } from "../queues/worker-dispatch";
+import { autoReleaseVehicleJobWorkersIfShiftEnded, dispatchReadyWorkers, handleAssignmentAcceptTimeout } from "../queues/worker-dispatch";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as workerApplicationRepository from "../repositories/worker.repository";
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
@@ -1750,6 +1750,24 @@ async function completeResolvedWorkerTicket(
     logger.error("Failed to notify vendor after ticket completion was submitted.", {
       ticketId: result.ticket.id,
       submissionId: result.submission.id,
+      error,
+    });
+  }
+
+  // Best-effort เช่นกัน — ถ้าทุก Booth ของ VehicleJob นี้ถูกส่งยอด/ยืนยัน/ยกเลิกครบแล้ว และมี Worker คนไหน
+  // ในทีมหมดกะไปแล้ว (ไม่ว่าจะเป็น Worker คนนี้เองหรือเพื่อนร่วมทีม) ให้ปล่อยทั้งทีมกลับคิวทันที เหมือนกับ
+  // ตอน Admin ส่งยอดแทนใน overrideTicketProductCounts — ไม่ต้องรอ Admin กด release-workers เพิ่ม
+  try {
+    const vehicleJob = await vehicleJobRepository.findVehicleJobById(
+      result.ticket.vehicle_job_id,
+    );
+
+    if (vehicleJob) {
+      await autoReleaseVehicleJobWorkersIfShiftEnded(vehicleJob, account.id);
+    }
+  } catch (error) {
+    logger.error("Failed to auto-release vehicle job workers after worker ticket completion.", {
+      vehicleJobId: result.ticket.vehicle_job_id,
       error,
     });
   }

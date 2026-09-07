@@ -766,6 +766,8 @@ function formatAdminWorkerStatusItem(
 ): AdminWorkerStatusItem {
   const scheduleWithShift = formatScheduleWithShift(schedule);
   const status = resolveWorkerWorkStatus(queue, assignment, teamScanReadiness);
+  const isOvertime =
+    assignment !== null && (!schedule || !isTimeInWorkSchedule(schedule));
 
   return {
     full_name: worker.full_name,
@@ -779,6 +781,7 @@ function formatAdminWorkerStatusItem(
     queue_position: status === WORKER_WORK_STATUS.READY && queueRank !== null ? queueRank + 1 : null,
     socket_connected: socketConnected,
     status,
+    is_overtime: isOvertime,
     assignment: assignment
       ? {
           ticket_number: ticketNumber,
@@ -965,11 +968,13 @@ export async function listAdminWorkerStatuses(): Promise<{
         assignment !== null ||
         (queue !== null && queue.status !== WORKER_WORK_STATUS.OPEN_APP);
 
+      const isOvertime = assignment !== null;
+
       return (
         worker.status === 1 &&
         hasVisibleWorkerFlow &&
         schedule !== null &&
-        isTimeInWorkSchedule(schedule)
+        (isTimeInWorkSchedule(schedule) || isOvertime)
       );
     })
     .map(({ item }) => item)

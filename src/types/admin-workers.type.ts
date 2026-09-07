@@ -243,4 +243,5 @@ export type AdminWorkerStatusItem = {
   socket_connected: boolean;
   status: AdminWorkerBoardStatus;
   assignment: AdminWorkerStatusAssignment | null;
+  is_overtime: boolean;
 };
