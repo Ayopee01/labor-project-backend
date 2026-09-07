@@ -2085,166 +2085,179 @@ export const gateRepositoryMock = {
       target_type: "member",
     },
   ],
-  createVehicleJobFromGate: async (
-    input: {
-      ticketNumber: string;
-      license_plate: string;
-      license_plate_province: string;
-      vehicle_type?: string | null;
-      dispatch_now?: boolean;
-      existingMarketJobId?: number;
-      markets: Array<{
-        ticketNo: string;
-        ticket_created_at: Date;
-        booth_count: number;
-        gate_transaction_ref: string;
-        workers_required: number;
-        marketCode: string;
-        marketName: string;
-        dropoff_point?: string | null;
-        booths: Array<{
-          boothCode: string;
-          boothName?: string | null;
-          vendor_line_id?: string | null;
-          reject_reason?: string | null;
-          products: Array<{
-            productCode: string;
-            productName: string;
-            productFullCode: string;
-            packageCode: string;
-            packageName: string;
-            quantity: number;
-            packageWeightSnapshot: string;
-            rateIdSnapshot: number;
-            sourceRateIdSnapshot: number;
-            rateMarketCode: string;
-            rateSource: "MARKET_RATE" | "CENTRAL_RATE";
-            weightRangeName: string;
-            weightMinSnapshot: string;
-            weightMaxSnapshot: string;
-            stallRateSnapshot: string;
-            laborRateSnapshot: string;
-            rateSnapshotAt: Date;
-          }>;
-        }>;
-      }>;
-    },
-    payloadSnapshot: unknown,
-  ) => {
+  // Business decisions (MAX/SUM/dispatch-reopen) now live in gate.service.ts createVehicleJobAndMarketJob
+  // (unmocked, runs for real in route tests) — these mocks are plain in-memory CRUD only, mirroring
+  // the granular persistence functions in src/repositories/gate.repository.ts one-to-one.
+  lockAndFindVehicleJobByRef: async (ticketNumber: string) =>
+    state.vehicleJobs.find((job) => job.ticket_number === ticketNumber) ?? null,
+  createVehicleJob: async (data: {
+    ticketNumber: string;
+    licensePlate: string;
+    licensePlateProvince: string;
+    vehicleType: string | null;
+    workersRequired: number;
+    dispatchNow: boolean;
+    status: string;
+  }) => {
     const now = new Date().toISOString();
-    const dispatchNow = input.dispatch_now === true;
-    const market = input.markets[0];
-    const requestedWorkersRequired = Math.max(1, market.workers_required);
-    let vehicleJob = state.vehicleJobs.find(
-      (job) => job.ticket_number === input.ticketNumber,
-    );
+    const vehicleJobId = Math.max(0, ...state.vehicleJobs.map((job) => job.id)) + 1;
+    const vehicleJob = {
+      id: vehicleJobId,
+      ticket_number: data.ticketNumber,
+      license_plate: data.licensePlate,
+      license_plate_province: data.licensePlateProvince,
+      vehicle_type: data.vehicleType,
+      workers_required: data.workersRequired,
+      dispatch_now: data.dispatchNow,
+      status: data.status,
+      driver_qr_token: `driver-qr-${vehicleJobId}`,
+      expected_ticket_count: null,
+      tickets_closed_at: null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.vehicleJobs.push(vehicleJob);
+    return vehicleJob;
+  },
+  updateVehicleJobDetails: async (
+    vehicleJobId: number,
+    data: {
+      licensePlate: string;
+      licensePlateProvince: string;
+      vehicleType: string | null;
+      dispatchNow: boolean;
+      status: string;
+    },
+  ) => {
+    const vehicleJob = state.vehicleJobs.find((job) => job.id === vehicleJobId);
 
     if (!vehicleJob) {
-      const vehicleJobId =
-        Math.max(0, ...state.vehicleJobs.map((job) => job.id)) + 1;
-      vehicleJob = {
-        id: vehicleJobId,
-        ticket_number: input.ticketNumber,
-        license_plate: input.license_plate,
-        license_plate_province: input.license_plate_province,
-        vehicle_type: input.vehicle_type ?? null,
-        workers_required: requestedWorkersRequired,
-        dispatch_now: dispatchNow,
-        status: dispatchNow ? "WORKING" : "WAIT",
-        driver_qr_token: `driver-qr-${vehicleJobId}`,
-        expected_ticket_count: null,
-        tickets_closed_at: null,
-        created_at: now,
-        updated_at: now,
-      };
-
-      state.vehicleJobs.push(vehicleJob);
-    } else {
-      vehicleJob.license_plate = input.license_plate;
-      vehicleJob.license_plate_province = input.license_plate_province;
-      vehicleJob.vehicle_type = input.vehicle_type ?? null;
-      vehicleJob.dispatch_now = vehicleJob.dispatch_now || dispatchNow;
-      // RELEASED เหมือน WAIT ตรงนี้ — Gate ส่ง booth ใหม่มาให้ TicketNumber ที่เคย release-workers
-      // ไปแล้วต้องเปิด dispatch คืนให้เหมือนตอน WAIT (มีงานใหม่จริงที่ต้องการ worker เพิ่ม)
-      if (
-        dispatchNow &&
-        (vehicleJob.status === "WAIT" || vehicleJob.status === "RELEASED")
-      ) {
-        vehicleJob.status = "WORKING";
-      }
-      vehicleJob.updated_at = now;
+      throw new Error("Vehicle job not found.");
     }
 
-    const marketStatus =
-      vehicleJob.status === "WORKING" || dispatchNow ? "WORKING" : "WAIT";
+    vehicleJob.license_plate = data.licensePlate;
+    vehicleJob.license_plate_province = data.licensePlateProvince;
+    vehicleJob.vehicle_type = data.vehicleType;
+    vehicleJob.dispatch_now = data.dispatchNow;
+    vehicleJob.status = data.status;
+    vehicleJob.updated_at = new Date().toISOString();
+    return vehicleJob;
+  },
+  lockAndFindMarketJobById: async (marketJobId: number) => {
+    const marketJob = state.marketJobs.find((item) => item.id === marketJobId);
 
-    let marketJob: (typeof state.marketJobs)[number];
-    let marketJobId: number;
-
-    if (input.existingMarketJobId !== undefined) {
-      // Gate ส่งแผงชุดใหม่มาเพิ่มเข้า Ticket เดิม (TicketNo + ตลาดเดิม) — บวก boothCount เพิ่ม และ
-      // workers_required ใช้ MAX ระหว่างของเดิมกับของคำขอนี้ (แผงเดิมไม่ถูกแตะ ค่าเดิมยังถูกต้องอยู่)
-      const existing = state.marketJobs.find(
-        (item) => item.id === input.existingMarketJobId,
-      )!;
-
-      existing.booth_count += market.booth_count;
-      existing.workers_required = Math.max(
-        existing.workers_required,
-        requestedWorkersRequired,
-      );
-      existing.gate_transaction_ref = market.gate_transaction_ref;
-      existing.updated_at = now;
-      marketJob = existing;
-      marketJobId = existing.id;
-    } else {
-      marketJobId =
-        Math.max(0, state.nextMarketJobId - 1, ...state.marketJobs.map((m) => m.id)) +
-        1;
-      state.nextMarketJobId = marketJobId + 1;
-
-      marketJob = {
-        id: marketJobId,
-        vehicle_job_id: vehicleJob.id,
-        ticket_no: market.ticketNo,
-        ticket_created_at: market.ticket_created_at.toISOString(),
-        booth_count: market.booth_count,
-        gate_transaction_ref: market.gate_transaction_ref,
-        workers_required: requestedWorkersRequired,
-        marketCode: market.marketCode,
-        marketName: market.marketName,
-        dropoff_point: market.dropoff_point ?? null,
-        status: marketStatus,
-        worker_roster_locked_at: null,
-        final_stall_amount: null,
-        financialized_at: null,
-        completed_at: null,
-        created_at: now,
-        updated_at: now,
-      };
-
-      state.marketJobs.push(marketJob);
+    if (!marketJob) {
+      throw new Error("Market job not found.");
     }
 
-    let ticketId =
-      Math.max(0, ...state.gateTickets.map((ticket) => ticket.id)) + 1;
-    let productId =
-      Math.max(0, ...state.ticketProducts.map((product) => product.id)) + 1;
+    return marketJob;
+  },
+  appendMarketJobBooths: async (
+    marketJobId: number,
+    data: { boothCountIncrement: number; workersRequired: number; gateTransactionRef: string },
+  ) => {
+    const marketJob = state.marketJobs.find((item) => item.id === marketJobId);
 
-    for (const boothInput of market.booths) {
+    if (!marketJob) {
+      throw new Error("Market job not found.");
+    }
+
+    marketJob.booth_count += data.boothCountIncrement;
+    marketJob.workers_required = data.workersRequired;
+    marketJob.gate_transaction_ref = data.gateTransactionRef;
+    marketJob.updated_at = new Date().toISOString();
+    return marketJob;
+  },
+  createMarketJob: async (data: {
+    vehicleJobId: number;
+    ticketNo: string;
+    ticketCreatedAt: Date;
+    boothCount: number;
+    gateTransactionRef: string;
+    workersRequired: number;
+    marketCode: string;
+    marketName: string;
+    dropoffPoint: string | null;
+    status: string;
+  }) => {
+    const now = new Date().toISOString();
+    const marketJobId =
+      Math.max(0, state.nextMarketJobId - 1, ...state.marketJobs.map((m) => m.id)) + 1;
+    state.nextMarketJobId = marketJobId + 1;
+
+    const marketJob = {
+      id: marketJobId,
+      vehicle_job_id: data.vehicleJobId,
+      ticket_no: data.ticketNo,
+      ticket_created_at: data.ticketCreatedAt.toISOString(),
+      booth_count: data.boothCount,
+      gate_transaction_ref: data.gateTransactionRef,
+      workers_required: data.workersRequired,
+      marketCode: data.marketCode,
+      marketName: data.marketName,
+      dropoff_point: data.dropoffPoint,
+      status: data.status,
+      worker_roster_locked_at: null,
+      final_stall_amount: null,
+      financialized_at: null,
+      completed_at: null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.marketJobs.push(marketJob);
+    return marketJob;
+  },
+  createGateTicketsWithProducts: async (
+    vehicleJobId: number,
+    marketJobId: number,
+    booths: Array<{
+      boothCode: string;
+      boothName?: string | null;
+      vendor_line_id?: string | null;
+      reject_reason?: string | null;
+      products: Array<{
+        productCode: string;
+        productName: string;
+        productFullCode: string;
+        packageCode: string;
+        packageName: string;
+        quantity: number;
+        packageWeightSnapshot: string;
+        rateIdSnapshot: number;
+        sourceRateIdSnapshot: number;
+        rateMarketCode: string;
+        rateSource: "MARKET_RATE" | "CENTRAL_RATE";
+        weightRangeName: string;
+        weightMinSnapshot: string;
+        weightMaxSnapshot: string;
+        stallRateSnapshot: string;
+        laborRateSnapshot: string;
+        rateSnapshotAt: Date;
+      }>;
+    }>,
+    ticketStatus: string,
+  ) => {
+    const now = new Date().toISOString();
+    const marketJob = state.marketJobs.find((item) => item.id === marketJobId);
+    let ticketId = Math.max(0, ...state.gateTickets.map((ticket) => ticket.id)) + 1;
+    let productId = Math.max(0, ...state.ticketProducts.map((product) => product.id)) + 1;
+
+    for (const boothInput of booths) {
       const ticket: (typeof state.gateTickets)[number] = {
         id: ticketId++,
-        vehicle_job_id: vehicleJob.id,
+        vehicle_job_id: vehicleJobId,
         market_job_id: marketJobId,
-        marketCode: market.marketCode,
-        marketName: market.marketName,
-        dropoff_point: market.dropoff_point ?? null,
+        marketCode: marketJob?.marketCode,
+        marketName: marketJob?.marketName,
+        dropoff_point: marketJob?.dropoff_point ?? null,
         boothCode: boothInput.boothCode,
         boothName: boothInput.boothName ?? null,
         vendor_line_id: boothInput.vendor_line_id ?? null,
         reject_reason: boothInput.reject_reason ?? null,
-        status: "WAIT",
-        confirmation_status: "WAIT",
+        status: ticketStatus,
+        confirmation_status: ticketStatus,
         created_at: now,
         updated_at: now,
       };
@@ -2295,33 +2308,51 @@ export const gateRepositoryMock = {
         state.ticketProducts.push(ticketProduct);
       });
     }
+  },
+  sumActiveMarketJobWorkersRequired: async (vehicleJobId: number) => {
+    const matching = state.marketJobs.filter(
+      (item) => item.vehicle_job_id === vehicleJobId && item.status !== "CANCELLED",
+    );
 
-    // Worker requirement ของ TicketNumber = ผลรวม (SUM) ของทุก Business Ticket ที่ยัง active
-    // (ไม่นับแถวที่ถูก Admin ยกเลิกไปแล้ว) ห้ามใช้ MAX
-    vehicleJob.workers_required = state.marketJobs
-      .filter(
-        (item) => item.vehicle_job_id === vehicleJob.id && item.status !== "CANCELLED",
-      )
-      .reduce((total, item) => total + item.workers_required, 0);
+    return matching.length === 0
+      ? null
+      : matching.reduce((total, item) => total + item.workers_required, 0);
+  },
+  countActiveMarketJobs: async (vehicleJobId: number) =>
+    state.marketJobs.filter(
+      (item) => item.vehicle_job_id === vehicleJobId && item.status !== "CANCELLED",
+    ).length,
+  finalizeVehicleJob: async (
+    vehicleJobId: number,
+    data: { workersRequired: number; expectedTicketCount: number; ticketsClosedAt: Date },
+  ) => {
+    const vehicleJob = state.vehicleJobs.find((job) => job.id === vehicleJobId);
 
-    // Gate ไม่ส่งจำนวน Ticket มาบอกล่วงหน้าอีกต่อไป — ปิดรับทันทีตั้งแต่ Ticket แรกที่สร้างสำเร็จ
-    // (ตั้งครั้งเดียว) expected_ticket_count เป็นแค่ค่านับ Ticket ที่ active จริง ณ ตอนนี้ไว้แสดงผล
-    vehicleJob.tickets_closed_at = vehicleJob.tickets_closed_at ?? now;
-    vehicleJob.expected_ticket_count = state.marketJobs.filter(
-      (item) => item.vehicle_job_id === vehicleJob.id && item.status !== "CANCELLED",
-    ).length;
+    if (!vehicleJob) {
+      throw new Error("Vehicle job not found.");
+    }
 
+    vehicleJob.workers_required = data.workersRequired;
+    vehicleJob.expected_ticket_count = data.expectedTicketCount;
+    vehicleJob.tickets_closed_at = data.ticketsClosedAt.toISOString();
+    vehicleJob.updated_at = new Date().toISOString();
+    return vehicleJob;
+  },
+  createGateRequestLog: async (data: {
+    gateTransactionRef: string;
+    vehicleJobId: number;
+    marketJobId: number;
+    payloadSnapshot: unknown;
+  }) => {
     state.gateRequestLogs.push({
       id: state.nextGateRequestLogId++,
-      gate_transaction_ref: market.gate_transaction_ref,
-      vehicle_job_id: vehicleJob.id,
-      market_job_id: marketJobId,
-      payload_snapshot: payloadSnapshot,
+      gate_transaction_ref: data.gateTransactionRef,
+      vehicle_job_id: data.vehicleJobId,
+      market_job_id: data.marketJobId,
+      payload_snapshot: data.payloadSnapshot,
       response_snapshot: null,
       created_at: new Date().toISOString(),
     });
-
-    return { vehicleJob, marketJob };
   },
   updateGateRequestResponse: async (
     gateTransactionRef: string,

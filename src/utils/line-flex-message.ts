@@ -6,7 +6,7 @@ import type { LineFlexComponent, LineMessage } from "../types/line.type";
 
 // Import Utils
 import { findTicketMarket } from "./ticket-payload";
-import { BANGKOK_TIME_ZONE } from "./time";
+import { formatBangkokDisplayDate } from "./time";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -56,28 +56,6 @@ function formatQuantity(
     : numberValue
       .toFixed(2)
       .replace(/\.?0+$/, "");
-}
-
-// Function format วันที่ตาม timezone กรุงเทพฯ
-function formatBangkokDisplayDate(
-  value: string | null | undefined
-): string {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-
-  if (!Number.isFinite(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: BANGKOK_TIME_ZONE,
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
 }
 
 // Function สร้างแถว label/value ใน Flex

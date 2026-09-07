@@ -16,18 +16,26 @@ function getClientKey(req: Request): string {
   return req.ip || req.socket.remoteAddress || "unknown";
 }
 
-function readPositiveNumberEnv(name: string, fallback: number): number {
-  const value = Number(process.env[name]);
-
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
 function cleanupExpiredBuckets(now = Date.now()): void {
   for (const [key, bucket] of buckets.entries()) {
     if (bucket.resetAt <= now) {
       buckets.delete(key);
     }
   }
+}
+
+// Function หา bucket ของ key นี้ (สร้างใหม่ถ้ายังไม่มีหรือหมดอายุแล้ว) แล้วนับเพิ่ม 1
+function incrementRateLimitBucket(key: string, windowMs: number): RateLimitBucket {
+  const now = Date.now();
+  const current = buckets.get(key);
+  const bucket =
+    !current || current.resetAt <= now
+      ? { resetAt: now + windowMs, count: 0 }
+      : current;
+
+  bucket.count += 1;
+  buckets.set(key, bucket);
+  return bucket;
 }
 
 function ensureRateLimitCleanupTimer(): void {
@@ -68,16 +76,9 @@ export function rateLimitMiddleware(
 
   const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS);
   const maxRequests = Number(process.env.RATE_LIMIT_MAX_REQUESTS);
-  const now = Date.now();
   const key = getClientKey(req);
-  const current = buckets.get(key);
-  const bucket =
-    !current || current.resetAt <= now
-      ? { resetAt: now + windowMs, count: 0 }
-      : current;
+  const bucket = incrementRateLimitBucket(key, windowMs);
 
-  bucket.count += 1;
-  buckets.set(key, bucket);
   res.setHeader("RateLimit-Limit", String(maxRequests));
   res.setHeader("RateLimit-Remaining", String(Math.max(0, maxRequests - bucket.count)));
   res.setHeader("RateLimit-Reset", String(Math.ceil(bucket.resetAt / 1000)));
@@ -103,8 +104,6 @@ export function stopRateLimitCleanupTimer(): void {
     clearInterval(cleanupTimer);
     cleanupTimer = null;
   }
-
-  stopLoginRateLimitCleanupTimer();
 }
 
 export function cleanupRateLimitBucketsForTest(now = Date.now()): void {
@@ -113,77 +112,4 @@ export function cleanupRateLimitBucketsForTest(now = Date.now()): void {
 
 export function getRateLimitBucketCountForTest(): number {
   return buckets.size;
-}
-
-/* -------------------------------------- Login Rate Limit -------------------------------------- */
-
-// Config Rate Limit เข้มสำหรับ login และ confirm-force-login
-const loginBuckets = new Map<string, RateLimitBucket>();
-const DEFAULT_LOGIN_WINDOW_MS = 60_000;
-const DEFAULT_LOGIN_MAX_REQUESTS = 10;
-let loginCleanupTimer: NodeJS.Timeout | null = null;
-
-function cleanupExpiredLoginBuckets(now = Date.now()): void {
-  for (const [key, bucket] of loginBuckets.entries()) {
-    if (bucket.resetAt <= now) {
-      loginBuckets.delete(key);
-    }
-  }
-}
-
-function ensureLoginRateLimitCleanupTimer(): void {
-  if (loginCleanupTimer) {
-    return;
-  }
-
-  const cleanupIntervalMs = Number(process.env.RATE_LIMIT_CLEANUP_INTERVAL_MS);
-
-  loginCleanupTimer = setInterval(() => cleanupExpiredLoginBuckets(), cleanupIntervalMs);
-  loginCleanupTimer.unref();
-}
-
-export function loginRateLimitMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void {
-  ensureLoginRateLimitCleanupTimer();
-
-  const windowMs = readPositiveNumberEnv("LOGIN_RATE_LIMIT_WINDOW_MS", DEFAULT_LOGIN_WINDOW_MS);
-  const maxRequests = readPositiveNumberEnv(
-    "LOGIN_RATE_LIMIT_MAX_REQUESTS",
-    DEFAULT_LOGIN_MAX_REQUESTS,
-  );
-  const now = Date.now();
-  const key = getClientKey(req);
-  const current = loginBuckets.get(key);
-  const bucket =
-    !current || current.resetAt <= now
-      ? { resetAt: now + windowMs, count: 0 }
-      : current;
-
-  bucket.count += 1;
-  loginBuckets.set(key, bucket);
-
-  if (bucket.count > maxRequests) {
-    res.status(429).json({
-      statusCode: 429,
-      code: "RATE_LIMITED",
-      message: "Too many login attempts. Please try again later.",
-    });
-    return;
-  }
-
-  next();
-}
-
-export function stopLoginRateLimitCleanupTimer(): void {
-  if (loginCleanupTimer) {
-    clearInterval(loginCleanupTimer);
-    loginCleanupTimer = null;
-  }
-}
-
-export function clearLoginRateLimitBuckets(): void {
-  loginBuckets.clear();
 }

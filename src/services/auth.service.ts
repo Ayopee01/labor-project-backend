@@ -378,6 +378,8 @@ export async function login(
     }
 
     const activeSession = await sessionRepository.findActiveByAccountId(account.id);
+    // Admin ตั้งใจให้มี session เดียวเสมอ ไม่ต้องแยกตามอุปกรณ์เหมือน Worker — device_id/device_name ที่
+    // client ส่งมาใน loginBodySchema (schema เดียวกับ Worker) จึงถูกละเว้นเสมอสำหรับ Admin ไม่ใช่บั๊ก
     const sessionDevice = {
       deviceId: getDefaultSessionDeviceId(account),
       deviceName: getDefaultSessionDeviceName(account),
@@ -536,117 +538,10 @@ export async function confirmForceLogin(
     );
   }
 
-  if (challenge.role === WORKER_ROLE) {
-    const oldSession = await workerSessionRepository.findActiveById(challenge.old_session_id);
-
-    if (!oldSession || oldSession.account_id !== challenge.account_id) {
-      throw new ApiError(
-        401,
-        "INVALID_LOGIN_CHALLENGE",
-        "Login challenge session is no longer active."
-      );
-    }
-
-    const worker = await requireActiveWorkerById(
-      challenge.account_id,
-      423,
-      "ACCOUNT_INACTIVE",
-      "Account is inactive."
-    );
-    const notificationPayload = {
-      reason: "force_login",
-      old_device_id: oldSession.device_id,
-      old_device_name: oldSession.device_name,
-      new_device_id: deviceId,
-      new_device_name: deviceName,
-    };
-
-    sendWorkerSocketEvent(worker.id, "SESSION_REVOKED", notificationPayload, {
-      push: false,
-      notificationKey: "auth.session_revoked",
-      notificationParams: notificationPayload,
-      fallbackTitle: "Signed in on another device",
-      fallbackMessage:
-        "This session was signed out because login was confirmed on another device.",
-    });
-    // Best-effort เท่านั้น — แค่แจ้งเตือนอุปกรณ์เดิมว่าถูกดีดออก ไม่ใช่ core ของ force login เอง ห้ามให้
-    // ความล้มเหลวของ FCM (Firebase credential ผิด, token หมดอายุ, network ขัดข้อง ฯลฯ) ทำให้ revoke
-    // session เดิม/สร้าง session ใหม่ด้านล่างไม่เกิดขึ้น
-    await sendWorkerPushNotificationToSession({
-      session_id: oldSession.id,
-      type: "SESSION_REVOKED",
-      title: "Signed in on another device",
-      message:
-        "This session was signed out because login was confirmed on another device.",
-      notification_key: "auth.session_revoked",
-      notification_params: notificationPayload,
-      lang: worker.lang,
-      payload: notificationPayload,
-    }).catch((error) => {
-      logger.warn("Failed to send force-login push notification to previous session.", { error });
-    });
-
-    return withTransaction(async (transaction) => {
-      await workerSessionRepository.revoke(oldSession.id, transaction);
-      await revokeWorkerPushTokensBySession(oldSession.id, transaction);
-
-      const tokens = await createWorkerSession(worker, deviceId, deviceName, transaction);
-      await registerWorkerPushTokenForAccount(
-        {
-          worker_id: worker.id,
-          worker_code: worker.labor_code,
-          session_id: tokens.session.id,
-          device_id: deviceId,
-          platform,
-          fcm_token: fcmToken,
-        },
-        transaction
-      );
-
-      // auth_session_revoked แยกจาก auth_force_login (27.14.1) — session_id คือ target session ที่
-      // ถูก revoke (ต่างจาก auth_force_login ที่ session_id คือ session ใหม่ที่สร้างขึ้น) ใช้
-      // request_id เดียวกันเพื่อ trace 2 event นี้กลับมาหากันได้จาก operation เดียวกัน
-      await writeSecurityAuditLog(
-        {
-          event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_SESSION_REVOKED,
-          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-          actor_type: "worker",
-          actor_worker_id: worker.id,
-          actor_username: worker.labor_code,
-          actor_full_name: worker.full_name,
-          session_id: oldSession.id,
-          ip_address: context.ip_address,
-          user_agent: context.user_agent,
-          request_id: context.request_id,
-          metadata: { revoke_source: "force_login", new_session_id: tokens.session.id },
-        },
-        transaction
-      );
-
-      await writeSecurityAuditLog(
-        {
-          event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_FORCE_LOGIN,
-          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-          actor_type: "worker",
-          actor_worker_id: worker.id,
-          actor_username: worker.labor_code,
-          actor_full_name: worker.full_name,
-          session_id: tokens.session.id,
-          ip_address: context.ip_address,
-          user_agent: context.user_agent,
-          request_id: context.request_id,
-          metadata: { revoked_session_id: oldSession.id },
-        },
-        transaction
-      );
-
-      return buildAuthSuccessResponse(tokens);
-    });
-  }
-
-  const oldSession = await sessionRepository.findActiveById(challenge.old_session_id);
-
-  if (!oldSession || oldSession.account_id !== challenge.account_id) {
+  // Force login รองรับเฉพาะ Worker เท่านั้น — signLoginChallengeToken สร้าง token นี้ด้วย
+  // role: WORKER_ROLE เสมอ (Admin login ไม่มี flow เช็ค device mismatch/สร้าง challenge token) จึงไม่มี
+  // ทางที่ challenge.role จะเป็นอย่างอื่นได้ในทาง flow ปกติ เหลือ guard นี้ไว้กันกรณี token ผิดปกติเท่านั้น
+  if (challenge.role !== WORKER_ROLE) {
     throw new ApiError(
       401,
       "INVALID_LOGIN_CHALLENGE",
@@ -654,29 +549,83 @@ export async function confirmForceLogin(
     );
   }
 
-  const account = await requireActiveAccountById(
+  const oldSession = await workerSessionRepository.findActiveById(challenge.old_session_id);
+
+  if (!oldSession || oldSession.account_id !== challenge.account_id) {
+    throw new ApiError(
+      401,
+      "INVALID_LOGIN_CHALLENGE",
+      "Login challenge session is no longer active."
+    );
+  }
+
+  const worker = await requireActiveWorkerById(
     challenge.account_id,
     423,
     "ACCOUNT_INACTIVE",
     "Account is inactive."
   );
+  const notificationPayload = {
+    reason: "force_login",
+    old_device_id: oldSession.device_id,
+    old_device_name: oldSession.device_name,
+    new_device_id: deviceId,
+    new_device_name: deviceName,
+  };
+
+  sendWorkerSocketEvent(worker.id, "SESSION_REVOKED", notificationPayload, {
+    push: false,
+    notificationKey: "auth.session_revoked",
+    notificationParams: notificationPayload,
+    fallbackTitle: "Signed in on another device",
+    fallbackMessage:
+      "This session was signed out because login was confirmed on another device.",
+  });
+  // Best-effort เท่านั้น — แค่แจ้งเตือนอุปกรณ์เดิมว่าถูกดีดออก ไม่ใช่ core ของ force login เอง ห้ามให้
+  // ความล้มเหลวของ FCM (Firebase credential ผิด, token หมดอายุ, network ขัดข้อง ฯลฯ) ทำให้ revoke
+  // session เดิม/สร้าง session ใหม่ด้านล่างไม่เกิดขึ้น
+  await sendWorkerPushNotificationToSession({
+    session_id: oldSession.id,
+    type: "SESSION_REVOKED",
+    title: "Signed in on another device",
+    message:
+      "This session was signed out because login was confirmed on another device.",
+    notification_key: "auth.session_revoked",
+    notification_params: notificationPayload,
+    lang: worker.lang,
+    payload: notificationPayload,
+  }).catch((error) => {
+    logger.warn("Failed to send force-login push notification to previous session.", { error });
+  });
 
   return withTransaction(async (transaction) => {
-    await sessionRepository.revoke(oldSession.id, transaction);
+    await workerSessionRepository.revoke(oldSession.id, transaction);
+    await revokeWorkerPushTokensBySession(oldSession.id, transaction);
 
-    const tokens = await createAdminSession(account, deviceId, deviceName, transaction);
+    const tokens = await createWorkerSession(worker, deviceId, deviceName, transaction);
+    await registerWorkerPushTokenForAccount(
+      {
+        worker_id: worker.id,
+        worker_code: worker.labor_code,
+        session_id: tokens.session.id,
+        device_id: deviceId,
+        platform,
+        fcm_token: fcmToken,
+      },
+      transaction
+    );
 
-    // auth_session_revoked แยกจาก auth_force_login (27.14.1) — session_id คือ target session ที่ถูก
-    // revoke (ต่างจาก auth_force_login ที่ session_id คือ session ใหม่ที่สร้างขึ้น) ใช้ request_id
-    // เดียวกันเพื่อ trace 2 event นี้กลับมาหากันได้จาก operation เดียวกัน
+    // auth_session_revoked แยกจาก auth_force_login (27.14.1) — session_id คือ target session ที่
+    // ถูก revoke (ต่างจาก auth_force_login ที่ session_id คือ session ใหม่ที่สร้างขึ้น) ใช้
+    // request_id เดียวกันเพื่อ trace 2 event นี้กลับมาหากันได้จาก operation เดียวกัน
     await writeSecurityAuditLog(
       {
         event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_SESSION_REVOKED,
         outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-        actor_type: "admin",
-        actor_account_id: account.id,
-        actor_username: account.username,
-        actor_full_name: account.full_name,
+        actor_type: "worker",
+        actor_worker_id: worker.id,
+        actor_username: worker.labor_code,
+        actor_full_name: worker.full_name,
         session_id: oldSession.id,
         ip_address: context.ip_address,
         user_agent: context.user_agent,
@@ -690,10 +639,10 @@ export async function confirmForceLogin(
       {
         event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_FORCE_LOGIN,
         outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-        actor_type: "admin",
-        actor_account_id: account.id,
-        actor_username: account.username,
-        actor_full_name: account.full_name,
+        actor_type: "worker",
+        actor_worker_id: worker.id,
+        actor_username: worker.labor_code,
+        actor_full_name: worker.full_name,
         session_id: tokens.session.id,
         ip_address: context.ip_address,
         user_agent: context.user_agent,

@@ -6,7 +6,8 @@ import type { SessionDto } from "../../../types/auth.type";
 import type { DriverSessionDto } from "../../../types/driver.type";
 import type { GateTicketDto, MarketJobDto, TicketCompletionSubmissionDto, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto } from "../../../types/worker.type";
 import type { AdminActionLogDto, AdminActionType } from "../../../types/shared/admin-action-log.type";
-import { ACCOUNT_ROLES, type AccountDto, type AccountRole, type MasterWorkerDto, type MasterWorkerSource, type SafeAccountDto, type SafeMasterWorkerDto, type WorkScheduleDto } from "../../../types/admin-workers.type";
+import { ACCOUNT_ROLES, type AccountDto, type AccountRole, type MasterWorkerDto, type MasterWorkerSource, type SafeAccountDto, type WorkScheduleDto } from "../../../types/admin-workers.type";
+import { ACCOUNT_STATUSES, type AccountStatus } from "../../../types/shared/account.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -44,21 +45,6 @@ export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | nu
   return safeAccount;
 }
 
-// Function ตัดข้อมูล sensitive ออกจาก master worker response
-export function sanitizeMasterWorker(worker: MasterWorkerDto): SafeMasterWorkerDto;
-export function sanitizeMasterWorker(worker: null): null;
-export function sanitizeMasterWorker(
-  worker: MasterWorkerDto | null
-): SafeMasterWorkerDto | null {
-  if (!worker) {
-    return null;
-  }
-
-  const { password_hash: _passwordHash, ...safeWorker } = worker;
-
-  return safeWorker;
-}
-
 // Function จัดการ เป็น account role จาก DB
 function toAccountRole(role: string): AccountRole {
   if ((ACCOUNT_ROLES as readonly string[]).includes(role)) {
@@ -66,6 +52,15 @@ function toAccountRole(role: string): AccountRole {
   }
 
   throw new Error(`Unsupported account role: ${role}`);
+}
+
+// Function จัดการ เป็น account status จาก DB
+function toAccountStatus(status: string): AccountStatus {
+  if ((ACCOUNT_STATUSES as readonly string[]).includes(status)) {
+    return status as AccountStatus;
+  }
+
+  throw new Error(`Unsupported account status: ${status}`);
 }
 
 // Function จัดการ เป็น master worker source จาก DB
@@ -88,7 +83,7 @@ export function mapAccount(record: Account | null): AccountDto | null {
     username: record.username,
     password_hash: record.passwordHash,
     role: toAccountRole(record.role),
-    status: record.status,
+    status: toAccountStatus(record.status),
     full_name: record.fullName,
     position: record.position,
     email: record.email,

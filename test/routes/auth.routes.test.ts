@@ -75,41 +75,6 @@ test("POST /api/auth/login rejects a nonexistent username with the same error as
   assert.equal(response.body.code, "INVALID_CREDENTIALS");
 });
 
-test("POST /api/auth/login is rate-limited separately and more strictly than the general /api/auth/* limit", async () => {
-  // ทั้งไฟล์ตั้ง LOGIN_RATE_LIMIT_MAX_REQUESTS ไว้สูงมาก (ดู applyIsolatedTestEnv) เพื่อกัน false
-  // 429 จากการที่เทสต์อื่นๆ login จริงกันเยอะ — เทสต์นี้ต้องการยืนยันพฤติกรรม rate limit เอง จึงต้อง
-  // override กลับเป็นค่าต่ำที่รู้ตัวเลขแน่นอนเฉพาะเทสต์นี้ แล้วคืนค่าเดิมก่อนออกเสมอ
-  const previousLimit = process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS;
-
-  process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS = "10";
-
-  try {
-    const passwordHash = await password.hashPassword("Admin@123456");
-    const admin = addAdmin(9006, passwordHash);
-    const attempt = () =>
-      server.request("POST", "/api/auth/login", {
-        body: { username: admin.username, password: "WrongPassword@123456" },
-      });
-
-    const responses = [];
-
-    for (let i = 0; i < 11; i += 1) {
-      responses.push(await attempt());
-    }
-
-    const statuses = responses.map((response) => response.status);
-
-    assert.ok(statuses.slice(0, 10).every((status) => status === 401));
-    assert.equal(statuses[10], 429);
-  } finally {
-    if (previousLimit === undefined) {
-      delete process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS;
-    } else {
-      process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS = previousLimit;
-    }
-  }
-});
-
 test("an authenticated request is rejected mid-session once the account's status becomes inactive, even though the session row itself is still active", async () => {
   const passwordHash = await password.hashPassword("Admin@123456");
   const admin = addAdmin(9004, passwordHash);

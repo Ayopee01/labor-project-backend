@@ -1,3 +1,5 @@
+import { VEHICLE_JOB_STATUS } from "../constants/job-status";
+import type { VendorTicketCompletionFlowResult } from "../types/line.type";
 import type { GateTicketDto, TicketProductDto, VehicleJobDetailResponse } from "../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -39,7 +41,7 @@ export function buildWorkerTicketPayload(
     // Format ticketNos keeps push event payloads consistent
     ticketNos: market?.ticket_no ? [market.ticket_no] : [],
     ticket_completed_at:
-      detail?.vehicle_job.status === "COMPLETED"
+      detail?.vehicle_job.status === VEHICLE_JOB_STATUS.COMPLETED
         ? detail.vehicle_job.updated_at
         : null,
     marketCode: market?.marketCode ?? null,
@@ -51,5 +53,26 @@ export function buildWorkerTicketPayload(
     completed_at: ticket.completed_at,
     ...extra,
     items: formatWorkerTicketItems(products),
+  };
+}
+
+// Function สร้าง extra fields ของผล confirm/reject ticket completion สำหรับส่งเข้า
+// buildWorkerTicketPayload — ใช้ร่วมกันทุกจุดที่แจ้งผลนี้ (auto-timeout, LINE webhook, LINE dev tester)
+export function buildTicketCompletionResultExtraFields(
+  result: VendorTicketCompletionFlowResult,
+  reason?: string
+): Record<string, unknown> {
+  return {
+    submission_status: result.submission.status,
+    confirmed_at: result.submission.confirmed_at,
+    rejected_at: result.submission.rejected_at,
+    vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
+    completed_worker_codes: result.completedWorkerCodes,
+    ticket_completed_at: result.completedVehicleJob?.vehicle_job.updated_at ?? null,
+    nextMarketCode: result.nextTicket?.marketCode ?? null,
+    nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
+    next_ticket_status: result.nextTicket?.ticket.status ?? null,
+    assignment_status: result.assignmentStatus,
+    ...(reason !== undefined ? { reason } : {}),
   };
 }

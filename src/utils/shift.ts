@@ -93,18 +93,27 @@ function addDaysToDateString(date: string, days: number): string {
   ].join("-");
 }
 
+// Function หาวันที่เริ่มกะจริงของ schedule ณ เวลาที่ระบุ (ย้อนกลับ 1 วันถ้ากะข้ามคืนและตอนนี้ยังอยู่
+// ในช่วงเช้าของกะเดิม) ใช้ร่วมกันทั้ง shift instance key และ shift end at
+function resolveShiftStartDate(
+  schedule: WorkScheduleDto,
+  value: Date
+): string {
+  const { startMinutes, endMinutes } = parseScheduleTimeRange(schedule);
+  const currentMinutes = getBangkokTimeToMinutes(value);
+  const currentDate = getBangkokDateString(value);
+
+  return endMinutes <= startMinutes && currentMinutes < endMinutes
+    ? addDaysToDateString(currentDate, -1)
+    : currentDate;
+}
+
 // Function สร้าง work schedule shift instance key สำหรับ helper กลาง
 export function buildWorkScheduleShiftInstanceKey(
   schedule: WorkScheduleDto,
   value: Date = new Date()
 ): string {
-  const { startMinutes, endMinutes } = parseScheduleTimeRange(schedule);
-  const currentMinutes = getBangkokTimeToMinutes(value);
-  const currentDate = getBangkokDateString(value);
-  const shiftStartDate =
-    endMinutes <= startMinutes && currentMinutes < endMinutes
-      ? addDaysToDateString(currentDate, -1)
-      : currentDate;
+  const shiftStartDate = resolveShiftStartDate(schedule, value);
 
   return `${shiftStartDate}:${schedule.time_in}-${schedule.time_out}`;
 }
@@ -115,12 +124,7 @@ function getWorkScheduleShiftEndAt(
   value: Date = new Date()
 ): Date {
   const { startMinutes, endMinutes } = parseScheduleTimeRange(schedule);
-  const currentMinutes = getBangkokTimeToMinutes(value);
-  const currentDate = getBangkokDateString(value);
-  const shiftStartDate =
-    endMinutes <= startMinutes && currentMinutes < endMinutes
-      ? addDaysToDateString(currentDate, -1)
-      : currentDate;
+  const shiftStartDate = resolveShiftStartDate(schedule, value);
   const shiftEndDate =
     endMinutes <= startMinutes
       ? addDaysToDateString(shiftStartDate, 1)

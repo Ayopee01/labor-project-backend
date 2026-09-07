@@ -19,8 +19,7 @@ import type { GateTicketDto, VehicleJobDetailResponse } from "../types/worker.ty
 import ApiError from "../utils/api-error";
 import { buildVendorCompletionResultFlexMessage, buildVendorRatingPromptFlexMessage, buildVendorRatingResultFlexMessages } from "../utils/line-flex-message";
 import { logger } from "../utils/logger";
-import { buildWorkerTicketPayload } from "../utils/ticket-payload";
-import { verifyVendorTicketActionToken } from "../utils/vendor-action-token";
+import { buildTicketCompletionResultExtraFields, buildWorkerTicketPayload } from "../utils/ticket-payload";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -109,35 +108,27 @@ async function verifyLineActionToken(
 ): Promise<VendorTicketActionTokenPayload | null> {
   const storedToken = await lineRepository.findLineActionToken(token);
 
-  if (storedToken) {
-    if (
-      !isVendorTicketAction(storedToken.action) ||
-      (expectedAction && storedToken.action !== expectedAction) ||
-      Date.parse(storedToken.expires_at) <= Date.now()
-    ) {
-      return null;
-    }
-
-    return {
-      token_type: "vendor_ticket_action",
-      action: storedToken.action,
-      ticket_id: storedToken.ticket_id,
-      submission_id: storedToken.submission_id,
-      boothCode: storedToken.boothCode,
-      iat: Math.floor(Date.parse(storedToken.created_at) / 1000),
-      exp: Math.floor(Date.parse(storedToken.expires_at) / 1000),
-    };
+  if (!storedToken) {
+    return null;
   }
 
-  try {
-    return verifyVendorTicketActionToken(token, expectedAction);
-  } catch (error) {
-    if (error instanceof ApiError) {
-      return null;
-    }
-
-    throw error;
+  if (
+    !isVendorTicketAction(storedToken.action) ||
+    (expectedAction && storedToken.action !== expectedAction) ||
+    Date.parse(storedToken.expires_at) <= Date.now()
+  ) {
+    return null;
   }
+
+  return {
+    token_type: "vendor_ticket_action",
+    action: storedToken.action,
+    ticket_id: storedToken.ticket_id,
+    submission_id: storedToken.submission_id,
+    boothCode: storedToken.boothCode,
+    iat: Math.floor(Date.parse(storedToken.created_at) / 1000),
+    exp: Math.floor(Date.parse(storedToken.expires_at) / 1000),
+  };
 }
 
 // Function ดึง LINE user ID ใน service flow
@@ -521,19 +512,7 @@ export async function handleLineWebhook(
         result.ticket,
         result.detail,
         result.products,
-        {
-          submission_status: result.submission.status,
-          confirmed_at: result.submission.confirmed_at,
-          rejected_at: result.submission.rejected_at,
-          vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
-          completed_worker_codes: result.completedWorkerCodes,
-          ticket_completed_at:
-            result.completedVehicleJob?.vehicle_job.updated_at ?? null,
-          nextMarketCode: result.nextTicket?.marketCode ?? null,
-          nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
-          next_ticket_status: result.nextTicket?.ticket.status ?? null,
-          assignment_status: result.assignmentStatus,
-        }
+        buildTicketCompletionResultExtraFields(result)
       ),
     };
 

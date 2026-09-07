@@ -17,6 +17,17 @@ function buildShiftSnapshot(input: WorkerShiftAttendanceWriteInput) {
   };
 }
 
+// Function สร้าง where clause ตาม unique key (workerId + shiftInstanceKey) — ใช้ร่วมกันทุกฟังก์ชันใน
+// ไฟล์นี้ที่ query/upsert แถว attendance ของกะเดียวกัน
+function buildShiftAttendanceKeyWhere(input: WorkerShiftAttendanceKeyInput) {
+  return {
+    workerId_shiftInstanceKey: {
+      workerId: input.worker_id,
+      shiftInstanceKey: input.shift_instance_key,
+    },
+  };
+}
+
 export async function findByWorkerAndShift(
   input: WorkerShiftAttendanceKeyInput,
   connection?: DbConnection
@@ -24,12 +35,7 @@ export async function findByWorkerAndShift(
   const db = client(connection);
 
   return db.workerShiftAttendance.findUnique({
-    where: {
-      workerId_shiftInstanceKey: {
-        workerId: input.worker_id,
-        shiftInstanceKey: input.shift_instance_key,
-      },
-    },
+    where: buildShiftAttendanceKeyWhere(input),
   });
 }
 
@@ -42,12 +48,7 @@ export async function markWorkerShiftOnline(
   const shiftSnapshot = buildShiftSnapshot(input);
 
   return db.workerShiftAttendance.upsert({
-    where: {
-      workerId_shiftInstanceKey: {
-        workerId: input.worker_id,
-        shiftInstanceKey: input.shift_instance_key,
-      },
-    },
+    where: buildShiftAttendanceKeyWhere(input),
     create: {
       workerId: input.worker_id,
       shiftInstanceKey: input.shift_instance_key,
@@ -71,12 +72,7 @@ export async function incrementAcceptTimeoutStreak(
   const shiftSnapshot = buildShiftSnapshot(input);
 
   return db.workerShiftAttendance.upsert({
-    where: {
-      workerId_shiftInstanceKey: {
-        workerId: input.worker_id,
-        shiftInstanceKey: input.shift_instance_key,
-      },
-    },
+    where: buildShiftAttendanceKeyWhere(input),
     create: {
       workerId: input.worker_id,
       shiftInstanceKey: input.shift_instance_key,
@@ -105,12 +101,7 @@ export async function resetAcceptTimeoutStreak(
   const shiftSnapshot = buildShiftSnapshot(input);
 
   return db.workerShiftAttendance.upsert({
-    where: {
-      workerId_shiftInstanceKey: {
-        workerId: input.worker_id,
-        shiftInstanceKey: input.shift_instance_key,
-      },
-    },
+    where: buildShiftAttendanceKeyWhere(input),
     create: {
       workerId: input.worker_id,
       shiftInstanceKey: input.shift_instance_key,

@@ -19,10 +19,8 @@ function includesForbiddenDatabaseName(databaseUrl: string): boolean {
 export function applyIsolatedTestEnv(prefix = "test"): void {
   process.env.NODE_ENV = "test";
   // Route test files ยิง POST /api/auth/login จริงแทบทุกเทสต์ (ไม่มี token cache) ไฟล์ที่มีหลายร้อย
-  // เทสต์จึงชน default LOGIN_RATE_LIMIT_MAX_REQUESTS (10 ครั้ง/60s ต่อ IP) ได้ง่ายเมื่อมีเทสต์เพิ่มขึ้น
-  // เรื่อยๆ (พิสูจน์แล้วจริงตอนเพิ่มเทสต์ HistoryFlags 4 ตัว) — ยกเพดานเฉพาะ process ของ test เท่านั้น
-  // ไม่กระทบ production/security จริง เผื่อ default rate limit ทั่วไปไว้ด้วยด้วยเหตุผลเดียวกัน
-  process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS ??= "1000";
+  // เทสต์จึงชน default RATE_LIMIT_MAX_REQUESTS ได้ง่ายเมื่อมีเทสต์เพิ่มขึ้นเรื่อยๆ (พิสูจน์แล้วจริงตอน
+  // เพิ่มเทสต์ HistoryFlags 4 ตัว) — ยกเพดานเฉพาะ process ของ test เท่านั้น ไม่กระทบ production/security จริง
   process.env.RATE_LIMIT_MAX_REQUESTS ??= "5000";
   process.env.RATE_LIMIT_WINDOW_MS ??= "60000";
   process.env.RATE_LIMIT_CLEANUP_INTERVAL_MS ??= "60000";
@@ -31,7 +29,6 @@ export function applyIsolatedTestEnv(prefix = "test"): void {
   process.env.JWT_REFRESH_SECRET ??= `${prefix}-refresh-secret`;
   process.env.JWT_LOGIN_CHALLENGE_SECRET ??= `${prefix}-login-challenge-secret`;
   process.env.REFRESH_TOKEN_HASH_SECRET ??= `${prefix}-refresh-hash-secret`;
-  process.env.VENDOR_ACTION_TOKEN_SECRET ??= `${prefix}-vendor-action-token-secret`;
   process.env.LINE_CHANNEL_SECRET ??= `${prefix}-line-channel-secret`;
   process.env.SPACES_ENDPOINT ??= "https://sgp1.digitaloceanspaces.com";
   process.env.SPACES_REGION ??= "sgp1";

@@ -13,6 +13,7 @@ import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import { writeSecurityAuditLog, diffChangedFields } from "./shared/security-audit-log.service";
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 import type { AccessTokenPayload } from "../types/auth.type";
+import type { AccountStatus } from "../types/shared/account.type";
 import type { DbConnection } from "../types/shared/common.type";
 import type { AdminWorkerBoardStatus, AdminWorkerStatusItem, MasterWorkerDto, PaginationMeta, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
@@ -112,7 +113,7 @@ function formatUserListSchedule(
 
 // Function แปลง Status ตัวเลขของ MasterWorker เป็น active/inactive string ของ API เดิม — null (ไม่มี
 // ค่าจาก Master) ถือเป็น inactive ในชั้นแสดงผลนี้เท่านั้น ค่าจริงใน DB ยังเป็น null ไม่ถูกเขียนทับ
-function toAccountStatus(status: number | null): string {
+function toAccountStatus(status: number | null): AccountStatus {
   return status === 1 ? "active" : "inactive";
 }
 

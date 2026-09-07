@@ -19,7 +19,7 @@ import type { DbConnection } from "../types/shared/common.type";
 import type { AssignmentAcceptTimeoutResult, CompletedWorkerQueueResult, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 import type { WorkScheduleDto } from "../types/admin-workers.type";
 import { buildWorkScheduleShiftInstanceKey, getWorkScheduleShiftEndDelayMs, isTimeInWorkSchedule } from "../utils/shift";
-import { buildWorkerTicketPayload } from "../utils/ticket-payload";
+import { buildTicketCompletionResultExtraFields, buildWorkerTicketPayload } from "../utils/ticket-payload";
 import { logger } from "../utils/logger";
 import { buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload, buildWorkerQueueSocketPayload } from "../utils/worker-payload";
@@ -694,52 +694,19 @@ async function handleVendorConfirmationTimeout(input: {
 
   await returnCompletedWorkersToQueue(result.completedVehicleJob);
 
+  const ticketPayload = buildWorkerTicketPayload(
+    result.ticket,
+    result.detail,
+    result.products,
+    buildTicketCompletionResultExtraFields(result, "vendor_confirm_timeout")
+  );
+
   publishRealtimeEvent({
     type: "TICKET_COMPLETION_RESULT",
     title: "Ticket completion auto-confirmed",
     message: `Ticket ${result.ticket.boothCode} was auto-confirmed after vendor timeout.`,
-    payload: {
-      ...buildWorkerTicketPayload(
-        result.ticket,
-        result.detail,
-        result.products,
-        {
-          submission_status: result.submission.status,
-          confirmed_at: result.submission.confirmed_at,
-          rejected_at: result.submission.rejected_at,
-          vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
-          completed_worker_codes: result.completedWorkerCodes,
-          ticket_completed_at:
-            result.completedVehicleJob?.vehicle_job.updated_at ?? null,
-          nextMarketCode: result.nextTicket?.marketCode ?? null,
-          nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
-          next_ticket_status: result.nextTicket?.ticket.status ?? null,
-          assignment_status: result.assignmentStatus,
-          reason: "vendor_confirm_timeout",
-        }
-      ),
-    },
-    worker_payload: {
-      ...buildWorkerTicketPayload(
-        result.ticket,
-        result.detail,
-        result.products,
-        {
-          submission_status: result.submission.status,
-          confirmed_at: result.submission.confirmed_at,
-          rejected_at: result.submission.rejected_at,
-          vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
-          completed_worker_codes: result.completedWorkerCodes,
-          ticket_completed_at:
-            result.completedVehicleJob?.vehicle_job.updated_at ?? null,
-          nextMarketCode: result.nextTicket?.marketCode ?? null,
-          nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
-          next_ticket_status: result.nextTicket?.ticket.status ?? null,
-          assignment_status: result.assignmentStatus,
-          reason: "vendor_confirm_timeout",
-        }
-      ),
-    },
+    payload: { ...ticketPayload },
+    worker_payload: { ...ticketPayload },
     admin: true,
     worker_ids: result.receiverAccountIds,
   });

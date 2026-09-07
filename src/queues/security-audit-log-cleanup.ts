@@ -2,7 +2,7 @@
 import { Queue, Worker } from "bullmq";
 
 // Import Config
-import { REDIS_CONFIG } from "../config/redis.config";
+import { buildBullConnection, REDIS_CONFIG } from "../config/redis.config";
 import { runSecurityAuditLogRetentionCleanup } from "../services/shared/security-audit-log.service";
 import { logger } from "../utils/logger";
 
@@ -17,15 +17,7 @@ const JOB_NAME = "cleanup";
 const REPEATABLE_JOB_ID = "security-audit-log-cleanup-daily";
 const RUN_EVERY_MS = 24 * 60 * 60 * 1000;
 
-const redisUrl = new URL(REDIS_CONFIG.url);
-
-const bullConnection = {
-  host: redisUrl.hostname,
-  port: Number(redisUrl.port || 6379),
-  password: redisUrl.password || undefined,
-  db: redisUrl.pathname ? Number(redisUrl.pathname.replace("/", "") || 0) : 0,
-  maxRetriesPerRequest: null,
-};
+const bullConnection = buildBullConnection();
 
 const cleanupQueue = new Queue(QUEUE_NAME, { connection: bullConnection });
 

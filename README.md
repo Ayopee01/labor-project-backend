@@ -54,7 +54,7 @@ npm install
 cp .env.example .env
 ```
 
-Fill in the token secrets (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_LOGIN_CHALLENGE_SECRET`, `VENDOR_ACTION_TOKEN_SECRET`, `REFRESH_TOKEN_HASH_SECRET`) with any local values.
+Fill in the token secrets (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_LOGIN_CHALLENGE_SECRET`, `REFRESH_TOKEN_HASH_SECRET`) with any local values.
 
 ### 3. Start PostgreSQL and Redis
 
@@ -141,7 +141,7 @@ Log level follows the response status code: `>=500` → `error`, `>=400` → `wa
 
 **Configuring Sentry**: set `SENTRY_DSN` in `.env` (see `.env.example`) — a no-op until set.
 
-In local development (`NODE_ENV=development`), logs are pretty-printed via `pino-pretty` instead of raw JSON.
+Logs are raw JSON lines in every environment, including local development.
 
 ## Self-Hosted Log Stack (Grafana + Loki + Promtail)
 
@@ -280,7 +280,7 @@ crontab -e
 
 Before starting the stack in production, replace every one of these in `.env` (all currently `CHANGE_ME*` placeholders in `.env.example`):
 
-- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_LOGIN_CHALLENGE_SECRET`, `VENDOR_ACTION_TOKEN_SECRET`, `REFRESH_TOKEN_HASH_SECRET` — generate each separately: `openssl rand -base64 32`
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_LOGIN_CHALLENGE_SECRET`, `REFRESH_TOKEN_HASH_SECRET` — generate each separately: `openssl rand -base64 32`
 - `DOCKER_DATABASE_URL` (and `DATABASE_URL` if used directly) — replace the `password` placeholder with a real generated password
 - `CORS_ORIGIN` — the real frontend origin(s), not `*`
 - `GRAFANA_ADMIN_PASSWORD` — required before exposing port 3000, even behind the UFW team-IP rule above

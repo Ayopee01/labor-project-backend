@@ -109,8 +109,17 @@ export function formatBangkokDate(value: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-export function formatBangkokDisplayDate(value: Date | string): string {
+export function formatBangkokDisplayDate(value: Date | string | null | undefined): string {
+  if (!value) {
+    return "-";
+  }
+
   const date = value instanceof Date ? value : new Date(value);
+
+  if (!Number.isFinite(date.getTime())) {
+    return "-";
+  }
+
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: BANGKOK_TIME_ZONE,
     year: "numeric",

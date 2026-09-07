@@ -3,7 +3,7 @@ import { Queue, Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 
 // Import Config
-import { REDIS_CONFIG } from "../config/redis.config";
+import { buildBullConnection, REDIS_CONFIG } from "../config/redis.config";
 import { getRuntimeSettings } from "../services/shared/runtime-settings.service";
 import { getDelayUntil } from "../utils/time";
 import { logger } from "../utils/logger";
@@ -18,15 +18,7 @@ const redis = new IORedis(REDIS_CONFIG.url, {
   maxRetriesPerRequest: null,
 });
 
-const redisUrl = new URL(REDIS_CONFIG.url);
-
-const bullConnection = {
-  host: redisUrl.hostname,
-  port: Number(redisUrl.port || 6379),
-  password: redisUrl.password || undefined,
-  db: redisUrl.pathname ? Number(redisUrl.pathname.replace("/", "") || 0) : 0,
-  maxRetriesPerRequest: null,
-};
+const bullConnection = buildBullConnection();
 
 const assignmentTimeoutQueue = new Queue(REDIS_CONFIG.assignmentTimeoutQueueName, {
   connection: bullConnection,

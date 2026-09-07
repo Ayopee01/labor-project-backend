@@ -36,3 +36,22 @@ export const REDIS_CONFIG = {
   workerBreakReturnQueueName: requiredEnv("BULLMQ_WORKER_BREAK_RETURN_QUEUE"),
   lineMessageQueueName: requiredEnv("BULLMQ_LINE_MESSAGE_QUEUE"),
 } as const;
+
+// Function สร้าง BullMQ connection options จาก REDIS_CONFIG.url — ใช้ร่วมกันทุก queue ในโปรเจกต์
+export function buildBullConnection(): {
+  host: string;
+  port: number;
+  password: string | undefined;
+  db: number;
+  maxRetriesPerRequest: null;
+} {
+  const redisUrl = new URL(REDIS_CONFIG.url);
+
+  return {
+    host: redisUrl.hostname,
+    port: Number(redisUrl.port || 6379),
+    password: redisUrl.password || undefined,
+    db: redisUrl.pathname ? Number(redisUrl.pathname.replace("/", "") || 0) : 0,
+    maxRetriesPerRequest: null,
+  };
+}

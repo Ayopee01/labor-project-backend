@@ -100,14 +100,19 @@ function assertNonNegativeDecimal(
   }
 }
 
+// Function แปลง Decimal เป็น string ทศนิยม 2 ตำแหน่ง — ใช้ร่วมกันทั้งเงินและน้ำหนัก (สูตรเดียวกัน)
+function decimalToFixedString(value: Prisma.Decimal): string {
+  return value.toFixed(2);
+}
+
 // Function แปลง Decimal เงินเป็น string ทศนิยม 2 ตำแหน่ง
 export function decimalToMoneyString(value: Prisma.Decimal): string {
-  return value.toFixed(2);
+  return decimalToFixedString(value);
 }
 
 // Function แปลง Decimal น้ำหนักเป็น string ทศนิยม 2 ตำแหน่ง
 export function decimalToWeightString(value: Prisma.Decimal): string {
-  return value.toFixed(2);
+  return decimalToFixedString(value);
 }
 
 // Function ตรวจและแปลง workerRanges จาก master_product

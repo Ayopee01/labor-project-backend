@@ -74,8 +74,6 @@ export interface MasterWorkerDto {
   updated_at: string;
 }
 
-export type SafeMasterWorkerDto = Omit<MasterWorkerDto, "password_hash">;
-
 // Type schedule ปัจจุบันของ worker หนึ่งคน — field เก็บอยู่บน MasterWorker เอง (timeWork/timeIn/
 // timeOut) ไม่ใช่ entity แยก เหมือนที่เคยเป็น Account มาก่อน
 export interface WorkScheduleDto {

@@ -26,7 +26,6 @@ const PRODUCTION_ENV_KEYS = [
   "JWT_REFRESH_SECRET",
   "JWT_LOGIN_CHALLENGE_SECRET",
   "REFRESH_TOKEN_HASH_SECRET",
-  "VENDOR_ACTION_TOKEN_SECRET",
   "CORS_ORIGIN",
   "LINE_CHANNEL_SECRET",
   "LINE_CHANNEL_ACCESS_TOKEN",
@@ -68,7 +67,6 @@ function withValidProductionEnv(
     JWT_REFRESH_SECRET: "x".repeat(32),
     JWT_LOGIN_CHALLENGE_SECRET: "y".repeat(32),
     REFRESH_TOKEN_HASH_SECRET: "z".repeat(32),
-    VENDOR_ACTION_TOKEN_SECRET: "w".repeat(32),
     CORS_ORIGIN: "https://example.com",
     LINE_CHANNEL_SECRET: "line-channel-secret",
     LINE_CHANNEL_ACCESS_TOKEN: "line-channel-access-token",
@@ -122,7 +120,6 @@ test("env validation rejects weak production secrets", () => {
   process.env.JWT_REFRESH_SECRET = "x".repeat(32);
   process.env.JWT_LOGIN_CHALLENGE_SECRET = "y".repeat(32);
   process.env.REFRESH_TOKEN_HASH_SECRET = "z".repeat(32);
-  process.env.VENDOR_ACTION_TOKEN_SECRET = "w".repeat(32);
   process.env.CORS_ORIGIN = "https://example.com";
   process.env.LINE_CHANNEL_SECRET = "line-channel-secret";
   process.env.LINE_CHANNEL_ACCESS_TOKEN = "line-channel-access-token";
@@ -166,7 +163,6 @@ test("env validation rejects missing production CORS origin and LINE config", ()
   process.env.JWT_REFRESH_SECRET = "x".repeat(32);
   process.env.JWT_LOGIN_CHALLENGE_SECRET = "y".repeat(32);
   process.env.REFRESH_TOKEN_HASH_SECRET = "z".repeat(32);
-  process.env.VENDOR_ACTION_TOKEN_SECRET = "w".repeat(32);
 
   try {
     const result = validateRuntimeEnv();
@@ -223,7 +219,6 @@ test("env validation allows wildcard CORS origin", () => {
   process.env.JWT_REFRESH_SECRET = "x".repeat(32);
   process.env.JWT_LOGIN_CHALLENGE_SECRET = "y".repeat(32);
   process.env.REFRESH_TOKEN_HASH_SECRET = "z".repeat(32);
-  process.env.VENDOR_ACTION_TOKEN_SECRET = "w".repeat(32);
 
   process.env.LINE_CHANNEL_SECRET = "line-channel-secret";
   process.env.LINE_CHANNEL_ACCESS_TOKEN =

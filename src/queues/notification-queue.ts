@@ -2,7 +2,7 @@
 import { Queue, Worker, type Job } from "bullmq";
 import type { Prisma } from "@prisma/client";
 // Import Config
-import { REDIS_CONFIG } from "../config/redis.config";
+import { buildBullConnection, REDIS_CONFIG } from "../config/redis.config";
 import { logger } from "../utils/logger";
 // Import Repositories
 import * as lineRepository from "../repositories/line.repository";
@@ -11,15 +11,7 @@ import type { LineMessage, LineMessageJobData } from "../types/line.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-const redisUrl = new URL(REDIS_CONFIG.url);
-
-const bullConnection = {
-  host: redisUrl.hostname,
-  port: Number(redisUrl.port || 6379),
-  password: redisUrl.password || undefined,
-  db: redisUrl.pathname ? Number(redisUrl.pathname.replace("/", "") || 0) : 0,
-  maxRetriesPerRequest: null,
-};
+const bullConnection = buildBullConnection();
 
 const lineMessageQueue = new Queue(REDIS_CONFIG.lineMessageQueueName, {
   connection: bullConnection,

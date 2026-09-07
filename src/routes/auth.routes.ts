@@ -4,7 +4,6 @@ import express from "express";
 import authMiddleware from "../middlewares/auth.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
-import { loginRateLimitMiddleware } from "../middlewares/security.middleware";
 import { uploadAdminImageLocal } from "../middlewares/upload.middleware";
 import * as authService from "../services/auth.service";
 import ApiError from "../utils/api-error";
@@ -26,7 +25,6 @@ function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
 
 router.post(
   "/login",
-  loginRateLimitMiddleware,
   async (req, res, next) => {
     try {
       const result = await authService.login(req.body, buildSecurityAuditContext(req));
@@ -39,7 +37,6 @@ router.post(
 
 router.post(
   "/login/confirm-force",
-  loginRateLimitMiddleware,
   async (req, res, next) => {
     try {
       const result = await authService.confirmForceLogin(

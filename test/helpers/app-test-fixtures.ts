@@ -1,5 +1,4 @@
 import { Prisma } from "@prisma/client";
-import { clearLoginRateLimitBuckets } from "../../src/middlewares/security.middleware";
 import { FakeRedis } from "./app-test-infra-mocks";
 import { state } from "./app-test-state";
 import type { AccountRecord, AssignmentRecord, GateClientRecord, MasterWorkerRecord, MobileAppVersionRecord, GateTicketRecord, MarketJobRecord, VehicleJobRecord } from "./app-test-harness.records";
@@ -229,7 +228,6 @@ export function recordWorkerAssignmentEventOnce(
 
 // Function รีเซ็ต route test state สำหรับ test
 export function resetRouteTestState(): void {
-  clearLoginRateLimitBuckets();
   FakeRedis.hashes.clear();
   FakeRedis.zsets.clear();
   FakeRedis.strings.clear();

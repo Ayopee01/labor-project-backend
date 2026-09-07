@@ -13,8 +13,9 @@ import type { CurrentTicketProgressDto, VehicleJobDetailResponse, VehicleJobDto,
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function แปลง vehicle job detail จาก DB
-export function mapVehicleJobDetail(
+// Function แปลง vehicle job detail จาก DB — ใช้เฉพาะภายในไฟล์นี้ (getVehicleJobDetail ด้านล่าง) จึงไม่
+// export
+function mapVehicleJobDetail(
   record: Prisma.VehicleJobGetPayload<{
     include: {
       marketJobs: {
