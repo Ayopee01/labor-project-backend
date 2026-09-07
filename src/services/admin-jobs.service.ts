@@ -2,8 +2,8 @@
 import { Prisma } from "@prisma/client";
 
 import { withTransaction } from "../db/prisma";
-import { enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning } from "../queues/worker-queue";
-import { autoReleaseVehicleJobWorkersIfShiftEnded, dispatchReadyWorkers, returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
+import { getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning } from "../queues/worker-queue";
+import { autoReleaseVehicleJobWorkersIfShiftEnded, dispatchReadyWorkers, requeueWorkersAtFrontRespectingShift, returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
 import * as adminActionLogRepository from "../repositories/shared/admin-action-log.repository";
 import * as adminJobsRepository from "../repositories/admin-jobs.repository";
@@ -1668,15 +1668,24 @@ async function cancelVehicleJobAndRequeue(
 
   const sortedAssignments =
     sortAssignmentsByAcceptedAt(activeAssignments);
-  const requeuedWorkerIds = sortedAssignments.map(
+  const candidateWorkerIds = sortedAssignments.map(
     (assignment) => assignment.worker_id,
   );
 
-  await enqueueWorkersAtFront(requeuedWorkerIds);
+  // เช็คกะสดก่อนคืนเข้าคิวเสมอ — Worker ที่หมดกะไปแล้วต้องไป open_app ไม่ใช่ถูกดันกลับเข้า READY
+  const { requeuedWorkerIds, openAppWorkerIds } =
+    await requeueWorkersAtFrontRespectingShift(candidateWorkerIds);
+
   for (const workerId of requeuedWorkerIds) {
     sendWorkerSocketEvent(workerId, "WORKER_STATUS_CHANGED", {
       status: WORKER_WORK_STATUS.READY,
       reason: "vehicle_job_cancelled_requeue",
+    });
+  }
+  for (const workerId of openAppWorkerIds) {
+    sendWorkerSocketEvent(workerId, "WORKER_STATUS_CHANGED", {
+      status: WORKER_WORK_STATUS.OPEN_APP,
+      reason: "vehicle_job_cancelled_shift_ended",
     });
   }
   publishRealtimeEvent({
@@ -1697,9 +1706,13 @@ async function cancelVehicleJobAndRequeue(
     },
     worker_ids: requeuedWorkerIds,
   });
-  await dispatchReadyWorkers();
-  const requeuedWorkerCodes =
-    await profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds);
+  if (requeuedWorkerIds.length > 0) {
+    await dispatchReadyWorkers();
+  }
+  const [requeuedWorkerCodes, openAppWorkerCodes] = await Promise.all([
+    profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
+    profileRepository.findWorkerCodesByAccountIds(openAppWorkerIds),
+  ]);
 
   publishNotification({
     type: "VEHICLE_JOB_CANCELLED_AND_REQUEUED",
@@ -1708,7 +1721,8 @@ async function cancelVehicleJobAndRequeue(
     payload: {
       ticketNumber: vehicleJob.ticket_number,
       status: vehicleJob.status,
-      requeued_worker_codes: requeuedWorkerCodes,
+      worker_to_queue: requeuedWorkerCodes,
+      worker_to_openapp: openAppWorkerCodes,
     },
     audience: {
       roles: ["admin"],
@@ -1719,7 +1733,8 @@ async function cancelVehicleJobAndRequeue(
     message: "Vehicle job cancelled and workers requeued successfully.",
     ticket_number: vehicleJob.ticket_number,
     status: vehicleJob.status,
-    requeued_worker_codes: requeuedWorkerCodes,
+    worker_to_queue: requeuedWorkerCodes,
+    worker_to_openapp: openAppWorkerCodes,
   };
 }
 
@@ -3024,26 +3039,39 @@ export async function changeVehicleJobToWait(
   });
 
   let requeuedWorkerCodes: Array<string | null> = [];
+  let openAppWorkerCodes: Array<string | null> = [];
 
   if (!input.dispatch && cancelledAssignments.length > 0) {
     const sortedAssignments = sortAssignmentsByAcceptedAt(cancelledAssignments);
-    const requeuedWorkerIds = sortedAssignments.map(
+    const candidateWorkerIds = sortedAssignments.map(
       (assignment) => assignment.worker_id,
     );
 
-    await enqueueWorkersAtFront(requeuedWorkerIds);
+    // เช็คกะสดก่อนคืนเข้าคิวเสมอ — Worker ที่หมดกะไปแล้วต้องไป open_app ไม่ใช่ถูกดันกลับเข้า READY
+    const { requeuedWorkerIds, openAppWorkerIds: openAppIds } =
+      await requeueWorkersAtFrontRespectingShift(candidateWorkerIds);
+
     for (const workerId of requeuedWorkerIds) {
       sendWorkerSocketEvent(workerId, "WORKER_STATUS_CHANGED", {
         status: WORKER_WORK_STATUS.READY,
         reason: "vehicle_job_wait_requeue",
       });
     }
-    requeuedWorkerCodes = await profileRepository.findWorkerCodesByAccountIds(
-      requeuedWorkerIds,
-    );
+    for (const workerId of openAppIds) {
+      sendWorkerSocketEvent(workerId, "WORKER_STATUS_CHANGED", {
+        status: WORKER_WORK_STATUS.OPEN_APP,
+        reason: "vehicle_job_wait_shift_ended",
+      });
+    }
+    [requeuedWorkerCodes, openAppWorkerCodes] = await Promise.all([
+      profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
+      profileRepository.findWorkerCodesByAccountIds(openAppIds),
+    ]);
     // ปล่อยให้ Worker ที่เพิ่งกลับเข้าคิวไหลไปรับงานคันอื่นที่ Dispatch อยู่ก่อนแล้วได้ทันที ไม่ต้อง
     // รอรอบ dispatch ถัดไป
-    await dispatchReadyWorkers();
+    if (requeuedWorkerIds.length > 0) {
+      await dispatchReadyWorkers();
+    }
   }
 
   if (input.dispatch) {
@@ -3069,7 +3097,8 @@ export async function changeVehicleJobToWait(
       dispatch_now: updated.dispatch_now,
       status: updated.status,
       reason_code: input.reason_code,
-      requeued_worker_codes: requeuedWorkerCodes,
+      worker_to_queue: requeuedWorkerCodes,
+      worker_to_openapp: openAppWorkerCodes,
     },
     admin: true,
   });
@@ -3081,7 +3110,8 @@ export async function changeVehicleJobToWait(
     ticket_number: updated.ticket_number,
     status: updated.status,
     dispatch_now: updated.dispatch_now,
-    requeued_worker_codes: requeuedWorkerCodes,
+    worker_to_queue: requeuedWorkerCodes,
+    worker_to_openapp: openAppWorkerCodes,
     reason_code: input.reason_code,
     reason_text: input.reason_text ?? null,
   };

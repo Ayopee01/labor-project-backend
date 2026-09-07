@@ -678,7 +678,12 @@ export interface AdminCancelVehicleJobAndRequeueResponse {
   message: string;
   ticket_number: string;
   status: string;
-  requeued_worker_codes: Array<string | null>;
+  // Workers pulled off this vehicle job who are still within their shift — sent back to the front
+  // of the ready queue.
+  worker_to_queue: Array<string | null>;
+  // Workers pulled off this vehicle job who had already ended their shift by the time of
+  // cancellation — sent to open_app instead of back into the ready queue.
+  worker_to_openapp: Array<string | null>;
 }
 
 // Type response หลังยกเลิกงาน market (Business Ticket) หนึ่งรายการ
@@ -760,7 +765,10 @@ export interface AdminVehicleWaitResponse {
   dispatch_now: boolean;
   // Workers pulled off this vehicle job and put back at the front of the FIFO queue. Only
   // populated when dispatch was switched to false; always empty when switched to true.
-  requeued_worker_codes: Array<string | null>;
+  worker_to_queue: Array<string | null>;
+  // Workers pulled off this vehicle job who had already ended their shift by the time dispatch
+  // was switched to false — sent to open_app instead of back into the ready queue.
+  worker_to_openapp: Array<string | null>;
   reason_code: string;
   reason_text: string | null;
 }

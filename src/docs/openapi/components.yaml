@@ -3910,12 +3910,19 @@
         dispatch_now:
           type: boolean
           example: false
-        requeued_worker_codes:
+        worker_to_queue:
           type: array
           items:
             type: string
             nullable: true
           description: Workers pulled off this vehicle job and put back at the front of the queue. Only populated when dispatch was switched to false; always empty when switched to true.
+          example: []
+        worker_to_openapp:
+          type: array
+          items:
+            type: string
+            nullable: true
+          description: Workers pulled off this vehicle job who had already ended their shift by the time dispatch was switched to false — sent to open_app instead of back into the ready queue. Only populated when dispatch was switched to false.
           example: []
         reason_code:
           type: string
@@ -4402,12 +4409,18 @@
         status:
           type: string
           example: CANCELLED
-        requeued_worker_codes:
+        worker_to_queue:
           type: array
           items:
             type: string
           example:
             - MN000115
+        worker_to_openapp:
+          type: array
+          items:
+            type: string
+          description: Workers pulled off this vehicle job who had already ended their shift by the time of cancellation — sent to open_app instead of back into the ready queue.
+          example: []
     AdminAssignWorkersRequest:
       type: object
       required:

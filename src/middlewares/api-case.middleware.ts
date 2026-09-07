@@ -107,7 +107,6 @@ const requestKeyMap: Record<string, string> = {
   ProductName: "productName",
   QrToken: "qr_token",
   QueuePosition: "queue_position",
-  RequeuedWorkerCodes: "requeued_worker_codes",
   ReleasedWorkerCodes: "released_worker_codes",
   ReleasedAt: "released_at",
   PreviousQuantity: "previous_quantity",
@@ -239,6 +238,8 @@ const requestKeyMap: Record<string, string> = {
   WeightRangeName: "weight_range_name",
   WorkerCount: "worker_count",
   WorkerPayoutTotal: "worker_payout_total",
+  WorkerToQueue: "worker_to_queue",
+  WorkerToOpenapp: "worker_to_openapp",
 };
 
 /* -------------------------------------- Functions -------------------------------------- */

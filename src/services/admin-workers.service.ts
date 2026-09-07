@@ -8,7 +8,7 @@ import * as vehicleJobRepository from "../repositories/shared/vehicle-job.reposi
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import { disconnectWorkerSocket, isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
-import { closeWorkerAttendanceShift } from "./shared/worker-attendance.service";
+import { closeWorkerAttendanceShift, scheduleWorkerShiftEndIfNeeded } from "./shared/worker-attendance.service";
 import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import { writeSecurityAuditLog, diffChangedFields } from "./shared/security-audit-log.service";
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
@@ -456,7 +456,7 @@ export async function updateUser(
     assertNormalizedPhoneHasDigits(normalizedPhone);
   }
 
-  return withTransaction(async (transaction) => {
+  const { result, updatedWorker } = await withTransaction(async (transaction) => {
     const worker = await requireWorker(id, transaction);
     // Snapshot ก่อนแก้ไขจริง — ห้ามใช้ worker ตรงๆ ไปเทียบกับ updatedWorker ตอนท้าย เพราะ repository
     // บาง implementation คืน object เดิม (mutate in place) ไม่ใช่ fresh copy ทุกครั้งที่ query
@@ -579,8 +579,29 @@ export async function updateUser(
       );
     }
 
-    return formatUserDetail(updatedWorker);
+    return { result: formatUserDetail(updatedWorker), updatedWorker };
   });
+
+  // Best-effort — ถ้า Admin เพิ่งแก้ time_in/time_out (เช่น ต่อเวลาสิ้นสุดกะ) ให้ re-arm shift-end job
+  // ด้วย schedule ใหม่ทันที เพราะ Worker ที่เคยถูก eject ไปแล้วก่อนหน้า (attendance ปิดไปแล้ว) จะ "go
+  // online" ซ้ำไม่ได้อีก (WORKER_SHIFT_CLOSED) ซึ่งเป็นจุดเดียวปกติที่ตั้ง job นี้ให้ — ถ้าไม่ re-arm ตรงนี้
+  // จะไม่มี job รออยู่เลยจนกว่า Worker จะ go online กะถัดไป
+  if (hasScheduleTimeInput) {
+    const updatedSchedule = scheduleFromWorker(updatedWorker);
+
+    if (updatedSchedule) {
+      try {
+        await scheduleWorkerShiftEndIfNeeded(updatedWorker.id, updatedSchedule);
+      } catch (error) {
+        logger.error("Failed to re-arm worker shift-end job after admin updated shift time.", {
+          workerId: updatedWorker.id,
+          error,
+        });
+      }
+    }
+  }
+
+  return result;
 }
 
 // Function รีเซ็ต password ใน service flow — Admin ยังตั้ง password แยกอิสระให้ worker ได้ตามเดิม
@@ -1104,6 +1125,13 @@ export async function forceAdminWorkerStatus(
       currentSchedule.id,
       breakDurationMs
     );
+  }
+
+  // Re-arm shift-end job เสมอเมื่อ Admin สั่งให้ Worker กลับมา active (READY/BREAK) เพราะ path นี้ไม่ได้
+  // ผ่าน "go online" ปกติ — ถ้า Worker เคยถูก eject ไปแล้วก่อนหน้า (job เดิมทำงานจบไปแล้ว) หรือไม่เคย
+  // go online วันนี้มาก่อนเลย จะไม่มี job รออยู่ให้ดีดกลับ open_app ตอนหมดกะจริง
+  if (input.status !== WORKER_WORK_STATUS.OPEN_APP) {
+    await scheduleWorkerShiftEndIfNeeded(worker.id, currentSchedule);
   }
 
   const [latest, latestQueue, latestAssignment] = await Promise.all([

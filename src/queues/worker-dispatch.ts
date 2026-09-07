@@ -13,7 +13,7 @@ import { publishAdminWorkerStatusChanged, publishNotification } from "../service
 import { publishRealtimeEvent } from "../services/shared/realtime-notification.service";
 import { applyVendorTicketCompletionResult } from "../services/shared/ticket-completion.service";
 import { sendMobileAppForceUpdateNotification, sendMobileAppReleaseNotification } from "../services/shared/mobile-app-version.service";
-import { enqueueWorker, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerShiftEnd, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
+import { enqueueWorker, enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerShiftEnd, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
 import type { DbConnection } from "../types/shared/common.type";
 import type { AssignmentAcceptTimeoutResult, CompletedWorkerQueueResult, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
@@ -467,6 +467,46 @@ export async function returnCompletedWorkersToQueue(
   }
 
   return requeuedWorkerCodes;
+}
+
+// Function คืน Worker กลับเข้าคิวหน้าสุด (priority requeue) โดยเช็คกะสดก่อนเสมอ — ใช้แทนการเรียก
+// enqueueWorkersAtFront ตรงๆ ทุกจุดที่ยกเลิก/ดึง assignment ของ Worker ออกแล้วต้องการคืนเข้าคิวแบบมี
+// priority (ยกเลิกทั้งรถ, สั่ง dispatch:false) เพราะ enqueueWorkersAtFront เองไม่เช็คว่า Worker ยังอยู่
+// ในกะไหมเลย — ถ้าใช้ตรงๆ Worker ที่หมดกะไปแล้วจะถูกดันกลับเข้า READY ทั้งที่ไม่ควรได้งานใหม่อีก
+// (ต่างจาก returnCompletedWorkersToQueue ด้านบนที่ enqueue ท้ายคิวปกติ ไม่ใช่หน้าสุด จึงใช้แทนกันไม่ได้)
+export async function requeueWorkersAtFrontRespectingShift(
+  workerIds: number[]
+): Promise<{ requeuedWorkerIds: number[]; openAppWorkerIds: number[] }> {
+  const uniqueWorkerIds = [...new Set(workerIds)];
+
+  if (uniqueWorkerIds.length === 0) {
+    return { requeuedWorkerIds: [], openAppWorkerIds: [] };
+  }
+
+  const schedules = await Promise.all(
+    uniqueWorkerIds.map((workerId) => workScheduleRepository.findCurrentByAccountId(workerId)),
+  );
+
+  const requeuedWorkerIds: number[] = [];
+  const openAppWorkerIds: number[] = [];
+
+  uniqueWorkerIds.forEach((workerId, index) => {
+    const schedule = schedules[index];
+
+    if (schedule && isTimeInWorkSchedule(schedule)) {
+      requeuedWorkerIds.push(workerId);
+    } else {
+      openAppWorkerIds.push(workerId);
+    }
+  });
+
+  if (requeuedWorkerIds.length > 0) {
+    await enqueueWorkersAtFront(requeuedWorkerIds);
+  }
+
+  await Promise.all(openAppWorkerIds.map((workerId) => markWorkerOpenApp(workerId)));
+
+  return { requeuedWorkerIds, openAppWorkerIds };
 }
 
 // Function เรียง assignments ตาม accepted_at (fallback created_at) ให้เป็นลำดับเดียวกับตอนเข้าคิว

@@ -5059,7 +5059,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/wait Dispatch:false before the 
   assert.equal(response.body.dispatch_now, false);
   assert.equal(response.body.reason_code, "R003");
   assert.deepEqual(
-    [...response.body.requeued_worker_codes].sort(),
+    [...response.body.worker_to_queue].sort(),
     [worker1.labor_code, worker2.labor_code].sort(),
   );
   assert.equal(job.status, "WAIT");
@@ -5116,7 +5116,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/wait Dispatch:true re-dispatche
   assert.equal(response.status, 200);
   assert.equal(response.body.status, "WORKING");
   assert.equal(response.body.dispatch_now, true);
-  assert.deepEqual(response.body.requeued_worker_codes, []);
+  assert.deepEqual(response.body.worker_to_queue, []);
   assert.equal(job.status, "WORKING");
   assert.equal(job.dispatch_now, true);
 
