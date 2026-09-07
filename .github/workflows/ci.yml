@@ -96,3 +96,12 @@ jobs:
 
       - name: Integration tests
         run: RUN_DB_TESTS=1 npm run test:integration
+
+  deploy:
+    name: Trigger Render deploy hook
+    needs: build-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/render'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Call Render deploy hook
+        run: curl --fail -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
