@@ -1,14 +1,13 @@
 import * as profileRepository from "../../repositories/shared/profile.repository";
 import * as assignmentRepository from "../../repositories/shared/vehicle-job-assignment.repository";
 import * as gateTicketRepository from "../../repositories/shared/gate-ticket.repository";
-import * as ticketWorkerRepository from "../../repositories/shared/ticket-worker.repository";
 import * as marketJobRepository from "../../repositories/shared/market-job.repository";
 import * as lineRepository from "../../repositories/line.repository";
 import * as vehicleJobRepository from "../../repositories/shared/vehicle-job.repository";
 import * as vehicleJobLifecycleService from "./vehicle-job-lifecycle.service";
 import * as rateResolutionService from "./rate-resolution.service";
 import { hasVendorConfirmationTimeout, scheduleVendorConfirmationTimeout } from "../../queues/worker-queue";
-import { enqueueLoggedLineMessage } from "../../queues/notification-queue";
+import { enqueueLoggedLineMessage } from "../../queues/line-message-queue";
 import { getRuntimeSettings } from "./runtime-settings.service";
 import { ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS } from "../../constants/job-status";
 import { resolveTicketResultAudience, publishRealtimeEvent } from "./realtime-notification.service";
@@ -369,12 +368,11 @@ export async function submitTicketCompletion(input: {
     );
   }
 
-  const ticketWorkers =
-    await ticketWorkerRepository.syncTicketWorkersFromVehicleAssignments(
-      ticket.market_job_id,
-      ticket.vehicle_job_id,
-      connection,
-    );
+  const ticketWorkers = await vehicleJobLifecycleService.syncTicketWorkerRoster(
+    ticket.market_job_id,
+    ticket.vehicle_job_id,
+    connection,
+  );
 
   if (requireRosterMembership) {
     // ตรวจสอบว่า Worker ที่ส่งยอดยังเป็นสมาชิกที่ทำงานอยู่ใน Business Ticket ของ Booth นี้ (Worker

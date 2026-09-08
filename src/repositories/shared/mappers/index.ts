@@ -419,7 +419,7 @@ export function mapAdminActionLog(
     reason_code: record.reasonCode,
     reason_text: record.reasonText,
     actor_account_id: record.actorAccountId,
-    actor_worker_code: record.actor?.username ?? null,
+    actor_username: record.actor?.username ?? null,
     actor_full_name: record.actor?.fullName ?? null,
     actor_role: record.actor?.role ?? null,
     metadata: (record.metadata as Record<string, unknown> | null) ?? null,

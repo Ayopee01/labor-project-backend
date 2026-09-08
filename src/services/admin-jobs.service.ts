@@ -28,6 +28,7 @@ import { logger } from "../utils/logger";
 // Import Types
 import type { AdminVehicleJobFinancialResponse, AdminVehicleJobFinancialRecord, AdminAssignmentResponse, AdminAssignWorkersResponse, AdminCancelAssignmentResponse, AdminCancelTicketWorkerFromBoothResponse, AdminCancelTicketWorkerResponse, AdminCancelVehicleJobAndRequeueResponse, AdminExtendScanDeadlineResponse, AdminHistoryCancellationResponse, AdminHistoryRejectionResponse, AdminHistoryBoothResponse, AdminHistoryProductResponse, AdminHistoryTimelineItemResponse, AdminHistoryWorkerResponse, AdminVehicleJobAssignmentCancelResponse, HistoryStatusValue, HistoryFlagValue, DailyStallFeeItemResponse, DailyStallFeeListResponse, DailyStallFeeRecord, DailyWorkerIncomeItemResponse, DailyWorkerIncomePaymentStatus, DailyWorkerIncomeRecord, MonthlyStallFeeGroupRow, MonthlyStallFeeItemResponse, MonthlyStallFeeListResponse, AdminMarketJobActionResponse, AdminOverrideCountResponse, AdminReleaseWorkersResponse, AdminScanDeadlineAssignmentResponse, AdminStallJobActionResponse, AdminVehicleJobHistoryItemResponse, AdminVehicleJobHistoryRecord, AdminVehicleJobOperationListResponse, AdminVehicleWaitResponse } from "../types/admin-jobs.type";
 import { HISTORY_FLAG_VALUES } from "../types/admin-jobs.type";
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { CompletedVehicleJobResult, GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 // Import Validation
@@ -37,6 +38,7 @@ import { adminAssignWorkersBodySchema, adminCancelAssignmentBodySchema, adminCan
 import { requireActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
 import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, DAILY_WORKER_INCOME_PAYMENT_STATUS, SUBMITTED_TICKET_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, TICKET_SUBMITTER_ROLE, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { DEFAULT_PAGE_LIMIT } from "../constants/pagination";
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
 import type { AdminActionLogDto } from "../types/shared/admin-action-log.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
@@ -81,7 +83,7 @@ function mapAssignmentEventToTimelineType(eventType: string): string {
 
 // Function บรรยาย Admin action หนึ่งรายการสำหรับ Timeline ใน service flow
 function describeAdminAction(log: AdminActionLogDto): string {
-  const actor = log.actor_worker_code ?? "Admin";
+  const actor = log.actor_username ?? "Admin";
 
   switch (log.action_type) {
     case ADMIN_ACTION_TYPE.OVERRIDE_COUNT:
@@ -905,21 +907,8 @@ function formatAdminVehicleJobHistoryDetail(
   }));
   const booths = markets.flatMap((market) => market.booths);
   const jobTimestamps = deriveAdminHistoryJobTimestamps(record);
-
-  let stallFeeTotal = new Prisma.Decimal(0);
-  let laborFeeTotal = new Prisma.Decimal(0);
-  let totalWorkerShare = new Prisma.Decimal(0);
-  let fundAmount = new Prisma.Decimal(0);
-
-  for (const booth of booths) {
-    if (booth.final_stall_amount !== null) {
-      stallFeeTotal = stallFeeTotal.plus(booth.final_stall_amount);
-    }
-
-    laborFeeTotal = laborFeeTotal.plus(booth.summary.labor_fee_raw);
-    totalWorkerShare = totalWorkerShare.plus(booth.summary.worker_payout_total);
-    fundAmount = fundAmount.plus(booth.summary.fund_amount);
-  }
+  const { stallFeeTotal, laborFeeTotal, workerPayoutTotal: totalWorkerShare, fundAmount } =
+    sumBoothFinancials(booths);
 
   // ชุดเดียวกับ Workers[] (formatAdminHistoryWorkers) เสมอ — คนที่กดรับงานจริงและไม่ซ้ำต่อคน
   const financeWorkers = buildAdminHistoryJobWorkerEarnings(record);
@@ -1155,6 +1144,42 @@ function formatAdminFinancialBooth(
   };
 }
 
+// Function รวมยอด stall/labor/worker-payout/fund ของ Booth[] เป็นยอดรวมระดับ Vehicle Job — ใช้ร่วมกัน
+// ระหว่าง formatAdminVehicleJobHistoryDetail (Work History) และ getVehicleJobFinancials (Financials)
+// เพราะทั้งสองที่ sum จาก booths[] ชุดเดียวกัน (ผลจาก formatAdminFinancialBooth) ด้วยสูตรเดียวกันเป๊ะ
+function sumBoothFinancials(
+  booths: {
+    final_stall_amount: string | null;
+    summary: {
+      labor_fee_raw: string;
+      worker_payout_total: string;
+      fund_amount: string;
+    };
+  }[],
+): {
+  stallFeeTotal: Prisma.Decimal;
+  laborFeeTotal: Prisma.Decimal;
+  workerPayoutTotal: Prisma.Decimal;
+  fundAmount: Prisma.Decimal;
+} {
+  let stallFeeTotal = new Prisma.Decimal(0);
+  let laborFeeTotal = new Prisma.Decimal(0);
+  let workerPayoutTotal = new Prisma.Decimal(0);
+  let fundAmount = new Prisma.Decimal(0);
+
+  for (const booth of booths) {
+    if (booth.final_stall_amount !== null) {
+      stallFeeTotal = stallFeeTotal.plus(booth.final_stall_amount);
+    }
+
+    laborFeeTotal = laborFeeTotal.plus(booth.summary.labor_fee_raw);
+    workerPayoutTotal = workerPayoutTotal.plus(booth.summary.worker_payout_total);
+    fundAmount = fundAmount.plus(booth.summary.fund_amount);
+  }
+
+  return { stallFeeTotal, laborFeeTotal, workerPayoutTotal, fundAmount };
+}
+
 // Function ตรวจสอบและดึง vehicle job ตาม ref ใน service flow
 async function requireVehicleJobByRef(
   idParam: unknown,
@@ -1319,22 +1344,12 @@ export async function getVehicleJobFinancials(
     (booth) => booth.financialized,
   ).length;
 
-  let finalStallAmount = new Prisma.Decimal(0);
-  let laborFeeRaw = new Prisma.Decimal(0);
-  let workerPayoutTotal = new Prisma.Decimal(0);
-  let fundAmount = new Prisma.Decimal(0);
-
-  for (const booth of booths) {
-    if (booth.final_stall_amount !== null) {
-      finalStallAmount = finalStallAmount.plus(booth.final_stall_amount);
-    }
-
-    laborFeeRaw = laborFeeRaw.plus(booth.summary.labor_fee_raw);
-    workerPayoutTotal = workerPayoutTotal.plus(
-      booth.summary.worker_payout_total,
-    );
-    fundAmount = fundAmount.plus(booth.summary.fund_amount);
-  }
+  const {
+    stallFeeTotal: finalStallAmount,
+    laborFeeTotal: laborFeeRaw,
+    workerPayoutTotal,
+    fundAmount,
+  } = sumBoothFinancials(booths);
 
   return {
     vehicle_job: {
@@ -1492,7 +1507,7 @@ export async function listVehicleJobs(query: unknown): Promise<{
     };
   }
 
-  const limit = filters.limit ?? 20;
+  const limit = filters.limit ?? DEFAULT_PAGE_LIMIT;
   const total = result.total ?? result.data.length;
 
   return {
@@ -1552,7 +1567,7 @@ export async function listVehicleJobOperations(
     };
   }
 
-  const limit = filters.limit ?? 20;
+  const limit = filters.limit ?? DEFAULT_PAGE_LIMIT;
   const start = (filters.page - 1) * limit;
   const pagedItems = filteredItems.slice(start, start + limit);
 
@@ -1707,7 +1722,16 @@ async function cancelVehicleJobAndRequeue(
     worker_ids: requeuedWorkerIds,
   });
   if (requeuedWorkerIds.length > 0) {
-    await dispatchReadyWorkers();
+    // dispatch เป็น best-effort เสมอ — ต้องไม่ทำให้ request cancel ที่สำเร็จไปแล้วพัง 500 เพราะ
+    // dispatch worker คันอื่นล้มเหลว (เขียน Redis/BullMQ แยกจาก DB transaction ของ request นี้)
+    try {
+      await dispatchReadyWorkers();
+    } catch (error) {
+      logger.error("Vehicle job assignment cancelled but worker dispatch failed.", {
+        vehicleJobId: vehicleJob.id,
+        error,
+      });
+    }
   }
   const [requeuedWorkerCodes, openAppWorkerCodes] = await Promise.all([
     profileRepository.findWorkerCodesByAccountIds(requeuedWorkerIds),
@@ -1858,7 +1882,7 @@ export async function assignVehicleJobWorkers(
             transaction,
           );
 
-        if (worker.status !== 1) {
+        if (worker.status !== MASTER_WORKER_STATUS.ACTIVE) {
           throw new ApiError(
             403,
             "WORKER_NOT_ACTIVE",
@@ -3068,9 +3092,16 @@ export async function changeVehicleJobToWait(
       profileRepository.findWorkerCodesByAccountIds(openAppIds),
     ]);
     // ปล่อยให้ Worker ที่เพิ่งกลับเข้าคิวไหลไปรับงานคันอื่นที่ Dispatch อยู่ก่อนแล้วได้ทันที ไม่ต้อง
-    // รอรอบ dispatch ถัดไป
+    // รอรอบ dispatch ถัดไป — best-effort เหมือน dispatchReadyWorkers อีกจุดด้านล่างในฟังก์ชันนี้
     if (requeuedWorkerIds.length > 0) {
-      await dispatchReadyWorkers();
+      try {
+        await dispatchReadyWorkers();
+      } catch (error) {
+        logger.error("Vehicle job set to wait but worker requeue dispatch failed.", {
+          vehicleJobId: vehicleJob.id,
+          error,
+        });
+      }
     }
   }
 
@@ -3537,7 +3568,7 @@ export async function listDailyWorkerIncome(query: unknown): Promise<{
   const dateTo = filters.date ?? filters.date_to;
   const dateRange = buildBangkokDateSpanRange(dateFrom, dateTo);
   const page = filters.page ?? 1;
-  const limit = filters.limit ?? 20;
+  const limit = filters.limit ?? DEFAULT_PAGE_LIMIT;
   const result = await adminJobsRepository.listDailyWorkerIncome({
     workerCode: filters.worker_code,
     status: filters.status,

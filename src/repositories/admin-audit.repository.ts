@@ -318,7 +318,7 @@ export async function listWorkerAssignmentEventsForAudit(
       eventType: true,
       occurredAt: true,
       metadata: true,
-      worker: { select: { laborCode: true } },
+      worker: { select: { laborCode: true, fullName: true } },
       vehicleJob: { select: { ticketNumber: true } },
     },
   });
@@ -332,6 +332,7 @@ export async function listWorkerAssignmentEventsForAudit(
     occurred_at: row.occurredAt.toISOString(),
     metadata: (row.metadata as Record<string, unknown> | null) ?? null,
     worker_code: row.worker?.laborCode ?? null,
+    worker_full_name: row.worker?.fullName ?? null,
     ticket_number: row.vehicleJob?.ticketNumber ?? null,
   }));
 }
@@ -361,8 +362,8 @@ export async function listCompletionSubmissionsForAudit(
       rejectedAt: true,
       confirmedAt: true,
       resolvedByLineUserId: true,
-      submittedByAccount: { select: { username: true } },
-      submittedByWorker: { select: { laborCode: true } },
+      submittedByAccount: { select: { username: true, fullName: true } },
+      submittedByWorker: { select: { laborCode: true, fullName: true } },
       ticket: {
         select: {
           boothCode: true,
@@ -384,6 +385,7 @@ export async function listCompletionSubmissionsForAudit(
     submitted_by_worker_id: row.submittedByWorkerId,
     submitted_by_role: row.submittedByRole,
     submitted_by_code: row.submittedByAccount?.username ?? row.submittedByWorker?.laborCode ?? null,
+    submitted_by_full_name: row.submittedByAccount?.fullName ?? row.submittedByWorker?.fullName ?? null,
     created_at: row.createdAt.toISOString(),
     rejected_at: toNullableIsoString(row.rejectedAt),
     confirmed_at: toNullableIsoString(row.confirmedAt),

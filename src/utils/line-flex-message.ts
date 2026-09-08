@@ -2,6 +2,7 @@
 import type { GateVehicleJobResponse } from "../types/gate.type";
 import type { GateTicketDto, TicketProductDto, VehicleJobDetailResponse } from "../types/worker.type";
 
+import { MAX_RATING_SCORE, MIN_RATING_SCORE } from "../types/line.type";
 import type { LineFlexComponent, LineMessage } from "../types/line.type";
 
 // Import Utils
@@ -527,7 +528,10 @@ export function buildVendorRatingPromptFlexMessage(input: {
           spacing: "sm",
           margin: "lg",
 
-          contents: [1, 2, 3, 4, 5].map(
+          contents: Array.from(
+            { length: MAX_RATING_SCORE - MIN_RATING_SCORE + 1 },
+            (_, index) => MIN_RATING_SCORE + index
+          ).map(
             (score) =>
               postbackButton({
                 label: String(score),
@@ -568,7 +572,7 @@ export function buildVendorRatingResultFlexMessages(input: {
 
   const stars =
     `${"★".repeat(input.score)}` +
-    `${"☆".repeat(5 - input.score)}`;
+    `${"☆".repeat(MAX_RATING_SCORE - input.score)}`;
 
   return [
     {

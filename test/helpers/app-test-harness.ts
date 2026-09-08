@@ -415,8 +415,8 @@ function patchModuleLoader(): void {
     }
 
     if (
-      request === "../queues/notification-queue" ||
-      request === "../../queues/notification-queue"
+      request === "../queues/line-message-queue" ||
+      request === "../../queues/line-message-queue"
     ) {
       return notificationQueueMock;
     }

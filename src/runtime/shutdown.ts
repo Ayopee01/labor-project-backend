@@ -12,7 +12,7 @@ type ShutdownDependencies = {
   markReadinessShuttingDown: () => void;
   closeHttpServer: (server: Server) => Promise<void>;
   closeWorkerWebSocketServer: () => Promise<void>;
-  closeNotificationQueueConnections: () => Promise<void>;
+  closeLineMessageQueueConnections: () => Promise<void>;
   closeWorkerQueueConnections: () => Promise<void>;
   closeRuntimeSettingsSyncConnections: () => Promise<void>;
   // Optional (ต่างจาก close*Connections ตัวอื่น) เพื่อไม่ต้องแก้ ShutdownDependencies literal ที่มีอยู่
@@ -35,9 +35,9 @@ const defaultShutdownDependencies: ShutdownDependencies = {
     const workerSocket = await import("../websockets/worker.socket");
     await workerSocket.closeWorkerWebSocketServer();
   },
-  closeNotificationQueueConnections: async () => {
-    const notificationQueue = await import("../queues/notification-queue");
-    await notificationQueue.closeNotificationQueueConnections();
+  closeLineMessageQueueConnections: async () => {
+    const lineMessageQueue = await import("../queues/line-message-queue");
+    await lineMessageQueue.closeLineMessageQueueConnections();
   },
   closeWorkerQueueConnections: async () => {
     const workerQueue = await import("../queues/worker-queue");
@@ -107,7 +107,7 @@ export function createGracefulShutdownHandler(
         httpCloseError = error;
       });
       await dependencies.closeWorkerWebSocketServer();
-      await dependencies.closeNotificationQueueConnections();
+      await dependencies.closeLineMessageQueueConnections();
       await dependencies.closeWorkerQueueConnections();
       await dependencies.closeRuntimeSettingsSyncConnections();
       await dependencies.closeSecurityAuditLogCleanupConnections?.();

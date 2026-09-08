@@ -100,20 +100,21 @@ interface GateMarketCreateInput {
   marketCode: string;
   marketName: string;
 
-  dropoff_point?: string;
+  dropoff_point: string;
 
   booths: GateBoothCreateInput[];
 }
 
-// Type input สำหรับสร้างหรือ append Business Ticket ใต้ VehicleJob
+// Type input สำหรับสร้างหรือ append Business Ticket ใต้ VehicleJob — ทุก field ที่นี่มาจาก
+// GateVehicleJobBody ที่ผ่าน schema validation แล้วเสมอ (required ทั้งหมด) จึงไม่มี field ไหน optional
 export interface GateVehicleJobCreateInput {
   ticketNumber: string;
 
   license_plate: string;
   license_plate_province: string;
-  vehicle_type?: string;
+  vehicle_type: string;
 
-  dispatch_now?: boolean;
+  dispatch_now: boolean;
 
   // เสมอมีสมาชิกเดียวใน array นี้ต่อหนึ่ง Gate request (หนึ่ง request = หนึ่ง Business Ticket)
   markets: GateMarketCreateInput[];

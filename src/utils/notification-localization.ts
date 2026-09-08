@@ -1,3 +1,5 @@
+import { TICKET_STATUS } from "../constants/job-status";
+
 export type NotificationLang = "TH" | "MN" | "CN" | "EN";
 
 export type LocalizedNotification = {
@@ -52,11 +54,11 @@ function numberText(value: unknown, fallback = "-"): string {
 function resolveTicketResultKey(params: Record<string, unknown>): string {
   const submissionStatus = String(params.submission_status ?? params.status ?? "").toUpperCase();
 
-  if (submissionStatus === "COMPLETED") {
+  if (submissionStatus === TICKET_STATUS.COMPLETED) {
     return "ticket.completion_confirmed";
   }
 
-  if (submissionStatus === "REJECT") {
+  if (submissionStatus === TICKET_STATUS.REJECT) {
     return "ticket.completion_rejected";
   }
 

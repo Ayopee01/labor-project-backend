@@ -15,6 +15,7 @@ import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shar
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { AccountStatus } from "../types/shared/account.type";
 import type { DbConnection } from "../types/shared/common.type";
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AdminWorkerBoardStatus, AdminWorkerStatusItem, MasterWorkerDto, PaginationMeta, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
 import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
@@ -75,7 +76,7 @@ async function requireWorker(
       : await workerRepository.findByIdentifier(id, connection);
 
   if (!worker) {
-    throw new ApiError(404, "USER_NOT_FOUND", "User not found.");
+    throw new ApiError(404, "WORKER_NOT_FOUND", `Worker ${id} not found.`);
   }
 
   return worker;
@@ -114,7 +115,7 @@ function formatUserListSchedule(
 // Function แปลง Status ตัวเลขของ MasterWorker เป็น active/inactive string ของ API เดิม — null (ไม่มี
 // ค่าจาก Master) ถือเป็น inactive ในชั้นแสดงผลนี้เท่านั้น ค่าจริงใน DB ยังเป็น null ไม่ถูกเขียนทับ
 function toAccountStatus(status: number | null): AccountStatus {
-  return status === 1 ? "active" : "inactive";
+  return status === MASTER_WORKER_STATUS.ACTIVE ? "active" : "inactive";
 }
 
 // Function จัดรูปแบบ user list item ใน service flow
@@ -343,7 +344,7 @@ export async function createUser(
         time_work: timeWorkPreset.time_work,
         time_in: timeWorkPreset.time_in,
         time_out: timeWorkPreset.time_out,
-        status: status === "active" ? 1 : 0,
+        status: status === "active" ? MASTER_WORKER_STATUS.ACTIVE : MASTER_WORKER_STATUS.INACTIVE,
       },
       transaction
     );
@@ -508,7 +509,7 @@ export async function updateUser(
     if (status !== undefined) {
       await workerRepository.update(
         worker.id,
-        { status: status === "active" ? 1 : 0 },
+        { status: status === "active" ? MASTER_WORKER_STATUS.ACTIVE : MASTER_WORKER_STATUS.INACTIVE },
         transaction
       );
 
@@ -993,7 +994,7 @@ export async function listAdminWorkerStatuses(): Promise<{
       const isOvertime = assignment !== null;
 
       return (
-        worker.status === 1 &&
+        worker.status === MASTER_WORKER_STATUS.ACTIVE &&
         hasVisibleWorkerFlow &&
         schedule !== null &&
         (isTimeInWorkSchedule(schedule) || isOvertime)
@@ -1026,7 +1027,7 @@ export async function forceAdminWorkerStatus(
     typeof idParam === "number" ? idParam : String(idParam)
   );
 
-  if (worker.status !== 1) {
+  if (worker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     throw new ApiError(403, "WORKER_NOT_ACTIVE", "Worker account is not active.");
   }
 
@@ -1092,7 +1093,17 @@ export async function forceAdminWorkerStatus(
 
   if (input.status === WORKER_WORK_STATUS.READY) {
     await enqueueWorker(worker.id);
-    await dispatchReadyWorkers();
+
+    // dispatch เป็น best-effort เสมอ — ต้องไม่ทำให้ request force-status ที่สำเร็จไปแล้วพัง 500
+    // เพราะ dispatch worker คันอื่นล้มเหลว (เขียน Redis/BullMQ แยกจาก DB transaction ของ request นี้)
+    try {
+      await dispatchReadyWorkers();
+    } catch (error) {
+      logger.error("Worker was forced ready but dispatch failed.", {
+        workerId: worker.id,
+        error,
+      });
+    }
   }
 
   if (input.status === WORKER_WORK_STATUS.OPEN_APP) {

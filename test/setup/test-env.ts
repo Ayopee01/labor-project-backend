@@ -17,7 +17,6 @@ function includesForbiddenDatabaseName(databaseUrl: string): boolean {
 
 // Function ตั้งค่า env แยกสำหรับ test ไม่ให้ชนข้อมูลจริง
 export function applyIsolatedTestEnv(prefix = "test"): void {
-  process.env.NODE_ENV = "test";
   // Route test files ยิง POST /api/auth/login จริงแทบทุกเทสต์ (ไม่มี token cache) ไฟล์ที่มีหลายร้อย
   // เทสต์จึงชน default RATE_LIMIT_MAX_REQUESTS ได้ง่ายเมื่อมีเทสต์เพิ่มขึ้นเรื่อยๆ (พิสูจน์แล้วจริงตอน
   // เพิ่มเทสต์ HistoryFlags 4 ตัว) — ยกเพดานเฉพาะ process ของ test เท่านั้น ไม่กระทบ production/security จริง

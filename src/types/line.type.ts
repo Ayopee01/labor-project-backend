@@ -78,6 +78,11 @@ export interface VendorTicketActionTokenPayload {
   exp: number;
 }
 
+// Config ช่วงคะแนนความพึงพอใจที่ Vendor ให้ได้ — ใช้ร่วมกันทั้ง validate (line.service.ts) และ
+// แสดงผล (line-flex-message.ts: ปุ่มให้คะแนน 1-MAX_RATING_SCORE และจำนวนดาว)
+export const MIN_RATING_SCORE = 1;
+export const MAX_RATING_SCORE = 5;
+
 // Type คะแนนความพึงพอใจที่ vendor ให้กับ ticket
 export interface TicketRatingDto {
   id: number;

@@ -4,6 +4,7 @@ import { client, requireMapped, toId } from "./repository-utils";
 
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
+import { MASTER_WORKER_STATUS } from "../../types/admin-workers.type";
 import type { MasterWorkerDto, WorkScheduleDto } from "../../types/admin-workers.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -83,7 +84,7 @@ export async function listActiveByLaborCodes(
       laborCode: {
         in: uniqueLaborCodes,
       },
-      status: 1,
+      status: MASTER_WORKER_STATUS.ACTIVE,
     },
   });
 

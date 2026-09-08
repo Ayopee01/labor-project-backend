@@ -7,7 +7,6 @@ import { createGracefulShutdownHandler } from "../../../src/runtime/shutdown";
 import { logger } from "../../../src/utils/logger";
 
 const PRODUCTION_ENV_KEYS = [
-  "NODE_ENV",
   "DATABASE_URL",
   "REDIS_URL",
   "REDIS_WORKER_QUEUE_KEY",
@@ -48,7 +47,6 @@ function withValidProductionEnv(
   ) as Record<(typeof PRODUCTION_ENV_KEYS)[number], string | undefined>;
 
   Object.assign(process.env, {
-    NODE_ENV: "production",
     DATABASE_URL: "postgresql://user:pass@localhost:5432/app",
     REDIS_URL: "redis://localhost:6379",
     REDIS_WORKER_QUEUE_KEY: "worker:queue",
@@ -102,10 +100,8 @@ function withValidProductionEnv(
 }
 
 test("env validation rejects weak production secrets", () => {
-  const previousNodeEnv = process.env.NODE_ENV;
   const previousAccessSecret = process.env.JWT_ACCESS_SECRET;
 
-  process.env.NODE_ENV = "production";
   process.env.DATABASE_URL = "postgresql://user:pass@localhost:5432/app";
   process.env.REDIS_URL = "redis://localhost:6379";
   process.env.REDIS_WORKER_QUEUE_KEY = "worker:queue";
@@ -130,7 +126,6 @@ test("env validation rejects weak production secrets", () => {
     assert.equal(result.ok, false);
     assert.match(result.errors.join(" "), /JWT_ACCESS_SECRET/);
   } finally {
-    process.env.NODE_ENV = previousNodeEnv;
     if (previousAccessSecret === undefined) {
       delete process.env.JWT_ACCESS_SECRET;
     } else {
@@ -140,12 +135,10 @@ test("env validation rejects weak production secrets", () => {
 });
 
 test("env validation rejects missing production CORS origin and LINE config", () => {
-  const previousNodeEnv = process.env.NODE_ENV;
   const previousCorsOrigin = process.env.CORS_ORIGIN;
   const previousLineSecret = process.env.LINE_CHANNEL_SECRET;
   const previousLineAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
-  process.env.NODE_ENV = "production";
   delete process.env.CORS_ORIGIN;
   delete process.env.LINE_CHANNEL_SECRET;
   delete process.env.LINE_CHANNEL_ACCESS_TOKEN;
@@ -172,7 +165,6 @@ test("env validation rejects missing production CORS origin and LINE config", ()
     assert.match(result.errors.join(" "), /LINE_CHANNEL_SECRET/);
     assert.match(result.errors.join(" "), /LINE_CHANNEL_ACCESS_TOKEN/);
   } finally {
-    process.env.NODE_ENV = previousNodeEnv;
     if (previousCorsOrigin === undefined) {
       delete process.env.CORS_ORIGIN;
     } else {
@@ -192,10 +184,8 @@ test("env validation rejects missing production CORS origin and LINE config", ()
 });
 
 test("env validation allows wildcard CORS origin", () => {
-  const previousNodeEnv = process.env.NODE_ENV;
   const previousCorsOrigin = process.env.CORS_ORIGIN;
 
-  process.env.NODE_ENV = "production";
   process.env.CORS_ORIGIN = "*";
 
   process.env.DATABASE_URL =
@@ -241,8 +231,6 @@ test("env validation allows wildcard CORS origin", () => {
 
     assert.equal(result.ok, true);
   } finally {
-    process.env.NODE_ENV = previousNodeEnv;
-
     if (previousCorsOrigin === undefined) {
       delete process.env.CORS_ORIGIN;
     } else {
@@ -418,7 +406,7 @@ test("graceful shutdown waits for HTTP close to finish (drain in-flight requests
           resolve();
         };
       }),
-    closeNotificationQueueConnections: async () => {
+    closeLineMessageQueueConnections: async () => {
       events.push("notification-close");
     },
     closeWorkerQueueConnections: async () => {
@@ -494,7 +482,7 @@ test("graceful shutdown is idempotent for duplicate signals", async () => {
     closeWorkerWebSocketServer: async () => {
       events.push("ws-close");
     },
-    closeNotificationQueueConnections: async () => {
+    closeLineMessageQueueConnections: async () => {
       events.push("notification-close");
     },
     closeWorkerQueueConnections: async () => {

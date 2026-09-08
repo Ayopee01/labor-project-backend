@@ -157,6 +157,7 @@ export interface AdminAuditWorkerAssignmentEventRow {
   occurred_at: string;
   metadata: Record<string, unknown> | null;
   worker_code: string | null;
+  worker_full_name: string | null;
   ticket_number: string | null;
 }
 
@@ -168,6 +169,7 @@ export interface AdminAuditCompletionSubmissionRow {
   submitted_by_worker_id: number | null;
   submitted_by_role: string;
   submitted_by_code: string | null;
+  submitted_by_full_name: string | null;
   created_at: string;
   rejected_at: string | null;
   confirmed_at: string | null;

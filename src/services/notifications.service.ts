@@ -141,8 +141,8 @@ export function publishNotification(event: RealtimeNotificationEvent): void {
 export function persistWorkerNotification(input: {
   worker_id: number;
   type: string;
-  notification_key?: string | null;
-  lang?: string | null;
+  notification_key: string;
+  lang: string;
   title: string;
   message: string;
   payload?: unknown;
@@ -155,8 +155,8 @@ export function persistWorkerNotification(input: {
 export function persistWorkerNotifications(inputs: Array<{
   worker_id: number;
   type: string;
-  notification_key?: string | null;
-  lang?: string | null;
+  notification_key: string;
+  lang: string;
   title: string;
   message: string;
   payload?: unknown;

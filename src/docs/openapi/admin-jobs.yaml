@@ -597,7 +597,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/vehicle-jobs/{ticketNo}/financials:
+  /api/admin/vehicle-jobs/{ticketNumber}/financials:
     get:
       tags:
         - Admin Jobs
@@ -609,12 +609,12 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: ticketNo
+          name: ticketNumber
           required: true
           schema:
             type: string
-            example: TKT-20260723-000125
-          description: Vehicle TicketNo.
+            example: TRUCK-20260723-001
+          description: Vehicle TicketNumber.
       responses:
         "200":
           description: Persisted financial breakdown of the vehicle job.
@@ -686,7 +686,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/vehicle-jobs/{ticketNo}/assign-workers:
+  /api/admin/vehicle-jobs/{ticketNumber}/assign-workers:
     post:
       tags:
         - Admin Jobs
@@ -700,11 +700,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: ticketNo
+          name: ticketNumber
           required: true
           schema:
             type: string
-            example: TKT-20260723-000125
+            example: TRUCK-20260723-001
       requestBody:
         required: true
         content:
@@ -733,7 +733,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/vehicle-jobs/{ticketNo}/scan-deadline/extend:
+  /api/admin/vehicle-jobs/{ticketNumber}/scan-deadline/extend:
     post:
       tags:
         - Admin Jobs
@@ -745,11 +745,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: ticketNo
+          name: ticketNumber
           required: true
           schema:
             type: string
-            example: TKT-20260723-000125
+            example: TRUCK-20260723-001
       requestBody:
         required: true
         content:

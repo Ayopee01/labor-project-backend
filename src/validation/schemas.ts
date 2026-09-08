@@ -2,7 +2,9 @@
 import { z } from "zod";
 import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS } from "../config/permission.config";
 import { SHIRT_COLOR_SNAPSHOT, VEHICLE_OPERATION_STATUS } from "../constants/job-status";
+import { DEFAULT_PAGE_LIMIT } from "../constants/pagination";
 import { ACCOUNT_ROLES, USER_LIST_SHIFTS } from "../types/admin-workers.type";
+import { ADMIN_AUDIT_ACTOR_TYPE_VALUES } from "../types/admin-audit.type";
 import { GATE_CLIENT_STATUSES } from "../types/shared/gate-client.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import { WORKER_NATIONALITIES, WORKER_SHIRT_TYPES } from "../utils/worker-code";
@@ -293,6 +295,16 @@ const optionalPageNumber = z.preprocess(
 const optionalLimitNumber = z.preprocess(
   emptyStringToUndefined,
   z.coerce.number().int().min(1).max(100).optional()
+);
+
+const pageQuerySchema = z.preprocess(
+  emptyStringToUndefined,
+  z.coerce.number().int().min(1).default(1)
+);
+
+const limitQuerySchema = z.preprocess(
+  emptyStringToUndefined,
+  z.coerce.number().int().min(1).max(100).default(DEFAULT_PAGE_LIMIT)
 );
 
 /* -------------------------------------- Common Schemas -------------------------------------- */
@@ -631,14 +643,8 @@ export const adminAuditWorkerPerformanceQuerySchema = z
     worker_code: optionalTrimmedString,
     date_from: optionalDateString,
     date_to: optionalDateString,
-    page: z.preprocess(
-      emptyStringToUndefined,
-      z.coerce.number().int().min(1).default(1)
-    ),
-    limit: z.preprocess(
-      emptyStringToUndefined,
-      z.coerce.number().int().min(1).max(100).default(20)
-    ),
+    page: pageQuerySchema,
+    limit: limitQuerySchema,
     sort_by: z.preprocess(
       emptyStringToUndefined,
       z.enum(adminAuditWorkerPerformanceSortByValues).optional()
@@ -676,12 +682,7 @@ export const adminAuditWorkerPerformanceQuerySchema = z
   });
 
 const adminAuditEventsActorTypeValues = [
-  "system",
-  "admin",
-  "worker",
-  "driver",
-  "vendor",
-  "gate",
+  ...ADMIN_AUDIT_ACTOR_TYPE_VALUES,
 ] as const;
 
 // 27.15.1 — quick_filter การ์ดด่วนเดียวที่แทน has_vehicle/has_reason/severity เดิมทั้งหมด ตั้งใจแยก
@@ -712,14 +713,8 @@ export const adminAuditEventsQuerySchema = z
       emptyStringToUndefined,
       z.enum(adminAuditQuickFilterValues).optional()
     ),
-    page: z.preprocess(
-      emptyStringToUndefined,
-      z.coerce.number().int().min(1).default(1)
-    ),
-    limit: z.preprocess(
-      emptyStringToUndefined,
-      z.coerce.number().int().min(1).max(100).default(20)
-    ),
+    page: pageQuerySchema,
+    limit: limitQuerySchema,
   })
   .strict()
   .superRefine((input, context) => {
@@ -840,8 +835,8 @@ export const adminDailyStallFeeQuerySchema = z
     search: optionalLowercaseString,
     product_code: optionalTrimmedString,
     package_code: optionalTrimmedString,
-    page: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).default(1)),
-    limit: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).max(100).default(20)),
+    page: pageQuerySchema,
+    limit: limitQuerySchema,
   })
   .strict()
   .superRefine((input, context) => {
@@ -883,8 +878,8 @@ export const adminMonthlyStallFeeQuerySchema = z
         SHIRT_COLOR_SNAPSHOT.UNKNOWN,
       ]).optional()
     ),
-    page: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).default(1)),
-    limit: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).max(100).default(20)),
+    page: pageQuerySchema,
+    limit: limitQuerySchema,
   })
   .strict()
   .superRefine((input, context) => {
@@ -1102,16 +1097,6 @@ export const runtimeSettingsSchema = z.object({
 });
 
 /* -------------------------------------- Query Schemas -------------------------------------- */
-
-const pageQuerySchema = z.preprocess(
-  emptyStringToUndefined,
-  z.coerce.number().int().min(1).default(1)
-);
-
-const limitQuerySchema = z.preprocess(
-  emptyStringToUndefined,
-  z.coerce.number().int().min(1).max(100).default(20)
-);
 
 const optionalUserListShiftSchema = z.preprocess(
   emptyStringToUndefined,

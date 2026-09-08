@@ -85,7 +85,7 @@ export async function enqueueLoggedLineMessage(input: {
 }
 
 // Function เริ่ม notification workers ใน Redis/BullMQ queue
-export function startNotificationWorkers(): void {
+export function startLineMessageWorker(): void {
   if (lineWorker) {
     return;
   }
@@ -119,7 +119,7 @@ export function startNotificationWorkers(): void {
 }
 
 // Function ปิด BullMQ LINE queue connection สำหรับ graceful shutdown
-export async function closeNotificationQueueConnections(): Promise<void> {
+export async function closeLineMessageQueueConnections(): Promise<void> {
   if (lineWorker) {
     await lineWorker.close();
     lineWorker = null;

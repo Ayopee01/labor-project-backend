@@ -3,6 +3,7 @@ import { Prisma, type MasterMarket } from "@prisma/client";
 
 // Import Dependencies
 import { VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { MASTER_MARKET_ACTIVE_STATUS, MASTER_OWNER_STALL_ACTIVE_STATUS } from "../constants/master-data-status";
 import * as gateTicketRepository from "./shared/gate-ticket.repository";
 import { mapMarketJob, mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
@@ -13,6 +14,30 @@ import type { GateRequestReplayRecord, GateVehicleJobCreateInput, GateVehicleJob
 import type { MarketJobDto, VehicleJobDto, VendorLineTargetDto } from "../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
+
+// Function ตรวจว่า master_market แถวนี้ (ตลาด+แผง) ยังใช้งานได้ — boothStatus ต้อง Normal เสมอ ส่วน
+// marketStatus ยอมรับทั้ง null (ไม่เคยตั้งค่า) หรือ Normal
+function isActiveMasterMarketBooth(record: {
+  boothStatus: string;
+  marketStatus: string | null;
+}): boolean {
+  return (
+    record.boothStatus === MASTER_MARKET_ACTIVE_STATUS &&
+    (record.marketStatus === null || record.marketStatus === MASTER_MARKET_ACTIVE_STATUS)
+  );
+}
+
+// Function สร้าง where clause กรองเฉพาะ master_market ที่ใช้งานได้ — ใช้ร่วมกันทุก query ที่ list
+// ตลาด/แผงให้ Gate เลือก
+function activeMasterMarketWhere(): {
+  boothStatus: string;
+  OR: Array<{ marketStatus: string | null }>;
+} {
+  return {
+    boothStatus: MASTER_MARKET_ACTIVE_STATUS,
+    OR: [{ marketStatus: null }, { marketStatus: MASTER_MARKET_ACTIVE_STATUS }],
+  };
+}
 
 // Function ค้นหา gate request replay ตาม ref จาก DB
 export async function findGateRequestReplayByRef(
@@ -99,14 +124,10 @@ export async function listGateMarketOptions(
           marketCode,
         }
         : {}),
-      boothStatus: "Normal",
+      ...activeMasterMarketWhere(),
       marketName: {
         not: null,
       },
-      OR: [
-        { marketStatus: null },
-        { marketStatus: "Normal" },
-      ],
     },
     select: {
       marketCode: true,
@@ -131,11 +152,7 @@ export async function listGateBoothOptionsByMarketCode(
     db.masterMarket.findMany({
       where: {
         marketCode,
-        boothStatus: "Normal",
-        OR: [
-          { marketStatus: null },
-          { marketStatus: "Normal" },
-        ],
+        ...activeMasterMarketWhere(),
       },
       select: {
         boothCode: true,
@@ -149,8 +166,8 @@ export async function listGateBoothOptionsByMarketCode(
     db.masterOwnerStall.findMany({
       where: {
         marketCode,
-        status: "active",
-        ownerStatus: "Normal",
+        status: MASTER_OWNER_STALL_ACTIVE_STATUS,
+        ownerStatus: MASTER_MARKET_ACTIVE_STATUS,
         lineUserId: {
           not: null,
         },
@@ -220,11 +237,7 @@ export async function findActiveMarketBoothByCodes(
     },
   });
 
-  if (
-    !marketBooth ||
-    marketBooth.boothStatus !== "Normal" ||
-    (marketBooth.marketStatus !== null && marketBooth.marketStatus !== "Normal")
-  ) {
+  if (!marketBooth || !isActiveMasterMarketBooth(marketBooth)) {
     return null;
   }
 

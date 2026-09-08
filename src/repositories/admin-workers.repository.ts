@@ -5,6 +5,7 @@ import { client, requireMapped, toId } from "./shared/repository-utils";
 
 import type { Prisma } from "@prisma/client";
 import type { DbConnection } from "../types/shared/common.type";
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { MasterWorkerCreateInput, MasterWorkerDto, MasterWorkerUpdateInput, UserListFilters, UserListShift } from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
@@ -61,7 +62,9 @@ function buildWorkerWhere(filters: Partial<UserListFilters> = {}): Prisma.Master
   const where: Prisma.MasterWorkerWhereInput = {};
 
   if (filters.status !== undefined) {
-    where.status = filters.status === "active" ? 1 : { not: 1 };
+    where.status = filters.status === "active"
+      ? MASTER_WORKER_STATUS.ACTIVE
+      : { not: MASTER_WORKER_STATUS.ACTIVE };
   }
 
   if (filters.search) {

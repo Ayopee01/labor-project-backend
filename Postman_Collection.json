@@ -304,6 +304,152 @@
           "response": []
         },
         {
+          "name": "POST /api/auth/login - Manager",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let body = {};",
+                  "try { body = pm.response.json(); } catch (error) {}",
+                  "if (body.AccessToken) pm.collectionVariables.set('accessToken', body.AccessToken);",
+                  "if (body.RefreshToken) pm.collectionVariables.set('refreshToken', body.RefreshToken);",
+                  "if (body.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.LoginChallengeToken);",
+                  "if (body.Details && body.Details.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.Details.LoginChallengeToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text",
+                "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "admin_webapp",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Username\": \"manager01\",\n  \"Password\": \"Manager@123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, admin_webapp), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: Manager username/password, seeded by prisma/seed.ts SEED_ADMIN_ACCOUNTS.manager (PermissionLevel=manager).\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Manager has every admin permission except the OWNER_ONLY_PERMISSIONS group (e.g. mobile_app_versions:create/update, still keeps mobile_app_versions:read). Saves AccessToken and RefreshToken into collection variables when login succeeds. Call GET /api/auth/me after login to fetch admin profile data, permissions, and latest activity."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/login - Supervisor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let body = {};",
+                  "try { body = pm.response.json(); } catch (error) {}",
+                  "if (body.AccessToken) pm.collectionVariables.set('accessToken', body.AccessToken);",
+                  "if (body.RefreshToken) pm.collectionVariables.set('refreshToken', body.RefreshToken);",
+                  "if (body.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.LoginChallengeToken);",
+                  "if (body.Details && body.Details.LoginChallengeToken) pm.collectionVariables.set('loginChallengeToken', body.Details.LoginChallengeToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text",
+                "description": "Required when sending JSON body."
+              },
+              {
+                "key": "X-Client-Type",
+                "value": "admin_webapp",
+                "type": "text",
+                "description": "Required here: no access token exists yet for the server to read the role from, and this path is shared by every app. Values: worker_app, admin_webapp, driver_webapp, gate, line_oa."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Username\": \"supervisor01\",\n  \"Password\": \"Supervisor@123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/login\nAuth: No auth required\nHeaders: Content-Type: application/json, X-Client-Type (required, admin_webapp), X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: Supervisor username/password, seeded by prisma/seed.ts SEED_ADMIN_ACCOUNTS.supervisor (PermissionLevel=supervisor).\nResponse: login returns tokens only: AccessToken, RefreshToken, TokenType, ExpiresIn.\nNotes: Supervisor does not get any permission in the OWNER_ONLY_PERMISSIONS group, not even read. Saves AccessToken and RefreshToken into collection variables when login succeeds. Call GET /api/auth/me after login to fetch admin profile data, permissions, and latest activity."
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/auth/login - Worker 1",
           "event": [
             {
@@ -1004,7 +1150,174 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Method: PATCH\nURL: {{baseUrl}}/api/auth/me/password\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: CurrentPassword and NewPassword\nNotes: Works for both Admin and Worker. Backend verifies CurrentPassword, hashes NewPassword, keeps the current session active, and revokes other active sessions for the same account."
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/auth/me/password\nAuth: Required via Authorization header — Admin only\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: CurrentPassword and NewPassword\nNotes: Admin only. Worker has no independent password to change here — Worker's password is always derived from the phone number on their Master record. To reset a Worker's password, Admin uses PATCH /api/admin/users/:workerCode/password instead. Backend verifies CurrentPassword, hashes NewPassword, keeps the current session active, and revokes other active sessions for the same account."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/auth/me/lang",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text",
+                "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Lang\": \"EN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me/lang",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me",
+                "lang"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/auth/me/lang\nAuth: Required via Authorization header\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: Lang, one of TH, MN, CN, EN (case-insensitive; legacy MY/KM values normalize to MN/CN).\nNotes: Works for both Admin and Worker. Updates the display language stored on the account."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/auth/me",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text",
+                "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"FullName\": \"System Admin\",\n  \"Email\": \"admin@simmummuang.local\",\n  \"Phone\": \"081-000-0001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/auth/me\nAuth: Required via Authorization header — Admin only\nHeaders: Authorization: Bearer {{accessToken}}, Content-Type: application/json, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: FullName, Email, Phone — all optional. Send null for Email/Phone to clear the stored value; FullName cannot be cleared (must stay non-empty when sent).\nNotes: Admin only — Worker has no editable free-text profile fields of this kind (Worker profile data is synced from Master)."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/me/upload-image",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text",
+                "description": "Required for protected routes. Format: Bearer <AccessToken>."
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Required. Image file for the Admin's own profile picture."
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me/upload-image",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me",
+                "upload-image"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: POST\nURL: {{baseUrl}}/api/auth/me/upload-image\nAuth: Required via Authorization header — Admin only\nHeaders: Authorization: Bearer {{accessToken}}, X-Request-Id (optional, correlation id), X-Client-Version (optional)\nQuery: None\nBody: multipart/form-data with a single file field named file.\nNotes: Admin only. Saves the file to local disk (ADMIN_IMAGE_STORAGE_DIR) and stores the resulting /storage/admin-images/<filename> URL on the account."
           },
           "response": []
         }
@@ -1764,6 +2077,84 @@
           "response": []
         },
         {
+          "name": "GET /api/admin/vehicle-jobs/history/daily-stall-fees",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/vehicle-jobs/history/daily-stall-fees?date_from=2026-07-01&date_to=2026-07-07&search=&product_code=&package_code=&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "vehicle-jobs",
+                "history",
+                "daily-stall-fees"
+              ],
+              "query": [
+                {
+                  "key": "date_from",
+                  "value": "2026-07-01",
+                  "description": "Required date range start in YYYY-MM-DD."
+                },
+                {
+                  "key": "date_to",
+                  "value": "2026-07-07",
+                  "description": "Required date range end in YYYY-MM-DD, inclusive. Range must not exceed 31 calendar days."
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Optional partial match, lowercased before comparison."
+                },
+                {
+                  "key": "product_code",
+                  "value": "",
+                  "description": "Optional exact filter."
+                },
+                {
+                  "key": "package_code",
+                  "value": "",
+                  "description": "Optional exact filter."
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/admin/vehicle-jobs/history/daily-stall-fees\nAuth: Admin access token with jobs:read permission\nQuery: date_from/date_to (required, max 31 calendar days apart), search, product_code, package_code, page, limit.\nNotes: One row per TicketProductFinancial (per product per booth per ticket), unlike monthly-stall-fees below which groups by MarketCode+BoothCode+ShirtColor. StallFeeRounded is already persisted at finalize time, never recomputed from the current rate. Totals here must reconcile with the sum of monthly-stall-fees over the same date range.\nResponse: Data[] of {Id, BusinessDate, FinalizedAt, BoothCode, Plate, PlateProvince, TicketNo, MarketCode, MarketName, ProductCode, ProductFullCode, ProductName, PackageCode, PackageName, ConfirmedQuantity, StallFeeRounded, ...}, Summary ({RowCount, StallCount, ConfirmedQuantityTotal, StallFeeTotal}), AvailableProducts[]/AvailablePackages[], and Pagination."
+          },
+          "response": []
+        },
+        {
           "name": "GET /api/admin/vehicle-jobs/history/monthly-stall-fees",
           "request": {
             "method": "GET",
@@ -2392,6 +2783,78 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "GET /api/admin/audit/events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "description": "Admin Audit event log (distinct endpoint from Worker Performance above — general system/admin/worker/driver/vendor/gate audit trail).",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/audit/events?page=1&limit=20&search=&actor_type=&event_type=&quick_filter=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "audit",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Optional partial match on event details."
+                },
+                {
+                  "key": "actor_type",
+                  "value": "",
+                  "description": "Optional exact filter: system, admin, worker, driver, vendor, or gate. Affects the returned Summary."
+                },
+                {
+                  "key": "event_type",
+                  "value": "",
+                  "description": "Optional exact filter by event type code."
+                },
+                {
+                  "key": "quick_filter",
+                  "value": "",
+                  "description": "Optional preset shortcut: has_vehicle, system, critical, or admin. Single value only, filters Data/Pagination only — never affects Summary."
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -2960,6 +3423,119 @@
               "type": "noauth"
             },
             "description": "Method: POST\nURL: {{baseUrl}}/api/admin/admins\nAuth: Admin access token with admins:create permission\nBody: username, password, FullName, optional position/email/phone/status, PermissionLevel owner|manager|supervisor, and permissions array\nNotes: Creates role=admin only and saves email/phone to accounts.email/accounts.phone when provided. Seed owner admin can create manager/supervisor. Manager can create supervisor only. No API can create owner because the actor must have a higher PermissionLevel than the new account. Saves created account id to {{adminUserId}}."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/admin/admins/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"FullName\": \"Branch Manager\",\n  \"Position\": \"Manager\",\n  \"Email\": \"manager01@simmummuang.local\",\n  \"Phone\": \"081-000-0002\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/admins/{{adminUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "admins",
+                "{{adminUserId}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/admins/:id\nAuth: Admin access token with admins:update permission\nBody: FullName, Position, Email, Phone — all optional\nNotes: Updates basic profile fields of another admin account. PermissionLevel/permissions are changed only via PATCH /api/admin/users/:id/permissions, not here. Actor must be able to manage the target account (must have a higher PermissionLevel)."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/admin/admins/:id/password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"NewPassword\": \"Manager@654321\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/admins/{{adminUserId}}/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "admins",
+                "{{adminUserId}}",
+                "password"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Method: PATCH\nURL: {{baseUrl}}/api/admin/admins/:id/password\nAuth: Admin access token with admins:reset_password permission\nBody: NewPassword\nNotes: Resets another admin's password and revokes all of that admin's active sessions. Actor must be able to manage the target account (must have a higher PermissionLevel)."
           },
           "response": []
         },
@@ -3689,6 +4265,55 @@
           },
           "response": [],
           "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/earnings/summary\nAuth: Worker access token\nQuery: None\nBody: None\nResponse: Period.FromDate/ToDate/DayCount, TotalEarnings, Daily[15], and Details. Backend returns latest 15 completed Bangkok calendar days and excludes the current day. Details.Earnings is read from persisted TicketWorker.FinalEarningAmount."
+        },
+        {
+          "name": "GET /api/workers/me/notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{$guid}}",
+                "type": "text",
+                "description": "Optional. Correlation id for this request — Postman's {{$guid}} generates a fresh UUID every time this request is sent. Echoed back in the X-Request-Id response header and in every error response body."
+              },
+              {
+                "key": "X-Client-Version",
+                "value": "{{clientVersion}}",
+                "type": "text",
+                "description": "Optional. Version of the calling client app, recorded in server logs for debugging only."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/workers/me/notifications?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workers",
+                "me",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Method: GET\nURL: {{baseUrl}}/api/workers/me/notifications\nAuth: Worker access token\nQuery: page, limit\nBody: None\nResponse: Data[] of {Id, Type, NotificationKey, Lang, Title, Message, Notification: {Key, Lang, Title, Message}, Payload, ReadAt, CreatedAt}, and Pagination."
+          },
+          "response": []
         },
         {
           "name": "POST /api/workers/me/online",

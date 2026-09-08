@@ -5,7 +5,7 @@ import { Prisma, type MasterMarket } from "@prisma/client";
 // Import Dependencies
 import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
 import { withTransaction } from "../db/prisma";
-import { enqueueLoggedLineMessage } from "../queues/notification-queue";
+import { enqueueLoggedLineMessage } from "../queues/line-message-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
 import * as gateRepository from "../repositories/gate.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
@@ -901,13 +901,13 @@ async function buildGateCreateInputWithVendorLineIds(
 // ขั้นตอนตามลำดับเดิมทุกประการ (lock VehicleJob -> lock MarketJob ถ้ามี -> สร้าง Ticket/Product -> SUM
 // -> finalize) ห้ามสลับลำดับ เพราะผูกกับ FOR UPDATE lock ที่ป้องกัน race condition ตอน Gate ยิงซ้ำ
 // TicketNumber เดียวกันพร้อมกัน — exported ให้ test เรียกตรงได้ ไม่ต้องผ่าน HTTP body ทั้งก้อน
-export async function createVehicleJobAndMarketJob(
+export async function createOrAppendGateBusinessTicket(
   input: GateVehicleJobCreateInput,
   payloadSnapshot: Prisma.InputJsonValue,
   connection?: DbConnection
 ): Promise<{ vehicleJob: VehicleJobDto; marketJob: MarketJobDto }> {
   const market = input.markets[0];
-  const dispatchNow = input.dispatch_now === true;
+  const dispatchNow = input.dispatch_now;
   const vehicleStatus = dispatchNow ? VEHICLE_JOB_STATUS.WORKING : VEHICLE_JOB_STATUS.WAIT;
   const ticketStatus = TICKET_STATUS.WAIT;
   const requestedWorkersRequired = Math.max(1, market.workers_required);
@@ -925,7 +925,7 @@ export async function createVehicleJobAndMarketJob(
         ticketNumber: input.ticketNumber,
         licensePlate: input.license_plate,
         licensePlateProvince: input.license_plate_province,
-        vehicleType: input.vehicle_type ?? null,
+        vehicleType: input.vehicle_type,
         workersRequired: requestedWorkersRequired,
         dispatchNow,
         status: vehicleStatus,
@@ -941,7 +941,7 @@ export async function createVehicleJobAndMarketJob(
     existingVehicleJob !== null &&
     (existingVehicleJob.license_plate !== input.license_plate ||
       existingVehicleJob.license_plate_province !== input.license_plate_province ||
-      existingVehicleJob.vehicle_type !== (input.vehicle_type ?? null) ||
+      existingVehicleJob.vehicle_type !== input.vehicle_type ||
       (dispatchNow && !existingVehicleJob.dispatch_now) ||
       (dispatchNow && canReopenDispatch));
 
@@ -952,7 +952,7 @@ export async function createVehicleJobAndMarketJob(
         {
           licensePlate: input.license_plate,
           licensePlateProvince: input.license_plate_province,
-          vehicleType: input.vehicle_type ?? null,
+          vehicleType: input.vehicle_type,
           dispatchNow: existingVehicleJob.dispatch_now || dispatchNow,
           status:
             dispatchNow && canReopenDispatch
@@ -996,7 +996,7 @@ export async function createVehicleJobAndMarketJob(
           workersRequired: requestedWorkersRequired,
           marketCode: market.marketCode,
           marketName: market.marketName,
-          dropoffPoint: market.dropoff_point ?? null,
+          dropoffPoint: market.dropoff_point,
           status: marketStatus,
         },
         connection
@@ -1412,7 +1412,7 @@ export async function createVehicleJobFromGate(
 
         // สร้าง VehicleJob (ถ้ายังไม่มี) และ Business Ticket ใหม่
         const { vehicleJob, marketJob } =
-          await createVehicleJobAndMarketJob(
+          await createOrAppendGateBusinessTicket(
             gateInputWithVendorLineIds,
             input as unknown as Prisma.InputJsonValue,
             transaction

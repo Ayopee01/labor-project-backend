@@ -3,6 +3,7 @@ import { getMessaging } from "firebase-admin/messaging";
 import * as masterWorkerRepository from "../../repositories/shared/master-worker.repository";
 import * as workerPushTokenRepository from "../../repositories/shared/worker-push-token.repository";
 import { buildLocalizedNotification } from "../../utils/notification-localization";
+import { MASTER_WORKER_STATUS } from "../../types/admin-workers.type";
 import type { AccessTokenPayload, SessionDto } from "../../types/auth.type";
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerPushEventInput, WorkerPushTokenDto, WorkerPushRegistrationResponse } from "../../types/notifications.type";
@@ -119,7 +120,7 @@ export async function registerWorkerPushToken(
   const deviceId = input.device_id ?? session.device_id;
   const worker = await masterWorkerRepository.findById(auth.account_id);
 
-  if (!worker || worker.status !== 1) {
+  if (!worker || worker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
   }
 

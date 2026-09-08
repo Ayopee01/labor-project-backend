@@ -25,12 +25,13 @@ import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import { buildWorkerDailySummary, closeWorkerAttendanceShift, markWorkerAttendanceOnline, scheduleWorkerShiftEndIfNeeded } from "./shared/worker-attendance.service";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { MasterWorkerDto } from "../types/admin-workers.type";
-import type { GateTicketDto, TicketCompletionResponse, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerCurrentJobTeamAcceptResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerProductPackageOptionsResponse, WorkerQueueEntryDto, WorkerShiftCloseReason, WorkerStatusResponse } from "../types/worker.type";
+import type { GateTicketDto, TicketCompletionResponse, VehicleJobAssignmentDto, VehicleJobDetailResponse, VehicleJobDto, VehicleWorkReadinessDto, WorkerAssignmentAcceptResponse, WorkerAssignmentCheckInResponse, WorkerAssignmentHistoryItemDto, WorkerAssignmentHistoryItemResponse, WorkerAssignmentHistoryResponse, WorkerAssignmentTeamMemberDto, WorkerAssignmentTeamRawMemberDto, WorkerBreakResponse, WorkerCurrentJobResponse, WorkerCurrentJobTeamAcceptResponse, WorkerEarningsSummaryResponse, WorkerOnlineResponse, WorkerProductPackageOptionsResponse, WorkerQueueEntryDto, WorkerShiftCloseReason, WorkerStatusResponse } from "../types/worker.type";
 import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import type { DbConnection } from "../types/shared/common.type";
-import { ASSIGNMENT_STATUS, TICKET_SUBMITTER_ROLE } from "../constants/job-status";
+import { ASSIGNMENT_STATUS, TICKET_SUBMITTER_ROLE, WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { workerAssignmentHistoryQuerySchema, workerCheckInBarcodeBodySchema, workerEarningsSummaryQuerySchema, workerTicketCompleteBodySchema } from "../validation/schemas";
@@ -240,6 +241,43 @@ function buildWorkerTeamAcceptResponse(
   };
 }
 
+// Function จัดหมวด scan_status ของสมาชิกทีมหนึ่งคนจากสถานะ/timestamp ดิบ — ย้ายมาจาก
+// vehicle-job-assignment.repository.ts เพราะเป็น business classification ไม่ใช่ data access
+function buildAssignmentScanStatus(member: WorkerAssignmentTeamRawMemberDto): string {
+  if (member.status === ASSIGNMENT_STATUS.COMPLETED || member.completed_at) {
+    return "completed";
+  }
+
+  if (WORKING_ASSIGNMENT_STATUSES.includes(member.status) || member.scanned_at) {
+    return "scanned";
+  }
+
+  if (member.status === ASSIGNMENT_STATUS.ACCEPTED || member.accepted_at) {
+    return "accepted";
+  }
+
+  return "pending";
+}
+
+// Function ดึงทีม assignment ของ VehicleJob พร้อม scan_status ที่คำนวณแล้ว — wrapper เดียวให้ทุก
+// caller ในไฟล์นี้ใช้ร่วมกัน แทนที่จะคำนวณ scan_status ซ้ำเองทุกจุด
+async function listVehicleJobAssignmentTeamWithScanStatus(
+  vehicleJobId: number,
+): Promise<WorkerAssignmentTeamMemberDto[]> {
+  const rawTeam = await assignmentRepository.listVehicleJobAssignmentTeam(vehicleJobId);
+
+  return rawTeam.map((member) => ({
+    worker_id: member.worker_id,
+    full_name: member.full_name,
+    worker_code: member.worker_code,
+    coat_no: member.coat_no,
+    image_url: member.image_url,
+    scan_status: buildAssignmentScanStatus(member),
+    accepted_at: member.accepted_at,
+    scanned_at: member.scanned_at,
+  }));
+}
+
 function resolveTeamUpdatedWorkerStatus(
   teamScan: VehicleWorkReadinessDto,
 ): WorkerWorkStatus {
@@ -312,9 +350,7 @@ export async function notifyVehicleJobTeamScanReadiness(
   vehicleJob: VehicleJobDto,
   teamScan: VehicleWorkReadinessDto,
 ): Promise<void> {
-  const team = await assignmentRepository.listVehicleJobAssignmentTeam(
-    vehicleJob.id,
-  );
+  const team = await listVehicleJobAssignmentTeamWithScanStatus(vehicleJob.id);
 
   sendAssignmentTeamUpdatedSocketEvents(vehicleJob.ticket_number, team, teamScan);
 
@@ -389,7 +425,7 @@ async function requireWorker(auth?: AccessTokenPayload) {
 
   const worker = await masterWorkerRepository.findById(auth.account_id);
 
-  if (!worker || worker.status !== 1) {
+  if (!worker || worker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     throw new ApiError(
       403,
       "WORKER_NOT_ACTIVE",
@@ -739,7 +775,7 @@ export async function workerOnline(
 // Function รวมตรรกะปิดกะ/อัปเดตคิว/แจ้งเตือน admin เมื่อ worker ออกจากสถานะ online (ใช้ซ้ำได้ทั้งจาก workerOffline และ auto-cascade ตอน logout)
 export async function performWorkerOfflineCascade(
   account: MasterWorkerDto,
-  reason: WorkerShiftCloseReason = "worker_offline",
+  reason: WorkerShiftCloseReason,
 ): Promise<WorkerOnlineResponse> {
   const [currentSchedule, currentQueueEntry, currentAssignment] =
     await Promise.all([
@@ -993,7 +1029,7 @@ export async function getWorkerStatus(
         vehicleJobRepository.getVehicleJobDetail(
           currentAssignment.vehicle_job_id,
         ),
-        assignmentRepository.listVehicleJobAssignmentTeam(
+        listVehicleJobAssignmentTeamWithScanStatus(
           currentAssignment.vehicle_job_id,
         ),
         assignmentRepository.getVehicleJobTeamScanReadiness(
@@ -1302,7 +1338,7 @@ export async function acceptWorkerAssignment(
   );
   const [vehicleJobDetail, team, teamScan, acceptedCount] = await Promise.all([
     vehicleJobRepository.getVehicleJobDetail(acceptedAssignment.vehicle_job_id),
-    assignmentRepository.listVehicleJobAssignmentTeam(
+    listVehicleJobAssignmentTeamWithScanStatus(
       acceptedAssignment.vehicle_job_id,
     ),
     assignmentRepository.getVehicleJobTeamScanReadiness(
@@ -1360,130 +1396,54 @@ export async function acceptWorkerAssignment(
 }
 
 // Function บันทึกการสแกน worker assignment ใน service flow
-export async function scanWorkerAssignment(
-  body: unknown,
-  auth?: AccessTokenPayload,
-): Promise<WorkerAssignmentCheckInResponse> {
-  const account = await requireWorker(auth);
-  const input = parseWithSchema(workerCheckInBarcodeBodySchema, body);
-  const settings = await getRuntimeSettings();
-  const teamScanRemainingMinutes = settings.worker_scan_team_remaining_minutes;
+// Function decide ผลลัพธ์ scan ใน transaction เดียว — คืน discriminated union "expired" (QR หมดเวลา)
+// หรือ "scanned" (scan สำเร็จ) ให้ scanWorkerAssignment แยกจัดการ side-effect ต่อตาม kind
+async function resolveScanAssignmentOutcome(
+  account: MasterWorkerDto,
+  input: { ticket_no: string },
+  teamScanRemainingMinutes: number,
+  transaction: DbConnection,
+) {
+  // ไม่ต้องรับ TicketNumber จาก client แล้ว — Worker สแกนได้แค่ Ticket ของ assignment ที่ตัวเองกำลัง
+  // active อยู่เท่านั้นอยู่แล้ว (ระบบไม่ให้มี assignment active มากกว่า 1 คันพร้อมกัน) จึง resolve
+  // จาก assignment ปัจจุบันของ worker เองได้เลย ไม่ต้องให้ client ระบุ
+  const assignment = await assignmentRepository.findCurrentAssignmentByWorker(
+    account.id,
+    transaction,
+  );
 
-  const result = await withTransaction(async (transaction) => {
-    // ไม่ต้องรับ TicketNumber จาก client แล้ว — Worker สแกนได้แค่ Ticket ของ assignment ที่ตัวเองกำลัง
-    // active อยู่เท่านั้นอยู่แล้ว (ระบบไม่ให้มี assignment active มากกว่า 1 คันพร้อมกัน) จึง resolve
-    // จาก assignment ปัจจุบันของ worker เองได้เลย ไม่ต้องให้ client ระบุ
-    const assignment = await assignmentRepository.findCurrentAssignmentByWorker(
-      account.id,
-      transaction,
+  if (!assignment) {
+    throw new ApiError(404, "ASSIGNMENT_NOT_FOUND", "Assignment not found.");
+  }
+
+  if (assignment.status !== ASSIGNMENT_STATUS.ACCEPTED) {
+    throw new ApiError(
+      409,
+      "ASSIGNMENT_NOT_ACCEPTED",
+      "Assignment is not accepted.",
     );
+  }
 
-    if (!assignment) {
-      throw new ApiError(404, "ASSIGNMENT_NOT_FOUND", "Assignment not found.");
-    }
-
-    if (assignment.status !== ASSIGNMENT_STATUS.ACCEPTED) {
-      throw new ApiError(
-        409,
-        "ASSIGNMENT_NOT_ACCEPTED",
-        "Assignment is not accepted.",
-      );
-    }
-
-    if (isScanDeadlineExpired(assignment.scan_deadline_at)) {
-      const vehicleJob = await vehicleJobRepository.findVehicleJobById(
-        assignment.vehicle_job_id,
-        transaction,
-      );
-      const timedOutAssignment = await assignmentRepository.timeoutAssignment(
-        assignment.id,
-        WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT,
-        transaction,
-      );
-
-      if (!timedOutAssignment) {
-        // แพ้ race ให้ scan-timeout job ของ BullMQ หรือ Admin cancel เปลี่ยนสถานะไปก่อนแล้วใน
-        // ช่วงเวลาสั้นๆ ระหว่างที่เช็ค accepted ด้านบนกับตอนเขียนจริง
-        throw new ApiError(
-          409,
-          "ASSIGNMENT_NOT_ACCEPTED",
-          "Assignment is not accepted.",
-        );
-      }
-
-      const teamScan = await assignmentRepository.getVehicleJobTeamScanReadiness(
-        assignment.vehicle_job_id,
-        transaction,
-      );
-
-      if (teamScan.is_ready) {
-        await vehicleJobLifecycleService.markVehicleJobInProgress(
-          assignment.vehicle_job_id,
-          transaction,
-        );
-      }
-
-      return {
-        kind: "expired" as const,
-        timedOutAssignment,
-        vehicleJob,
-      };
-    }
-
-    // หา Business Ticket (MarketJob) จาก barcode ticket_no ที่สแกน โดย scope ด้วย vehicle_job_id
-    // ของ assignment ปัจจุบันของ worker เอง ปลอดภัยแม้ ticket_no จะไม่ unique ทั้งระบบ เพราะ unique
-    // แค่ภายในคันเดียว (worker scan Ticket ใบไหนในรถของตัวเองก็ได้ ไม่ต้อง scan ครบทุกใบ)
-    const scannedMarketJob = await marketJobRepository.findMarketJobByVehicleAndTicketNo(
-      assignment.vehicle_job_id,
-      input.ticket_no,
-      transaction,
-    );
-
-    if (!scannedMarketJob) {
-      throw new ApiError(
-        404,
-        "MARKET_JOB_NOT_FOUND",
-        "Business Ticket not found for this worker's vehicle job.",
-      );
-    }
-
+  if (isScanDeadlineExpired(assignment.scan_deadline_at)) {
     const vehicleJob = await vehicleJobRepository.findVehicleJobById(
       assignment.vehicle_job_id,
       transaction,
     );
-
-    if (!vehicleJob) {
-      throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
-    }
-
-    // บันทึกไว้ใน WorkerAssignmentEvent.metadata ว่า Worker คนนี้ Scan TicketNo ใบไหนของ TicketNumber
-    // นี้ — เก็บเป็นประวัติเช็คย้อนหลังได้ แยกจาก assignment.scanned_at ที่บอกแค่ "Scan เข้ารถคันนี้
-    // เมื่อไหร่" แต่ไม่บอกว่าเลือก TicketNo ไหน (ดู scanAssignment ใน
-    // vehicle-job-assignment.repository.ts)
-    const scannedAssignment = await assignmentRepository.scanAssignment(
+    const timedOutAssignment = await assignmentRepository.timeoutAssignment(
       assignment.id,
-      {
-        ticket_no: scannedMarketJob.ticket_no,
-        marketCode: scannedMarketJob.marketCode,
-        marketName: scannedMarketJob.marketName,
-      },
+      WORKER_ASSIGNMENT_EVENT_TYPE.SCAN_TIMEOUT,
       transaction,
     );
 
-    if (!scannedAssignment) {
-      // แพ้ race ให้ scan-timeout job หรือ Admin cancel เปลี่ยนสถานะไปก่อนแล้วในช่วงเวลาสั้นๆ
-      // ระหว่างที่เช็ค accepted ด้านบนกับตอนเขียนจริง
+    if (!timedOutAssignment) {
+      // แพ้ race ให้ scan-timeout job ของ BullMQ หรือ Admin cancel เปลี่ยนสถานะไปก่อนแล้วใน
+      // ช่วงเวลาสั้นๆ ระหว่างที่เช็ค accepted ด้านบนกับตอนเขียนจริง
       throw new ApiError(
         409,
         "ASSIGNMENT_NOT_ACCEPTED",
         "Assignment is not accepted.",
       );
     }
-
-    const scannedCount = await assignmentRepository.countScannedAssignments(
-      assignment.vehicle_job_id,
-      transaction,
-    );
 
     const teamScan = await assignmentRepository.getVehicleJobTeamScanReadiness(
       assignment.vehicle_job_id,
@@ -1497,75 +1457,171 @@ export async function scanWorkerAssignment(
       );
     }
 
-    const shortenedAssignments: VehicleJobAssignmentDto[] = [];
-
-    if (vehicleJob.workers_required > 1 && scannedCount === 1) {
-      const remainingAssignments =
-        await assignmentRepository.listAcceptedAssignmentsByVehicleJob(
-          assignment.vehicle_job_id,
-          assignment.id,
-          transaction,
-        );
-      const teamScanDeadline = buildDeadline(
-        teamScanRemainingMinutes * 60 * 1000,
-      );
-
-      for (const remainingAssignment of remainingAssignments) {
-        shortenedAssignments.push(
-          await assignmentRepository.updateAssignmentScanDeadline(
-            remainingAssignment.id,
-            teamScanDeadline,
-            transaction,
-          ),
-        );
-      }
-    }
-
     return {
-      kind: "scanned" as const,
-      scannedAssignment,
+      kind: "expired" as const,
+      timedOutAssignment,
       vehicleJob,
-      scannedMarketJob,
-      shortenedAssignments,
-      teamScan,
     };
-  });
-
-  if (result.kind === "expired") {
-    await removeScanTimeout(result.timedOutAssignment.id);
-    await removeScanWarning(result.timedOutAssignment.id);
-    const queue = await markWorkerOpenApp(account.id);
-    await dispatchReadyWorkers();
-    const workerCode = account.labor_code;
-    const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
-      result.timedOutAssignment.vehicle_job_id,
-    );
-
-    sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
-      ticketNumber: result.vehicleJob?.ticket_number ?? null,
-      ticketNos,
-      reason: "scan_timeout",
-      status: WORKER_WORK_STATUS.OPEN_APP,
-    });
-    publishNotification({
-      type: "ASSIGNMENT_TIMEOUT",
-      title: "Assignment scan timed out",
-      message: `Worker ${account.full_name} did not scan QR in time.`,
-      payload: {
-        ticketNumber: result.vehicleJob?.ticket_number ?? null,
-        worker_code: workerCode,
-        status: result.timedOutAssignment.status,
-        reason: "scan_timeout",
-        queue: buildWorkerQueueSocketPayload(queue, workerCode),
-      },
-      audience: {
-        roles: ["admin"],
-      },
-    });
-
-    throw new ApiError(409, "QR_EXPIRED", "Worker QR scan time expired.");
   }
 
+  // หา Business Ticket (MarketJob) จาก barcode ticket_no ที่สแกน โดย scope ด้วย vehicle_job_id
+  // ของ assignment ปัจจุบันของ worker เอง ปลอดภัยแม้ ticket_no จะไม่ unique ทั้งระบบ เพราะ unique
+  // แค่ภายในคันเดียว (worker scan Ticket ใบไหนในรถของตัวเองก็ได้ ไม่ต้อง scan ครบทุกใบ)
+  const scannedMarketJob = await marketJobRepository.findMarketJobByVehicleAndTicketNo(
+    assignment.vehicle_job_id,
+    input.ticket_no,
+    transaction,
+  );
+
+  if (!scannedMarketJob) {
+    throw new ApiError(
+      404,
+      "MARKET_JOB_NOT_FOUND",
+      "Business Ticket not found for this worker's vehicle job.",
+    );
+  }
+
+  const vehicleJob = await vehicleJobRepository.findVehicleJobById(
+    assignment.vehicle_job_id,
+    transaction,
+  );
+
+  if (!vehicleJob) {
+    throw new ApiError(404, "VEHICLE_JOB_NOT_FOUND", "Vehicle job not found.");
+  }
+
+  // บันทึกไว้ใน WorkerAssignmentEvent.metadata ว่า Worker คนนี้ Scan TicketNo ใบไหนของ TicketNumber
+  // นี้ — เก็บเป็นประวัติเช็คย้อนหลังได้ แยกจาก assignment.scanned_at ที่บอกแค่ "Scan เข้ารถคันนี้
+  // เมื่อไหร่" แต่ไม่บอกว่าเลือก TicketNo ไหน (ดู scanAssignment ใน
+  // vehicle-job-assignment.repository.ts)
+  const scannedAssignment = await assignmentRepository.scanAssignment(
+    assignment.id,
+    {
+      ticket_no: scannedMarketJob.ticket_no,
+      marketCode: scannedMarketJob.marketCode,
+      marketName: scannedMarketJob.marketName,
+    },
+    transaction,
+  );
+
+  if (!scannedAssignment) {
+    // แพ้ race ให้ scan-timeout job หรือ Admin cancel เปลี่ยนสถานะไปก่อนแล้วในช่วงเวลาสั้นๆ
+    // ระหว่างที่เช็ค accepted ด้านบนกับตอนเขียนจริง
+    throw new ApiError(
+      409,
+      "ASSIGNMENT_NOT_ACCEPTED",
+      "Assignment is not accepted.",
+    );
+  }
+
+  const scannedCount = await assignmentRepository.countScannedAssignments(
+    assignment.vehicle_job_id,
+    transaction,
+  );
+
+  const teamScan = await assignmentRepository.getVehicleJobTeamScanReadiness(
+    assignment.vehicle_job_id,
+    transaction,
+  );
+
+  if (teamScan.is_ready) {
+    await vehicleJobLifecycleService.markVehicleJobInProgress(
+      assignment.vehicle_job_id,
+      transaction,
+    );
+  }
+
+  const shortenedAssignments: VehicleJobAssignmentDto[] = [];
+
+  if (vehicleJob.workers_required > 1 && scannedCount === 1) {
+    const remainingAssignments =
+      await assignmentRepository.listAcceptedAssignmentsByVehicleJob(
+        assignment.vehicle_job_id,
+        assignment.id,
+        transaction,
+      );
+    const teamScanDeadline = buildDeadline(
+      teamScanRemainingMinutes * 60 * 1000,
+    );
+
+    for (const remainingAssignment of remainingAssignments) {
+      shortenedAssignments.push(
+        await assignmentRepository.updateAssignmentScanDeadline(
+          remainingAssignment.id,
+          teamScanDeadline,
+          transaction,
+        ),
+      );
+    }
+  }
+
+  return {
+    kind: "scanned" as const,
+    scannedAssignment,
+    vehicleJob,
+    scannedMarketJob,
+    shortenedAssignments,
+    teamScan,
+  };
+}
+
+// Function จัดการ side-effect เมื่อ QR scan หมดเวลา (คืน Worker เข้าคิว + แจ้งเตือน) แล้ว throw
+// ปิดท้ายเสมอ — ไม่มี "response สำเร็จ" ให้คืนสำหรับ outcome นี้
+async function handleExpiredScanOutcome(
+  result: Extract<Awaited<ReturnType<typeof resolveScanAssignmentOutcome>>, { kind: "expired" }>,
+  account: MasterWorkerDto,
+): Promise<never> {
+  await removeScanTimeout(result.timedOutAssignment.id);
+  await removeScanWarning(result.timedOutAssignment.id);
+  const queue = await markWorkerOpenApp(account.id);
+
+  // dispatch เป็น best-effort เสมอ — ต้องไม่ทำให้ scan-timeout ที่จัดการสำเร็จไปแล้วพัง 500 เพราะ
+  // dispatch worker คันอื่นล้มเหลว (เขียน Redis/BullMQ แยกจาก DB transaction ของ request นี้)
+  try {
+    await dispatchReadyWorkers();
+  } catch (error) {
+    logger.error("Worker scan timed out but requeue dispatch failed.", {
+      workerId: account.id,
+      error,
+    });
+  }
+  const workerCode = account.labor_code;
+  const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+    result.timedOutAssignment.vehicle_job_id,
+  );
+
+  sendWorkerSocketEvent(account.id, "ASSIGNMENT_TIMEOUT", {
+    ticketNumber: result.vehicleJob?.ticket_number ?? null,
+    ticketNos,
+    reason: "scan_timeout",
+    status: WORKER_WORK_STATUS.OPEN_APP,
+  });
+  publishNotification({
+    type: "ASSIGNMENT_TIMEOUT",
+    title: "Assignment scan timed out",
+    message: `Worker ${account.full_name} did not scan QR in time.`,
+    payload: {
+      ticketNumber: result.vehicleJob?.ticket_number ?? null,
+      worker_code: workerCode,
+      status: result.timedOutAssignment.status,
+      reason: "scan_timeout",
+      queue: buildWorkerQueueSocketPayload(queue, workerCode),
+    },
+    audience: {
+      roles: ["admin"],
+    },
+  });
+
+  throw new ApiError(409, "QR_EXPIRED", "Worker QR scan time expired.");
+}
+
+// Function จัดการ side-effect เมื่อ scan สำเร็จ (schedule timeout ใหม่, แจ้งเตือน, ประกาศ realtime)
+// แล้วสร้าง response กลับให้ worker
+async function buildScannedOutcomeResponse(
+  result: Extract<Awaited<ReturnType<typeof resolveScanAssignmentOutcome>>, { kind: "scanned" }>,
+  account: MasterWorkerDto,
+  teamScanRemainingMinutes: number,
+): Promise<WorkerAssignmentCheckInResponse> {
   const { scannedAssignment, vehicleJob, scannedMarketJob, shortenedAssignments, teamScan } =
     result;
   await removeScanTimeout(scannedAssignment.id);
@@ -1641,6 +1697,26 @@ export async function scanWorkerAssignment(
     ticket_no: scannedMarketJob.ticket_no,
     team_scan: buildWorkerTeamScanResponse(teamScan),
   };
+}
+
+export async function scanWorkerAssignment(
+  body: unknown,
+  auth?: AccessTokenPayload,
+): Promise<WorkerAssignmentCheckInResponse> {
+  const account = await requireWorker(auth);
+  const input = parseWithSchema(workerCheckInBarcodeBodySchema, body);
+  const settings = await getRuntimeSettings();
+  const teamScanRemainingMinutes = settings.worker_scan_team_remaining_minutes;
+
+  const result = await withTransaction((transaction) =>
+    resolveScanAssignmentOutcome(account, input, teamScanRemainingMinutes, transaction),
+  );
+
+  if (result.kind === "expired") {
+    return handleExpiredScanOutcome(result, account);
+  }
+
+  return buildScannedOutcomeResponse(result, account, teamScanRemainingMinutes);
 }
 
 // Function จบงาน worker assignment ticket ใน service flow

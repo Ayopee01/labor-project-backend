@@ -13,6 +13,7 @@ import { withTransaction } from "../db/prisma";
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto, UpdateLangResponse } from "../types/auth.type";
 import type { DbConnection } from "../types/shared/common.type";
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AccountDto, MasterWorkerDto } from "../types/admin-workers.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
@@ -70,7 +71,7 @@ async function requireActiveWorkerById(
 ): Promise<MasterWorkerDto> {
   const worker = await masterWorkerRepository.findById(workerId);
 
-  if (!worker || worker.status !== 1) {
+  if (!worker || worker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     throw new ApiError(statusCode, errorCode, errorMessage);
   }
 
@@ -417,16 +418,16 @@ export async function login(
     });
   }
 
-  const activeWorker = worker as MasterWorkerDto;
+  const matchedWorker = worker as MasterWorkerDto;
 
-  if (activeWorker.status !== 1) {
+  if (matchedWorker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     void writeSecurityAuditLogBestEffort({
       event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_LOGIN_FAILED,
       outcome: SECURITY_AUDIT_OUTCOME.FAILURE,
       actor_type: "worker",
-      actor_worker_id: activeWorker.id,
-      actor_username: activeWorker.labor_code,
-      actor_full_name: activeWorker.full_name,
+      actor_worker_id: matchedWorker.id,
+      actor_username: matchedWorker.labor_code,
+      actor_full_name: matchedWorker.full_name,
       failure_code: "account_inactive",
       ip_address: context.ip_address,
       user_agent: context.user_agent,
@@ -436,12 +437,12 @@ export async function login(
     throw new ApiError(423, "ACCOUNT_INACTIVE", "Account is inactive.");
   }
 
-  const activeSession = await workerSessionRepository.findActiveByWorkerId(activeWorker.id);
+  const activeSession = await workerSessionRepository.findActiveByWorkerId(matchedWorker.id);
   const sessionDevice = requireWorkerDevice(deviceId, deviceName);
 
   if (activeSession && activeSession.device_id !== sessionDevice.deviceId) {
     const loginChallengeToken = signLoginChallengeToken({
-      account_id: activeWorker.id,
+      account_id: matchedWorker.id,
       role: WORKER_ROLE,
       old_session_id: activeSession.id,
       new_device_id: sessionDevice.deviceId,
@@ -469,15 +470,15 @@ export async function login(
     }
 
     const tokens = await createWorkerSession(
-      activeWorker,
+      matchedWorker,
       sessionDevice.deviceId,
       sessionDevice.deviceName,
       transaction
     );
     await registerWorkerPushTokenForAccount(
       {
-        worker_id: activeWorker.id,
-        worker_code: activeWorker.labor_code,
+        worker_id: matchedWorker.id,
+        worker_code: matchedWorker.labor_code,
         session_id: tokens.session.id,
         device_id: sessionDevice.deviceId,
         platform,
@@ -491,9 +492,9 @@ export async function login(
         event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_LOGIN_SUCCEEDED,
         outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
         actor_type: "worker",
-        actor_worker_id: activeWorker.id,
-        actor_username: activeWorker.labor_code,
-        actor_full_name: activeWorker.full_name,
+        actor_worker_id: matchedWorker.id,
+        actor_username: matchedWorker.labor_code,
+        actor_full_name: matchedWorker.full_name,
         session_id: tokens.session.id,
         ip_address: context.ip_address,
         user_agent: context.user_agent,
@@ -519,7 +520,7 @@ function getDefaultSessionDeviceName(_account: AccountDto): string {
 // Function ยืนยัน force login ใน service flow
 export async function confirmForceLogin(
   body: unknown,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  context: SecurityAuditRequestContext
 ) {
   const {
     login_challenge_token: loginChallengeToken,
@@ -779,8 +780,8 @@ export async function refresh(body: unknown) {
 
 // Function จัดการ logout ใน service flow
 export async function logout(
-  auth?: AccessTokenPayload,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  auth: AccessTokenPayload | undefined,
+  context: SecurityAuditRequestContext
 ) {
   if (!auth || !auth.session_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -917,7 +918,7 @@ export async function me(
 export async function changeOwnPassword(
   auth: AccessTokenPayload | undefined,
   body: unknown,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  context: SecurityAuditRequestContext
 ): Promise<{ message: string }> {
   if (!auth || !auth.account_id || !auth.session_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -1017,7 +1018,7 @@ export async function updateOwnProfile(
   auth: AccessTokenPayload | undefined,
   currentSession: SessionDto | undefined,
   body: unknown,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  context: SecurityAuditRequestContext
 ): Promise<MeResponse> {
   if (!auth || !auth.account_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -1082,7 +1083,7 @@ export async function updateOwnProfile(
 export async function uploadOwnProfileImage(
   auth: AccessTokenPayload | undefined,
   imageUrl: string,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  context: SecurityAuditRequestContext
 ): Promise<{ message: string; image_url: string }> {
   if (!auth || !auth.account_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -1130,8 +1131,8 @@ export async function uploadOwnProfileImage(
     };
   });
 
-  // ลบรูปเก่าออกจาก Spaces แบบ best-effort หลัง commit สำเร็จแล้วเท่านั้น (ไม่ทำให้ request หลักล้มเหลว
-  // ถ้าลบไม่สำเร็จ) — no-op เงียบๆ ถ้า previousImageUrl เป็น path local เก่าก่อน migrate ไป Spaces
+  // ลบรูปเก่าออกจาก local disk แบบ best-effort หลัง commit สำเร็จแล้วเท่านั้น (ไม่ทำให้ request หลักล้มเหลว
+  // ถ้าลบไม่สำเร็จ) — ใช้ local disk ชั่วคราวระหว่างรอ DigitalOcean Spaces (ดู upload.middleware.ts)
   if (previousImageUrl && previousImageUrl !== imageUrl) {
     await deleteAdminProfileImageByUrl(previousImageUrl).catch((error) => {
       logger.error("Failed to delete previous admin profile image from storage.", { error });

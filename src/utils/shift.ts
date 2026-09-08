@@ -180,11 +180,10 @@ function parseScheduleTimeRange(schedule: WorkScheduleDto): {
   };
 }
 
-// Function จัดการ calculate shift name สำหรับ helper กลาง
-export function calculateShiftName(
-  timeIn: string,
-  timeOut?: string
-): string {
+// Function จัดการ calculate shift name สำหรับ helper กลาง — ตัดสินจาก timeIn เท่านั้น (เวลาเริ่มกะ
+// ตั้งแต่ NIGHT_SHIFT_START_MINUTES ขึ้นไปถือเป็นกะดึก) ไม่รับ timeOut เพราะไม่มีผลต่อผลลัพธ์เลย และ
+// ทุก caller จริงมี time_out ที่ผ่านการ validate จาก schema มาก่อนหน้าแล้วเสมอ
+export function calculateShiftName(timeIn: string): string {
   const startMinutes = parseTimeToMinutes(timeIn);
 
   if (startMinutes === null) {
@@ -193,19 +192,6 @@ export function calculateShiftName(
       "INVALID_TIME_FORMAT",
       "TimeIn must use HH:mm format."
     );
-  }
-
-  if (timeOut !== undefined) {
-    const endMinutes = parseTimeToMinutes(timeOut);
-
-    if (endMinutes === null) {
-      throw new ApiError(
-        400,
-        "INVALID_TIME_FORMAT",
-        "TimeOut must use HH:mm format."
-      );
-    }
-
   }
 
   if (startMinutes >= NIGHT_SHIFT_START_MINUTES) {
@@ -258,10 +244,7 @@ export function formatScheduleWithShift(
 
   return {
     ...schedule,
-    shift_name: calculateShiftName(
-      schedule.time_in,
-      schedule.time_out
-    ),
+    shift_name: calculateShiftName(schedule.time_in),
   };
 }
 
@@ -324,10 +307,7 @@ export function buildShiftWaitInfo(
 
   return {
     shift: {
-      name: calculateShiftName(
-        schedule.time_in,
-        schedule.time_out
-      ),
+      name: calculateShiftName(schedule.time_in),
       start_time: schedule.time_in,
       end_time: schedule.time_out,
     },

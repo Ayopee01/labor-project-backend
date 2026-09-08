@@ -9,7 +9,7 @@ import { client, requireDto } from "./repository-utils";
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerAssignmentEventType } from "../../types/shared/worker-assignment-event.type";
-import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerAssignmentTeamMemberDto } from "../../types/worker.type";
+import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerAssignmentTeamRawMemberDto } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -220,26 +220,12 @@ export async function getVehicleJobTeamScanReadiness(
   };
 }
 
-function buildAssignmentScanStatus(assignment: VehicleJobAssignmentDto): string {
-  if (assignment.status === ASSIGNMENT_STATUS.COMPLETED || assignment.completed_at) {
-    return "completed";
-  }
-
-  if (WORKING_ASSIGNMENT_STATUSES.includes(assignment.status) || assignment.scanned_at) {
-    return "scanned";
-  }
-
-  if (assignment.status === ASSIGNMENT_STATUS.ACCEPTED || assignment.accepted_at) {
-    return "accepted";
-  }
-
-  return "pending";
-}
-
+// Function ดึงทีม assignment ของ VehicleJob จาก DB ดิบๆ — ไม่คำนวณ scan_status ที่นี่ (เป็น business
+// classification ของ Service, ดู buildAssignmentScanStatus ใน worker.service.ts)
 export async function listVehicleJobAssignmentTeam(
   vehicleJobId: number,
   connection?: DbConnection
-): Promise<WorkerAssignmentTeamMemberDto[]> {
+): Promise<WorkerAssignmentTeamRawMemberDto[]> {
   const db = client(connection);
   const assignments = await db.vehicleJobAssignment.findMany({
     where: {
@@ -268,7 +254,8 @@ export async function listVehicleJobAssignmentTeam(
       worker_code: assignment.worker.laborCode,
       coat_no: assignment.worker.coatNo ?? null,
       image_url: assignment.worker.imageUrl,
-      scan_status: buildAssignmentScanStatus(assignmentDto),
+      status: assignmentDto.status,
+      completed_at: assignmentDto.completed_at,
       accepted_at: assignmentDto.accepted_at,
       scanned_at: assignmentDto.scanned_at,
     };

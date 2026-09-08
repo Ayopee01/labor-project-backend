@@ -65,7 +65,6 @@ export async function revokeDriverSessionsByVehicleJobId(
 // Function ค้นหา active driver session ตาม token จาก DB
 export async function findActiveDriverSessionByToken(
   sessionToken: string,
-  now = new Date(),
   connection?: DbConnection,
 ): Promise<DriverSessionDto | null> {
   const db = client(connection);
@@ -74,7 +73,7 @@ export async function findActiveDriverSessionByToken(
       sessionToken,
       revokedAt: null,
       expiresAt: {
-        gt: now,
+        gt: new Date(),
       },
     },
   });

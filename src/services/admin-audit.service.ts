@@ -314,6 +314,10 @@ function mapWorkerAssignmentEvents(
       ...(row.metadata ?? {}),
       ticketNumber: row.ticket_number,
       workerCode: row.worker_code,
+      // ผู้กระทำจริงของ event นี้ (ACCEPTED/SCANNED คือ worker เจ้าของ assignment เอง) แยกจาก
+      // workerCode ด้านบนซึ่งหมายถึง "assignment นี้เป็นของ worker คนไหน" เสมอไม่ว่าใครเป็นผู้กระทำ
+      ...(isWorkerActor && row.worker_code && { actorCode: row.worker_code }),
+      ...(isWorkerActor && row.worker_full_name && { actorName: row.worker_full_name }),
     };
 
     if (row.event_type === WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED) {
@@ -330,8 +334,8 @@ function mapWorkerAssignmentEvents(
         metadata = {
           ...metadata,
           ...(matchedLog.metadata ?? {}),
-          ...(matchedLog.actor_worker_code && {
-            actorCode: matchedLog.actor_worker_code,
+          ...(matchedLog.actor_username && {
+            actorCode: matchedLog.actor_username,
           }),
           ...(matchedLog.actor_full_name && {
             actorName: matchedLog.actor_full_name,
@@ -359,6 +363,7 @@ function mapWorkerAssignmentEvents(
         eventType,
         row.ticket_number,
         row.worker_code,
+        row.worker_full_name,
         reasonCode,
         reasonText,
       ]),
@@ -406,7 +411,11 @@ function mapCompletionSubmissionEvents(
             : null,
         reason_code: null,
         reason_text: null,
-        metadata: { ...baseMetadata, workerCode: row.submitted_by_code },
+        metadata: {
+          ...baseMetadata,
+          actorCode: row.submitted_by_code,
+          ...(row.submitted_by_full_name && { actorName: row.submitted_by_full_name }),
+        },
         occurred_at: row.created_at,
         search_text: buildSearchText([
           `submission:${row.id}:submitted`,
@@ -416,6 +425,7 @@ function mapCompletionSubmissionEvents(
           row.booth_code,
           row.booth_name,
           row.submitted_by_code,
+          row.submitted_by_full_name,
         ]),
       });
     }
@@ -607,9 +617,8 @@ function mapSecurityAuditLogEvents(
       reason_text: null,
       metadata: {
         outcome: row.outcome,
-        ...(isAdminActor && row.actor_username && { actorCode: row.actor_username }),
-        ...(isAdminActor && row.actor_full_name && { actorName: row.actor_full_name }),
-        ...(isWorkerActor && row.actor_username && { workerCode: row.actor_username }),
+        ...((isAdminActor || isWorkerActor) && row.actor_username && { actorCode: row.actor_username }),
+        ...((isAdminActor || isWorkerActor) && row.actor_full_name && { actorName: row.actor_full_name }),
         ...(!isAdminActor && !isWorkerActor && row.actor_username && {
           attemptedUsername: row.actor_username,
         }),
@@ -717,7 +726,7 @@ function mapAdminActionLogEvents(
       ...(row.gate_ticket_booth_code && {
         boothCode: row.gate_ticket_booth_code,
       }),
-      ...(row.actor_worker_code && { actorCode: row.actor_worker_code }),
+      ...(row.actor_username && { actorCode: row.actor_username }),
       ...(row.actor_full_name && { actorName: row.actor_full_name }),
     };
 
@@ -762,7 +771,7 @@ function mapAdminActionLogEvents(
       search_text: buildSearchText([
         `admin_action:${row.id}`,
         eventType,
-        row.actor_worker_code,
+        row.actor_username,
         row.actor_full_name,
         row.reason_code,
         row.reason_text,

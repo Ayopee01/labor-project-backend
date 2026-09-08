@@ -243,7 +243,6 @@ export const lineRepositoryMock = {
     ticket_id: number;
     submission_id: number;
     boothCode: string;
-    expires_at?: Date;
   }) => {
     const now = new Date();
     const id = state.nextLineActionTokenId++;
@@ -254,9 +253,7 @@ export const lineRepositoryMock = {
       ticket_id: input.ticket_id,
       submission_id: input.submission_id,
       boothCode: input.boothCode,
-      expires_at:
-        input.expires_at?.toISOString() ??
-        new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       used_at: null,
       created_at: now.toISOString(),
       updated_at: now.toISOString(),

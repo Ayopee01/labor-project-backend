@@ -9,9 +9,56 @@ import * as workerAssignmentEventRepository from "../../repositories/shared/work
 import { finalizeMarketJobFinancials } from "./ticket-financial.service";
 
 import type { DbConnection } from "../../types/shared/common.type";
-import type { CompletedVehicleJobResult, CurrentTicketProgressDto, VehicleJobDto } from "../../types/worker.type";
+import type { CompletedVehicleJobResult, CurrentTicketProgressDto, TicketWorkerDto, VehicleJobDto } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
+
+// Function Sync Worker Roster ของ Business Ticket ใบเดียวให้ตรงกับทีม Worker ปัจจุบัน — ตัดสินใจ
+// roster diff (ใครขาด/ใครหลุดทีม) เอง แล้วสั่ง Repository persist เป็นจุดๆ (ย้ายมาจาก
+// ticket-worker.repository.ts เพราะ diff/lock decision เป็น business logic ไม่ใช่ data access)
+export async function syncTicketWorkerRoster(
+  marketJobId: number,
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<TicketWorkerDto[]> {
+  const lockState = await ticketWorkerRepository.findMarketJobRosterLockState(
+    marketJobId,
+    connection,
+  );
+
+  if (!lockState.found || lockState.workerRosterLockedAt !== null) {
+    return ticketWorkerRepository.listTicketWorkers(marketJobId, connection);
+  }
+
+  const activeWorkerAccountIds =
+    await ticketWorkerRepository.listActiveScannedAssignmentWorkerIds(
+      vehicleJobId,
+      connection,
+    );
+  const existingWorkers = await ticketWorkerRepository.listTicketWorkers(
+    marketJobId,
+    connection,
+  );
+  const existingWorkerAccountIds = new Set(
+    existingWorkers.map((worker) => worker.worker_id),
+  );
+  const missingWorkerAccountIds = activeWorkerAccountIds.filter(
+    (workerId) => !existingWorkerAccountIds.has(workerId),
+  );
+
+  await ticketWorkerRepository.createTicketWorkersIfMissing(
+    marketJobId,
+    missingWorkerAccountIds,
+    connection,
+  );
+  await ticketWorkerRepository.cancelDroppedTicketWorkers(
+    marketJobId,
+    activeWorkerAccountIds,
+    connection,
+  );
+
+  return ticketWorkerRepository.listTicketWorkers(marketJobId, connection);
+}
 
 // Function Sync Worker Roster ของทุก Business Ticket ที่ยัง Active และยังไม่ Lock ของ TicketNumber
 // นี้ ให้ตรงกับทีม Worker ปัจจุบัน เรียกทุกครั้งที่ทีมของ TicketNumber เปลี่ยน (Ticket ใหม่มา,
@@ -37,11 +84,7 @@ async function syncAllOpenMarketJobRosters(
   );
 
   for (const market of openMarketJobs) {
-    await ticketWorkerRepository.syncTicketWorkersFromVehicleAssignments(
-      market.id,
-      vehicleJobId,
-      connection,
-    );
+    await syncTicketWorkerRoster(market.id, vehicleJobId, connection);
   }
 }
 

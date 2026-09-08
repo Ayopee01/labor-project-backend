@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import * as workerAssignmentEventRepository from "./shared/worker-assignment-event.repository";
 import { withTransaction } from "../db/prisma";
 import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { DEFAULT_PAGE_LIMIT } from "../constants/pagination";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
 import { mapGateTicket, mapMarketJob, mapMasterWorker, mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
@@ -307,7 +308,7 @@ export async function listVehicleJobs(
 
   const where = buildVehicleJobWhere(filters, andFilters);
   const shouldPaginate = filters.page !== undefined;
-  const limit = filters.limit ?? 20;
+  const limit = filters.limit ?? DEFAULT_PAGE_LIMIT;
   const data = await db.vehicleJob.findMany({
     where,
     orderBy: {

@@ -42,6 +42,13 @@ export const MASTER_WORKER_SOURCES = ["master_sync", "admin_created"] as const;
 
 export type MasterWorkerSource = (typeof MASTER_WORKER_SOURCES)[number];
 
+// Config ค่า status ตัวเลขของ MasterWorker (1 = active, 0 = inactive) — ใช้แทน magic number 1/0
+// ที่กระจายอยู่หลายไฟล์ (auth, worker, admin-workers, session/socket middleware)
+export const MASTER_WORKER_STATUS = {
+  ACTIVE: 1,
+  INACTIVE: 0,
+} as const;
+
 // Type DTO ของ MasterWorker — source of truth เดียวของข้อมูล Worker ทั้งหมดในระบบ (แทน
 // Account/Profile/WorkSchedule เดิม) picture ถูกแปลงเป็น base64 ไว้แล้วที่ชั้น mapper ตามข้อ 29 ของ
 // worker.md ไม่ส่ง Buffer ดิบออกไป

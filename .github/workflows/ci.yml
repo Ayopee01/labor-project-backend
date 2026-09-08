@@ -42,7 +42,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/labor_project_test
       REDIS_URL: redis://localhost:6379/15
       REDIS_WORKER_QUEUE_KEY: "ci:worker:queue"

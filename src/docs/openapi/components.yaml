@@ -3251,12 +3251,9 @@
         vehicle_job:
           type: object
           properties:
-            ticketNo:
+            ticket_number:
               type: string
-              example: TKT-20260723-000125
-            gate_transaction_ref:
-              type: string
-              example: GATE-REQ-001
+              example: TRUCK-20260723-001
             license_plate:
               type: string
               example: ABC-1234

@@ -6,6 +6,7 @@ import * as masterWorkerRepository from "../repositories/shared/master-worker.re
 import * as workerSessionRepository from "../repositories/shared/worker-session.repository";
 import ApiError from "../utils/api-error";
 // Import Types
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AccessTokenPayload, SessionDto } from "../types/auth.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -42,7 +43,7 @@ async function workerSessionMiddleware(
 
   const worker = await masterWorkerRepository.findById(auth.account_id);
 
-  if (!worker || worker.status !== 1) {
+  if (!worker || worker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     throw new ApiError(401, "INVALID_TOKEN", "Account is inactive.");
   }
 

@@ -396,6 +396,20 @@ export interface WorkerAssignmentTeamMemberDto {
   scanned_at?: string | null;
 }
 
+// Type แถวดิบจาก Repository ก่อนคำนวณ scan_status — ให้ Service เป็นคนตัดสิน scan_status เอง (ดู
+// buildAssignmentScanStatus ใน worker.service.ts) เพราะเป็น business classification ไม่ใช่ data access
+export interface WorkerAssignmentTeamRawMemberDto {
+  worker_id?: number;
+  full_name: string;
+  worker_code: string | null;
+  coat_no?: string | null;
+  image_url: string | null;
+  status: string;
+  completed_at: string | null;
+  accepted_at?: string | null;
+  scanned_at?: string | null;
+}
+
 // Type สมาชิกทีมใน response ที่ส่งให้ Worker Mobile (ชื่อ field ตาม public API contract)
 export interface WorkerAssignmentTeamMemberResponse {
   worker_id?: number;

@@ -1,4 +1,5 @@
 import { SCANNED_ASSIGNMENT_STATUSES, TICKET_STATUS, TICKET_SUBMITTER_ROLE, TICKET_WORKER_STATUS } from "../../constants/job-status";
+import { MASTER_MARKET_ACTIVE_STATUS, MASTER_OWNER_STALL_ACTIVE_STATUS } from "../../constants/master-data-status";
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct } from "./mappers";
 import { client, requireDto } from "./repository-utils";
 
@@ -211,8 +212,8 @@ export async function findActiveVendorLineTargetsByMarketAndBooth(
 
   if (
     !ownerStall ||
-    ownerStall.status !== "active" ||
-    ownerStall.ownerStatus !== "Normal" ||
+    ownerStall.status !== MASTER_OWNER_STALL_ACTIVE_STATUS ||
+    ownerStall.ownerStatus !== MASTER_MARKET_ACTIVE_STATUS ||
     !ownerStall.lineUserId
   ) {
     return [];
@@ -223,7 +224,7 @@ export async function findActiveVendorLineTargetsByMarketAndBooth(
       marketCode: ownerStall.marketCode,
       ownerIdCard: ownerStall.cardId,
       ownerLineUserId: ownerStall.lineUserId,
-      status: "active",
+      status: MASTER_OWNER_STALL_ACTIVE_STATUS,
       memberStallStatusOnStall: "1",
     },
     orderBy: {

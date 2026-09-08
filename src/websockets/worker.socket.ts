@@ -12,6 +12,7 @@ import { clearWorkerPresence, getWorkerQueueStatus, recordWorkerHeartbeat } from
 import { buildWorkerNotification, persistWorkerNotification, publishNotification } from "../services/notifications.service";
 import { sendWorkerPushNotificationByWorkerIds } from "../services/shared/worker-push.service";
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
@@ -111,7 +112,7 @@ async function authenticateWorkerSocket(
     findActiveWorkerSessionById(payload.session_id),
   ]);
 
-  if (!worker || worker.status !== 1) {
+  if (!worker || worker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     throw new ApiError(403, "WORKER_NOT_ACTIVE", "Worker account is not active.");
   }
 
@@ -157,7 +158,7 @@ function registerWorkerSocket(accountId: number, socket: WorkerSocket): void {
 }
 
 // Function ลบ socket ออกจาก registry และเริ่ม grace period ก่อนประกาศว่า disconnected
-function unregisterWorkerSocket(socket: WorkerSocket): void {
+function handleWorkerSocketDisconnect(socket: WorkerSocket): void {
   const accountId = socket.workerId;
 
   if (!accountId) {
@@ -244,7 +245,7 @@ export async function disconnectWorkerSocket(
 
   if (sockets && sockets.size > 0) {
     for (const socket of sockets) {
-      // เคลียร์ workerId ก่อนปิด กัน close handler เดิม (unregisterWorkerSocket) ไปตั้ง grace timer ซ้ำ
+      // เคลียร์ workerId ก่อนปิด กัน close handler เดิม (handleWorkerSocketDisconnect) ไปตั้ง grace timer ซ้ำ
       // ซึ่งจะ publish WORKER_CONNECTION_CHANGED ซ้ำอีกรอบตอน 15 วิให้หลัง
       socket.workerId = undefined;
       socket.close();
@@ -483,7 +484,7 @@ export function setupWorkerWebSocket(server: Server): void {
       });
 
       socket.on("close", () => {
-        unregisterWorkerSocket(socket);
+        handleWorkerSocketDisconnect(socket);
       });
     }
   );

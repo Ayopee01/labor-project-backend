@@ -12,7 +12,7 @@ const runDbTests = process.env.RUN_DB_TESTS === "1";
 
 /* -------------------------------------- Helpers -------------------------------------- */
 
-// Regression net for gate.service.ts createVehicleJobAndMarketJob — owns the business decisions
+// Regression net for gate.service.ts createOrAppendGateBusinessTicket — owns the business decisions
 // (dispatchNow/vehicleStatus, canReopenDispatch/shouldUpdateVehicle, marketStatus, append-vs-create,
 // SUM-of-active-MarketJobs) that used to live inside gate.repository.ts createVehicleJobFromGate.
 // Route-level tests (test/routes/gate.routes.test.ts) mock the repository layer entirely, so they
@@ -38,7 +38,7 @@ async function runRollbackTest(
   }
 }
 
-function buildProduct(overrides: Partial<Parameters<typeof gateService.createVehicleJobAndMarketJob>[0]["markets"][number]["booths"][number]["products"][number]> = {}) {
+function buildProduct(overrides: Partial<Parameters<typeof gateService.createOrAppendGateBusinessTicket>[0]["markets"][number]["booths"][number]["products"][number]> = {}) {
   return {
     productCode: "PRD1",
     productFullCode: "PRD1-FULL",
@@ -64,7 +64,7 @@ function buildProduct(overrides: Partial<Parameters<typeof gateService.createVeh
 /* -------------------------------------- Tests -------------------------------------- */
 
 test(
-  "gate.service.createVehicleJobAndMarketJob preserves dispatch/status/MAX/SUM business rules against real PostgreSQL",
+  "gate.service.createOrAppendGateBusinessTicket preserves dispatch/status/MAX/SUM business rules against real PostgreSQL",
   {
     skip: runDbTests
       ? false
@@ -78,7 +78,7 @@ test(
 
     await runRollbackTest(async (tx) => {
       // --- Scenario 1: brand-new VehicleJob + MarketJob, dispatch_now = false ---
-      const first = await gateService.createVehicleJobAndMarketJob(
+      const first = await gateService.createOrAppendGateBusinessTicket(
         {
           ticketNumber,
           license_plate: "1กก-1234",
@@ -119,7 +119,7 @@ test(
 
       // --- Scenario 2: append a new booth into the SAME active MarketJob with a HIGHER
       // workers_required — must take MAX(existing, requested), not replace or add ---
-      const appended = await gateService.createVehicleJobAndMarketJob(
+      const appended = await gateService.createOrAppendGateBusinessTicket(
         {
           ticketNumber,
           license_plate: "1กก-1234",
@@ -163,7 +163,7 @@ test(
 
       // --- Scenario 3: a second, independent Business Ticket (different TicketNo) under the SAME
       // TicketNumber -> VehicleJob.workers_required must be the SUM across active MarketJobs, not MAX ---
-      const secondTicket = await gateService.createVehicleJobAndMarketJob(
+      const secondTicket = await gateService.createOrAppendGateBusinessTicket(
         {
           ticketNumber,
           license_plate: "1กก-1234",
@@ -206,7 +206,7 @@ test(
 
       // --- Scenario 4: a third Business Ticket with dispatch_now = true must REOPEN dispatch on a
       // WAIT vehicle (canReopenDispatch) and cascade the VehicleJob + new MarketJob to WORKING ---
-      const dispatched = await gateService.createVehicleJobAndMarketJob(
+      const dispatched = await gateService.createOrAppendGateBusinessTicket(
         {
           ticketNumber,
           license_plate: "1กก-1234",

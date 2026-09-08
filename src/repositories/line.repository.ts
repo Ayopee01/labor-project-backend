@@ -90,7 +90,6 @@ export async function createLineActionToken(
     ticket_id: number;
     submission_id: number;
     boothCode: string;
-    expires_at?: Date;
   },
   connection?: DbConnection
 ): Promise<LineActionTokenDto> {
@@ -105,7 +104,7 @@ export async function createLineActionToken(
           ticketId: input.ticket_id,
           submissionId: input.submission_id,
           boothCode: input.boothCode,
-          expiresAt: input.expires_at ?? buildLineActionTokenExpiresAt(),
+          expiresAt: buildLineActionTokenExpiresAt(),
         },
       });
 
