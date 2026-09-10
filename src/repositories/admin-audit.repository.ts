@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 
 import { client } from "./shared/repository-utils";
 import { mapAdminActionLog } from "./shared/mappers";
-import { ASSIGNMENT_STATUS } from "../constants/job-status";
+import { ASSIGNMENT_STATUS } from "../constants/status";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 
 import type { DbConnection } from "../types/shared/common.type";
@@ -52,6 +52,7 @@ const WORKER_PERFORMANCE_SORT_SQL: Record<WorkerPerformanceSortBy, Prisma.Sql> =
     worker_code: Prisma.sql`worker_code`,
   };
 
+// Function แปลง sortBy/sortOrder เป็น ORDER BY SQL สำหรับ query worker performance
 function buildWorkerPerformanceOrderBy(
   sortBy: WorkerPerformanceSortBy,
   sortOrder: "asc" | "desc",
@@ -95,6 +96,7 @@ function mapWorkerPerformanceRecord(
   };
 }
 
+// Function สร้าง CTE คำนวณ metric ผลงานของ worker แต่ละคนจาก assignment + event ในช่วงเวลาที่กำหนด
 function buildWorkerPerformanceRecordsCte(filters: {
   startAt: Date;
   endAt: Date;
@@ -159,6 +161,7 @@ function buildWorkerPerformanceRecordsCte(filters: {
   `;
 }
 
+// Function ดึงรายการผลงาน worker แบบแบ่งหน้า พร้อมยอดรวมทั้งหมด
 export async function listWorkerPerformance(
   filters: {
     startAt: Date;
@@ -209,10 +212,8 @@ export async function listWorkerPerformance(
 }
 
 /* -------------------------------------- Audit Events: Raw Source Queries -------------------------------------- */
-// แต่ละ Function ดึงข้อมูลดิบจาก source เดิมหนึ่งแหล่ง ขอบเขตด้วยช่วงเวลาที่ Filter มา (ไม่เกิน 92 วัน
-// ตาม validation schema) — merge/derive เป็น Audit Event ที่สมบูรณ์ทำที่ service เพราะกฎ merge บาง
-// ข้อต้อง cross-reference ข้าม source (เช่น WorkerAssignmentEvent.ADMIN_CANCELLED กับ
-// AdminActionLog.ASSIGNMENT_CANCELLED) ซึ่งเขียนเป็น SQL เดียวได้ยากและเปราะบางกว่า
+// แต่ละ Function ดึงข้อมูลดิบจาก source เดียว ในช่วงเวลาที่ Filter มา (ไม่เกิน 92 วัน) — merge เป็น
+// Audit Event ที่สมบูรณ์ทำที่ service เพราะบางกฎต้อง cross-reference ข้าม source เขียนเป็น SQL เดียวยาก
 
 // Function ดึง VehicleJob ที่มี timestamp (created/started/completed) อยู่ในช่วงที่ระบุ
 export async function listVehicleJobsForAudit(
@@ -481,9 +482,8 @@ export async function listMessageDeliveryLogsForAudit(
   }));
 }
 
-// Function ดึง AdminActionLog ที่เกิดขึ้นในช่วงที่ระบุ พร้อม actor และ business code เสริม
-// (ticketNumber/ticketNo/boothCode) สำหรับค้นหา/แสดงผลใน Metadata — reuse mapper เดียวกับ Work
-// History Timeline สำหรับ field หลัก
+// Function ดึง AdminActionLog ที่เกิดในช่วงที่ระบุ พร้อม business code เสริม (ticketNumber/ticketNo/
+// boothCode) สำหรับค้นหา/แสดงผล — reuse mapper เดียวกับ Work History Timeline สำหรับ field หลัก
 export async function listAdminActionLogsForAudit(
   range: AdminAuditDateRange,
   connection?: DbConnection,
@@ -519,9 +519,8 @@ export async function listAdminActionLogsForAudit(
   return result;
 }
 
-// Function ดึง SecurityAuditLog (27.12 phase 1: auth/session event) ที่เกิดขึ้นในช่วงที่ระบุ —
-// ไม่มี relation ให้ join เพราะ actor เป็น snapshot ที่เขียนไว้ตอนสร้างแถวแล้ว (ดู
-// security-audit-log.repository.ts ฝั่ง write)
+// Function ดึง SecurityAuditLog (auth/session event) ที่เกิดในช่วงที่ระบุ — ไม่มี relation ให้ join
+// เพราะ actor เป็น snapshot ที่เขียนไว้ตอนสร้างแถวแล้ว ไม่ใช่ live foreign key
 export async function listSecurityAuditLogsForAudit(
   range: AdminAuditDateRange,
   connection?: DbConnection,

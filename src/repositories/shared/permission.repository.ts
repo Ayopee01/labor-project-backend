@@ -8,12 +8,12 @@ import type { DbConnection } from "../../types/shared/common.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function จัดการ เป็น admin permission จาก DB
+// Function แปลง permission string จาก DB เป็น AdminPermission (null ถ้าไม่รู้จัก)
 function toAdminPermission(permission: string): AdminPermission | null {
   return isAdminPermission(permission) ? permission : null;
 }
 
-// Function ดึงรายการ ตาม account ID จาก DB
+// Function ดึงรายการ permission ตาม account id จาก DB
 export async function listByAccountId(
   accountId: number,
   connection?: DbConnection
@@ -33,7 +33,7 @@ export async function listByAccountId(
     .filter((permission): permission is AdminPermission => permission !== null);
 }
 
-// Function จัดการ replace account permissions จาก DB
+// Function แทนที่ permissions ทั้งหมดของ account นี้ด้วยชุดใหม่ (ลบของเก่าแล้วสร้างใหม่)
 export async function replaceAccountPermissions(
   accountId: number,
   permissions: AdminPermission[],

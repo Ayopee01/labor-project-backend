@@ -13,6 +13,7 @@ function toGateClientIsoString(value: Date | string | null): string | null {
   return value;
 }
 
+// Function แปลง GateClient record จาก DB เป็น DTO (normalize status ให้เป็น active/inactive เท่านั้น)
 function mapGateClient(record: {
   id: number;
   clientId: string;

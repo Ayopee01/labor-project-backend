@@ -31,13 +31,14 @@ import { HISTORY_FLAG_VALUES } from "../types/admin-jobs.type";
 import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { CompletedVehicleJobResult, GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
+import type { DbConnection } from "../types/shared/common.type";
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { adminAssignWorkersBodySchema, adminCancelAssignmentBodySchema, adminCancelBodySchema, adminDailyStallFeeQuerySchema, adminDailyWorkerIncomeQuerySchema, adminExtendScanDeadlineBodySchema, adminMonthlyStallFeeQuerySchema, adminOverrideCountBodySchema, adminReleaseWorkersBodySchema, adminVehicleJobAssignmentCancelBodySchema, adminVehicleJobListQuerySchema, adminVehicleJobOperationsQuerySchema, adminVehicleWaitBodySchema } from "../validation/schemas";
 // Import Utils
 import { requireActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
-import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, DAILY_WORKER_INCOME_PAYMENT_STATUS, SUBMITTED_TICKET_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, TICKET_SUBMITTER_ROLE, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, DAILY_WORKER_INCOME_PAYMENT_STATUS, SUBMITTED_TICKET_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, TICKET_SUBMITTER_ROLE, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
 import { DEFAULT_PAGE_LIMIT } from "../constants/pagination";
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
 import type { AdminActionLogDto } from "../types/shared/admin-action-log.type";
@@ -105,11 +106,8 @@ function describeAdminAction(log: AdminActionLogDto): string {
   }
 }
 
-// Function ค้นหา AdminActionLog ของการ Cancel Assignment ที่ตรงกับ assignment นี้เจาะจง ใช้ร่วมกัน
-// ทั้ง Worker Cancellation object และ Timeline Cancel actor เพื่อไม่ให้คืนค่าจาก Log ของ action อื่น
-// — ถ้าไม่มี Log เจาะจงระดับ assignment (เช่น assignment นี้ถูกยกเลิกทางอ้อมจากการยกเลิกทั้ง
-// TicketNumber ไม่ใช่ยกเลิกทีละ Worker) fallback ไป Log VEHICLE_JOB_CANCELLED ล่าสุดของรถคันนี้แทน
-// เพราะเป็นสาเหตุเดียวที่เป็นไปได้อีกทางที่ทำให้ assignment กลายเป็น CANCELLED
+// Function ค้นหา AdminActionLog ของการ Cancel Assignment นี้เจาะจง ถ้าไม่มี Log ระดับ assignment
+// (ถูกยกเลิกทางอ้อมจากการยกเลิกทั้ง TicketNumber) fallback ไป Log VEHICLE_JOB_CANCELLED ล่าสุดแทน
 function findAssignmentCancelLog(
   adminActionLogs: AdminActionLogDto[],
   assignmentId: number,
@@ -143,9 +141,8 @@ function findVehicleCancelLog(
   return vehicleCancelLogs[0] ?? null;
 }
 
-// Function ค้นหา AdminActionLog ของการยกเลิกตลาด (MarketJob/ticket_no) นี้เจาะจง — ถ้าไม่มี Log
-// ระดับตลาดเอง (ถูกยกเลิกทางอ้อมจากการยกเลิกทั้งคัน) fallback ไป Log VEHICLE_JOB_CANCELLED แทน
-// เพราะเป็นสาเหตุเดียวที่เป็นไปได้อีกทางที่ทำให้ตลาดนี้กลายเป็น CANCELLED
+// Function ค้นหา AdminActionLog ของการยกเลิกตลาด (MarketJob) นี้เจาะจง ถ้าไม่มี Log ระดับตลาดเอง
+// (ถูกยกเลิกทางอ้อมจากการยกเลิกทั้งคัน) fallback ไป Log VEHICLE_JOB_CANCELLED แทน
 function findMarketCancelLog(
   adminActionLogs: AdminActionLogDto[],
   marketJobId: number,
@@ -165,9 +162,8 @@ function findMarketCancelLog(
   return findVehicleCancelLog(adminActionLogs);
 }
 
-// Function ค้นหา AdminActionLog ของการยกเลิกแผง (GateTicket/Booth) นี้เจาะจง — ถ้าไม่มี Log ระดับ
-// แผงเอง (ถูกยกเลิกทางอ้อมจากการยกเลิกทั้งตลาดหรือทั้งคัน) fallback ไล่ขึ้นไปที่ระดับตลาดแล้วรถตามลำดับ
-// (ดู findMarketCancelLog)
+// Function ค้นหา AdminActionLog ของการยกเลิกแผง (GateTicket/Booth) นี้เจาะจง ถ้าไม่มี Log ระดับแผงเอง
+// fallback ไล่ขึ้นไปที่ระดับตลาดแล้วรถตามลำดับ (ดู findMarketCancelLog)
 function findBoothCancelLog(
   adminActionLogs: AdminActionLogDto[],
   gateTicketId: number,
@@ -188,12 +184,8 @@ function findBoothCancelLog(
   return findMarketCancelLog(adminActionLogs, marketJobId);
 }
 
-// Function ประกอบ AdminHistoryCancellationResponse จาก Log ที่หาเจอ — ใช้ร่วมกันทุกระดับ (VehicleJob/
-// MarketJob/GateTicket) คืน null ทั้งก้อนเมื่อ status ไม่ใช่ CANCELLED เท่านั้น ถ้า status เป็น
-// CANCELLED แต่หา Log ไม่เจอเลย sub-field จะเป็น null แทนการเดา — เกิดขึ้นได้จริงที่ VehicleJob เมื่อ
-// closeCompletedVehicleJobIfReady auto-rollup ทั้งคันเป็น CANCELLED เพราะทุก MarketJob cancelled หมด
-// (ไม่มี VEHICLE_JOB_CANCELLED log ของตัวเอง เพราะไม่มี Admin กด Cancel ระดับรถโดยตรง) ซึ่ง
-// vehicle_job.cancellation เป็นระดับบนสุดจึงไม่ fallback ไปที่ Log ของ MarketJob ที่เป็นสาเหตุแทน
+// Function ประกอบ AdminHistoryCancellationResponse จาก Log ที่หาเจอ ใช้ร่วมกันทุกระดับ (VehicleJob/
+// MarketJob/GateTicket) ถ้า status เป็น CANCELLED แต่หา Log ไม่เจอ sub-field จะเป็น null แทนการเดา
 function formatCancellationResponse(
   isCancelled: boolean,
   cancelLog: AdminActionLogDto | null,
@@ -211,9 +203,8 @@ function formatCancellationResponse(
   };
 }
 
-// Function ค้นหา AdminActionLog ของการ Release Workers ที่ครอบคลุม worker คนนี้ ใช้สำหรับ Timeline
-// Release actor — ถ้ามีมากกว่าหนึ่ง Log ที่ครอบคลุม worker คนเดียวกัน (ปล่อยคนละรอบ) ให้เลือก Log
-// ที่ created_at ใกล้ releasedAt ที่สุด
+// Function ค้นหา AdminActionLog ของการ Release Workers ที่ครอบคลุม worker คนนี้ ถ้ามีหลาย Log
+// (ปล่อยคนละรอบ) เลือก Log ที่ created_at ใกล้ releasedAt ที่สุด
 function findWorkersReleasedLog(
   adminActionLogs: AdminActionLogDto[],
   workerId: number,
@@ -250,10 +241,8 @@ function findWorkersReleasedLog(
   });
 }
 
-// Function เลือก accepted assignment ล่าสุดต่อ worker หนึ่งคน (stable identity = workerId)
-// จาก assignments ทั้งหมดของ VehicleJob นี้ — คนที่ถูก dispatch เข้ามาแต่ไม่เคยกด Accept
-// (acceptedAt เป็น null) ต้องไม่ถูกเลือกเลย ส่วนคนที่ถูก dispatch/กดรับมากกว่าหนึ่งครั้งให้เหลือ
-// เพียงแถวเดียวจาก transaction ที่ acceptedAt ล่าสุด (tie-break ด้วย id ล่าสุด)
+// Function เลือก accepted assignment ล่าสุดต่อ worker หนึ่งคน จาก assignments ทั้งหมดของ VehicleJob นี้
+// worker ที่ไม่เคยกด Accept (acceptedAt เป็น null) จะไม่ถูกเลือก
 function selectLatestAcceptedAssignmentPerWorker(
   assignments: AdminVehicleJobHistoryRecord["assignments"],
 ): AdminVehicleJobHistoryRecord["assignments"] {
@@ -280,16 +269,13 @@ function selectLatestAcceptedAssignmentPerWorker(
   return Array.from(latestByWorkerId.values());
 }
 
-// Function สร้างรายการ Worker ของ VehicleJob สำหรับ Work History ใน service flow — เฉพาะคนที่กดรับ
-// งานจริงและไม่ซ้ำต่อคน (ดู selectLatestAcceptedAssignmentPerWorker) Timeline ยังคง event ครบทุก
-// assignment ตามเดิม ฟังก์ชันนี้กระทบแค่รายการสรุปในแท็บประวัติแรงงาน
+// Function สร้างรายการ Worker ของ VehicleJob สำหรับ Work History เฉพาะคนที่กดรับงานจริงและไม่ซ้ำต่อคน
+// (ดู selectLatestAcceptedAssignmentPerWorker) ไม่กระทบ Timeline ที่ยังคง event ครบทุก assignment
 function formatAdminHistoryWorkers(
   record: AdminVehicleJobHistoryRecord,
   adminActionLogs: AdminActionLogDto[],
 ): AdminHistoryWorkerResponse[] {
-  // submitted_at ต้องผูกกับ assignment (work-cycle) ที่เลือกจริงเท่านั้น ผ่าน
-  // TicketCompletionSubmission.assignmentId ที่ stamp ไว้ตอน Submit — submission ที่ไม่มี
-  // assignmentId (Admin submit แทน หรือ row เก่าก่อน Feature นี้) ต้องไม่ถูกนำมาปนกัน
+  // submitted_at ผูกกับ assignmentId ที่ stamp ไว้ตอน Submit เท่านั้น ไม่รวม submission ที่ไม่มี assignmentId
   const submittedAtByAssignmentId = new Map<number, string>();
 
   for (const market of record.marketJobs) {
@@ -325,9 +311,8 @@ function formatAdminHistoryWorkers(
       shirt_number: assignment.worker.coatNo ?? null,
       accepted_at: assignment.acceptedAt?.toISOString() ?? null,
       scanned_at: assignment.scannedAt?.toISOString() ?? null,
-      // Business Definition: Worker ถือว่าเริ่มงานตั้งแต่ Scan เข้างานจริง ไม่ใช่ตอนกด Accept —
-      // ใช้เวลาเริ่มงานระดับ VehicleJob เป็นหลัก fallback เป็น scannedAt ของคนนั้นเฉพาะข้อมูลเก่าที่
-      // ไม่มี workStartedAt บันทึกไว้
+      // Worker เริ่มงานตั้งแต่ Scan เข้างานจริง ไม่ใช่ตอนกด Accept ใช้ workStartedAt ระดับ VehicleJob
+      // เป็นหลัก fallback เป็น scannedAt เฉพาะข้อมูลเก่าที่ไม่มี workStartedAt
       started_at: assignment.scannedAt
         ? (record.workStartedAt?.toISOString() ?? assignment.scannedAt.toISOString())
         : null,
@@ -340,8 +325,7 @@ function formatAdminHistoryWorkers(
             const cancelLog = findAssignmentCancelLog(adminActionLogs, assignment.id);
 
             return {
-              // ห้าม fallback ไปใช้ assignment.updatedAt — ถ้าไม่มี ADMIN_CANCELLED event จริง
-              // ให้เป็น null แทนการเดา
+              // ห้าม fallback ไปใช้ assignment.updatedAt ถ้าไม่มี ADMIN_CANCELLED event จริงให้เป็น null
               cancelled_at: adminCancelledEvent?.occurredAt.toISOString() ?? null,
               reason_code: cancelLog?.reason_code ?? null,
               reason_text: cancelLog?.reason_text ?? null,
@@ -363,8 +347,7 @@ function formatAdminHistoryTimeline(
 ): AdminHistoryTimelineItemResponse[] {
   const items: AdminHistoryTimelineItemResponse[] = [];
 
-  // Gate Arrival ต้องมาจาก TicketCreatedAt แรกสุด (source เดียวกับ ticket_created_at) ไม่ใช่
-  // VehicleJob.createdAt — ถ้าไม่มี MarketJob เลย (ไม่มี source จริง) ก็ไม่ต้องเดาแล้วใส่ item ลอยๆ
+  // Gate Arrival ใช้ ticket_created_at ไม่ใช่ VehicleJob.createdAt ถ้าไม่มี MarketJob เลยก็ไม่ต้องเดา
   if (jobTimestamps.ticket_created_at) {
     items.push({
       type: "GATE_ARRIVAL",
@@ -475,9 +458,8 @@ function formatAdminHistoryTimeline(
   return items.sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
 }
 
-// Function derive job-level timestamp/duration ของ VehicleJob สำหรับ Work History ใน service flow
-// ห้าม derive จาก field ที่ไม่มีจริง หา TicketCreatedAt/WorkStartedAt/SubmittedCompleteAt/CompletedAt ไม่ได้ก็คืน null
-// แทนการเดา
+// Function derive job-level timestamp/duration ของ VehicleJob สำหรับ Work History
+// หา timestamp ที่ต้องการไม่ได้ก็คืน null แทนการเดา
 function deriveAdminHistoryJobTimestamps(record: AdminVehicleJobHistoryRecord): {
   ticket_created_at: string | null;
   work_started_at: string | null;
@@ -485,8 +467,7 @@ function deriveAdminHistoryJobTimestamps(record: AdminVehicleJobHistoryRecord): 
   completed_at: string | null;
   duration_seconds: number | null;
 } {
-  // ticket_created_at = TicketCreatedAt ที่เร็วที่สุดของ Business Tickets (MarketJobs) ภายใน VehicleJob
-  // นี้ — คือเวลาที่ Ticket ถูกสร้างจาก Gate ห้ามใช้ assignments.scannedAt
+  // ticket_created_at = TicketCreatedAt ที่เร็วที่สุดของ MarketJobs ภายใน VehicleJob นี้ (ห้ามใช้ assignments.scannedAt)
   const ticketCreatedTimestamps = record.marketJobs.map((market) => market.ticketCreatedAt);
   const ticketCreatedAt =
     ticketCreatedTimestamps.length > 0
@@ -495,8 +476,7 @@ function deriveAdminHistoryJobTimestamps(record: AdminVehicleJobHistoryRecord): 
   const workStartedAt = record.workStartedAt;
 
   const allTickets = record.marketJobs.flatMap((market) => market.tickets);
-  // submitted_complete_at ต้องไม่รอ Ticket ที่ถูก CANCELLED (ไม่ใช่งานที่ต้องรอ completion) —
-  // ใช้ requiredTickets เดียวกับที่ vendor confirm เคยใช้
+  // submitted_complete_at ไม่ต้องรอ Ticket ที่ CANCELLED แล้ว
   const requiredTickets = allTickets.filter(
     (ticket) => ticket.status !== TICKET_STATUS.CANCELLED,
   );
@@ -516,11 +496,10 @@ function deriveAdminHistoryJobTimestamps(record: AdminVehicleJobHistoryRecord): 
     )
     : null;
 
-  // completed_at ต้องใช้ VehicleJob.completedAt จริงที่ persist ไว้ที่จุดเปลี่ยนสถานะเดียว
-  // (updateVehicleJobStatus) ห้าม derive จาก MarketJob.completedAt อีกต่อไป
+  // completed_at ใช้ VehicleJob.completedAt ที่ persist ไว้จริง ห้าม derive จาก MarketJob.completedAt
   const completedAt = record.completedAt;
 
-  // duration_seconds = completedAt - workStartedAt เพื่อวัดเวลาทำงานจริงหลังทีม scan ครบ
+  // duration_seconds = completedAt - workStartedAt (เวลาทำงานจริงหลังทีม scan ครบ)
   const durationSeconds =
     completedAt && workStartedAt
       ? Math.round((completedAt.getTime() - workStartedAt.getTime()) / 1000)
@@ -535,8 +514,7 @@ function deriveAdminHistoryJobTimestamps(record: AdminVehicleJobHistoryRecord): 
   };
 }
 
-// Type ข้อมูล MasterOwnerStall ที่ Batch-fetch มาแล้ว ใช้ประกอบ correction_owner และเป็นจุดเริ่มต้น
-// resolve ผู้กด Reject ผ่าน LINE (ดู buildHistoryRejectionActorContext)
+// Type ข้อมูล MasterOwnerStall ที่ Batch-fetch มาแล้ว ใช้ประกอบ correction_owner และ resolve ผู้กด Reject ผ่าน LINE
 type HistoryOwnerStallInfo = {
   full_name: string | null;
   card_id: string;
@@ -558,8 +536,7 @@ function buildMemberStallKey(
   return `${marketCode}::${ownerCardId}::${ownerLineUserId}::${memberLineUserId}`;
 }
 
-// Function resolve ผู้กด Reject ผ่าน LINE ของ Submission หนึ่งรายการ ใช้ Owner map ที่ fetch มาแล้ว
-// เป็นจุดเริ่มต้นก่อนเสมอ (ไม่ query ซ้ำ) แล้วค่อย fallback ไปหา Member map ถ้า lineUserId ไม่ตรง Owner
+// Function resolve ผู้กด Reject ผ่าน LINE ของ Submission หนึ่งรายการ เช็ค Owner map ก่อน แล้ว fallback ไปหา Member map ถ้า lineUserId ไม่ตรง Owner
 function resolveRejectionActor(
   owner: HistoryOwnerStallInfo | null,
   marketCode: string,
@@ -592,8 +569,7 @@ function resolveRejectionActor(
   return { rejected_by_type: null, rejected_by_name: null };
 }
 
-// Function คำนวณ company_share_rate ของ Booth หนึ่งใบจาก Finalized Financial Snapshot เดิม
-// (fund_amount / labor_fee_raw) * 100 — ไม่ persist ค่าใหม่ ไม่แตะ formatAdminFinancialBooth เดิม
+// Function คำนวณ company_share_rate ของ Booth หนึ่งใบ: (fund_amount / labor_fee_raw) * 100
 function calculateCompanyShareRate(laborFeeRaw: string, fundAmount: string): string {
   const laborFeeRawDecimal = new Prisma.Decimal(laborFeeRaw);
 
@@ -607,9 +583,8 @@ function calculateCompanyShareRate(laborFeeRaw: string, fundAmount: string): str
     .toFixed(2);
 }
 
-// Function ระบุประเภทของการ Confirm ล่าสุดของ Submission — "vendor" เมื่อ resolved_by_line_user_id
-// มีค่าจริง (Vendor กดยืนยันเองผ่าน LINE), "timeout" เมื่อไม่มี (Auto-confirm จาก BullMQ Timeout แต่
-// confirmedAt ยังถูกบันทึกจริงเสมอทั้งสองกรณี), null เมื่อยังไม่เคย Confirm เลย
+// Function ระบุประเภทการ Confirm ล่าสุดของ Submission: "vendor" ถ้ามี resolvedByLineUserId (กดเอง),
+// "timeout" ถ้าไม่มี (Auto-confirm จาก BullMQ), null ถ้ายังไม่เคย Confirm
 function resolveConfirmedByType(
   submission: AdminVehicleJobHistoryRecord["marketJobs"][number]["tickets"][number]["completionSubmissions"][number] | null,
 ): "vendor" | "timeout" | null {
@@ -620,8 +595,7 @@ function resolveConfirmedByType(
   return submission.resolvedByLineUserId ? "vendor" : "timeout";
 }
 
-// Function จัดรูปแบบ SubmissionWorkerSnapshot[] ของ submission หนึ่งรายการ — roster ที่ยัง WORKING
-// ณ เวลา Submit จริง (คนละอันกับ GateTicketWorkerSnapshot ที่ snapshot ทีหลังตอน Confirm)
+// Function จัดรูปแบบ SubmissionWorkerSnapshot[] ของ submission หนึ่งรายการ (roster ที่ WORKING ณ เวลา Submit จริง)
 function formatSubmissionWorkerSnapshot(
   submission: AdminVehicleJobHistoryRecord["marketJobs"][number]["tickets"][number]["completionSubmissions"][number],
 ): AdminHistoryBoothResponse["submission_worker_snapshot"] {
@@ -649,9 +623,8 @@ function resolveSubmitterName(
     : submission.submittedByWorker?.fullName ?? null;
 }
 
-// Function จัดรูปแบบ Booth หนึ่งใบสำหรับ Work History ใน service flow
-// Reuse formatAdminFinancialBooth (คำนวณเงินจาก Snapshot ที่ Finalize แล้วเหมือนหน้า /financials
-// ทุกประการ ห้ามคำนวณสูตรใหม่) แล้วเติมข้อมูลการส่งยอด/Reject ที่หน้า Financial เดิมไม่ต้องใช้
+// Function จัดรูปแบบ Booth หนึ่งใบสำหรับ Work History โดย reuse formatAdminFinancialBooth
+// (คำนวณเงินเหมือนหน้า /financials ห้ามคำนวณสูตรใหม่) แล้วเติมข้อมูลการส่งยอด/Reject เพิ่ม
 function formatAdminHistoryBooth(
   ticket: AdminVehicleJobHistoryRecord["marketJobs"][number]["tickets"][number],
   market: AdminVehicleJobHistoryRecord["marketJobs"][number],
@@ -660,8 +633,7 @@ function formatAdminHistoryBooth(
   adminActionLogs: AdminActionLogDto[],
   isVehicleReleased: boolean,
 ): AdminHistoryBoothResponse {
-  // ticket_id/ticket_no/marketCode/marketName ของ formatAdminFinancialBooth ไม่ใช้ที่นี่ เพราะ
-  // Work History มีข้อมูลชุดนี้อยู่แล้วระดับ Markets[] หนึ่งชั้นเหนือขึ้นไป — ไม่ต้องซ้ำในทุก Booth
+  // ตัด ticket_id/ticket_no/marketCode/marketName ออก เพราะ Work History มีข้อมูลชุดนี้แล้วระดับ Markets[]
   const { ticket_id: _ticketId, ticket_no: _ticketNo, marketCode: _marketCode, marketName: _marketName, products: financialProducts, ...base } =
     formatAdminFinancialBooth(ticket, market);
   const products: AdminHistoryProductResponse[] = financialProducts.map(
@@ -696,8 +668,7 @@ function formatAdminHistoryBooth(
       rejectedAt: submission.rejectedAt.toISOString(),
       // Current Master Owner ของ Booth นี้ ไม่ใช่ Historical Snapshot
       correction_owner: owner?.full_name ?? null,
-      // Current state เหมือน correction_owner ข้างบน — ทีมยังไม่ Release แก้เองได้ (worker) ทีม
-      // Release ไปแล้วต้อง Admin จัดการแทน (admin)
+      // ทีมยังไม่ Release แก้เองได้ (worker) ทีม Release ไปแล้วต้อง Admin จัดการแทน (admin)
       correction_owner_type: isVehicleReleased ? "admin" : "worker",
       rejected_by_type: rejectionActor.rejected_by_type,
       rejected_by_name: rejectionActor.rejected_by_name,
@@ -724,9 +695,7 @@ function formatAdminHistoryBooth(
       base.summary.labor_fee_raw,
       base.summary.fund_amount,
     ),
-    // จำนวน Worker WORKING ณ ตอน Submission ล่าสุดจริง (Historical Snapshot) ไม่ใช่ Roster
-    // ปัจจุบันหรือ GateTicketWorkerSnapshot ตอน Confirm — null ถ้าไม่มี Submission หรือเป็น
-    // Submission เก่าก่อน Feature นี้ (ห้าม fallback ไปนับ Worker ปัจจุบัน)
+    // จำนวน Worker WORKING ณ ตอน Submission ล่าสุด (Historical Snapshot) ห้าม fallback ไปนับ Worker ปัจจุบัน
     worker_count: latestSubmission?.workerCountSnapshot ?? null,
     cancellation: formatCancellationResponse(
       ticket.status === TICKET_STATUS.CANCELLED,
@@ -735,15 +704,8 @@ function formatAdminHistoryBooth(
   };
 }
 
-// Function สร้าง Job-level Worker Earnings ของ Work History ใน service flow — เงินจริงต่อ Worker
-// ไม่ใช่ค่าเฉลี่ย: GROUP BY workerId แล้ว SUM(TicketWorker.finalEarningAmount) ที่ finalize
-// ไว้แล้วในทุก MarketJob (Business Ticket) ของ VehicleJob นี้
-//
-// ชุด Worker มาจาก TicketWorker ที่ finalEarningAmount ถูก finalize ไว้แล้วเท่านั้น (มี payment
-// จริง) ไม่ใช่จาก assignment ที่กด Accept — คนที่ timeout ก่อน Scan (ไม่มีแถว ticket_workers เลย
-// หรือมีแต่ finalEarningAmount เป็น null) ต้องไม่โผล่ใน Finance.Workers[] เลย ส่วนคนที่อยู่ใน
-// submission snapshot แต่ไม่ได้เป็นผู้กดส่งยอดเอง ยังคงมีแถว ticket_workers ของตัวเองตามปกติ จึงยัง
-// ถูกนับตามข้อมูลเงินจริง
+// Function สร้าง Job-level Worker Earnings: GROUP BY workerId แล้ว SUM(TicketWorker.finalEarningAmount)
+// ของทุก MarketJob ในรถคันนี้ นับเฉพาะที่ finalize แล้ว คนที่ timeout ก่อน Scan จะไม่โผล่ในผลลัพธ์
 function buildAdminHistoryJobWorkerEarnings(
   record: AdminVehicleJobHistoryRecord,
 ): Array<{
@@ -783,10 +745,8 @@ function buildAdminHistoryJobWorkerEarnings(
   });
 }
 
-// Function derive HistoryStatus ต่อ record เดียวกับ business group ที่ history_status query กรอง
-// (buildHistoryStatusFilter ใน admin-jobs.repository.ts) ห้ามให้ตรรกะสองจุดนี้เพี้ยนไปจากกัน —
-// ลำดับความสำคัญ CANCELLED → COMPLETED → REJECT_PENDING เหมือนกัน null เมื่อไม่เข้ากลุ่มใดเลย (เช่น
-// WAIT/WORKING ที่ไม่มี Booth REJECT ค้าง — เกิดได้เมื่อไม่ได้กรองด้วย history_status)
+// Function derive HistoryStatus ต่อ record ต้องตรงกับ buildHistoryStatusFilter ใน
+// admin-jobs.repository.ts เสมอ (ลำดับความสำคัญ CANCELLED → COMPLETED → REJECT_PENDING)
 function deriveHistoryStatus(record: AdminVehicleJobHistoryRecord): HistoryStatusValue | null {
   if (record.status === VEHICLE_JOB_STATUS.CANCELLED) {
     return "CANCELLED";
@@ -807,8 +767,7 @@ function deriveHistoryStatus(record: AdminVehicleJobHistoryRecord): HistoryStatu
   return null;
 }
 
-// Function รวม TicketCompletionSubmission ทุกใบของทุก Booth ในทุก Business Ticket ของ VehicleJob
-// นี้เป็นชุดเดียว — ใช้ร่วมกันใน deriveHistoryFlags แทนการวน loop ซ้อนกันหลายรอบต่อ flag
+// Function รวม TicketCompletionSubmission ทุกใบของทุก Booth ในรถคันนี้เป็นชุดเดียว ใช้ร่วมกันใน deriveHistoryFlags
 function collectAllCompletionSubmissions(
   record: AdminVehicleJobHistoryRecord,
 ): AdminVehicleJobHistoryRecord["marketJobs"][number]["tickets"][number]["completionSubmissions"] {
@@ -817,11 +776,8 @@ function collectAllCompletionSubmissions(
   );
 }
 
-// Function derive HistoryFlags ต่อ record — เหตุการณ์สำคัญย้อนหลังที่เคยเกิดขึ้นกับ VehicleJob นี้
-// คนละความหมายกับ deriveHistoryStatus (สถานะหลักปัจจุบัน) งานหนึ่งงานมีได้หลาย flag พร้อมกัน ใช้แค่
-// ข้อมูล transactional ที่มีอยู่แล้วใน record ห้าม derive จากข้อความ Timeline/Description เด็ดขาด —
-// ลำดับการคืนค่าตรงกับ HISTORY_FLAG_VALUES เสมอ (ไม่ใช่ลำดับที่เจอเหตุการณ์จริง) และไม่มีค่าซ้ำโดย
-// ธรรมชาติ (แต่ละ flag ถูกประเมินเป็น boolean เดียวครั้งเดียว ไม่ใช่ push ซ้ำจากหลาย submission)
+// Function derive HistoryFlags ของ record (เหตุการณ์สำคัญย้อนหลังที่เคยเกิด คนละความหมายกับสถานะปัจจุบันใน deriveHistoryStatus)
+// ลำดับค่าที่คืนต้องตรงกับ HISTORY_FLAG_VALUES เสมอ และห้าม derive จากข้อความ Timeline/Description
 function deriveHistoryFlags(record: AdminVehicleJobHistoryRecord): HistoryFlagValue[] {
   const submissions = collectAllCompletionSubmissions(record);
   const allTickets = record.marketJobs.flatMap((market) => market.tickets);
@@ -838,14 +794,12 @@ function deriveHistoryFlags(record: AdminVehicleJobHistoryRecord): HistoryFlagVa
     BOOTH_REJECTED: submissions.some(
       (submission) => submission.rejectedAt !== null,
     ),
-    // เงื่อนไขเดียวกับ resolveConfirmedByType ที่คืน "timeout" (ไม่มี resolvedByLineUserId แปลว่า
-    // Vendor ไม่ได้กดยืนยันเอง เป็น BullMQ Timeout auto-confirm แทน)
+    // ไม่มี resolvedByLineUserId แปลว่าเป็น BullMQ Timeout auto-confirm (เดียวกับ resolveConfirmedByType)
     AUTO_CONFIRMED: submissions.some(
       (submission) =>
         submission.confirmedAt !== null && submission.resolvedByLineUserId === null,
     ),
-    // นับเฉพาะ assignment ที่เคยกดรับงานจริง (acceptedAt ไม่ null) แล้วถูก ADMIN_CANCELLED — dispatch
-    // ที่ถูกยกเลิกก่อนกดรับไม่นับเป็น "เปลี่ยนแรงงานระหว่างงาน"
+    // นับเฉพาะ assignment ที่กดรับงานแล้วถูก ADMIN_CANCELLED (dispatch ที่ยกเลิกก่อนกดรับไม่นับ)
     WORKER_CHANGED_DURING_JOB: record.assignments.some(
       (assignment) =>
         assignment.acceptedAt !== null &&
@@ -853,8 +807,7 @@ function deriveHistoryFlags(record: AdminVehicleJobHistoryRecord): HistoryFlagVa
           (event) => event.eventType === WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED,
         ),
     ),
-    // ใช้ workerCountSnapshot ณ เวลา Submit เท่านั้น — submission เก่าก่อนมี feature นี้ที่
-    // workerCountSnapshot เป็น null ต้องข้ามไป ห้าม fallback จาก roster ปัจจุบันหรือแหล่งอื่น
+    // ใช้ workerCountSnapshot ณ เวลา Submit เท่านั้น ข้าม submission เก่าที่ไม่มีค่านี้ ห้าม fallback จาก roster ปัจจุบัน
     SUBMISSION_ROSTER_INCOMPLETE: submissions.some(
       (submission) =>
         submission.workerCountSnapshot !== null &&
@@ -863,8 +816,7 @@ function deriveHistoryFlags(record: AdminVehicleJobHistoryRecord): HistoryFlagVa
     ADMIN_SUBMITTED_ON_BEHALF: submissions.some(
       (submission) => submission.submittedByRole === TICKET_SUBMITTER_ROLE.ADMIN,
     ),
-    // สอง flag นี้ mutually exclusive กันเองโดยธรรมชาติ (workStartedAt เป็น null หรือไม่เป็น null
-    // อย่างใดอย่างหนึ่งเท่านั้น) ไม่ต้องเช็คแยกป้องกันซ้ำ
+    // สอง flag นี้ mutually exclusive กันเอง (แยกกันด้วย workStartedAt เป็น null หรือไม่)
     VEHICLE_CANCELLED_AFTER_START:
       record.status === VEHICLE_JOB_STATUS.CANCELLED && record.workStartedAt !== null,
     VEHICLE_CANCELLED_BEFORE_START:
@@ -1048,12 +1000,8 @@ function formatAdminFinancialProduct(
   };
 }
 
-// Function จัดรูปแบบ Booth Financial สำหรับ Admin
-//
-// Worker Roster (ticketWorkers) อยู่ระดับ Business Ticket (marketJob) ไม่ใช่ระดับ Booth แล้ว
-// ดังนั้น "ยอดรวมต่อ Worker ของ Booth นี้" ต้องรวมจาก TicketWorkerPayment ของ Product ที่อยู่
-// ใน Booth นี้เท่านั้น (ผ่าน product.financial.workerPayments) ห้ามใช้ ticketWorker.payments
-// ตรงๆ เพราะจะรวมยอดข้าม Booth อื่นของ Business Ticket เดียวกันมาด้วย
+// Function จัดรูปแบบ Booth Financial สำหรับ Admin — Worker Roster อยู่ระดับ Business Ticket ไม่ใช่ระดับ Booth
+// จึงต้องรวมยอดจาก product.financial.workerPayments ของ Booth นี้เท่านั้น ห้ามใช้ ticketWorker.payments ตรงๆ (จะรวมข้าม Booth)
 function formatAdminFinancialBooth(
   ticket: AdminVehicleJobFinancialRecord["marketJobs"][number]["tickets"][number],
   marketJob: AdminVehicleJobFinancialRecord["marketJobs"][number],
@@ -1098,8 +1046,7 @@ function formatAdminFinancialBooth(
     }
   }
 
-  // Roster ทั้งหมดของ Business Ticket (รวม Worker ที่ถูก Cancel/ไม่มี Payment ใน Booth นี้)
-  // ต้องยังคงแสดงในรายการเพื่อการตรวจสอบ แม้ total_amount ของ Booth นี้จะเป็น 0
+  // แสดง Worker ทั้งหมดของ Business Ticket แม้ total_amount ของ Booth นี้จะเป็น 0
   for (const ticketWorker of marketJob.ticketWorkers) {
     if (boothWorkerTotals.has(ticketWorker.id)) {
       continue;
@@ -1144,9 +1091,8 @@ function formatAdminFinancialBooth(
   };
 }
 
-// Function รวมยอด stall/labor/worker-payout/fund ของ Booth[] เป็นยอดรวมระดับ Vehicle Job — ใช้ร่วมกัน
-// ระหว่าง formatAdminVehicleJobHistoryDetail (Work History) และ getVehicleJobFinancials (Financials)
-// เพราะทั้งสองที่ sum จาก booths[] ชุดเดียวกัน (ผลจาก formatAdminFinancialBooth) ด้วยสูตรเดียวกันเป๊ะ
+// Function รวมยอด stall/labor/worker-payout/fund ของ Booth[] เป็นยอดรวมระดับ Vehicle Job
+// ใช้ร่วมกันระหว่าง Work History และ Financials เพื่อให้สูตรรวมตรงกันเป๊ะ
 function sumBoothFinancials(
   booths: {
     final_stall_amount: string | null;
@@ -1214,10 +1160,8 @@ function assignmentQueuePriorityAt(
   return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
 }
 
-// Function เรียง assignments ตาม accepted_at (fallback created_at) ให้เป็นลำดับเดียวกับตอนเข้าคิว
-// ครั้งแรก — ใช้ร่วมกันทุกจุดที่ต้อง requeue Worker กลับเข้าคิว ไม่ว่าจะเข้าหน้าคิว (cancel+requeue,
-// Admin สั่ง Dispatch:false) หรือต่อท้ายคิว (release-workers หลังส่งยอดครบ) ลำดับสัมพัทธ์ระหว่างกันต้อง
-// อิงเวลากดรับงานเสมอ ไม่ใช่ลำดับที่ assignment ถูกสร้าง/dispatch
+// Function เรียง assignments ตาม accepted_at (fallback created_at) ใช้ร่วมกันทุกจุดที่ requeue Worker
+// กลับเข้าคิว ลำดับสัมพัทธ์ต้องอิงเวลากดรับงานเสมอ ไม่ใช่ลำดับที่ assignment ถูกสร้าง/dispatch
 function sortAssignmentsByAcceptedAt(
   assignments: VehicleJobAssignmentDto[],
 ): VehicleJobAssignmentDto[] {
@@ -1375,9 +1319,8 @@ export async function getVehicleJobFinancials(
   };
 }
 
-// Function Batch-fetch ผู้ที่กด Reject ผ่าน LINE (Owner/Member) และ Current Master Owner ของทุก
-// Booth ที่มี Rejection History ใน Vehicle Job list หน้านี้ ใน service flow — query ครั้งเดียวต่อหน้า
-// ไม่ query ต่อแถว/ต่อ Booth
+// Function Batch-fetch ผู้ที่กด Reject ผ่าน LINE (Owner/Member) ของทุก Booth ที่มี Rejection History
+// ในหน้า Vehicle Job list นี้ — query ครั้งเดียวต่อหน้า ไม่ query ต่อแถว/ต่อ Booth
 async function buildHistoryRejectionActorContext(
   records: AdminVehicleJobHistoryRecord[],
 ): Promise<{
@@ -1585,8 +1528,7 @@ export async function listVehicleJobOperations(
   };
 }
 
-// Function ทำขั้นตอนร่วมของการยกเลิก vehicle job ทั้งคัน — เรียกจาก cancelVehicleJobAndRequeue
-// ก่อนที่จะไป requeue worker ต่อ
+// Function ทำขั้นตอนร่วมของการยกเลิก vehicle job ทั้งคัน เรียกจาก cancelVehicleJobAndRequeue ก่อน requeue worker
 async function performVehicleJobCancellation(
   idParam: unknown,
   body: unknown,
@@ -1598,9 +1540,7 @@ async function performVehicleJobCancellation(
 
   const { vehicleJob, activeAssignments, ticketNos } = await withTransaction(
     async (transaction) => {
-      // Lock แถวรถก่อนอ่านสถานะล่าสุดและยกเลิก — กัน race กับ vendor confirm/auto-confirm
-      // (closeCompletedVehicleJobIfReady) ที่อาจปิดรถคันนี้เป็น COMPLETED/CANCELLED พร้อมกันอยู่คนละ
-      // Transaction ใช้ Lock เดียวกัน (FOR UPDATE บน vehicle_jobs) จึง serialize กันเองโดยอัตโนมัติ
+      // Lock แถวรถก่อนอ่าน/ยกเลิก กัน race กับ closeCompletedVehicleJobIfReady ที่อาจปิดรถพร้อมกันคนละ transaction
       await transaction.$queryRaw`SELECT id FROM vehicle_jobs WHERE id = ${vehicleJobId} FOR UPDATE`;
 
       const current = await vehicleJobRepository.findVehicleJobById(
@@ -1620,8 +1560,7 @@ async function performVehicleJobCancellation(
         );
       }
 
-      // ต้องดึงก่อน cancelVehicleJob เท่านั้น เพราะ cancel ทำให้ MarketJob ทุกใบของรถคันนี้กลายเป็น
-      // CANCELLED ไปด้วย — ดึงหลังจากนั้นจะได้ array ว่างเปล่าเสมอ
+      // ต้องดึงก่อน cancelVehicleJob เท่านั้น เพราะ cancel ทำให้ MarketJob ทุกใบกลายเป็น CANCELLED ไปด้วย
       const activeAssignments =
         await adminJobsRepository.listActiveAssignmentsByVehicleJob(
           vehicleJobId,
@@ -1638,8 +1577,7 @@ async function performVehicleJobCancellation(
         transaction,
       );
 
-      // เพิกถอน driver session ที่ยัง active ทั้งหมดของรถคันนี้ทันทีที่ถูกยกเลิกทั้งคัน — เหตุผลเดียวกับ
-      // ใน closeCompletedVehicleJobIfReady
+      // เพิกถอน driver session ที่ยัง active ของรถคันนี้ทันที (เหตุผลเดียวกับ closeCompletedVehicleJobIfReady)
       await driverRepository.revokeDriverSessionsByVehicleJobId(
         vehicleJobId,
         transaction,
@@ -1722,8 +1660,7 @@ async function cancelVehicleJobAndRequeue(
     worker_ids: requeuedWorkerIds,
   });
   if (requeuedWorkerIds.length > 0) {
-    // dispatch เป็น best-effort เสมอ — ต้องไม่ทำให้ request cancel ที่สำเร็จไปแล้วพัง 500 เพราะ
-    // dispatch worker คันอื่นล้มเหลว (เขียน Redis/BullMQ แยกจาก DB transaction ของ request นี้)
+    // dispatch เป็น best-effort ต้องไม่ทำให้ request cancel ที่สำเร็จแล้วพัง 500 เพราะ dispatch ล้มเหลว
     try {
       await dispatchReadyWorkers();
     } catch (error) {
@@ -1762,10 +1699,8 @@ async function cancelVehicleJobAndRequeue(
   };
 }
 
-// Function ยกเลิกรวม (vehicle/ticket_no/booth/worker) ใน service flow — scope ตัดสินจากว่า ticket_no/
-// boothCode/worker_code ตัวไหนถูกระบุมาบ้าง ดู comment ที่ adminVehicleJobAssignmentCancelBodySchema
-// สำหรับตาราง mapping เต็ม แทนที่ /jobs/cancel, tickets/:ticketNo/cancel, stalls/:stallCode/cancel,
-// workers/:workerCode/assignment/cancel, tickets/:ticketNo/workers/:workerCode/cancel เดิมทั้งหมด
+// Function ยกเลิกรวม (vehicle/ticket_no/booth/worker) โดย scope ตัดสินจากว่า ticket_no/boothCode/
+// worker_code ตัวไหนถูกระบุมาบ้าง (ดู mapping เต็มที่ adminVehicleJobAssignmentCancelBodySchema)
 export async function cancelVehicleJobAssignment(
   body: unknown,
   auth?: AccessTokenPayload,
@@ -1876,6 +1811,10 @@ export async function assignVehicleJobWorkers(
           );
         }
 
+        // ล็อกแถว MasterWorker ก่อนเช็ค Active Assignment เดิม กัน Race เมื่อสอง Request assign worker
+        // คนเดียวกันพร้อมกัน (ไม่งั้นทั้งสอง transaction จะเห็นว่ายังไม่มี assignment แล้วสร้างซ้อนกันได้)
+        await transaction.$queryRaw`SELECT id FROM master_workers WHERE id = ${worker.id} FOR UPDATE`;
+
         const currentAssignment =
           await assignmentRepository.findCurrentAssignmentByWorker(
             worker.id,
@@ -1961,22 +1900,42 @@ export async function assignVehicleJobWorkers(
     },
   );
 
-  const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
-    vehicleJob.id,
-  );
+  // Assignment ทุกตัว commit ลง DB แล้วจริง จากนี้เป็นแค่ best-effort notify Redis/BullMQ/Socket
+  // ต้องครอบ try/catch แยกทีละ worker ห้าม throw ออก ไม่งั้น worker ที่เหลือจะไม่ได้ schedule timeout ค้างถาวร และ request จะพัง 500 ทั้งที่ assign สำเร็จแล้ว
+  let ticketNos: string[] = [];
+
+  try {
+    ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+      vehicleJob.id,
+    );
+  } catch (error) {
+    logger.error("Failed to load active ticket numbers after manual worker assignment.", {
+      vehicleJobId: vehicleJob.id,
+      error,
+    });
+  }
 
   for (const assignment of assignments) {
-    await markWorkerAssigned(assignment.worker_id);
-    await scheduleAssignmentTimeout(
-      assignment.id,
-      assignment.worker_id,
-      acceptDeadlineMs,
-    );
-    sendWorkerSocketEvent(
-      assignment.worker_id,
-      "WORKER_ASSIGNED",
-      buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos),
-    );
+    try {
+      await markWorkerAssigned(assignment.worker_id);
+      await scheduleAssignmentTimeout(
+        assignment.id,
+        assignment.worker_id,
+        acceptDeadlineMs,
+      );
+      sendWorkerSocketEvent(
+        assignment.worker_id,
+        "WORKER_ASSIGNED",
+        buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos),
+      );
+    } catch (error) {
+      logger.error("Failed to notify worker after manual assignment was already committed.", {
+        vehicleJobId: vehicleJob.id,
+        workerId: assignment.worker_id,
+        assignmentId: assignment.id,
+        error,
+      });
+    }
   }
   const assignmentResponses = await buildAdminAssignmentResponses(
     vehicleJob.ticket_number,
@@ -2052,9 +2011,8 @@ async function cancelAssignment(
       );
 
       if (!result) {
-        // แพ้ race ให้ worker accept/scan/timeout เปลี่ยนสถานะไปก่อนแล้วในช่วงเวลาสั้นๆ ระหว่างที่
-        // เช็ค active ด้านบนกับตอนเขียนจริง — throw ที่นี่ (ยัง rollback transaction ได้) แทนการ
-        // เขียน AdminActionLog/แตะ roster ต่อไปทั้งที่การยกเลิกจริงไม่ได้เกิดขึ้น
+        // แพ้ race ให้ worker accept/scan/timeout เปลี่ยนสถานะไปก่อนระหว่างเช็ค active กับตอนเขียนจริง
+        // throw ที่นี่เพื่อ rollback transaction แทนที่จะเขียน AdminActionLog/แตะ roster ทั้งที่ยกเลิกไม่ได้เกิดขึ้นจริง
         throw new ApiError(
           409,
           "ASSIGNMENT_NOT_ACTIVE",
@@ -2109,9 +2067,8 @@ async function cancelAssignment(
     reason: "admin_cancel_assignment",
   });
 
-  // แจ้งทีมที่เหลือด้วยถ้าการยกเลิกคนนี้ทำให้ทีมพร้อมพอดี (ตัวหาร workers_required ลดลงจากการยกเลิก
-  // จนทีมที่เหลือ scan ครบอยู่แล้ว) — ไม่งั้นทีมที่เหลือจะไม่รู้ตัวว่าเริ่มงานได้แล้วจนกว่าจะ reconnect
-  // socket หรือ refresh เอง (ดู notifyVehicleJobTeamScanReadiness ใน worker.service.ts)
+  // แจ้งทีมที่เหลือถ้าการยกเลิกคนนี้ทำให้ workers_required ลดลงจนทีมที่เหลือ scan ครบพอดี
+  // ไม่งั้นทีมจะไม่รู้ตัวว่าเริ่มงานได้แล้วจนกว่าจะ reconnect socket หรือ refresh เอง
   if (vehicleJob) {
     await notifyVehicleJobTeamScanReadiness(vehicleJob, teamScan);
   }
@@ -2174,9 +2131,8 @@ export async function extendVehicleJobScanDeadline(
         transaction,
       );
 
-      // แพ้ race ให้ scan-timeout job หรือ worker scan สำเร็จไปพร้อมกัน — assignment คนนี้ไม่ใช่
-      // ACCEPTED อีกต่อไป ข้ามไปเฉยๆ ไม่ทำให้ทั้ง batch ล้มเหลว ให้ worker คนอื่นที่ยังต่อเวลาได้
-      // ทำต่อไปตามปกติ
+      // แพ้ race ให้ scan-timeout job หรือ worker scan สำเร็จไปพร้อมกัน ข้ามไปเฉยๆ ไม่ทำให้ทั้ง batch ล้มเหลว
+      // ให้ worker คนอื่นที่ยังต่อเวลาได้ทำต่อไปตามปกติ
       if (extended) {
         results.push(extended);
       }
@@ -2251,12 +2207,8 @@ export async function extendVehicleJobScanDeadline(
   };
 }
 
-// Function จัดการ side effect เมื่อ VehicleJob ปิดเป็น terminal จากผลพวงของการยกเลิกตลาด/booth
-// (ไม่ใช่การกดยกเลิกทั้งรถโดยตรง) — reuse แพทเทิร์นเดียวกับตอน vendor confirm/auto-confirm timeout
-// ปิดรถ: เคลียร์ timer ของทุก assignment ที่เพิ่งถูกปิด แล้วส่งกลับเข้าคิวผ่าน
-// returnCompletedWorkersToQueue เรียกได้ปลอดภัยแม้ result เป็น null (แปลว่ารถยังไม่ terminal หรือ
-// ปิดไปแล้วก่อนหน้านี้ — closeCompletedVehicleJobIfReady การันตีคืนค่า non-null แค่ครั้งเดียวตอนที่
-// มันเป็นคนเปลี่ยนสถานะรถเองเท่านั้น ไม่มีทางถูกเรียกซ้ำกับ Worker ที่ release ไปก่อนแล้ว)
+// Function จัดการ side effect เมื่อ VehicleJob ปิดเป็น terminal จากผลพวงการยกเลิกตลาด/booth (ไม่ใช่ยกเลิกทั้งรถตรงๆ)
+// เคลียร์ timer แล้วคืน worker เข้าคิว เรียกได้ปลอดภัยแม้ result เป็น null เพราะ closeCompletedVehicleJobIfReady คืนค่า non-null แค่ครั้งเดียวเท่านั้น
 async function handleVehicleJobClosedByCascadeCancellation(
   result: CompletedVehicleJobResult | null,
 ): Promise<void> {
@@ -2393,9 +2345,7 @@ async function cancelMarketJobById(
       transaction,
     );
 
-    // Roll up สถานะ MarketJob อื่น/VehicleJob ทันทีในทรานแซกชันเดียวกัน — ใช้ centralized lifecycle
-    // ตัวเดียวกับ vendor confirm/auto-confirm (Rule B.3 ในสเปกยกเลิกระดับรถ/Business Ticket/Booth)
-    // แทนการมีกฎ roll up แยกชุดของตัวเอง
+    // Roll up สถานะ MarketJob/VehicleJob ในทรานแซกชันเดียวกัน ใช้ centralized lifecycle เดียวกับ vendor confirm/auto-confirm แทนการมีกฎแยกของตัวเอง
     const completedVehicleJob =
       await vehicleJobLifecycleService.closeCompletedVehicleJobIfReady(
         cancelled.vehicle_job_id,
@@ -2485,6 +2435,46 @@ function assertTicketNotSubmitted(status: string, message: string): void {
   }
 }
 
+// Function เขียนสถานะ CANCELLED ของ Booth หนึ่งใบ + Audit Log + Roll up สถานะ MarketJob/VehicleJob
+// ใช้ร่วมกันระหว่าง cancelStallJobById และ cancelTicketWorkerFromBooth ต้องรับ transaction จาก caller เสมอ ห้ามเปิดใหม่ เพราะ caller ล็อกแถว gate_tickets ไว้แล้ว เปิดซ้อนจะ deadlock
+async function cancelStallJobRecord(
+  ticket: GateTicketDto,
+  reasonCode: string | null,
+  reasonText: string | null,
+  actorId: number,
+  transaction: DbConnection,
+  extraMetadata?: Record<string, unknown>,
+): Promise<{
+  ticket: GateTicketDto;
+  completedVehicleJob: CompletedVehicleJobResult | null;
+}> {
+  const cancelled = await adminJobsRepository.cancelGateTicket(ticket.id, transaction);
+
+  await adminActionLogRepository.create(
+    {
+      vehicle_job_id: cancelled.vehicle_job_id,
+      gate_ticket_id: cancelled.id,
+      market_job_id: cancelled.market_job_id,
+      action_type: ADMIN_ACTION_TYPE.STALL_JOB_CANCELLED,
+      reason_code: reasonCode,
+      reason_text: reasonText,
+      actor_account_id: actorId,
+      metadata: extraMetadata ?? null,
+    },
+    transaction,
+  );
+
+  // Roll up สถานะ MarketJob/VehicleJob ในทรานแซกชันเดียวกัน ใช้ centralized lifecycle เดียวกับ vendor confirm/auto-confirm
+  // ครอบคลุมทั้งกรณี Booth สุดท้ายของตลาด CANCELLED และกรณีตลาดมี Booth อื่น COMPLETED อยู่แล้ว (finalize financial snapshot)
+  const completedVehicleJob =
+    await vehicleJobLifecycleService.closeCompletedVehicleJobIfReady(
+      cancelled.vehicle_job_id,
+      transaction,
+    );
+
+  return { ticket: cancelled, completedVehicleJob };
+}
+
 // Function หลักที่ยกเลิก stall job จริง — ล็อกแถวและเช็คว่ายังไม่ terminal ก่อนเขียนทับเสมอ กัน
 // race ที่อีก request ยกเลิก/ปิด booth เดียวกันพร้อมกัน
 async function cancelStallJobById(
@@ -2520,33 +2510,7 @@ async function cancelStallJobById(
       "Stall job cannot be cancelled after it has already been submitted.",
     );
 
-    const cancelled = await adminJobsRepository.cancelGateTicket(ticketId, transaction);
-
-    await adminActionLogRepository.create(
-      {
-        vehicle_job_id: cancelled.vehicle_job_id,
-        gate_ticket_id: cancelled.id,
-        market_job_id: cancelled.market_job_id,
-        action_type: ADMIN_ACTION_TYPE.STALL_JOB_CANCELLED,
-        reason_code: reasonCode,
-        reason_text: reasonText,
-        actor_account_id: actorId,
-      },
-      transaction,
-    );
-
-    // Roll up สถานะ MarketJob/VehicleJob ทันทีในทรานแซกชันเดียวกัน — ใช้ centralized lifecycle
-    // ตัวเดียวกับ vendor confirm/auto-confirm (Rule C.4/C.5 ในสเปกยกเลิกระดับรถ/Business Ticket/
-    // Booth) แทนการมีกฎ roll up แยกชุดของตัวเอง — ครอบคลุมทั้งกรณี Booth สุดท้ายของตลาดเป็น CANCELLED
-    // (ตลาด/รถอาจกลายเป็น CANCELLED) และกรณีตลาดมี Booth อื่น COMPLETED อยู่แล้ว (ตลาด/รถอาจกลายเป็น
-    // COMPLETED พร้อม finalize financial snapshot)
-    const completedVehicleJob =
-      await vehicleJobLifecycleService.closeCompletedVehicleJobIfReady(
-        cancelled.vehicle_job_id,
-        transaction,
-      );
-
-    return { ticket: cancelled, completedVehicleJob };
+    return cancelStallJobRecord(current, reasonCode, reasonText, actorId, transaction);
   });
   const vehicleJob = await vehicleJobRepository.findVehicleJobById(
     ticket.vehicle_job_id,
@@ -2587,12 +2551,8 @@ async function cancelStallJobById(
   );
 }
 
-// Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket (market job) ใบเดียวใน service flow
-//
-// ต่างจาก cancelAssignment (ที่ยกเลิกทั้ง TicketNumber และ cascade ไปทุก Business Ticket ที่ยัง
-// ไม่ Terminal): ฟังก์ชันนี้ไม่แตะ VehicleJobAssignment เลย worker ยังอยู่กับรถและยังทำ Business
-// Ticket อื่นได้ กระทบเฉพาะ Roster ของ Business Ticket ใบนี้ใบเดียว ตั้งใจแยก action ให้ชัดเจน
-// ไม่ให้ caller เดา scope เอง
+// Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket ใบเดียว ต่างจาก cancelAssignment ที่ cascade
+// ไปทุก Business Ticket ของรถ — ฟังก์ชันนี้ไม่แตะ VehicleJobAssignment กระทบแค่ Roster ของ Ticket นี้ใบเดียว
 async function cancelTicketWorker(
   ticketNumberParam: unknown,
   ticketNoParam: unknown,
@@ -2695,10 +2655,8 @@ async function cancelTicketWorker(
   };
 }
 
-// Function ถอด Worker หนึ่งคนออกจากแค่ Booth เดียว (ไม่แตะ TicketWorker.status เลย worker ยังเป็น
-// สมาชิก WORKING ของ Business Ticket ปกติ ยังทำ Booth อื่นในใบเดียวกันต่อได้) — ล็อกแถว Booth และ
-// เช็คว่ายังไม่เคยถูกส่งยอด (เหมือน guard ของการยกเลิกทั้ง Booth) ก่อนสร้าง GateTicketWorkerExclusion
-// ทุกครั้ง เพื่อกัน race กับอีก request ที่กำลังยกเลิก/ส่งยอด Booth เดียวกันพร้อมกัน
+// Function ถอด Worker ออกจากแค่ Booth เดียว (ไม่แตะ TicketWorker.status worker ยังทำ Booth อื่นในใบเดียวกันต่อได้)
+// ล็อกแถว Booth และเช็คว่ายังไม่เคยส่งยอดก่อนสร้าง GateTicketWorkerExclusion กัน race กับ request อื่นที่ยกเลิก/ส่งยอด Booth เดียวกัน
 async function cancelTicketWorkerFromBooth(
   ticketNumberParam: unknown,
   ticketNoParam: unknown,
@@ -2743,21 +2701,7 @@ async function cancelTicketWorkerFromBooth(
     throw new ApiError(404, "WORKER_NOT_FOUND", `Worker ${workerCode} not found.`);
   }
 
-  const ticketWorker =
-    await ticketWorkerRepository.findTicketWorkerByMarketJobAndWorkerAccountId(
-      ticket.market_job_id,
-      worker.id,
-    );
-
-  if (!ticketWorker || ticketWorker.status !== TICKET_WORKER_STATUS.WORKING) {
-    throw new ApiError(
-      404,
-      "TICKET_WORKER_NOT_FOUND",
-      "Worker is not an active member of this business ticket.",
-    );
-  }
-
-  await withTransaction(async (transaction) => {
+  const { boothCancelled, completedVehicleJob } = await withTransaction(async (transaction) => {
     await transaction.$queryRaw`SELECT id FROM gate_tickets WHERE id = ${ticket.id} FOR UPDATE`;
 
     const current = await gateTicketRepository.findGateTicketForCompletion(
@@ -2783,6 +2727,23 @@ async function cancelTicketWorkerFromBooth(
       current.status,
       "Worker cannot be removed from this booth after it has already been submitted.",
     );
+
+    // ดึงและเช็คสถานะ TicketWorker หลังได้ row lock แล้วเท่านั้น กัน TOCTOU ที่ worker อาจถูกยกเลิกออกจาก
+    // Business Ticket หรือ Booth นี้ไปแล้วพอดีระหว่างที่ request นี้เพิ่งอ่านค่าไปก่อนได้ lock
+    const ticketWorker =
+      await ticketWorkerRepository.findTicketWorkerByMarketJobAndWorkerAccountId(
+        ticket.market_job_id,
+        worker.id,
+        transaction,
+      );
+
+    if (!ticketWorker || ticketWorker.status !== TICKET_WORKER_STATUS.WORKING) {
+      throw new ApiError(
+        404,
+        "TICKET_WORKER_NOT_FOUND",
+        "Worker is not an active member of this business ticket.",
+      );
+    }
 
     const alreadyExcluded = await gateTicketRepository.findGateTicketWorkerExclusion(
       ticket.id,
@@ -2820,6 +2781,32 @@ async function cancelTicketWorkerFromBooth(
       },
       transaction,
     );
+
+    // เช็คหลังสร้าง Exclusion และหลังได้ row lock แล้วเท่านั้น กัน race ระหว่างสอง request ที่ exclude
+    // worker คนละคนของ Booth เดียวกันพร้อมกัน — ถ้าไม่เหลือ worker ที่ยัง WORKING เลยต้องยกเลิกทั้ง Booth ไปด้วย ไม่ปล่อยให้ confirmTicketCompletion เจอ snapshot ว่างแล้วจ่ายเงินผิดคนทีหลัง
+    const remainingEligibleWorkers = await gateTicketRepository.countEligibleWorkersForBooth(
+      ticket.market_job_id,
+      ticket.id,
+      transaction,
+    );
+
+    if (remainingEligibleWorkers > 0) {
+      return { boothCancelled: false, completedVehicleJob: null };
+    }
+
+    const { completedVehicleJob } = await cancelStallJobRecord(
+      current,
+      input.reason_code ?? null,
+      input.reason_text ?? null,
+      actorId,
+      transaction,
+      {
+        source: "auto_cancel_last_worker_excluded",
+        triggered_by_worker_code: workerCode,
+      },
+    );
+
+    return { boothCancelled: true, completedVehicleJob };
   });
 
   publishNotification({
@@ -2838,24 +2825,49 @@ async function cancelTicketWorkerFromBooth(
     },
   });
 
+  if (boothCancelled) {
+    const cancelledVehicleJob = await vehicleJobRepository.findVehicleJobById(vehicleJob.id);
+    const marketJob = await marketJobRepository.findMarketJobById(ticket.market_job_id);
+
+    publishRealtimeEvent({
+      type: "STALL_JOB_CANCELLED",
+      title: "Stall job cancelled",
+      message: `Stall job ${boothCode} was cancelled because its last remaining worker was removed.`,
+      payload: {
+        ticketNumber: cancelledVehicleJob?.ticket_number ?? vehicleJob.ticket_number,
+        marketCode: marketJob?.marketCode ?? null,
+        boothCode,
+        status: TICKET_STATUS.CANCELLED,
+      },
+      worker_payload: {
+        ticketNumber: cancelledVehicleJob?.ticket_number ?? vehicleJob.ticket_number,
+        ticketNos: marketJob ? [marketJob.ticket_no] : [],
+        marketCode: marketJob?.marketCode ?? null,
+        boothCode,
+        status: TICKET_STATUS.CANCELLED,
+      },
+      admin: true,
+      worker_ids: await listStallJobWorkerIds(ticket),
+    });
+
+    await handleVehicleJobClosedByCascadeCancellation(completedVehicleJob ?? null);
+  }
+
   return {
-    message: "Worker removed from booth successfully.",
+    message: boothCancelled
+      ? "Worker removed from booth successfully. The booth had no remaining workers and was cancelled automatically."
+      : "Worker removed from booth successfully.",
     ticket_number: vehicleJob.ticket_number,
     ticket_no: ticketNo,
     boothCode,
     worker_code: workerCode,
     status: TICKET_WORKER_STATUS.CANCELLED,
+    booth_cancelled: boothCancelled,
   };
 }
 
-// Function Admin ส่ง/แก้ยอดสินค้าของ Booth หนึ่งใบแทน Worker (กรณี Worker กดส่งยอดเองไม่ได้) ใน
-// service flow — ใช้ pipeline เดียวกับที่ Worker ส่งยอดเอง (submitTicketCompletion) ทุกขั้นตอน:
-// ต้องมี Vendor LINE target ตั้งไว้, ทีมต้อง check-in ครบก่อน, เปลี่ยนสถานะ Booth เป็น DELIVERED,
-// รอ Vendor กดยืนยัน/ปฏิเสธผ่าน LINE เหมือน Worker ส่งเอง — ต่างแค่ requireRosterMembership: false
-// (Admin ไม่ใช่สมาชิก TicketWorker ของ Booth นี้) และเพิ่มบันทึก AdminActionLog เก็บเหตุผลที่ Admin
-// เข้ามาส่งแทน ซึ่ง TicketCompletionSubmission เองไม่มีช่องเก็บเหตุผล — ใช้ business key
-// (productCode + packageCode) เหมือน Worker submit flow ไม่ใช่ ticketProductId เพราะเป็น
-// convention ของ Project นี้อยู่แล้ว (ดู updateTicketProductConfirmations)
+// Function Admin ส่ง/แก้ยอดสินค้าของ Booth หนึ่งใบแทน Worker ใช้ pipeline เดียวกับ submitTicketCompletion
+// ทุกขั้นตอน ต่างแค่ requireRosterMembership: false (Admin ไม่ใช่สมาชิก TicketWorker) และบันทึก AdminActionLog เก็บเหตุผลที่เข้ามาส่งแทน
 export async function overrideTicketProductCounts(
   ticketNumberParam: unknown,
   ticketNoParam: unknown,
@@ -2941,10 +2953,8 @@ export async function overrideTicketProductCounts(
     ]),
   );
 
-  // submitTicketCompletion (เรียกไว้ก่อนหน้านี้) commit สถานะ Ticket เป็น DELIVERED ไปแล้วจริง —
-  // ถ้า notifyTicketCompletionSubmitted (schedule vendor-confirm-timeout + ส่ง LINE หา Vendor) fail
-  // ต้อง best-effort เท่านั้น ห้ามปล่อยให้ throw ทำให้ request นี้ตอบ error กลับ Admin ทั้งที่ยอดถูก
-  // บันทึกสำเร็จไปแล้วจริง
+  // submitTicketCompletion commit สถานะ Ticket เป็น DELIVERED ไปแล้วจริง จากนี้เป็นแค่ best-effort
+  // notify vendor เท่านั้น ห้าม throw ออกไปทำให้ request ตอบ error ทั้งที่ยอดบันทึกสำเร็จแล้ว
   try {
     await ticketCompletionService.notifyTicketCompletionSubmitted(result);
   } catch (error) {
@@ -2986,15 +2996,8 @@ export async function overrideTicketProductCounts(
   };
 }
 
-// Function Admin สลับ Dispatch ของ VehicleJob (Dispatch: false = สั่งกลับไปรอลง คืน Worker ทั้งชุด
-// เข้าคิวหน้าสุด, Dispatch: true = สั่ง Dispatch ใหม่ เรียก Worker จากคิว ณ ตอนนั้น) ใน service flow
-//
-// อนุญาตเฉพาะก่อนทีมจะ Scan ครบทุกคน (ยังเป็นแค่ PENDING/ACCEPTED/SCANNED บางส่วน — "wait_team")
-// เท่านั้น เพราะจุดที่ทีมทั้งชุด Scan ครบ (VehicleWorkReadiness.is_ready) คือจุดเดียวกับที่ Worker
-// เริ่มทำงานจริงและ Booth แรกเริ่มเปลี่ยนสถานะได้ — ก่อนจุดนั้นไม่มี Booth ไหนถูกส่งยอดได้เลย
-// (submitTicketCompletion เองก็ require is_ready เหมือนกัน) จึงไม่มี TicketWorker roster ให้ต้อง
-// ป้องกันความเสียหายจากการคืน Worker เข้าคิว — ต่างจาก cancelVehicleJobAndRequeue ตรงที่ตัว
-// VehicleJob/MarketJob/GateTicket เองไม่ถูกยกเลิก ยังใช้งานต่อได้ปกติ
+// Function Admin สลับ Dispatch ของ VehicleJob (false = คืน Worker ทั้งชุดเข้าคิวหน้าสุด, true = Dispatch ใหม่จากคิว ณ ตอนนั้น)
+// อนุญาตเฉพาะก่อนทีม Scan ครบทุกคน (ก่อน is_ready) เพราะยังไม่มี Booth ไหนถูกส่งยอดได้เลย ต่างจาก cancelVehicleJobAndRequeue ตรงที่ VehicleJob/MarketJob/GateTicket เองไม่ถูกยกเลิก
 export async function changeVehicleJobToWait(
   ticketNumberParam: unknown,
   body: unknown,
@@ -3005,9 +3008,8 @@ export async function changeVehicleJobToWait(
   const actorId = requireActorId(auth);
 
   const { updated, cancelledAssignments } = await withTransaction(async (transaction) => {
-    // Lock แถว VehicleJob นี้ไว้ก่อน re-check invariant ("ทีมยัง Scan ไม่ครบ") แล้วเขียนจริง กัน
-    // Race กับ Worker คนสุดท้ายที่อาจ Scan เข้ามาพร้อมกัน (ดูรายละเอียดเดียวกับ Lock ใน
-    // closeCompletedVehicleJobIfReady)
+    // Lock แถว VehicleJob ก่อน re-check ว่าทีมยัง Scan ไม่ครบแล้วเขียนจริง กัน race กับ worker
+    // คนสุดท้ายที่อาจ Scan เข้ามาพร้อมกัน (เหตุผลเดียวกับ lock ใน closeCompletedVehicleJobIfReady)
     await transaction.$queryRaw`SELECT id FROM vehicle_jobs WHERE id = ${vehicleJob.id} FOR UPDATE`;
 
     if (TERMINAL_JOB_STATUSES.includes(vehicleJob.status)) {
@@ -3148,11 +3150,8 @@ export async function changeVehicleJobToWait(
   };
 }
 
-// Function Admin ปล่อย Worker ทั้งทีมของ VehicleJob กลับคิวก่อนเวลา ใน service flow
-//
-// ใช้เมื่อ Worker ส่งยอดครบทุก Booth แล้วและไม่มี Booth ไหนค้าง Reject ที่ต้องแก้ โดยไม่ต้องรอให้
-// Gate ปิดรับ Ticket เพิ่ม (ticketsClosedAt) และไม่ต้องรอ Financial Finalize ของแต่ละ Business
-// Ticket เพราะ Worker หมดหน้าที่ทางกายภาพแล้ว การคำนวณเงินเกิดทีหลังได้โดยไม่ต้องมี Worker อยู่
+// Function Admin ปล่อย Worker ทั้งทีมของ VehicleJob กลับคิวก่อนเวลา ใช้เมื่อส่งยอดครบทุก Booth แล้วไม่มี Booth ค้าง Reject
+// ไม่ต้องรอ Gate ปิดรับ Ticket หรือ Financial Finalize เพราะ Worker หมดหน้าที่ทางกายภาพแล้ว คำนวณเงินทีหลังได้โดยไม่ต้องมี Worker อยู่
 export async function releaseVehicleJobWorkers(
   ticketNumberParam: unknown,
   body: unknown,
@@ -3187,9 +3186,8 @@ export async function releaseVehicleJobWorkers(
       );
     }
 
-    // Worker ทางกายทำงานเสร็จตั้งแต่ "ส่งยอดครบ" (DELIVERED) แล้ว ไม่ต้องรอ Vendor ยืนยัน
-    // (COMPLETED) หรือรอ TicketNumber ปิดทั้งคัน — REJECT ยังนับเป็น unresolved เพราะ Worker
-    // ต้องแก้ไขและส่งยอดใหม่ก่อน
+    // Worker ทางกายทำงานเสร็จตั้งแต่ส่งยอดครบ (DELIVERED) ไม่ต้องรอ Vendor ยืนยันหรือ TicketNumber ปิดทั้งคัน
+    // REJECT ยังนับเป็น unresolved เพราะ Worker ต้องแก้ไขและส่งยอดใหม่ก่อน
     const hasUnresolvedBooth = tickets.some(
       (ticket) => !SUBMITTED_TICKET_STATUSES.includes(ticket.status),
     );
@@ -3225,10 +3223,8 @@ export async function releaseVehicleJobWorkers(
       transaction,
     );
 
-    // เปลี่ยน status เป็น RELEASED (ไม่แตะ dispatchNow เลย ปล่อยตามค่าเดิม) กัน dispatchReadyWorkers
-    // ดึง worker กลับเข้างานคันนี้ซ้ำอีกไม่ว่าจะเกิดจากการ release เอง หรือ event อื่นในภายหลัง (เช่น
-    // Vendor Reject ทำให้ booth กลับไม่ submitted) — Gate เพิ่ม booth ใหม่ให้ TicketNumber นี้ทีหลังจะ
-    // เปิด dispatch คืนให้เอง หรือ Admin เปิดกลับเองผ่าน /wait ถ้าต้องการ worker ชุดใหม่จริงๆ
+    // เปลี่ยน status เป็น RELEASED (ไม่แตะ dispatchNow) กัน dispatchReadyWorkers ดึง worker กลับเข้ารถคันนี้ซ้ำ
+    // จาก event อื่นในภายหลัง (เช่น Vendor Reject) — Gate เพิ่ม booth ใหม่หรือ Admin เปิดผ่าน /wait จะเปิด dispatch คืนเอง
     await vehicleJobRepository.updateVehicleJobStatus(
       vehicleJob.id,
       VEHICLE_JOB_STATUS.RELEASED,
@@ -3285,9 +3281,8 @@ export async function releaseVehicleJobWorkers(
   };
 }
 
-// Function ตัดสิน payment_status ของแถวรายได้ Worker รายวันหนึ่งแถว ตามลำดับความสำคัญ: cancel (ticket_no
-// ถูกยกเลิกทั้งใบ) > success/partially_paid (ticket_no จบงานแล้ว) > admin_reject/worker_reject (มี
-// booth REJECT ค้างอยู่) > null (ไม่เข้าเงื่อนไขไหนเลย ไม่ต้องนับมาแสดง)
+// Function ตัดสิน payment_status ของแถวรายได้ Worker รายวันหนึ่งแถว ตามลำดับความสำคัญ:
+// cancel > success/partially_paid > admin_reject/worker_reject > null (ไม่เข้าเงื่อนไขไหนเลย ไม่ต้องนับมาแสดง)
 function resolveDailyWorkerIncomePaymentStatus(
   record: DailyWorkerIncomeRecord,
   hasUnresolvedReject: boolean,
@@ -3315,9 +3310,8 @@ function resolveDailyWorkerIncomePaymentStatus(
     return null;
   }
 
-  // ticket_no ยังไม่จบงาน (WAIT/WORKING) — ห้าม release ถ้ายังมี reject ค้างอยู่ (ดู
-  // BOOTHS_NOT_SUBMITTED ใน releaseVehicleJobWorkers) ดังนั้น reject ที่เจอตอน isReleased=true
-  // ต้องเกิดขึ้นหลัง release เสมอ ไม่มีทางสลับลำดับกันได้
+  // ticket_no ยังไม่จบงาน (WAIT/WORKING) — ห้าม release ถ้ายังมี reject ค้างอยู่ (ดู BOOTHS_NOT_SUBMITTED)
+  // reject ที่เจอตอน isReleased=true จึงต้องเกิดขึ้นหลัง release เสมอ ไม่มีทางสลับลำดับกันได้
   if (hasUnresolvedReject) {
     return isReleased
       ? DAILY_WORKER_INCOME_PAYMENT_STATUS.ADMIN_REJECT
@@ -3472,9 +3466,8 @@ function buildDailyWorkerIncomeRiskText(
   return messages.length > 0 ? messages.join(", ") : "-";
 }
 
-// Function จัดรูปแบบแถวรายได้ Worker รายวันหนึ่งแถว ใน service flow — คืน null เมื่อแถวนี้ไม่เข้า
-// payment_status ไหนเลย (ผู้เรียกต้องกรองออกก่อนแบ่งหน้า)
-// Reuse ticketWorker.final_earning_amount ที่ Finalize แล้วตรงๆเป็น payable ห้ามคำนวณสูตรใหม่
+// Function จัดรูปแบบแถวรายได้ Worker รายวันหนึ่งแถว คืน null เมื่อไม่เข้า payment_status ไหนเลย (ผู้เรียกต้องกรองออกก่อนแบ่งหน้า)
+// Reuse ticketWorker.final_earning_amount ที่ finalize แล้วตรงๆ เป็น payable ห้ามคำนวณสูตรใหม่
 function formatDailyWorkerIncomeItem(
   record: DailyWorkerIncomeRecord,
 ): DailyWorkerIncomeItemResponse | null {
@@ -3484,9 +3477,7 @@ function formatDailyWorkerIncomeItem(
     .filter((assignment) => assignment.workerId === record.workerId)
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   const assignment = matchingAssignments[0] ?? null;
-  // เวลาส่งยอดล่าสุดของ booth ล่าสุดใน ticket_no นี้ ไม่ว่า worker คนไหนในทีมเป็นคนกดส่ง (ตรงข้ามกับ
-  // ก่อนหน้านี้ที่ filter เอาเฉพาะที่ worker แถวนี้ส่งเอง) — ให้ค่าเดียวกันทุกแถวของ ticket_no เดียวกัน
-  // เหมือน confirmedAt
+  // เวลาส่งยอดล่าสุดของ booth ล่าสุดใน ticket_no นี้ ไม่ว่า worker คนไหนในทีมเป็นคนกดส่ง ให้ค่าเดียวกันทุกแถวของ ticket_no เดียวกันเหมือน confirmedAt
   const submittedAtMs = Math.max(
     0,
     ...marketJob.tickets.flatMap((ticket) =>
@@ -3507,9 +3498,8 @@ function formatDailyWorkerIncomeItem(
     return null;
   }
 
-  // marketJob.adminActionLogs ครอบทั้งยกเลิก ticket_no ตรงๆ (MARKET_JOB_CANCELLED) และ cascade
-  // จาก Booth สุดท้ายที่ถูกยกเลิกจนตลาดว่าง (STALL_JOB_CANCELLED) — ถ้าไม่มีทั้งคู่ แปลว่า ticket_no
-  // นี้ถูกยกเลิกทางอ้อมจากการยกเลิกทั้ง TicketNumber แทน จึง fallback ไปที่ Log ระดับรถ
+  // marketJob.adminActionLogs ครอบทั้งยกเลิก ticket_no ตรง (MARKET_JOB_CANCELLED) และ cascade จาก Booth สุดท้าย (STALL_JOB_CANCELLED)
+  // ถ้าไม่มีทั้งคู่ แปลว่าถูกยกเลิกทางอ้อมจากการยกเลิกทั้ง TicketNumber จึง fallback ไปที่ log ระดับรถ
   const cancelLog =
     paymentStatus === DAILY_WORKER_INCOME_PAYMENT_STATUS.CANCEL
       ? vehicleJob.adminActionLogs.find(
@@ -3577,9 +3567,8 @@ export async function listDailyWorkerIncome(query: unknown): Promise<{
     ...dateRange,
   });
 
-  // payment_status derive จากหลายตาราง ไม่ใช่ column เดียวใน DB ให้ WHERE/paginate ตรงๆ ได้ จึงต้อง
-  // format+กรองแถวที่ไม่เข้าเงื่อนไขไหนเลยออกก่อน แล้วค่อยแบ่งหน้าใน service layer (แบบเดียวกับที่
-  // listVehicleJobOperations ทำกับ operation_status)
+  // payment_status derive จากหลายตาราง ไม่ใช่ column เดียวที่ WHERE/paginate ใน DB ได้ตรงๆ จึงต้อง
+  // format+กรองแถวที่ไม่เข้าเงื่อนไขออกก่อน แล้วแบ่งหน้าใน service layer (เหมือน listVehicleJobOperations กับ operation_status)
   const items = result.data
     .map(formatDailyWorkerIncomeItem)
     .filter((item): item is DailyWorkerIncomeItemResponse => item !== null);
@@ -3626,10 +3615,8 @@ function formatDailyStallFeeItem(record: DailyStallFeeRecord): DailyStallFeeItem
   };
 }
 
-// Function ดึงรายงานค่าลงสินค้าแผงค้ารายวันสำหรับ Admin ใน service flow ตาม
-// docs/backend-missing-apis-spec V8.md ข้อ 28 — filter/summary/pagination ทั้งหมดทำที่ DB layer
-// (adminJobsRepository.listDailyStallFees) ไม่ paginate ใน service เหมือน listDailyWorkerIncome ด้านบน
-// เพราะไม่มี field ที่ derive ข้ามตารางแบบ payment_status
+// Function ดึงรายงานค่าลงสินค้าแผงค้ารายวันสำหรับ Admin — filter/summary/pagination ทั้งหมดทำที่ DB layer
+// ไม่ paginate ใน service เหมือน listDailyWorkerIncome เพราะไม่มี field ที่ derive ข้ามตารางแบบ payment_status
 export async function listDailyStallFees(query: unknown): Promise<DailyStallFeeListResponse> {
   const filters = parseWithSchema(adminDailyStallFeeQuerySchema, query);
   const dateRange = buildBangkokDateSpanRange(filters.date_from, filters.date_to);
@@ -3664,9 +3651,8 @@ export async function listDailyStallFees(query: unknown): Promise<DailyStallFeeL
   };
 }
 
-// Function format หนึ่งแถวรายงานค่าลงสินค้าแผงค้ารายเดือนสำหรับ Admin — id ประกอบจาก
-// date_from/date_to/market_code/booth_code/shirt_color ตรงๆ (deterministic อยู่แล้วเพราะ group key
-// unique ต่อแถว ไม่ต้องมี numeric tie-breaker เพิ่ม)
+// Function format หนึ่งแถวรายงานค่าลงสินค้าแผงค้ารายเดือนสำหรับ Admin — id ประกอบจาก date_from/date_to/market_code/booth_code/shirt_color
+// ตรงๆ (deterministic อยู่แล้วเพราะ group key unique ต่อแถว ไม่ต้องมี numeric tie-breaker เพิ่ม)
 function formatMonthlyStallFeeItem(
   row: MonthlyStallFeeGroupRow,
   dateFrom: string,
@@ -3683,10 +3669,8 @@ function formatMonthlyStallFeeItem(
   };
 }
 
-// Function ดึงรายงานค่าลงสินค้าแผงค้ารายเดือนสำหรับ Admin ใน service flow — group ด้วย
-// market_code+booth_code+shirt_color ที่ DB ชั้นเดียว (adminJobsRepository.listMonthlyStallFees ใช้
-// raw SQL เพราะ Prisma groupBy ทำ GROUP BY ข้าม relation ไม่ได้) summary/facet filter/pagination มา
-// จาก DB ทั้งหมด ไม่โหลดมารวมใน memory
+// Function ดึงรายงานค่าลงสินค้าแผงค้ารายเดือนสำหรับ Admin — group ด้วย market_code+booth_code+shirt_color
+// ที่ DB ชั้นเดียวผ่าน raw SQL (Prisma groupBy ทำ GROUP BY ข้าม relation ไม่ได้) summary/filter/pagination มาจาก DB ทั้งหมด ไม่โหลดมารวมใน memory
 export async function listMonthlyStallFees(query: unknown): Promise<MonthlyStallFeeListResponse> {
   const filters = parseWithSchema(adminMonthlyStallFeeQuerySchema, query);
   const dateRange = buildBangkokDateSpanRange(filters.date_from, filters.date_to);

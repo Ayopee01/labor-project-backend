@@ -264,6 +264,16 @@ export const lineRepositoryMock = {
   },
   findLineActionToken: async (token: string) =>
     state.lineActionTokens.find((record) => record.token === token) ?? null,
+  claimLineActionTokenUsed: async (id: number) => {
+    const record = state.lineActionTokens.find((item) => item.id === id);
+
+    if (!record || record.used_at !== null) {
+      return false;
+    }
+
+    record.used_at = new Date().toISOString();
+    return true;
+  },
   upsertTicketRating: async (input: {
     ticket_id: number;
     submission_id: number;

@@ -14,7 +14,7 @@ const router = express.Router();
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 
-// Function ดึง IP/User-Agent/RequestId จาก request ปัจจุบันสำหรับ Security Audit Log (27.12)
+// Function ดึง IP/User-Agent/RequestId จาก request ปัจจุบันสำหรับ security audit log
 function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
   return {
     ip_address: req.ip ?? null,

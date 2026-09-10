@@ -10,7 +10,7 @@ import type { DbConnection } from "../../types/shared/common.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function สร้าง active session where จาก DB
+// Function ประกอบเงื่อนไข where สำหรับ session ที่ยัง active (isActive และยังไม่หมดอายุ)
 function buildActiveSessionWhere(
   where: Prisma.UserSessionWhereInput = {}
 ): Prisma.UserSessionWhereInput {
@@ -54,7 +54,7 @@ export async function revokeActiveByAccountId(
   });
 }
 
-// Function เพิกถอน active ตาม account ID except จาก DB
+// Function เพิกถอน active session ทั้งหมดของ account ยกเว้น session ที่ระบุ จาก DB
 export async function revokeActiveByAccountIdExcept(
   accountId: number | string,
   exceptSessionId: number | string,

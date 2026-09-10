@@ -31,6 +31,20 @@ const TOKEN_CONFIG: Record<TokenType, TokenConfig> = {
   },
 };
 
+// ค่า Secret ที่ห้ามใช้เด็ดขาด (ค่า Default ง่ายเกินไป หรือ Placeholder จาก .env.example ที่ยาวพอผ่าน
+// เกณฑ์ความยาวแต่ยังเป็นค่าเดิมที่ไม่ได้เปลี่ยน)
+const WEAK_JWT_SECRET_VALUES = new Set([
+  "secret",
+  "password",
+  "change-me",
+  "change-this-access-secret",
+  "change-this-refresh-secret",
+  "change-this-login-challenge-secret",
+  "CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_BASE64_32_ACCESS",
+  "CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_BASE64_32_REFRESH",
+  "CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_BASE64_32_LOGIN_CHALLENGE",
+]);
+
 const TOKEN_PAYLOAD_SCHEMAS: {
   [TTokenType in TokenType]: ZodType<TokenPayloadByType[TTokenType]>;
 } = {
@@ -51,6 +65,12 @@ function getTokenConfig(tokenType: TokenType): TokenConfig & { secret: string } 
 
   if (!config.secret) {
     throw new Error(`${tokenType} token secret must be configured.`);
+  }
+
+  if (config.secret.length < 32 || WEAK_JWT_SECRET_VALUES.has(config.secret)) {
+    throw new Error(
+      `${tokenType} token secret must be a strong value (at least 32 characters, not a default placeholder).`
+    );
   }
 
   return config as TokenConfig & { secret: string };

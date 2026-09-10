@@ -167,6 +167,10 @@ export interface GateVehicleJobBody {
   Booths: GateVehicleJobBoothBody[];
 
   Dispatch: boolean;
+
+  // Optional — ยังไม่มี Gate Vendor ส่งมาจริงในปัจจุบัน ดู Comment ที่ gateVehicleJobBodySchema
+  // (validation/schemas.ts) และ buildGateTransactionRef (gate.service.ts) สำหรับรายละเอียด (BUG-020)
+  IdempotencyKey?: string;
 }
 
 /* -------------------------------------- Gate Response -------------------------------------- */

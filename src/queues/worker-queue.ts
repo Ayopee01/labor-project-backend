@@ -32,6 +32,8 @@ let timeoutWorker: Worker | null = null;
 let breakReturnWorker: Worker | null = null;
 
 let lastWorkerQueueScore = 0;
+// ตัวนับ Score แยกต่างหากสำหรับ Enqueue-at-Front เท่านั้น (ดู reserveWorkerQueueFrontScores ด้านล่าง)
+let lastWorkerQueueFrontScore = 0;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -145,6 +147,13 @@ export async function enqueueWorker(accountId: number): Promise<WorkerQueueEntry
   return queueEntry;
 }
 
+// Function จองช่วง Score ติดลบแบบ synchronous ไม่มี await คั่น กัน race ระหว่าง request ที่เรียกพร้อมกัน
+// (ต่างจากเดิมที่อ่าน head จาก Redis ก่อนคำนวณ) — ค่ายิ่งน้อยยิ่งอยู่หน้าคิว Batch ที่เรียกทีหลังจึงชนะเสมอ
+function reserveWorkerQueueFrontScores(count: number): number {
+  lastWorkerQueueFrontScore -= count;
+  return lastWorkerQueueFrontScore;
+}
+
 // Function เพิ่มงานเข้า queue workers at front ใน Redis/BullMQ queue
 export async function enqueueWorkersAtFront(
   accountIds: number[]
@@ -155,20 +164,7 @@ export async function enqueueWorkersAtFront(
     return [];
   }
 
-  const currentHead = await redis.zrange(
-    REDIS_CONFIG.workerQueueKey,
-    0,
-    0,
-    "WITHSCORES"
-  );
-  const currentHeadScore = currentHead.length >= 2 ? Number(currentHead[1]) : null;
-  const firstScore = currentHeadScore === null || Number.isNaN(currentHeadScore)
-    ? buildWorkerQueueScore()
-    : currentHeadScore - uniqueAccountIds.length;
-  lastWorkerQueueScore = Math.max(
-    lastWorkerQueueScore,
-    firstScore + uniqueAccountIds.length - 1
-  );
+  const firstScore = reserveWorkerQueueFrontScores(uniqueAccountIds.length);
   const readyAt = new Date();
   const entries: WorkerQueueEntryDto[] = [];
 
@@ -211,14 +207,21 @@ export async function markWorkerBreak(
   return setWorkerStatus(accountId, WORKER_WORK_STATUS.BREAK, null, breakUntil);
 }
 
+// Function claim สิทธิ์ออกจากคิว READY แบบ atomic ตัวเดียว ใช้ตอน worker กดออกจากสถานะ READY เอง (เช่น
+// พักเบรก) — เช็คจากค่าที่ ZREM ลบได้จริง (0/1) แทนอ่าน status เฉยๆ กัน double-tap ชนะพร้อมกันสองฝั่ง
+export async function claimWorkerFromReadyQueue(accountId: number): Promise<boolean> {
+  const removed = await redis.zrem(REDIS_CONFIG.workerQueueKey, String(accountId));
+
+  return removed === 1;
+}
+
 // Function จัดการ pop ready workers จาก Redis FIFO แบบ atomic
 export async function popReadyWorkers(limit: number): Promise<WorkerQueueEntryDto[]> {
   if (limit <= 0) {
     return [];
   }
 
-  // ZPOPMIN เป็น atomic command
-  // ป้องกัน concurrent dispatch ดึง Worker คนเดียวกันออกจากคิวซ้ำ
+  // ZPOPMIN เป็น atomic command ป้องกัน concurrent dispatch ดึง worker คนเดียวกันออกจากคิวซ้ำ
   const popped = await redis.zpopmin(
     REDIS_CONFIG.workerQueueKey,
     limit
@@ -228,16 +231,13 @@ export async function popReadyWorkers(limit: number): Promise<WorkerQueueEntryDt
     return [];
   }
 
-  // Redis ZPOPMIN คืนค่า:
-  // [member, score, member, score, ...]
+  // Redis ZPOPMIN คืนค่าเป็น [member, score, member, score, ...]
   const accountIds = popped.filter(
     (_value, index) => index % 2 === 0
   );
 
-  // เขียนสถานะ ASSIGNED แบบขนานทุกคนที่ pop มาพร้อมกัน (ไม่ await ทีละคน) — ลดช่วงเวลาที่ worker
-  // ถูกดึงออกจากคิวไปแล้ว (ZPOPMIN ทำงานทันที) แต่ status hash ของเขายังไม่ทันอัปเดตเป็น ASSIGNED
-  // (ยังเห็นเป็น READY อยู่ถ้ามีคนอ่านพร้อมกันพอดี) ให้เหลือสั้นที่สุดเท่าที่ทำได้โดยไม่ต้องเปลี่ยนไป
-  // ใช้ Lua script — คนละ Redis key กันคนละ worker จึงรันขนานกันได้ปลอดภัยไม่ชนกันเอง
+  // เขียนสถานะ ASSIGNED แบบขนานทุกคน (ไม่ await ทีละคน) ลดช่วงที่ worker ถูก pop ออกจากคิวแล้วแต่ status
+  // hash ยังไม่อัปเดตเป็น ASSIGNED ให้สั้นที่สุด — คนละ Redis key กันจึงรันขนานกันได้ปลอดภัย
   return Promise.all(
     accountIds.map((accountIdValue) =>
       markWorkerAssigned(Number(accountIdValue))
@@ -333,8 +333,7 @@ export async function recordWorkerHeartbeat(
   }, staleAfterSeconds);
 }
 
-// Function ล้าง worker presence ใน Redis/BullMQ queue — ใช้ตอน session ถูก revoke แบบชัดเจน (logout/admin
-// revoke) กันไม่ให้ presence ค้างเป็น online ต่อจนกว่า TTL จะหมดอายุเอง
+// Function ล้าง worker presence ทันทีตอน session ถูก revoke ชัดเจน (logout/admin) กันค้างเป็น online จนกว่า TTL จะหมดอายุเอง
 export async function clearWorkerPresence(accountId: number): Promise<void> {
   await redis.del(buildWorkerPresenceKey(accountId));
 }

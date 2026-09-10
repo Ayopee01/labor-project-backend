@@ -1,21 +1,45 @@
+// Import Library
 import type { NextFunction, Request, Response } from "express";
 
+/* -------------------------------------- Types -------------------------------------- */
+
+// Type ของ bucket สำหรับเก็บข้อมูล rate limit ของ client
 type RateLimitBucket = {
   resetAt: number;
   count: number;
 };
 
+/* -------------------------------------- Config -------------------------------------- */
+
+// Map ของ client key -> bucket สำหรับเก็บข้อมูล rate limit ของ client
 const buckets = new Map<string, RateLimitBucket>();
+// Config ของ route patterns ที่ต้อง rate limit
 const RATE_LIMITED_ROUTE_PATTERNS = [
-  /^\/api\/auth\//,
+  /^\/api\/auth\//, 
   /^\/api\/admin\//,
+  /^\/api\/driver\//,
 ] as const;
 let cleanupTimer: NodeJS.Timeout | null = null;
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function ตรวจสอบว่า environment variable ที่กำหนดเป็น positive number หรือไม่ ถ้าไม่ใช่จะ throw error
+function requiredPositiveNumberEnv(name: string): number {
+  const value = Number(process.env[name]);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be set to a positive number.`);
+  }
+
+  return value;
+}
+
+// Function หา client key จาก request (ใช้ IP address ของ client เป็น key)
 function getClientKey(req: Request): string {
   return req.ip || req.socket.remoteAddress || "unknown";
 }
 
+// Function ลบ bucket ที่หมดอายุออกจาก map
 function cleanupExpiredBuckets(now = Date.now()): void {
   for (const [key, bucket] of buckets.entries()) {
     if (bucket.resetAt <= now) {
@@ -24,7 +48,7 @@ function cleanupExpiredBuckets(now = Date.now()): void {
   }
 }
 
-// Function หา bucket ของ key นี้ (สร้างใหม่ถ้ายังไม่มีหรือหมดอายุแล้ว) แล้วนับเพิ่ม 1
+// Function เพิ่ม count ของ bucket ของ client และ return bucket ใหม่
 function incrementRateLimitBucket(key: string, windowMs: number): RateLimitBucket {
   const now = Date.now();
   const current = buckets.get(key);
@@ -38,30 +62,36 @@ function incrementRateLimitBucket(key: string, windowMs: number): RateLimitBucke
   return bucket;
 }
 
+// Function สร้าง timer สำหรับ cleanup expired buckets ทุก interval ที่กำหนด
 function ensureRateLimitCleanupTimer(): void {
   if (cleanupTimer) {
     return;
   }
 
-  const cleanupIntervalMs = Number(process.env.RATE_LIMIT_CLEANUP_INTERVAL_MS);
-
-  cleanupTimer = setInterval(() => cleanupExpiredBuckets(), cleanupIntervalMs);
+  cleanupTimer = setInterval(
+    () => cleanupExpiredBuckets(),
+    requiredPositiveNumberEnv("RATE_LIMIT_CLEANUP_INTERVAL_MS")
+  );
   cleanupTimer.unref();
 }
 
+// Function จัดการ security headers middleware สำหรับ Express middleware
 export function securityHeadersMiddleware(
   _req: Request,
   res: Response,
   next: NextFunction,
 ): void {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Referrer-Policy", "no-referrer");
-  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
-  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("X-Content-Type-Options", "nosniff"); // ป้องกันการ sniff MIME type
+  res.setHeader("X-Frame-Options", "DENY"); // ป้องกันการ clickjacking
+  res.setHeader("Referrer-Policy", "no-referrer"); // ป้องกันการส่ง referrer header ไปยัง domain อื่น
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()"); // ป้องกันการเข้าถึง feature ของ browser ที่ไม่จำเป็น
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin"); // ป้องกันการโจมตีแบบ cross-origin
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains"); // บังคับให้ใช้ HTTPS Max-age 1 ปี และรวม subdomains ด้วย
+  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"); // ป้องกันการโหลด resource จาก domain อื่น และป้องกันการฝังหน้าเว็บใน iframe
   next();
 }
 
+// Function จัดการ rate limit middleware สำหรับ Express middleware
 export function rateLimitMiddleware(
   req: Request,
   res: Response,
@@ -74,8 +104,8 @@ export function rateLimitMiddleware(
 
   ensureRateLimitCleanupTimer();
 
-  const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS);
-  const maxRequests = Number(process.env.RATE_LIMIT_MAX_REQUESTS);
+  const windowMs = requiredPositiveNumberEnv("RATE_LIMIT_WINDOW_MS");
+  const maxRequests = requiredPositiveNumberEnv("RATE_LIMIT_MAX_REQUESTS");
   const key = getClientKey(req);
   const bucket = incrementRateLimitBucket(key, windowMs);
 
@@ -95,10 +125,7 @@ export function rateLimitMiddleware(
   next();
 }
 
-export function clearRateLimitBuckets(): void {
-  buckets.clear();
-}
-
+// Function หยุด timer สำหรับ cleanup expired buckets 
 export function stopRateLimitCleanupTimer(): void {
   if (cleanupTimer) {
     clearInterval(cleanupTimer);
@@ -106,10 +133,17 @@ export function stopRateLimitCleanupTimer(): void {
   }
 }
 
+// Function สำหรับ test: ลบ bucket ทั้งหมด
+export function clearRateLimitBuckets(): void {
+  buckets.clear();
+}
+
+// Function สำหรับ test: cleanup expired buckets
 export function cleanupRateLimitBucketsForTest(now = Date.now()): void {
   cleanupExpiredBuckets(now);
 }
 
+// Function สำหรับ test: return จำนวน bucket ปัจจุบัน
 export function getRateLimitBucketCountForTest(): number {
   return buckets.size;
 }

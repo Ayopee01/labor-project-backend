@@ -166,6 +166,7 @@ test("diffChangedFields returns only the fields that actually changed, using nul
 /* -------------------------------------- runSecurityAuditLogRetentionCleanup -------------------------------------- */
 
 test("runSecurityAuditLogRetentionCleanup deletes rows older than the configured retention window and returns the deleted count", async () => {
+  process.env.SECURITY_AUDIT_LOG_RETENTION_DAYS = "180";
   deleteOlderThanReturnCount = 42;
   const before = Date.now();
 
@@ -173,14 +174,39 @@ test("runSecurityAuditLogRetentionCleanup deletes rows older than the configured
 
   const after = Date.now();
 
+  delete process.env.SECURITY_AUDIT_LOG_RETENTION_DAYS;
+
   assert.equal(deletedCount, 42);
   assert.equal(deleteOlderThanCalls.length, 1);
 
   const cutoffMs = deleteOlderThanCalls[0].getTime();
-  const retentionMs = 180 * 24 * 60 * 60 * 1000; // ค่า default ตอนไม่ได้ตั้ง env
+  const retentionMs = 180 * 24 * 60 * 60 * 1000;
 
   // Cutoff ต้องมาจาก "ตอนนี้ - retention days" จริง ไม่ใช่ derive จากค่า record ใดๆ — เทียบแบบช่วง
   // เพราะ before/after คนละ millisecond กับตอน service คำนวณจริง
   assert.ok(cutoffMs >= before - retentionMs - 1000);
   assert.ok(cutoffMs <= after - retentionMs + 1000);
+});
+
+test("runSecurityAuditLogRetentionCleanup rejects a missing or non-positive SECURITY_AUDIT_LOG_RETENTION_DAYS", async () => {
+  const original = process.env.SECURITY_AUDIT_LOG_RETENTION_DAYS;
+  delete process.env.SECURITY_AUDIT_LOG_RETENTION_DAYS;
+
+  await assert.rejects(
+    () => securityAuditLogService.runSecurityAuditLogRetentionCleanup(),
+    /SECURITY_AUDIT_LOG_RETENTION_DAYS/
+  );
+
+  process.env.SECURITY_AUDIT_LOG_RETENTION_DAYS = "0";
+
+  await assert.rejects(
+    () => securityAuditLogService.runSecurityAuditLogRetentionCleanup(),
+    /SECURITY_AUDIT_LOG_RETENTION_DAYS/
+  );
+
+  if (original === undefined) {
+    delete process.env.SECURITY_AUDIT_LOG_RETENTION_DAYS;
+  } else {
+    process.env.SECURITY_AUDIT_LOG_RETENTION_DAYS = original;
+  }
 });

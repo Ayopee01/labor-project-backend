@@ -2,6 +2,7 @@ import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
 import * as masterWorkerRepository from "../../repositories/shared/master-worker.repository";
 import * as workerPushTokenRepository from "../../repositories/shared/worker-push-token.repository";
+import { createMessageDeliveryLog, MESSAGE_DELIVERY_STATUS, updateMessageDeliveryLogStatus } from "../../repositories/line.repository";
 import { buildLocalizedNotification } from "../../utils/notification-localization";
 import { MASTER_WORKER_STATUS } from "../../types/admin-workers.type";
 import type { AccessTokenPayload, SessionDto } from "../../types/auth.type";
@@ -10,6 +11,7 @@ import type { WorkerPushEventInput, WorkerPushTokenDto, WorkerPushRegistrationRe
 import { parseWithSchema } from "../../validation/parser";
 import { workerPushTokenBodySchema } from "../../validation/schemas";
 import ApiError from "../../utils/api-error";
+import { logger } from "../../utils/logger";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -199,6 +201,7 @@ async function sendWorkerPushNotification(
   await sendWorkerPushNotificationToTokens(tokens, input);
 }
 
+// Function ส่ง FCM multicast ให้ token ที่ระบุ บันทึก Delivery Log และ revoke token ที่ใช้ไม่ได้
 async function sendWorkerPushNotificationToTokens(
   tokens: WorkerPushTokenDto[],
   input: WorkerPushEventInput,
@@ -219,28 +222,66 @@ async function sendWorkerPushNotificationToTokens(
     notification,
   };
   const data = toFcmData(payload);
-  const invalidTokenHashes: string[] = [];
+
+  // บันทึก Delivery Log ก่อนเริ่มส่งจริงเสมอ (Pattern เดียวกับ LINE Message ผ่าน message_delivery_logs)
+  // เพื่อให้ Admin ตรวจสอบย้อนหลังได้ว่า Push ถึงมือ Worker จริงหรือไม่
+  const deliveryLogId = await createMessageDeliveryLog(
+    "fcm_push",
+    input.type,
+    {
+      worker_codes: input.worker_codes,
+      token_count: tokens.length,
+      title: input.title,
+      message: input.message,
+    },
+    input.worker_codes[0] ?? null,
+  );
+
+  let hadChunkFailure = false;
+  let lastErrorMessage: string | null = null;
 
   for (const tokenChunk of chunk(tokens, FCM_MULTICAST_LIMIT)) {
-    const response = await getMessaging().sendEachForMulticast({
-      tokens: tokenChunk.map((token) => token.fcm_token),
-      notification: {
-        title: input.title,
-        body: input.message,
-      },
-      data,
-    });
+    try {
+      const response = await getMessaging().sendEachForMulticast({
+        tokens: tokenChunk.map((token) => token.fcm_token),
+        notification: {
+          title: input.title,
+          body: input.message,
+        },
+        data,
+      });
 
-    response.responses.forEach((sendResponse, index) => {
-      const errorCode = sendResponse.error?.code;
+      const invalidTokenHashesInChunk: string[] = [];
 
-      if (errorCode && INVALID_FCM_ERROR_CODES.has(errorCode)) {
-        invalidTokenHashes.push(tokenChunk[index]?.fcm_token_hash ?? "");
+      response.responses.forEach((sendResponse, index) => {
+        const errorCode = sendResponse.error?.code;
+
+        if (errorCode && INVALID_FCM_ERROR_CODES.has(errorCode)) {
+          invalidTokenHashesInChunk.push(tokenChunk[index]?.fcm_token_hash ?? "");
+        }
+      });
+
+      // Revoke Token ที่ไม่ถูกต้องของ Chunk นี้ทันที ไม่รอสะสม เพื่อไม่เสีย Progress ถ้า Chunk ถัดไป Throw
+      if (invalidTokenHashesInChunk.length > 0) {
+        await workerPushTokenRepository.revokeByTokenHashes(invalidTokenHashesInChunk);
       }
-    });
+    } catch (error) {
+      // ต้องไม่ throw ออกไป ไม่งั้น Chunk ถัดไปจะไม่ถูกส่งเลย — Log แล้วไปต่อเสมอ
+      hadChunkFailure = true;
+      lastErrorMessage = error instanceof Error ? error.message : String(error);
+      logger.error("Failed to send FCM push notification chunk.", {
+        error,
+        type: input.type,
+        chunkSize: tokenChunk.length,
+      });
+    }
   }
 
-  await workerPushTokenRepository.revokeByTokenHashes(invalidTokenHashes);
+  await updateMessageDeliveryLogStatus(
+    deliveryLogId,
+    hadChunkFailure ? MESSAGE_DELIVERY_STATUS.FAILED : MESSAGE_DELIVERY_STATUS.SENT,
+    lastErrorMessage,
+  );
 }
 
 // Function แปลง worker id ภายในเป็น WorkerCode ก่อนส่ง push notification ไป Mobile
@@ -263,39 +304,46 @@ export async function sendWorkerPushNotificationByWorkerIds(input: {
       continue;
     }
 
-    const localized = buildLocalizedNotification({
-      type: input.type,
-      lang: worker.lang,
-      key: input.notification_key,
-      params: input.notification_params ?? input.payload,
-      fallbackTitle: input.title,
-      fallbackMessage: input.message,
-    });
+    try {
+      const localized = buildLocalizedNotification({
+        type: input.type,
+        lang: worker.lang,
+        key: input.notification_key,
+        params: input.notification_params ?? input.payload,
+        fallbackTitle: input.title,
+        fallbackMessage: input.message,
+      });
 
-    await sendWorkerPushNotification({
-      worker_codes: [worker.labor_code],
-      type: input.type,
-      title: localized.title,
-      message: localized.message,
-      notification_key: localized.key,
-      lang: localized.lang,
-      payload: input.payload,
-    });
+      await sendWorkerPushNotification({
+        worker_codes: [worker.labor_code],
+        type: input.type,
+        title: localized.title,
+        message: localized.message,
+        notification_key: localized.key,
+        lang: localized.lang,
+        payload: input.payload,
+      });
+    } catch (error) {
+      // ต้องไม่ throw ออกไป ไม่งั้น Worker คนถัดไปใน Batch เดียวกันจะไม่ได้รับ Push ด้วย — Log แล้วไปต่อเสมอ
+      logger.error("Failed to send push notification to one worker in a batch.", {
+        error,
+        workerId,
+        type: input.type,
+      });
+    }
   }
 }
 
-// Function ส่ง FCM push ให้ Worker ที่ active token ทุกคน แบบ localized ตามภาษาที่แต่ละคนตั้งไว้
-// (ใช้ notification-localization mechanism เดิมของ project) — group token ตาม lang ก่อนแล้วยิง
-// multicast ทีละกลุ่ม (ไม่ query/ยิงทีละ account เหมือน sendWorkerPushNotificationByAccountIds
-// เพราะผู้รับเป็นทุกคน ไม่ใช่ account_ids ที่ระบุมา จึงต้อง batch ตาม lang แทนเพื่อเลี่ยง N+1)
+// Function ส่ง FCM push ให้ Worker ที่ active token ทุกคน แบบ localized ตามภาษาของแต่ละคน
+// group token ตาม lang ก่อนยิง multicast ทีละกลุ่ม (ไม่ยิงทีละคนเหมือน sendWorkerPushNotificationByWorkerIds
+// เพราะผู้รับคือทุกคน ไม่ใช่ id ที่ระบุมา จึงต้อง batch ตาม lang แทนเพื่อเลี่ยง N+1)
 export async function sendWorkerPushNotificationToAllActive(input: {
   type: string;
   notification_key?: string | null;
   notification_params?: Record<string, unknown>;
   fallbackTitle: string;
   fallbackMessage: string;
-  // ข้อความเพิ่มเติมที่ Admin กำหนดเอง (เช่น ReleaseMessage ของ Mobile App Version) ต่อท้าย
-  // localized message เสมอ ไม่ผ่าน localization เพราะเป็น free text ที่ Admin พิมพ์เอง
+  // ข้อความเพิ่มเติมที่ Admin กำหนดเอง (เช่น ReleaseMessage) ต่อท้าย localized message เสมอ ไม่ผ่าน localization เพราะเป็น free text
   appendMessage?: string | null;
   payload?: Record<string, unknown>;
 }): Promise<void> {
@@ -344,6 +392,7 @@ export async function sendWorkerPushNotificationToAllActive(input: {
   }
 }
 
+// Function ส่ง FCM push แบบ localized ให้ token ทั้งหมดของ session ที่ระบุ
 export async function sendWorkerPushNotificationToSession(input: {
   session_id: number;
   type: string;

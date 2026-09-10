@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { withTransaction } from "../db/prisma";
 import { enqueueWorker, getWorkerBreakCount, getWorkerPresence, getWorkerPresences, getWorkerQueueStatus, getWorkerQueueStatuses, getWorkerReadyQueueRanks, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, removeWorkerBreakReturn, scheduleWorkerBreakReturn } from "../queues/worker-queue";
 import { workerRepository, workerSessionRepository } from "../repositories/admin-workers.repository";
@@ -30,7 +31,7 @@ import { buildDeadline, formatBangkokDate, toUnixMs } from "../utils/time";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 import { buildWorkerCode } from "../utils/worker-code";
 import { resolveWorkerWorkStatus } from "../utils/worker-status";
-import { ASSIGNMENT_STATUS } from "../constants/job-status";
+import { ASSIGNMENT_STATUS } from "../constants/status";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
 
@@ -112,8 +113,7 @@ function formatUserListSchedule(
   };
 }
 
-// Function แปลง Status ตัวเลขของ MasterWorker เป็น active/inactive string ของ API เดิม — null (ไม่มี
-// ค่าจาก Master) ถือเป็น inactive ในชั้นแสดงผลนี้เท่านั้น ค่าจริงใน DB ยังเป็น null ไม่ถูกเขียนทับ
+// Function แปลง Status ตัวเลขของ MasterWorker เป็น active/inactive string — null ถือเป็น inactive แค่ตอนแสดงผล ไม่เขียนทับค่าจริงใน DB
 function toAccountStatus(status: number | null): AccountStatus {
   return status === MASTER_WORKER_STATUS.ACTIVE ? "active" : "inactive";
 }
@@ -203,10 +203,25 @@ async function assertWorkerCodeAvailable(
   }
 }
 
-// Function ตรวจสอบเงื่อนไข normalized phone มีตัวเลขอย่างน้อยหนึ่งตัว ใน service flow — เบอร์โทรที่พิมพ์
-// มาไม่มีตัวเลขเลย (เช่น พิมพ์ผิดเป็นตัวอักษรล้วน) จะถูก normalizePhoneDigits ตัดจนเหลือ empty string
-// ถ้าไม่เช็คตรงนี้ hashPassword(normalizedPhone) ด้านล่างจะ throw TypeError ดิบๆ กลาย เป็น 500 แทนที่จะ
-// เป็น validation error 400 ที่สื่อความหมาย
+// Function จับ P2002 จาก laborCode Unique Constraint แล้วแปลงเป็น ApiError เดียวกับ assertWorkerCodeAvailable
+// กัน TOCTOU Race (สอง Request ผ่าน assertWorkerCodeAvailable พร้อมกันก่อนอีกฝ่าย Commit) ไม่ให้ตกเป็น 500 ทั่วไป
+function rethrowAsWorkerCodeConflict(error: unknown): never {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  ) {
+    throw new ApiError(
+      409,
+      "WORKER_CODE_ALREADY_EXISTS",
+      "Worker code already exists."
+    );
+  }
+
+  throw error;
+}
+
+// Function ตรวจสอบว่า normalized phone มีตัวเลขอย่างน้อยหนึ่งตัว — เบอร์ที่พิมพ์ผิดล้วนตัวอักษรจะถูก normalizePhoneDigits ตัดจนว่างเปล่า
+// ถ้าไม่เช็คตรงนี้ hashPassword(normalizedPhone) จะ throw TypeError กลายเป็น 500 แทนที่จะเป็น validation error 400
 function assertNormalizedPhoneHasDigits(normalizedPhone: string): void {
   if (!normalizedPhone) {
     throw new ApiError(
@@ -217,9 +232,8 @@ function assertNormalizedPhoneHasDigits(normalizedPhone: string): void {
   }
 }
 
-// Function เพิกถอน worker sessions ใน service flow — พร้อมล้างสถานะคิว/ปิด shift ให้กลับเป็น open_app
-// ไปด้วยถ้า worker ยังอยู่ในคิว online อยู่ (ready/assigned/waiting_team/working/break) กัน worker ค้าง
-// โชว์เป็น online ใน dashboard ต่อไปทั้งที่ session ถูก revoke ไปแล้ว
+// Function เพิกถอน worker sessions พร้อมล้างสถานะคิว/ปิด shift กลับเป็น open_app ถ้า worker ยังอยู่ในคิว online (ready/assigned/waiting_team/working/break)
+// กัน worker ค้างโชว์เป็น online ใน dashboard ทั้งที่ session ถูก revoke ไปแล้ว
 async function revokeWorkerSessions(
   worker: MasterWorkerDto,
   connection?: DbConnection
@@ -282,8 +296,7 @@ async function revokeWorkerSessions(
     });
   }
 
-  // ปิด socket + ล้าง presence เสมอไม่ว่า queue status จะเป็น open_app อยู่แล้วหรือไม่ — worker อาจ
-  // open_app ในคิวแต่ socket ยังเชื่อมต่ออยู่ก็ได้ คนละสถานะกัน
+  // ปิด socket + ล้าง presence เสมอไม่ว่า queue status จะเป็น open_app อยู่แล้วหรือไม่ — worker อาจ open_app ในคิวแต่ socket ยังเชื่อมต่ออยู่ก็ได้
   try {
     await disconnectWorkerSocket(worker.id, "admin_session_revoked");
   } catch (error) {
@@ -320,34 +333,36 @@ export async function createUser(
   const laborCode = requestedUsername ?? workerCode;
   const initialWorkStartDate = workStartDate ?? formatBangkokDate();
   const timeWorkPreset = resolveTimeWorkPreset(timeWork);
-  // เก็บ telephone ลง DB เป็นตัวเลขล้วนเสมอ (ตัดขีด/วงเล็บ/เว้นวรรคทิ้ง) ไม่ว่า Admin จะพิมพ์มารูปแบบไหน
-  // — ใช้ค่าเดียวกันนี้ทั้ง telephone column และตอนสร้าง password ด้านล่าง กันไม่ให้สองที่ไม่ตรงกัน
+  // เก็บ telephone ลง DB เป็นตัวเลขล้วนเสมอ (ตัดขีด/วงเล็บ/เว้นวรรค) — ใช้ค่าเดียวกันทั้ง telephone column และตอนสร้าง password กันไม่ให้ไม่ตรงกัน
   const normalizedPhone = normalizePhoneDigits(phone);
   assertNormalizedPhoneHasDigits(normalizedPhone);
-  // work_code สร้างจาก shirt_number ตรงๆ (buildWorkerCode ด้านบนตรวจแล้วว่าเป็นเลขจำนวนเต็ม 0-999999
-  // ก่อนหน้านี้) ให้ตรงกับที่ masterdata จริงได้ตอน sync (ตัดตัวอักษรนำหน้า labor_code ออก)
+  // work_code สร้างจาก shirt_number ตรงๆ (ผ่านการตรวจแล้วว่าเป็นเลขจำนวนเต็ม 0-999999) ให้ตรงกับ masterdata จริงตอน sync
   const workCode = Number(shirtNumber);
 
   return withTransaction(async (transaction) => {
     await assertWorkerCodeAvailable(laborCode, null, transaction);
 
-    await workerRepository.create(
-      {
-        labor_code: laborCode,
-        full_name: fullName,
-        telephone: normalizedPhone,
-        nationality,
-        labor_color: shirtType,
-        work_start_date: initialWorkStartDate,
-        work_code: workCode,
-        coat_no: shirtNumber,
-        time_work: timeWorkPreset.time_work,
-        time_in: timeWorkPreset.time_in,
-        time_out: timeWorkPreset.time_out,
-        status: status === "active" ? MASTER_WORKER_STATUS.ACTIVE : MASTER_WORKER_STATUS.INACTIVE,
-      },
-      transaction
-    );
+    try {
+      await workerRepository.create(
+        {
+          labor_code: laborCode,
+          full_name: fullName,
+          telephone: normalizedPhone,
+          nationality,
+          labor_color: shirtType,
+          work_start_date: initialWorkStartDate,
+          work_code: workCode,
+          coat_no: shirtNumber,
+          time_work: timeWorkPreset.time_work,
+          time_in: timeWorkPreset.time_in,
+          time_out: timeWorkPreset.time_out,
+          status: status === "active" ? MASTER_WORKER_STATUS.ACTIVE : MASTER_WORKER_STATUS.INACTIVE,
+        },
+        transaction
+      );
+    } catch (error) {
+      rethrowAsWorkerCodeConflict(error);
+    }
 
     const passwordHash = await hashPassword(normalizedPhone);
     const created = await workerRepository.findByIdentifier(laborCode, transaction);
@@ -427,9 +442,8 @@ export async function getUser(id: number | string, _auth?: AccessTokenPayload) {
   return formatUserDetail(worker);
 }
 
-// Function อัปเดต user ใน service flow — worker_code จะถูก regenerate ใหม่เฉพาะตอนที่ส่ง
-// nationality+shirt_type+shirt_number มาครบทั้งสามค่าพร้อมกัน (หรือส่ง worker_code ตรงๆ) เพราะ
-// MasterWorker ไม่ได้เก็บ shirt_number แยกไว้ให้ derive ย้อนหลังแบบ Account เดิมอีกต่อไป
+// Function อัปเดต user — worker_code จะถูก regenerate ใหม่เฉพาะตอนส่ง nationality+shirt_type+shirt_number มาครบสามค่า (หรือส่ง worker_code ตรงๆ)
+// เพราะ MasterWorker ไม่ได้เก็บ shirt_number แยกไว้ให้ derive ย้อนหลังเหมือน Account เดิม
 export async function updateUser(
   id: number | string,
   body: unknown,
@@ -460,8 +474,7 @@ export async function updateUser(
 
   const { result, updatedWorker } = await withTransaction(async (transaction) => {
     const worker = await requireWorker(id, transaction);
-    // Snapshot ก่อนแก้ไขจริง — ห้ามใช้ worker ตรงๆ ไปเทียบกับ updatedWorker ตอนท้าย เพราะ repository
-    // บาง implementation คืน object เดิม (mutate in place) ไม่ใช่ fresh copy ทุกครั้งที่ query
+    // Snapshot ก่อนแก้ไขจริง — ห้ามเทียบ worker ตรงๆ กับ updatedWorker เพราะ repository บาง implementation mutate in place ไม่คืน fresh copy
     const workerBeforeUpdate = { ...worker };
     const nextWorkerCode =
       requestedWorkerCode ??
@@ -481,17 +494,21 @@ export async function updateUser(
       shirtType !== undefined;
 
     if (hasFieldUpdates) {
-      await workerRepository.update(
-        worker.id,
-        {
-          labor_code: nextWorkerCode,
-          full_name: nextFullName !== undefined && nextFullName !== "" ? nextFullName : undefined,
-          telephone: normalizedPhone,
-          nationality,
-          labor_color: shirtType,
-        },
-        transaction
-      );
+      try {
+        await workerRepository.update(
+          worker.id,
+          {
+            labor_code: nextWorkerCode,
+            full_name: nextFullName !== undefined && nextFullName !== "" ? nextFullName : undefined,
+            telephone: normalizedPhone,
+            nationality,
+            labor_color: shirtType,
+          },
+          transaction
+        );
+      } catch (error) {
+        rethrowAsWorkerCodeConflict(error);
+      }
 
       if (normalizedPhone !== undefined) {
         await workerRepository.updatePasswordHash(
@@ -584,10 +601,7 @@ export async function updateUser(
     return { result: formatUserDetail(updatedWorker), updatedWorker };
   });
 
-  // Best-effort — ถ้า Admin เพิ่งแก้ time_in/time_out (เช่น ต่อเวลาสิ้นสุดกะ) ให้ re-arm shift-end job
-  // ด้วย schedule ใหม่ทันที เพราะ Worker ที่เคยถูก eject ไปแล้วก่อนหน้า (attendance ปิดไปแล้ว) จะ "go
-  // online" ซ้ำไม่ได้อีก (WORKER_SHIFT_CLOSED) ซึ่งเป็นจุดเดียวปกติที่ตั้ง job นี้ให้ — ถ้าไม่ re-arm ตรงนี้
-  // จะไม่มี job รออยู่เลยจนกว่า Worker จะ go online กะถัดไป
+  // Best-effort: re-arm shift-end job ทันทีถ้า Admin แก้ time_in/time_out เพราะ worker ที่เคย eject แล้ว go online ซ้ำไม่ได้ (WORKER_SHIFT_CLOSED)
   if (hasScheduleTimeInput) {
     const updatedSchedule = scheduleFromWorker(updatedWorker);
 
@@ -606,9 +620,8 @@ export async function updateUser(
   return result;
 }
 
-// Function รีเซ็ต password ใน service flow — Admin ยังตั้ง password แยกอิสระให้ worker ได้ตามเดิม
-// (จะถูกเขียนทับอีกครั้งถ้า telephone ของ worker คนนี้เปลี่ยนในภายหลัง ไม่ว่าจะจาก Admin แก้เอง หรือ
-// จาก Master sync — เป็นพฤติกรรมที่ตั้งใจ)
+// Function รีเซ็ต password — Admin ตั้ง password แยกอิสระให้ worker ได้ตามเดิม
+// จะถูกเขียนทับอีกครั้งถ้า telephone ของ worker เปลี่ยนภายหลัง (จาก Admin หรือ Master sync) เป็นพฤติกรรมที่ตั้งใจ
 export async function resetPassword(
   id: number | string,
   body: unknown,
@@ -1045,9 +1058,8 @@ export async function forceAdminWorkerStatus(
   ]);
   const currentSchedule = scheduleFromWorker(worker);
 
-  // Admin ห้าม Force สถานะใดๆ (ready/open_app/break) ให้ worker ที่อยู่นอกเวลากะเด็ดขาด — ต้องแก้เวลา
-  // กะใน DB ให้ครอบคลุมเวลาปัจจุบันก่อน ถึงจะ Force ได้ กันไม่ให้เกิดคนอยู่ในคิว/ทำงานได้นอกเวลากะโดยไม่มี
-  // shift-end job มาดีดออก
+  // Admin ห้าม Force สถานะใดๆ ให้ worker ที่อยู่นอกเวลากะเด็ดขาด — ต้องแก้เวลากะใน DB ให้ครอบคลุมเวลาปัจจุบันก่อนถึงจะ Force ได้
+  // กันไม่ให้มีคนอยู่ในคิว/ทำงานนอกเวลากะโดยไม่มี shift-end job มาดีดออก
   if (!currentSchedule || !isTimeInWorkSchedule(currentSchedule)) {
     throw new ApiError(
       403,
@@ -1068,11 +1080,7 @@ export async function forceAdminWorkerStatus(
     );
   }
 
-  // เขียน Audit Log ก่อนแตะ Redis เสมอ — ถ้า DB write ล้ม (เช่น connection ชั่วครู่) request นี้ต้อง
-  // fail สะอาดโดยที่ยังไม่มี Redis state ใดถูกเปลี่ยนเลย กัน worker state เปลี่ยนจริงแบบไม่มีร่องรอย
-  // ว่าใคร Force ด้วยเหตุผลอะไร (vehicle_job_id เป็น null ได้ปกติ — ส่วนใหญ่ Admin Force สถานะ Worker
-  // ที่ว่างงานอยู่ ไม่มี VehicleJob ให้ผูกเลย currentAssignment มีค่าเฉพาะกรณี Force READY บน
-  // assignment DELIVERED)
+  // เขียน Audit Log ก่อนแตะ Redis เสมอ — ถ้า DB write ล้ม จะ fail ก่อน Redis state เปลี่ยน กัน worker state เปลี่ยนแบบไม่มีร่องรอยว่าใคร Force ทำไม
   await adminActionLogRepository.create({
     vehicle_job_id: currentAssignment?.vehicle_job_id ?? null,
     action_type: ADMIN_ACTION_TYPE.WORKER_STATUS_FORCED,
@@ -1094,8 +1102,7 @@ export async function forceAdminWorkerStatus(
   if (input.status === WORKER_WORK_STATUS.READY) {
     await enqueueWorker(worker.id);
 
-    // dispatch เป็น best-effort เสมอ — ต้องไม่ทำให้ request force-status ที่สำเร็จไปแล้วพัง 500
-    // เพราะ dispatch worker คันอื่นล้มเหลว (เขียน Redis/BullMQ แยกจาก DB transaction ของ request นี้)
+    // dispatch เป็น best-effort เสมอ — ต้องไม่ทำให้ request force-status ที่สำเร็จไปแล้วพัง 500 เพราะ dispatch worker คันอื่นล้มเหลว
     try {
       await dispatchReadyWorkers();
     } catch (error) {
@@ -1139,9 +1146,8 @@ export async function forceAdminWorkerStatus(
     );
   }
 
-  // Re-arm shift-end job เสมอเมื่อ Admin สั่งให้ Worker กลับมา active (READY/BREAK) เพราะ path นี้ไม่ได้
-  // ผ่าน "go online" ปกติ — ถ้า Worker เคยถูก eject ไปแล้วก่อนหน้า (job เดิมทำงานจบไปแล้ว) หรือไม่เคย
-  // go online วันนี้มาก่อนเลย จะไม่มี job รออยู่ให้ดีดกลับ open_app ตอนหมดกะจริง
+  // Re-arm shift-end job เสมอเมื่อ Admin สั่งให้ Worker กลับมา active (READY/BREAK) เพราะ path นี้ไม่ผ่าน go online ปกติ
+  // ถ้า Worker เคยถูก eject ไปแล้วหรือไม่เคย go online วันนี้มาก่อน จะไม่มี job รอดีดกลับ open_app ตอนหมดกะจริง
   if (input.status !== WORKER_WORK_STATUS.OPEN_APP) {
     await scheduleWorkerShiftEndIfNeeded(worker.id, currentSchedule);
   }

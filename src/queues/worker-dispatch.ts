@@ -23,7 +23,7 @@ import { buildTicketCompletionResultExtraFields, buildWorkerTicketPayload } from
 import { logger } from "../utils/logger";
 import { buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload, buildWorkerQueueSocketPayload } from "../utils/worker-payload";
-import { ASSIGNMENT_STATUS, SUBMITTED_TICKET_STATUSES, TERMINAL_JOB_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { ASSIGNMENT_STATUS, SUBMITTED_TICKET_STATUSES, TERMINAL_JOB_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
@@ -80,33 +80,46 @@ async function dispatchReadyWorkersForVehicleJob(
     if (readyWorkers.length === 0) {
       break;
     }
-    const workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
-      readyWorkers.map((worker) => worker.worker_id),
-      connection
-    );
+    // popReadyWorkers ด้านบน mark ASSIGNED ใน Redis ไปแล้วนอก DB Transaction (ไม่มี Reconciliation Job มาแก้ให้ภายหลัง)
+    // worker_code เป็นแค่ข้อมูลแสดงผล ไม่ใช่ business logic จึง fallback เป็น Map ว่างได้อย่างปลอดภัยเมื่อ fail
+    let workerCodeMap: Map<number, string | null>;
+
+    try {
+      workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
+        readyWorkers.map((worker) => worker.worker_id),
+        connection
+      );
+    } catch (error) {
+      logger.error("Failed to load worker code map while dispatching workers.", {
+        vehicleJobId: vehicleJob.id,
+        workerIds: readyWorkers.map((worker) => worker.worker_id),
+        error,
+      });
+      workerCodeMap = new Map();
+    }
 
     for (const worker of readyWorkers) {
       const workerCode = workerCodeMap.get(worker.worker_id) ?? null;
-
-      // Function ดีด Worker นอกกะออกจากคิวก่อน dispatch
-      const workerSchedule = await workScheduleRepository.findCurrentByAccountId(
-        worker.worker_id,
-        connection
-      );
-
-      if (!workerSchedule || !isTimeInWorkSchedule(workerSchedule)) {
-        if (workerSchedule) {
-          await ejectWorkerForShiftEnd(worker.worker_id, workerSchedule);
-        } else {
-          await markWorkerOpenApp(worker.worker_id);
-        }
-
-        continue;
-      }
-
       let assignment: VehicleJobAssignmentDto;
 
       try {
+        // Function ดีด Worker นอกกะออกจากคิวก่อน dispatch — อยู่ใน try เดียวกับการสร้าง Assignment เสมอ
+        // ด้วยเหตุผลเดียวกับ workerCodeMap ด้านบน (Redis ถูก mark ASSIGNED ไปก่อนแล้ว)
+        const workerSchedule = await workScheduleRepository.findCurrentByAccountId(
+          worker.worker_id,
+          connection
+        );
+
+        if (!workerSchedule || !isTimeInWorkSchedule(workerSchedule)) {
+          if (workerSchedule) {
+            await ejectWorkerForShiftEnd(worker.worker_id, workerSchedule);
+          } else {
+            await markWorkerOpenApp(worker.worker_id);
+          }
+
+          continue;
+        }
+
         assignment = await assignmentRepository.createAssignment(
           vehicleJob.id,
           worker.worker_id,
@@ -120,9 +133,7 @@ async function dispatchReadyWorkersForVehicleJob(
           acceptDeadlineMs
         );
       } catch (error) {
-        // คืน Worker เข้า FIFO เมื่อสร้าง assignment ล้มเหลว — log ไว้เสมอเพื่อสืบสาเหตุได้ ถ้า
-        // createAssignment fail ต่อเนื่องเป็นระบบ worker ชุดเดิมจะถูกคืนเข้าคิวแล้วดึงออกมาลองใหม่
-        // วนซ้ำได้โดยไม่มี log ให้ตามหาสาเหตุเลยถ้าไม่ log ตรงนี้
+        // คืน Worker เข้า FIFO เมื่อ fail ก่อน Assignment ถูกสร้างสำเร็จ — log ไว้เสมอเพื่อสืบสาเหตุถ้า fail ต่อเนื่องเป็นระบบ
         logger.error("Failed to create assignment while dispatching worker.", {
           vehicleJobId: vehicleJob.id,
           workerId: worker.worker_id,
@@ -132,30 +143,42 @@ async function dispatchReadyWorkersForVehicleJob(
         continue;
       }
 
-      const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
-        vehicleJob.id,
-        connection
-      );
+      // Assignment ถูกสร้างและ mark ASSIGNED ใน Redis สำเร็จแล้ว ส่วนที่เหลือเป็นแค่ best-effort notification
+      // ห้าม enqueueWorker คืนคิวถ้า fail ตรงนี้ เพราะ Redis จะบอก READY ทั้งที่ DB มี Assignment จริงรออยู่
+      try {
+        const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+          vehicleJob.id,
+          connection
+        );
 
-      sendWorkerSocketEvent(
-        worker.worker_id,
-        "WORKER_ASSIGNED",
-        buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos)
-      );
-      publishNotification({
-        type: "WORKER_ASSIGNED",
-        title: "Worker assigned",
-        message: `Worker ${workerCode ?? worker.worker_id} was assigned to vehicle job ${vehicleJob.ticket_number}.`,
-        payload: {
-          ticketNumber: vehicleJob.ticket_number,
-          worker_code: workerCode,
-          status: assignment.status,
-          accept_deadline_at: assignment.accept_deadline_at,
-        },
-        audience: {
-          roles: ["admin"],
-        },
-      });
+        sendWorkerSocketEvent(
+          worker.worker_id,
+          "WORKER_ASSIGNED",
+          buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos)
+        );
+        publishNotification({
+          type: "WORKER_ASSIGNED",
+          title: "Worker assigned",
+          message: `Worker ${workerCode ?? worker.worker_id} was assigned to vehicle job ${vehicleJob.ticket_number}.`,
+          payload: {
+            ticketNumber: vehicleJob.ticket_number,
+            worker_code: workerCode,
+            status: assignment.status,
+            accept_deadline_at: assignment.accept_deadline_at,
+          },
+          audience: {
+            roles: ["admin"],
+          },
+        });
+      } catch (error) {
+        logger.error("Failed to notify worker/admin after successful dispatch assignment.", {
+          vehicleJobId: vehicleJob.id,
+          workerId: worker.worker_id,
+          assignmentId: assignment.id,
+          error,
+        });
+      }
+
       workersNeeded -= 1;
     }
   }
@@ -230,10 +253,8 @@ export async function handleAssignmentAcceptTimeout(input: {
     reason = "assignment_timeout_shift_unavailable";
   }
 
-  // dispatchReadyWorkers ไม่เรียกที่นี่ — ต้องให้ caller เรียกแยกเองหลัง transaction ที่ครอบฟังก์ชันนี้
-  // commit แล้วเท่านั้น เพราะอาจ dispatch worker คนอื่นที่ไม่เกี่ยวข้องไปยัง VehicleJob อื่น (เขียน DB+
-  // Redis/BullMQ จริง) ถ้ายังอยู่ใน transaction เดียวกับ caller แล้วโค้ดหลังจากนี้ throw จะทำให้ DB
-  // ของ worker คนอื่นที่ถูก dispatch ไปแล้ว rollback แต่ Redis/BullMQ ของเขาไม่ rollback ตาม
+  // dispatchReadyWorkers ไม่เรียกที่นี่ — ต้องให้ caller เรียกแยกเองหลัง transaction commit แล้วเท่านั้น
+  // เพราะ dispatch เขียน DB+Redis/BullMQ ของ worker คนอื่นแยกจาก transaction นี้ rollback พร้อมกันไม่ได้
 
   return {
     queue,
@@ -244,9 +265,8 @@ export async function handleAssignmentAcceptTimeout(input: {
   };
 }
 
-// Function จัดการกรณี worker accept งานแล้วไม่ scan QR ภายในเวลา — คืน true เมื่อ timeout เกิดขึ้นจริง
-// (caller ต้องเรียก dispatchReadyWorkers เองหลัง transaction commit แล้ว ดูเหตุผลที่
-// handleAssignmentAcceptTimeout ด้านบน) คืน false เมื่อไม่มีอะไรเปลี่ยนแปลง (reschedule/แพ้ race)
+// Function จัดการกรณี worker accept งานแล้วไม่ scan QR ภายในเวลา — คืน true เมื่อ timeout เกิดขึ้นจริง (caller ต้องเรียก
+// dispatchReadyWorkers เองหลัง transaction commit แล้ว) คืน false เมื่อไม่มีอะไรเปลี่ยนแปลง (reschedule/แพ้ race)
 async function handleAssignmentScanTimeout(input: {
   assignment: VehicleJobAssignmentDto;
   workerId: number;
@@ -469,11 +489,8 @@ export async function returnCompletedWorkersToQueue(
   return requeuedWorkerCodes;
 }
 
-// Function คืน Worker กลับเข้าคิวหน้าสุด (priority requeue) โดยเช็คกะสดก่อนเสมอ — ใช้แทนการเรียก
-// enqueueWorkersAtFront ตรงๆ ทุกจุดที่ยกเลิก/ดึง assignment ของ Worker ออกแล้วต้องการคืนเข้าคิวแบบมี
-// priority (ยกเลิกทั้งรถ, สั่ง dispatch:false) เพราะ enqueueWorkersAtFront เองไม่เช็คว่า Worker ยังอยู่
-// ในกะไหมเลย — ถ้าใช้ตรงๆ Worker ที่หมดกะไปแล้วจะถูกดันกลับเข้า READY ทั้งที่ไม่ควรได้งานใหม่อีก
-// (ต่างจาก returnCompletedWorkersToQueue ด้านบนที่ enqueue ท้ายคิวปกติ ไม่ใช่หน้าสุด จึงใช้แทนกันไม่ได้)
+// Function คืน Worker กลับเข้าคิวหน้าสุด (priority requeue) โดยเช็คกะสดก่อนเสมอ — enqueueWorkersAtFront เองไม่เช็คกะ
+// ถ้าเรียกตรงๆ Worker ที่หมดกะไปแล้วจะถูกดันกลับเข้า READY ทั้งที่ไม่ควรได้งานใหม่อีก
 export async function requeueWorkersAtFrontRespectingShift(
   workerIds: number[]
 ): Promise<{ requeuedWorkerIds: number[]; openAppWorkerIds: number[] }> {
@@ -533,13 +550,8 @@ function sortAssignmentsByAcceptedAt(
   });
 }
 
-// Function พยายามปล่อย Worker ทั้งทีมของ VehicleJob กลับคิวอัตโนมัติหลัง Worker หรือ Admin ส่งยอด ถ้า
-// Worker ทั้งทีมหมดกะไปแล้วทุกคน — ใช้เงื่อนไข eligibility เดียวกับ releaseVehicleJobWorkers (ทุก Booth
-// ต้อง submitted/confirmed/cancelled หมดก่อน) แต่ไม่ throw เมื่อยังไม่พร้อม เพราะเป็น best-effort ต่อท้าย
-// การส่งยอด ไม่ใช่ action ที่ผู้ใช้เรียกตรงๆ — ถ้ามีแค่บางคนในทีมหมดกะ (ไม่ใช่ทั้งทีม) จะไม่ทำอะไรเลย
-// ต้องรอ Admin กด release-workers เองเพื่อปล่อยทั้งทีม (คนหมดกะจะ reset เป็น open_app ส่วนคนที่ยังไม่
-// หมดกะจะกลับเข้า ready queue ตามปกติ) — เรียกได้จากทั้ง admin-jobs.service.ts (Admin ส่งยอดแทน) และ
-// worker.service.ts (Worker ส่งยอดเอง)
+// Function พยายามปล่อย Worker ทั้งทีมของ VehicleJob กลับคิวอัตโนมัติหลังส่งยอด ถ้าทั้งทีมหมดกะไปแล้วทุกคน (best-effort ไม่ throw)
+// ถ้ามีแค่บางคนหมดกะจะไม่ทำอะไร ต้องรอ Admin กด release-workers เองเพื่อปล่อยทั้งทีม
 export async function autoReleaseVehicleJobWorkersIfShiftEnded(
   vehicleJob: Pick<VehicleJobDto, "id" | "ticket_number" | "status">,
   actorId: number,
@@ -585,9 +597,7 @@ export async function autoReleaseVehicleJobWorkersIfShiftEnded(
         workScheduleRepository.findCurrentByAccountId(assignment.worker_id, transaction),
       ),
     );
-    // ต้องหมดกะทั้งทีมถึงจะปล่อยอัตโนมัติ — ถ้ามีแค่บางคนหมดกะ ต้องรอ Admin กด release-workers เอง
-    // เพื่อปล่อยทั้งทีม (คนหมดกะจะ reset เป็น open_app ส่วนคนที่ยังไม่หมดกะจะกลับเข้า ready queue ตาม
-    // canReturnToQueue ใน returnCompletedWorkersToQueue อยู่แล้ว)
+    // ต้องหมดกะทั้งทีมถึงจะปล่อยอัตโนมัติ — ถ้ามีแค่บางคนหมดกะ ต้องรอ Admin กด release-workers เองเพื่อปล่อยทั้งทีม
     const isWholeTeamShiftEnded = schedules.every(
       (schedule) => !schedule || !isTimeInWorkSchedule(schedule),
     );
@@ -740,7 +750,7 @@ async function handleWorkerShiftEnd(input: {
     return;
   }
 
-  // Function อ่าน schedule สดก่อนปิดกะจาก delayed job
+  // เช็ค schedule สดอีกครั้งก่อนปิดกะ เผื่อกะถูกต่อเวลาไปแล้วตอน delayed job มาถึง
   if (isTimeInWorkSchedule(schedule)) {
     await scheduleWorkerShiftEnd(
       input.workerId,
@@ -884,10 +894,8 @@ export function startAssignmentTimeoutProcessing(): void {
       return;
     }
 
-    // shouldDispatch บอกว่ามี timeout เกิดขึ้นจริงในทรานแซกชันนี้หรือไม่ — ใช้ตัดสินว่าต้องเรียก
-    // dispatchReadyWorkers หลัง transaction commit แล้วหรือเปล่า (ดูเหตุผลที่
-    // handleAssignmentAcceptTimeout ด้านบน ห้ามเรียก dispatchReadyWorkers ในทรานแซกชันเดียวกับ
-    // งาน timeout นี้ เพราะจะ dispatch worker คนอื่นที่ไม่เกี่ยวข้องไปด้วย)
+    // shouldDispatch บอกว่ามี timeout เกิดขึ้นจริงในทรานแซกชันนี้หรือไม่ — ใช้ตัดสินว่าต้องเรียก dispatchReadyWorkers
+    // หลัง transaction commit แล้วหรือเปล่า ห้ามเรียกในทรานแซกชันเดียวกับงาน timeout นี้ (ดูเหตุผลด้านบน)
     let shouldDispatch = false;
 
     await withTransaction(async (transaction) => {
@@ -934,7 +942,7 @@ export function startAssignmentTimeoutProcessing(): void {
       });
 
       if (!timeoutResult) {
-        // Function ข้าม timeout notification เมื่อแพ้ race
+        // แพ้ race ให้คนอื่นเปลี่ยนสถานะไปก่อนแล้ว ข้าม notification
         return;
       }
 

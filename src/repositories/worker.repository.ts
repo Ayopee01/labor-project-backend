@@ -6,6 +6,7 @@ import type { WorkerAssignmentHistoryItemDto, WorkerEarningsSummaryResponse } fr
 
 /* -------------------------------------- Functions -------------------------------------- */
 
+// Function ดึงประวัติงานที่ Worker ถูกมอบหมายในช่วงวันที่กำหนด จาก DB
 export async function listWorkerAssignmentHistoryByDate(
   workerId: number,
   startAt: Date,

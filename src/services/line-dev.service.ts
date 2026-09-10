@@ -5,7 +5,7 @@ import { returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
 import { removeVendorConfirmationTimeout } from "../queues/worker-queue";
 import * as lineRepository from "../repositories/line.repository";
 import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
-import { TICKET_STATUS } from "../constants/job-status";
+import { TICKET_STATUS } from "../constants/status";
 import type { LineDevCompletionResult, LineDevSubmissionItem, VendorTicketCompletionAction } from "../types/line.type";
 import ApiError from "../utils/api-error";
 import { buildTicketCompletionResultExtraFields, buildWorkerTicketPayload } from "../utils/ticket-payload";

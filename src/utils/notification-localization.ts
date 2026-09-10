@@ -1,4 +1,4 @@
-import { TICKET_STATUS } from "../constants/job-status";
+import { TICKET_STATUS } from "../constants/status";
 
 export type NotificationLang = "TH" | "MN" | "CN" | "EN";
 

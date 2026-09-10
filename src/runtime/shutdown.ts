@@ -4,8 +4,16 @@ import { stopRateLimitCleanupTimer } from "../middlewares/security.middleware";
 import { markReadinessShuttingDown } from "./readiness-state";
 import { logger } from "../utils/logger";
 
+// Function อ่าน Timeout จาก Env ตรงจุดที่ใช้จริง — Throw ถ้าไม่มีค่าหรือไม่ใช่ตัวเลขบวก กันเงียบๆ ได้
+// ค่า NaN ที่ทำให้ setTimeout ยิงทันที (0ms) แทนที่จะรอ Drain Connection ตามเวลาที่ตั้งใจไว้จริง
 function readShutdownTimeoutMs(): number {
-  return Number(process.env.SHUTDOWN_TIMEOUT_MS);
+  const value = Number(process.env.SHUTDOWN_TIMEOUT_MS);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("SHUTDOWN_TIMEOUT_MS must be set to a positive number.");
+  }
+
+  return value;
 }
 
 type ShutdownDependencies = {
@@ -15,10 +23,10 @@ type ShutdownDependencies = {
   closeLineMessageQueueConnections: () => Promise<void>;
   closeWorkerQueueConnections: () => Promise<void>;
   closeRuntimeSettingsSyncConnections: () => Promise<void>;
-  // Optional (ต่างจาก close*Connections ตัวอื่น) เพื่อไม่ต้องแก้ ShutdownDependencies literal ที่มีอยู่
-  // แล้วในเทสเดิม (env-logger.test.ts) — job นี้เป็น housekeeping เสริม ไม่ใช่ core flow ที่ทุก caller
-  // ของ createGracefulShutdownHandler ต้องระบุเสมอ
+  // Optional เพราะเป็น housekeeping เสริม ไม่ใช่ core flow ที่ caller ทุกตัวต้องระบุ
   closeSecurityAuditLogCleanupConnections?: () => Promise<void>;
+  // Optional ด้วยเหตุผลเดียวกับ closeSecurityAuditLogCleanupConnections ด้านบน
+  closeHealthCheckRedisConnections?: () => Promise<void>;
   closePrisma: () => Promise<void>;
   stopRateLimitCleanupTimer: () => void;
   logger: Pick<typeof logger, "info" | "error">;
@@ -50,6 +58,10 @@ const defaultShutdownDependencies: ShutdownDependencies = {
   closeSecurityAuditLogCleanupConnections: async () => {
     const securityAuditLogCleanup = await import("../queues/security-audit-log-cleanup");
     await securityAuditLogCleanup.closeSecurityAuditLogCleanupConnections();
+  },
+  closeHealthCheckRedisConnections: async () => {
+    const healthService = await import("../services/health.service");
+    await healthService.closeHealthCheckRedisConnections();
   },
   closePrisma: async () => {
     const prisma = await import("../db/prisma");
@@ -100,9 +112,8 @@ export function createGracefulShutdownHandler(
     let httpCloseError: unknown;
 
     try {
-      // ต้องรอ HTTP server ปิดเสร็จ (drain in-flight request ทุกตัวจนจบ) ก่อนเสมอ ค่อยไปปิด
-      // WebSocket/Queue/Prisma ต่อ — ถ้าปิด Prisma/Redis ไปพร้อมกับที่ยังมี request ทำงานอยู่ (แค่
-      // เริ่ม close ไม่รอให้ปิดเสร็จ) request นั้นจะพังกลางคันเพราะ connection ที่ใช้อยู่ถูกตัดไปแล้ว
+      // ต้องรอ HTTP server ปิดเสร็จ (drain in-flight request ให้จบ) ก่อนค่อยปิด WebSocket/Queue/Prisma
+      // ไม่งั้น request ที่ยังทำงานอยู่จะพังกลางคันเพราะ connection ถูกตัดไปแล้ว
       await dependencies.closeHttpServer(server).catch((error) => {
         httpCloseError = error;
       });
@@ -111,6 +122,7 @@ export function createGracefulShutdownHandler(
       await dependencies.closeWorkerQueueConnections();
       await dependencies.closeRuntimeSettingsSyncConnections();
       await dependencies.closeSecurityAuditLogCleanupConnections?.();
+      await dependencies.closeHealthCheckRedisConnections?.();
       await dependencies.closePrisma();
       dependencies.stopRateLimitCleanupTimer();
 

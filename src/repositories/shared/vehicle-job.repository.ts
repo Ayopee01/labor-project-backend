@@ -2,7 +2,7 @@
 import { Prisma } from "@prisma/client";
 
 // Import Dependencies
-import { TERMINAL_TICKET_STATUSES, VEHICLE_JOB_STATUS } from "../../constants/job-status";
+import { TERMINAL_TICKET_STATUSES, VEHICLE_JOB_STATUS } from "../../constants/status";
 import { countScannedAssignments } from "./vehicle-job-assignment.repository";
 import { mapGateTicket, mapMarketJob, mapTicketProduct, mapVehicleJob } from "./mappers";
 import { client, requireDto } from "./repository-utils";
@@ -13,8 +13,7 @@ import type { CurrentTicketProgressDto, VehicleJobDetailResponse, VehicleJobDto,
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function แปลง vehicle job detail จาก DB — ใช้เฉพาะภายในไฟล์นี้ (getVehicleJobDetail ด้านล่าง) จึงไม่
-// export
+// Function แปลง vehicle job detail จาก DB — ใช้เฉพาะภายในไฟล์นี้ (helper ของ getVehicleJobDetail) จึงไม่ export
 function mapVehicleJobDetail(
   record: Prisma.VehicleJobGetPayload<{
     include: {
@@ -110,13 +109,14 @@ export async function getVehicleJobDetail(
   return vehicleJob ? mapVehicleJobDetail(vehicleJob) : null;
 }
 
+// Function เริ่มงาน VehicleJob: ตั้ง workStartedAt ครั้งแรก (ถ้ายังไม่เคยตั้ง) และเปลี่ยน status เป็น WORKING
 export async function markVehicleJobInProgress(
   vehicleJobId: number,
   connection?: DbConnection,
 ): Promise<VehicleJobDto> {
   const db = client(connection);
 
-  // Function ตั้ง workStartedAt ครั้งแรกที่รถเริ่มทำงานจริง
+  // ตั้ง workStartedAt เฉพาะครั้งแรกที่รถเริ่มทำงานจริง (ไม่ทับถ้าเคยตั้งแล้ว)
   await db.vehicleJob.updateMany({
     where: {
       id: vehicleJobId,
@@ -174,6 +174,7 @@ export async function updateGateTicketStatus(
   return requireDto(mapGateTicket(ticket), "gate ticket status update");
 }
 
+// Function หาตั๋วที่ยังไม่ปิด (non-terminal) ใบแรกของ VehicleJob พร้อมข้อมูลตลาด
 export async function findCurrentOpenTicketByVehicleJob(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -222,6 +223,7 @@ export async function findCurrentOpenTicketByVehicleJob(
   return null;
 }
 
+// Function คำนวณความพร้อมของทีมงาน (จำนวนที่ scan เข้างานแล้วเทียบกับจำนวนที่ต้องการ)
 export async function getVehicleWorkReadiness(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -256,9 +258,8 @@ export async function listDispatchableVehicleJobs(
   const db = client(connection);
   const vehicleJobs = await db.vehicleJob.findMany({
     where: {
-      // status: WORKING เท่านั้น (ไม่รวม RELEASED) — งานที่ release-workers ปล่อยทีมกลับคิวไปแล้ว
-      // จะไม่ถูกดึง worker ใหม่กลับเข้ามาซ้ำ จนกว่า Gate จะเพิ่ม booth ใหม่ (เปิด dispatch คืนให้เอง)
-      // หรือ Admin เปิด Dispatch กลับเองผ่าน /wait
+      // status: WORKING เท่านั้น (ไม่รวม RELEASED) — งานที่ release-workers ปล่อยทีมกลับคิวแล้ว
+      // จะไม่ถูกดึง worker ใหม่จนกว่า Gate จะเปิด booth ใหม่ หรือ Admin เปิด dispatch คืนเองผ่าน /wait
       status: VEHICLE_JOB_STATUS.WORKING,
     },
     orderBy: {
@@ -313,7 +314,7 @@ export async function updateVehicleJobStatus(
     },
     data: {
       status,
-      // Function ตั้ง completedAt จากจุด lifecycle กลางเท่านั้น
+      // ตั้ง completedAt เฉพาะตอนเปลี่ยนเป็น COMPLETED เท่านั้น
       ...(status === VEHICLE_JOB_STATUS.COMPLETED && {
         completedAt: new Date(),
       }),

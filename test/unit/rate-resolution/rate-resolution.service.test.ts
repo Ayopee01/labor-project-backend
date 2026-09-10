@@ -11,10 +11,11 @@ import type { DbConnection } from "../../../src/types/shared/common.type";
 
 /* -------------------------------------- Test Env -------------------------------------- */
 
-process.env.JWT_ACCESS_SECRET = "test-access-secret";
-process.env.JWT_REFRESH_SECRET = "test-refresh-secret";
-process.env.JWT_LOGIN_CHALLENGE_SECRET = "test-login-challenge-secret";
-process.env.REFRESH_TOKEN_HASH_SECRET = "test-refresh-hash-secret";
+// ต้องยาวอย่างน้อย 32 ตัวอักษรเพื่อผ่านเกณฑ์ความแข็งแรงของ Secret ที่ jwt.ts/refresh-token-hash.ts เช็ค
+process.env.JWT_ACCESS_SECRET = "test-access-secret-min-32-charss";
+process.env.JWT_REFRESH_SECRET = "test-refresh-secret-min-32-chars";
+process.env.JWT_LOGIN_CHALLENGE_SECRET = "test-login-challenge-secret-min-32";
+process.env.REFRESH_TOKEN_HASH_SECRET = "test-refresh-hash-secret-min-32-ok";
 
 /* -------------------------------------- Module Loader Patch -------------------------------------- */
 // Mock master-data repository through Module._load before loading the service

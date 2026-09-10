@@ -6,8 +6,6 @@ datasource db {
   provider = "postgresql"
 }
 
-// Account = Admin / back-office identity เท่านั้น (login, permission, session) Worker ทั้งหมด
-// ย้ายไปเป็น MasterWorker แล้ว — ห้ามเก็บ worker profile/sync field กลับมาที่นี่อีก
 model Account {
   id              Int      @id @default(autoincrement())
   username        String   @unique @db.VarChar(100)
@@ -40,10 +38,6 @@ model Account {
   @@map("accounts")
 }
 
-// MasterWorker = Worker master data ที่ sync มาจาก Master DB ภายนอก (LMSDB.dbo.LaborMaster ผ่าน
-// docs/worker.csv ตอน seed) ผูกด้วย laborId เป็น identifier หลักฝั่ง Master ส่วน id (internal) ใช้
-// เป็น FK ให้ทุกตารางธุรกิจในระบบนี้ Worker ที่ source = "admin_created" ยังไม่มี laborId จนกว่าจะถูก
-// จับคู่กับ Master ภายหลัง (laborId จึงต้องเป็น nullable unique)
 model MasterWorker {
   id Int @id @default(autoincrement())
 
@@ -55,12 +49,7 @@ model MasterWorker {
   fullName String? @map("full_name") @db.VarChar(255)
 
   laborStatus String? @map("labor_status") @db.VarChar(50)
-  // ตัวบอก active/inactive หลักของ Worker ทั้งระบบ (1 = active) — ใช้เช็คตอน login (auth.service.ts)
-  // seed จาก docs/worker.csv: derive จาก laborStatus ("Working" -> 1, "Resign" -> 0)
   status      Int?
-  // seed จาก docs/worker.csv: derive จาก laborCode (ตัดตัวอักษรนำหน้าออก เช่น "CG000085" -> 85) —
-  // ค่าที่ได้ชนกันได้ข้าม prefix ต่างกัน (CG000004/MB000004/MN000004 ล้วน -> 4) เพราะ CSV ไม่มีคอลัมน์
-  // "ตัดตัวอักษรแล้ว" คู่กับ laborCode แบบที่ laborCoat มี coatNo
   workCode    Int?    @map("work_code")
 
   nationality   String?   @db.VarChar(100)
@@ -71,34 +60,19 @@ model MasterWorker {
   laborCoat  String? @map("labor_coat") @db.VarChar(50)
   coatNo     String? @map("coat_no") @db.VarChar(50)
 
-  // Shift assignment เดียวสำหรับทั้ง Master sync และ queue/dispatch/attendance — timeWork คือ
-  // "Morning"/"Evening" (derive จาก timeIn ผ่าน resolveTimeWorkFromTimeIn: start >= 18:00 -> Evening
-  // มิฉะนั้น Morning) ตั้งค่าเริ่มต้นจาก docs/worker.csv ตอน sync แต่ admin แก้ทับภายหลังได้ตามปกติผ่าน
-  // PATCH /api/admin/users/:workerCode (src/utils/shift.ts)
   timeWork String? @map("time_work") @db.VarChar(50)
   timeIn   String? @map("time_in") @db.Char(5)
   timeOut  String? @map("time_out") @db.Char(5)
 
   picture Bytes?
 
-  // Path/URL ของไฟล์รูปที่ decode ออกจาก picture (Bytes) แล้วเขียนลง disk จริง — ต่างจาก picture ที่
-  // เป็น raw bytes ดิบจาก sync, image_url คือสิ่งที่ endpoint ฝั่ง Worker Mobile ใช้ตอบกลับจริง (ดู
-  // WORKER_IMAGE_STORAGE_DIR ใน .env) null ถ้ายังไม่เคย decode หรือ worker คนนี้ไม่มีรูป
   imageUrl String? @map("image_url") @db.VarChar(512)
 
-  // UpdateDate ล่าสุดจาก Master ที่เคย sync มา (ไม่ใช่ updatedAt ของแถวนี้ในระบบเรา) ใช้เทียบตอน sync
-  // รอบถัดไปว่า Master มีข้อมูลใหม่กว่าหรือไม่
   updateDate DateTime? @map("update_date") @db.Timestamp(3)
 
-  // Preference สำหรับ localize การแจ้งเตือน — เดิมอยู่บน Account เช่นกัน เป็น operational
-  // preference ของระบบเรา ไม่ได้มาจาก Master
   lang String @default("TH") @db.VarChar(10)
 
-  // "master_sync" = ได้มาจาก Worker(1).csv/Master DB, "admin_created" = Admin สร้างเองในระบบ ยังไม่มี
-  // laborId จาก Master
   source       String  @default("master_sync") @db.VarChar(30)
-  // Password ของ Worker = เบอร์โทรศัพท์ hash ด้วย argon2 เดียวกับ Account.passwordHash — ต้อง
-  // re-hash ทุกครั้งที่ telephone เปลี่ยน (ทั้งจาก Admin แก้เองและจาก Master sync)
   passwordHash String? @map("password_hash") @db.VarChar(512)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
@@ -118,8 +92,6 @@ model MasterWorker {
   @@map("master_workers")
 }
 
-// WorkerSession = คู่ขนานของ UserSession แต่สำหรับ Worker (ผูก MasterWorker แทน Account) แยกจาก
-// Admin โดยสิ้นเชิงตามสถาปัตยกรรมใหม่ที่ Worker ไม่มี Account record อีกต่อไป
 model WorkerSession {
   id               Int       @id @default(autoincrement())
   workerId         Int       @map("worker_id")
@@ -208,19 +180,6 @@ model GateClient {
   @@map("gate_clients")
 }
 
-// Model เก็บ Version ของ Worker Mobile Application ทุกเวอร์ชัน (ไม่ลบ record เก่า เพื่อเก็บ
-// History) สถานะ current/scheduled/history ไม่ persist ในตารางนี้ เพราะ derive ได้ปลอดภัยจาก
-// buildNumber + forceUpdateAt เทียบกับเวลา server ตอน query เสมอ (ดู
-// resolveEffectiveMobileAppVersion ใน services/shared/mobile-app-version.service.ts) การ persist
-// สถานะเองจะเสี่ยง inconsistent ถ้าเวลาผ่านไปแล้วไม่มีใครมา sync สถานะให้ตรง
-//
-// สำคัญ: releaseNotificationAt (เวลาส่ง FCM แจ้งเตือนล่วงหน้า) กับ forceUpdateAt (เวลา Version
-// เริ่ม Effective/บังคับ Update) เป็นคนละเรื่องกันโดยเด็ดขาด แต่ทั้งคู่ผูก FCM คนละข้อความกัน:
-// - releaseNotificationAt = null -> ส่งทันทีตอน POST/PATCH, ถ้ามีค่า -> ตั้งเวลาส่งผ่าน BullMQ
-// - forceUpdateAt (ถ้ามีค่า) -> เมื่อถึงเวลานี้ ระบบส่ง FCM มาตรฐานอัตโนมัติอีกครั้งว่าเริ่มบังคับ
-//   อัปเดตแล้ว (ไม่ต้อง Admin ตั้งค่าอะไรเพิ่ม) "พร้อมกับ" activate version — แต่ activate version
-//   เองยัง resolve จาก forceUpdateAt เทียบเวลา server เท่านั้น ไม่ได้พึ่ง BullMQ job นี้ที่ทำหน้าที่
-//   แค่ยิง FCM คู่ขนานไปเฉยๆ ถ้า BullMQ job พลาดด้วยเหตุใดก็ตาม version ก็ยัง activate ตรงเวลาปกติ
 model MobileAppVersion {
   id                            Int       @id @default(autoincrement())
   version                       String    @db.VarChar(50)
@@ -228,8 +187,6 @@ model MobileAppVersion {
   releaseAt                     DateTime? @map("release_at") @db.Timestamp(3)
   androidDownloadUrl            String?   @map("android_download_url") @db.VarChar(512)
   iosDownloadUrl                String?   @map("ios_download_url") @db.VarChar(512)
-  // มีค่า = Version นี้มี deadline บังคับ Update (ทั้งเวลา Activate และเวลาส่ง FCM บังคับอัตโนมัติ)
-  // ไม่มีค่า = ไม่บังคับ, Version มีผลทันทีตั้งแต่ CreatedAt แบบ Optional Update
   forceUpdateAt                 DateTime? @map("force_update_at") @db.Timestamp(3)
   releaseNotificationAt         DateTime? @map("release_notification_at") @db.Timestamp(3)
   releaseNotificationSentAt     DateTime? @map("release_notification_sent_at") @db.Timestamp(3)
@@ -294,28 +251,13 @@ model VehicleJob {
   licensePlate         String    @map("license_plate") @db.VarChar(50)
   licensePlateProvince String?   @map("license_plate_province") @db.VarChar(100)
   vehicleType          String?   @map("vehicle_type") @db.VarChar(100)
-  // Aggregate SUM of every MarketJob (Business Ticket) workersRequired under this vehicle,
-  // recomputed whenever a MarketJob is created/updated. Drives dispatch sizing only.
   workersRequired      Int       @map("workers_required")
   dispatchNow          Boolean   @default(false) @map("dispatch_now")
   status               String    @default("WAIT") @db.VarChar(30)
-  // Set once, the first time this vehicle job's status becomes WORKING (whole team scanned in —
-  // see markVehicleJobInProgress). Guarded so repeated calls never overwrite it with a later time.
   workStartedAt        DateTime? @map("work_started_at") @db.Timestamp(3)
   driverQrToken        String    @unique @map("driver_qr_token") @db.VarChar(255)
-  // Derived count of active (non-cancelled) Tickets under this vehicle at the moment of the
-  // latest Gate create — Gate never declares this upfront anymore, it is just a snapshot for
-  // display. Not used as a gate/threshold for anything.
   expectedTicketCount  Int?      @map("expected_ticket_count")
-  // Set immediately the first time any Ticket is created for this vehicle (Gate has no separate
-  // "done sending" signal anymore — every Gate create is a complete, standalone Ticket). Required,
-  // alongside every Ticket/booth being terminal, before the vehicle can be marked COMPLETED and
-  // its workers returned to queue — in practice this now just means "at least one Ticket exists."
   ticketsClosedAt      DateTime? @map("tickets_closed_at") @db.Timestamp(3)
-  // Set once, at the single central lifecycle point (closeCompletedVehicleJobIfReady →
-  // updateVehicleJobStatus) that transitions status to COMPLETED — covers both manual vendor
-  // confirm and BullMQ auto-confirm timeout. Authoritative source for Work History completed_at;
-  // never derive completion time from MarketJob.completedAt or updatedAt once this is set.
   completedAt          DateTime? @map("completed_at") @db.Timestamp(3)
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
@@ -332,9 +274,6 @@ model VehicleJob {
   @@map("vehicle_jobs")
 }
 
-// MarketJob = Ticket (Business Ticket). One row per Gate-created Ticket, always
-// against exactly one market, nested under exactly one VehicleJob (TicketNumber).
-// A vehicle may own many MarketJob rows over time.
 model MarketJob {
   id                   Int       @id @default(autoincrement())
   vehicleJobId         Int       @map("vehicle_job_id")
@@ -342,14 +281,11 @@ model MarketJob {
   ticketCreatedAt      DateTime  @map("ticket_created_at") @db.Timestamp(3)
   boothCount           Int       @default(1) @map("booth_count")
   gateTransactionRef   String    @map("gate_transaction_ref") @db.VarChar(100)
-  // This Ticket's own worker requirement (summed onto VehicleJob.workersRequired).
   workersRequired      Int       @map("workers_required")
   marketCode           String    @map("market_code") @db.VarChar(100)
   marketName           String    @map("market_name") @db.VarChar(255)
   dropoffPoint         String?   @map("dropoff_point") @db.VarChar(255)
   status               String    @default("WAIT") @db.VarChar(30)
-  // Set once, when this Ticket's financial finalize locks the worker roster. Roster sync
-  // and every roster mutation must respect this once it is non-null.
   workerRosterLockedAt DateTime? @map("worker_roster_locked_at") @db.Timestamp(3)
   finalStallAmount     Decimal?  @map("final_stall_amount") @db.Decimal(18, 2)
   financializedAt      DateTime? @map("financialized_at") @db.Timestamp(3)
@@ -363,11 +299,6 @@ model MarketJob {
   gateRequestLogs GateRequestLog[]
   adminActionLogs AdminActionLog[]
 
-  // ticketNo ไม่ unique แบบเต็มรูปแบบอีกต่อไป — Admin ยกเลิก Ticket ที่ผิดได้ (status = CANCELLED)
-  // แล้ว Gate ส่ง ticketNo เดิมซ้ำเพื่อสร้างใหม่ได้ทันที แถวเดิมที่ถูกยกเลิกยังเก็บไว้เป็นประวัติ
-  // ความ unique จริงบังคับด้วย partial unique index ที่ migration.sql (เฉพาะแถวที่ status <>
-  // 'CANCELLED') Prisma schema syntax ไม่รองรับ partial unique index ตรงๆ จึงมีแค่ index ธรรมดา
-  // ไว้ช่วย query ตรงนี้
   @@index([vehicleJobId, ticketNo])
   @@index([vehicleJobId, status])
   @@index([vehicleJobId, marketCode])
@@ -520,9 +451,6 @@ model MasterRate {
   @@map("master_rate")
 }
 
-// TicketWorker = a worker's roster membership on one Business Ticket (MarketJob),
-// not one booth. This is the participation/financial-eligibility record — see
-// VehicleJobAssignment for the vehicle-level (TicketNumber) team membership.
 model TicketWorker {
   id                  Int                         @id @default(autoincrement())
   marketJobId         Int                         @map("market_job_id")
@@ -547,13 +475,6 @@ model TicketWorker {
   @@map("ticket_workers")
 }
 
-// Snapshot of which TicketWorker rows were still WORKING at the moment one specific booth
-// (GateTicket) was confirmed (vendor confirm or auto-confirm timeout) — captured once, in
-// confirmTicketCompletion. This is the authoritative worker list + divisor used for THIS booth's
-// products at financialize time, instead of the Ticket-wide roster taken once at the very end of
-// the whole Business Ticket. This keeps payout fair per booth: a worker cancelled from the team
-// after this booth already confirmed does not shrink this booth's divisor, and a worker who was
-// active when this booth confirmed still gets counted here even if cancelled from the Ticket later.
 model GateTicketWorkerSnapshot {
   id             Int      @id @default(autoincrement())
   gateTicketId   Int      @map("gate_ticket_id")
@@ -568,14 +489,6 @@ model GateTicketWorkerSnapshot {
   @@map("gate_ticket_worker_snapshots")
 }
 
-// Snapshot of which TicketWorker rows were WORKING at the exact moment one specific
-// TicketCompletionSubmission was created (in createTicketCompletionSubmission) — the same set used
-// for that submission's workerCountSnapshot, just as a full roster instead of a count. Distinct
-// from GateTicketWorkerSnapshot (captured later, at booth Confirm time): a worker cancelled or
-// reassigned between Submit and Confirm makes these two snapshots diverge — this one answers "who
-// was on the team when the count was actually submitted", used by Work History's
-// SubmissionWorkerSnapshot[], never the payout divisor (GateTicketWorkerSnapshot stays the only
-// source of truth for that).
 model SubmissionWorkerSnapshot {
   id             Int      @id @default(autoincrement())
   submissionId   Int      @map("submission_id")
@@ -590,12 +503,6 @@ model SubmissionWorkerSnapshot {
   @@map("submission_worker_snapshots")
 }
 
-// Admin ถอน worker คนหนึ่งออกจากแค่ Booth เดียว (payout divisor ของ booth นี้เท่านั้น) โดยไม่แตะ
-// TicketWorker.status เลย — worker ยังเป็นสมาชิก WORKING ของ Business Ticket ตามปกติ ยังทำ Booth
-// อื่นในใบเดียวกันต่อได้ ต่างจาก cancelTicketWorker (ถอนออกทั้ง Business Ticket) ตรงนี้แคบกว่า
-// อีกชั้น — ถอนได้จนกว่า Booth นั้นจะเคยถูกส่งยอดแล้ว (เหมือน guard ของการยกเลิกทั้ง Booth)
-// confirmTicketCompletion ต้อง exclude worker ที่มีแถวนี้ตอนสร้าง GateTicketWorkerSnapshot ของ
-// Booth นั้น
 model GateTicketWorkerExclusion {
   id             Int      @id @default(autoincrement())
   gateTicketId   Int      @map("gate_ticket_id")
@@ -613,38 +520,15 @@ model GateTicketWorkerExclusion {
 model TicketCompletionSubmission {
   id                   Int       @id @default(autoincrement())
   ticketId             Int       @map("ticket_id")
-  // Submitter คือ Admin หรือ Worker อย่างใดอย่างหนึ่งเท่านั้น (ดู submittedByRole) — แยกเป็นสอง FK
-  // คนละตารางเพราะ Worker ไม่มี Account record อีกต่อไปตั้งแต่ MasterWorker refactor พอดี ๆ กับ role
-  // ต้องมีค่าตรงกับ FK ที่ไม่ null เสมอ (admin -> submittedByAccountId, worker -> submittedByWorkerId)
   submittedByAccountId Int?      @map("submitted_by_account_id")
   submittedByWorkerId  Int?      @map("submitted_by_worker_id")
-  // Snapshot of the submitting account's role at the moment of THIS submission ("worker" or
-  // "admin" — see TICKET_SUBMITTER_ROLE). Must always be written explicitly by the service that
-  // creates this row, never derived by joining Account.role at read time — Account.role can
-  // change later (e.g. an admin account demoted), which would otherwise silently rewrite history.
   submittedByRole      String    @map("submitted_by_role") @db.VarChar(20)
   status               String    @default("DELIVERED") @db.VarChar(30)
   confirmedAt          DateTime? @map("confirmed_at") @db.Timestamp(3)
   rejectedAt           DateTime? @map("rejected_at") @db.Timestamp(3)
-  // Reject reason captured per-submission at the moment of this specific reject, unlike
-  // GateTicket.rejectReason which only ever holds the latest/current reason and gets
-  // overwritten by later submissions. Used for Work History's per-rejection audit trail.
   rejectReason         String?   @map("reject_reason") @db.Text
   resolvedByLineUserId String?   @map("resolved_by_line_user_id") @db.VarChar(255)
-  // Count of TicketWorker rows with status = WORKING at the exact moment this submission was
-  // created (after syncTicketWorkersFromVehicleAssignments), for Work History's per-submission
-  // Booth worker_count. Distinct from GateTicketWorkerSnapshot (roster at Confirm/Financialize
-  // time) and from Financial worker_count (TicketProductFinancial.workerCount) — never mix the
-  // three. Nullable because rows created before this feature have no reliable historical count;
-  // never backfilled from current data.
   workerCountSnapshot  Int?      @map("worker_count_snapshot")
-  // VehicleJobAssignment that the submitting worker was actively working under at the exact
-  // moment this submission was created (resolved the same way as
-  // findCurrentAssignmentByVehicleJobRefAndWorker: latest accepted, not-yet-terminated assignment
-  // for that worker on this VehicleJob). Used by Work History's Workers[] to attribute
-  // submitted_at to the correct work-cycle instead of guessing across transactions. Null for
-  // admin-submitted-on-behalf rows (the admin account has no assignment of its own) and for rows
-  // created before this feature — never backfilled from current data.
   assignmentId         Int?      @map("assignment_id")
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
@@ -765,10 +649,6 @@ model TicketProductFinancial {
   workerPayoutTotal Decimal               @map("worker_payout_total") @db.Decimal(18, 2)
   fundAmount        Decimal               @map("fund_amount") @db.Decimal(20, 4)
   finalizedAt       DateTime              @map("finalized_at") @db.Timestamp(3)
-  // Snapshot สีเสื้อ (NAVY/BLUE/GREEN/MIXED) ของ worker ทุกคนที่หารเงินแถวนี้ ณ ตอน finalize เท่านั้น
-  // (ดู SHIRT_COLOR_SNAPSHOT ใน constants/job-status.ts) — nullable เพราะข้อมูลเก่าก่อนมีฟีเจอร์นี้ไม่มี
-  // ค่า ต้องแสดงเป็น "UNKNOWN" ตอนอ่าน ห้าม derive จาก MasterWorker.laborColor ปัจจุบันย้อนหลัง เพราะ
-  // ค่านั้นแก้ทีหลังได้ (เหมือน rate snapshot อื่นๆ บน TicketProduct)
   shirtColorSnapshot String?              @map("shirt_color_snapshot") @db.VarChar(20)
   createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamp(3)
@@ -823,10 +703,6 @@ model VehicleJobAssignment {
   acceptedAt       DateTime? @map("accepted_at") @db.Timestamp(3)
   scannedAt        DateTime? @map("scanned_at") @db.Timestamp(3)
   completedAt      DateTime? @map("completed_at") @db.Timestamp(3)
-  // Set when Admin explicitly releases this worker back to the FIFO queue after they have
-  // submitted all their assigned booths, without waiting for the whole TicketNumber to close.
-  // Distinct from completedAt: completed means the whole vehicle job finished; released means
-  // only this worker's own work is done early.
   releasedAt       DateTime? @map("released_at") @db.Timestamp(3)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
@@ -910,19 +786,10 @@ model WorkerPushToken {
   @@map("worker_push_tokens")
 }
 
-// Central audit log for Admin actions that need a reason + actor + timeline entry (override
-// count, force wait, release workers, force worker status, ...). Kept generic/append-only
-// rather than adding cancelled_by/waited_by/released_by columns scattered across multiple
-// tables — Work History's Timeline reads this directly as ADMIN_ACTION entries.
-//
-// vehicleJobId is nullable because some actions (e.g. force worker status) target a Worker with
-// no VehicleJob context at all — an idle worker sitting in the queue has none.
 model AdminActionLog {
   id             Int      @id @default(autoincrement())
   vehicleJobId   Int?     @map("vehicle_job_id")
   gateTicketId   Int?     @map("gate_ticket_id")
-  // Business Ticket (market job) this action targeted, when the action is scoped narrower than
-  // the whole vehicle job but broader than a single booth (e.g. cancelling a whole TicketNo).
   marketJobId    Int?     @map("market_job_id")
   actionType     String   @map("action_type") @db.VarChar(40)
   reasonCode     String?  @map("reason_code") @db.VarChar(50)
@@ -943,20 +810,10 @@ model AdminActionLog {
   @@map("admin_action_logs")
 }
 
-// Append-only auth/security event log (27.12, phase 1: login/logout/force-login only) — separate
-// from AdminActionLog because that table requires a non-null Account actor and is scoped to
-// job/ticket operational actions, while a failed login may have no resolvable actor at all (unknown
-// username). actorAccountId/actorWorkerId are plain non-FK ids (no relation, mirroring how worker
-// refs are already handled loosely elsewhere in this schema) so a later account/worker deletion can
-// never be blocked by, or silently cascade into, security history. actorUsername/actorFullName are
-// denormalized snapshots taken at write time, not joined at read time — keeps this table fully
-// self-contained for the merged GET /api/admin/audit/events timeline.
 model SecurityAuditLog {
   id            Int      @id @default(autoincrement())
   eventType     String   @map("event_type") @db.VarChar(50)
   outcome       String   @db.VarChar(20)
-  // "admin" | "worker" | null (actor could not be resolved at all, e.g. login with an unknown
-  // username — never fabricate a value here just to fill the column)
   actorType     String?  @map("actor_type") @db.VarChar(20)
   actorAccountId Int?    @map("actor_account_id")
   actorWorkerId Int?     @map("actor_worker_id")

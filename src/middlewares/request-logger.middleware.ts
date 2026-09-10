@@ -1,13 +1,17 @@
+// Import Library
 import type { NextFunction, Request, Response } from "express";
-
+// Import Utils
 import { detectClientType } from "../utils/client-type";
 import { logger } from "../utils/logger";
 
+/* -------------------------------------- Config -------------------------------------- */
+
+// Config ของ path ที่ไม่ต้อง log request
 const SKIPPED_LOG_PATHS = new Set(["/ready"]);
+// Config ของ header ที่ใช้ระบุ version ของ client
 const CLIENT_VERSION_HEADER = "x-client-version";
 
-// Function เลือก log level ตาม status code — 5xx = error (bug/failure ฝั่ง server), 4xx = warn (client
-// error ที่คาดเดาได้ เช่น validation/permission), อื่นๆ = info (สำเร็จปกติ)
+// Function resolve log level ตาม status code ของ response
 function resolveLogLevel(statusCode: number): "info" | "warn" | "error" {
   if (statusCode >= 500) {
     return "error";
@@ -20,6 +24,7 @@ function resolveLogLevel(statusCode: number): "info" | "warn" | "error" {
   return "info";
 }
 
+// Function สร้าง context สำหรับ log ของ request
 export function buildRequestLogContext(input: {
   requestId?: string;
   method: string;
@@ -44,6 +49,7 @@ export function buildRequestLogContext(input: {
   };
 }
 
+// Function จัดการ request logger middleware สำหรับ Express middleware
 export function requestLoggerMiddleware(
   req: Request,
   res: Response,

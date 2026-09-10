@@ -20,11 +20,12 @@ test(
   async () => {
     assertSafeTestDatabaseUrl();
 
-    process.env.JWT_ACCESS_SECRET = "service-test-access-secret";
-    process.env.JWT_REFRESH_SECRET = "service-test-refresh-secret";
+    // ต้องยาวอย่างน้อย 32 ตัวอักษรเพื่อผ่านเกณฑ์ความแข็งแรงของ Secret ที่ jwt.ts/refresh-token-hash.ts เช็ค
+    process.env.JWT_ACCESS_SECRET = "service-test-access-secret-min-32";
+    process.env.JWT_REFRESH_SECRET = "service-test-refresh-secret-min-32";
     process.env.JWT_LOGIN_CHALLENGE_SECRET =
-      "service-test-login-challenge-secret";
-    process.env.REFRESH_TOKEN_HASH_SECRET = "service-test-refresh-hash-secret";
+      "service-test-login-challenge-secret-min-32";
+    process.env.REFRESH_TOKEN_HASH_SECRET = "service-test-refresh-hash-secret-min-32";
 
     const authService = await import("../../../src/services/auth.service");
     const { workerRepository } = await import(

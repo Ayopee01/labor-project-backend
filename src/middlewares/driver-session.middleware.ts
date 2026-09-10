@@ -1,9 +1,8 @@
+
 // Import Library
 import type { NextFunction, Request, Response } from "express";
-
 // Import Repositories
 import * as driverRepository from "../repositories/driver.repository";
-
 // Import Utils
 import ApiError from "../utils/api-error";
 import { extractBearerToken } from "../utils/bearer-token";

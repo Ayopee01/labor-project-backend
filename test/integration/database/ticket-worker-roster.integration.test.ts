@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ASSIGNMENT_STATUS, TICKET_WORKER_STATUS } from "../../../src/constants/job-status";
+import { ASSIGNMENT_STATUS, TICKET_WORKER_STATUS } from "../../../src/constants/status";
 import * as vehicleJobLifecycleService from "../../../src/services/shared/vehicle-job-lifecycle.service";
 import type { DbConnection } from "../../../src/types/shared/common.type";
 import { assertSafeTestDatabaseUrl } from "../../setup/test-env";
@@ -159,7 +159,7 @@ test(
 
       // --- Scenario 3: worker2's assignment moves to RELEASED (still inside
       // SCANNED_ASSIGNMENT_STATUSES on purpose) -> sync must NOT cancel worker2's roster row.
-      // This is the exact invariant documented on SCANNED_ASSIGNMENT_STATUSES in job-status.ts ---
+      // This is the exact invariant documented on SCANNED_ASSIGNMENT_STATUSES in status.ts ---
       await tx.vehicleJobAssignment.updateMany({
         where: { vehicleJobId, workerId: worker2 },
         data: { status: ASSIGNMENT_STATUS.RELEASED, releasedAt: new Date() },

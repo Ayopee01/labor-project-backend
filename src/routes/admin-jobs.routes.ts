@@ -44,12 +44,8 @@ router.post(
   }
 );
 
-// Route ยกเลิกรวม — scope ตัดสินจาก body ว่าระบุ ticketNo/boothCode/workerCode ตัวไหนมาบ้าง
-// (ticketNumber อย่างเดียว = ทั้งคัน, +ticketNo = ทั้ง Business Ticket, +boothCode = แค่ Booth,
-// +workerCode ไม่มี ticketNo = worker คนนั้นทั้งคัน, +ticketNo+workerCode ไม่มี boothCode = worker
-// คนนั้นออกจาก Business Ticket ใบนั้น) แทนที่ /jobs/cancel, tickets/:ticketNo/cancel,
-// stalls/:stallCode/cancel, workers/:workerCode/assignment/cancel,
-// tickets/:ticketNo/workers/:workerCode/cancel เดิมทั้งหมดด้วยเส้นเดียว
+// Route ยกเลิกรวม scope ตัดสินจาก body ว่าระบุ ticketNo/boothCode/workerCode ตัวไหนมาบ้าง
+// (ticketNumber อย่างเดียว = ทั้งคัน, +ticketNo = ทั้ง business ticket, +boothCode = แค่ booth, +workerCode = worker คนนั้น)
 router.post(
   "/vehicle-jobs/assignment/cancel",
   permissionMiddleware(["jobs:cancel"]),
@@ -92,8 +88,7 @@ router.get(
   }
 );
 
-// Route รายได้ Worker รายวัน — อยู่ใต้ namespace /vehicle-jobs/history เดิม (ไม่สร้าง /work-history
-// namespace ใหม่) เพราะเป็นรายงานที่ derive จากข้อมูล Vehicle Job History เดียวกัน
+// Route รายได้ worker รายวัน อยู่ใต้ namespace /vehicle-jobs/history เดิมเพราะ derive จากข้อมูลเดียวกัน
 router.get(
   "/vehicle-jobs/history/daily-worker-income",
   permissionMiddleware(["jobs:read"]),
@@ -107,8 +102,7 @@ router.get(
   }
 );
 
-// Route รายงานค่าลงสินค้าแผงค้ารายวัน — อยู่ใต้ namespace เดียวกับ daily-worker-income ด้านบนตาม
-// docs/backend-missing-apis-spec V8.md ข้อ 28.7.4
+// Route รายงานค่าลงสินค้าแผงค้ารายวัน อยู่ใต้ namespace เดียวกับ daily-worker-income ด้านบน
 router.get(
   "/vehicle-jobs/history/daily-stall-fees",
   permissionMiddleware(["jobs:read"]),
@@ -122,8 +116,7 @@ router.get(
   }
 );
 
-// Route รายงานค่าลงสินค้าแผงค้ารายเดือน — group ด้วย market_code+booth_code+shirt_color ต่างจาก
-// daily-stall-fees ด้านบนที่ list ทีละแถว TicketProductFinancial ตรงๆ
+// Route รายงานค่าลงสินค้าแผงค้ารายเดือน group ด้วย market_code+booth_code+shirt_color ต่างจาก daily-stall-fees ที่ list ทีละแถวตรงๆ
 router.get(
   "/vehicle-jobs/history/monthly-stall-fees",
   permissionMiddleware(["jobs:read"]),
@@ -186,9 +179,8 @@ router.post(
   }
 );
 
-// Route Admin ส่ง/แก้ยอดสินค้าของ Booth หนึ่งใบแทน Worker
-// ต้องระบุ ticketNo (Business Ticket) มาด้วยเสมอ เพราะ stallCode ไม่ unique ข้าม Business Ticket
-// คนละตลาดของรถคันเดียวกัน (unique แค่ภายใน MarketJob เดียว) — เหมือน tickets/:ticketNo/workers/... ด้านบน
+// Route admin ส่ง/แก้ยอดสินค้าของ booth หนึ่งใบแทน worker ต้องระบุ ticketNo เสมอ
+// เพราะ stallCode ไม่ unique ข้าม business ticket (unique แค่ภายใน MarketJob เดียว)
 router.post(
   "/vehicle-jobs/:ticketNumber/tickets/:ticketNo/stalls/:stallCode/override-count",
   permissionMiddleware(["jobs:override_count"]),

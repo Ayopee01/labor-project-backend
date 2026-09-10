@@ -1,24 +1,16 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-/**
- * Sources:
- * - [CargoCheckpoint].[dbo].[tbm_Market]
- * - [CargoCheckpoint].[dbo].[tbm_Booth]
- *
- * Mapping rules:
- * - One master_market row represents one MarketCode + BoothCode mapping.
- * - MarketName is joined from tbm_Market by MarketCode.
- * - Source booth rows without MarketCode are excluded because Gate lookup requires MarketCode.
- * - Duplicate MarketCode + BoothCode pairs keep the latest source row by UpdateDate,
- *   then CreateDate, then the highest booth DocId.
- * - If tbm_Booth contains a MarketCode not found in tbm_Market, marketName/sourceMarketId
- *   remain null instead of inventing a mapping.
- * - Source timestamps are interpreted as Asia/Bangkok (+07:00).
- */
 
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function แปลง timestamp จาก master เป็น Date โดยตีความเป็นเวลา Asia/Bangkok
 const asBangkokDate = (value: string): Date =>
   new Date(`${value.replace(" ", "T")}+07:00`);
 
+/* -------------------------------------- Types -------------------------------------- */
+
 type MasterMarketSeed = Prisma.MasterMarketUncheckedCreateInput;
+
+/* -------------------------------------- Master Data -------------------------------------- */
 
 const masterMarketSeedDataPart01: MasterMarketSeed[] = [
   {

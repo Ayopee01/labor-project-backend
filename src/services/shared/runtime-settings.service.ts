@@ -13,6 +13,7 @@ let cachedSettings: {
   value: RuntimeSettings;
 } | null = null;
 
+// Function รวม settings แบบ key/value จาก DB ให้เป็น RuntimeSettings ที่ type ตรง พร้อมเช็คว่าครบทุก key ที่ต้องมี
 function mergeRuntimeSettings(
   storedSettings: { key: string; value: string }[],
 ): RuntimeSettings {
@@ -46,6 +47,7 @@ export function clearRuntimeSettingsCache(): void {
   cachedSettings = null;
 }
 
+// Function ดึง Runtime Settings พร้อม cache ในหน่วยความจำ (TTL 30 วินาที) กัน query DB ถี่เกินไป
 export async function getRuntimeSettings(): Promise<RuntimeSettings> {
   if (cachedSettings && cachedSettings.expiresAt > Date.now()) {
     return cachedSettings.value;

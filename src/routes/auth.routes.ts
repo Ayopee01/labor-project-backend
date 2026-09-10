@@ -4,8 +4,9 @@ import express from "express";
 import authMiddleware from "../middlewares/auth.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
-import { uploadAdminImageLocal } from "../middlewares/upload.middleware";
+import { matchesImageSignature, uploadAdminImage } from "../middlewares/upload.middleware";
 import * as authService from "../services/auth.service";
+import { uploadAdminProfileImage } from "../config/spaces";
 import ApiError from "../utils/api-error";
 
 import type { Request } from "express";
@@ -13,8 +14,7 @@ import type { SecurityAuditRequestContext } from "../types/shared/security-audit
 
 const router = express.Router();
 
-// Function ดึง IP/User-Agent/RequestId จาก request ปัจจุบันสำหรับ Security Audit Log (27.12) — ไม่มี
-// middleware ใดแนบค่านี้ลง req.auth ให้อัตโนมัติ จึงต้อง extract ตรงนี้แล้วส่งต่อเข้า service เอง
+// Function ดึง IP/User-Agent/RequestId จาก request ปัจจุบันสำหรับ security audit log ไม่มี middleware ใดแนบให้อัตโนมัติ จึง extract เองตรงนี้
 function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
   return {
     ip_address: req.ip ?? null,
@@ -111,8 +111,7 @@ router.get(
   }
 );
 
-// Route เปลี่ยน password ของ Admin ที่ login อยู่เอง — Worker ไม่มี password อิสระให้เปลี่ยน (password
-// มาจาก telephone เสมอ) จึงจำกัดเฉพาะ Admin
+// Route เปลี่ยน password ของ admin ที่ login อยู่เอง (worker ไม่มี password อิสระ ใช้ telephone เสมอ จึงจำกัดเฉพาะ admin)
 router.patch(
   "/me/password",
   authMiddleware,
@@ -173,14 +172,23 @@ router.post(
   authMiddleware,
   sessionMiddleware,
   roleMiddleware(["admin"]),
-  uploadAdminImageLocal.single("file"),
+  uploadAdminImage.single("file"),
   async (req, res, next) => {
     try {
       if (!req.file) {
         throw new ApiError(400, "IMAGE_FILE_REQUIRED", "Image file is required.");
       }
 
-      const imageUrl = `/storage/admin-images/${req.file.filename}`;
+      // ตรวจ magic byte ของเนื้อไฟล์จริงจาก buffer ใน memory (fileFilter เชื่อได้แค่ Content-Type ที่ client ส่งมาเอง)
+      if (!matchesImageSignature(req.file.buffer, req.file.mimetype)) {
+        throw new ApiError(
+          400,
+          "INVALID_IMAGE_TYPE",
+          "Uploaded file content does not match an allowed image type."
+        );
+      }
+
+      const imageUrl = await uploadAdminProfileImage(req.file.buffer, req.file.mimetype);
       const result = await authService.uploadOwnProfileImage(
         req.auth,
         imageUrl,

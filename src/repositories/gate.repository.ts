@@ -2,8 +2,7 @@
 import { Prisma, type MasterMarket } from "@prisma/client";
 
 // Import Dependencies
-import { VEHICLE_JOB_STATUS } from "../constants/job-status";
-import { MASTER_MARKET_ACTIVE_STATUS, MASTER_OWNER_STALL_ACTIVE_STATUS } from "../constants/master-data-status";
+import { MASTER_MARKET_ACTIVE_STATUS, MASTER_OWNER_STALL_ACTIVE_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
 import * as gateTicketRepository from "./shared/gate-ticket.repository";
 import { mapMarketJob, mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
@@ -15,8 +14,7 @@ import type { MarketJobDto, VehicleJobDto, VendorLineTargetDto } from "../types/
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ตรวจว่า master_market แถวนี้ (ตลาด+แผง) ยังใช้งานได้ — boothStatus ต้อง Normal เสมอ ส่วน
-// marketStatus ยอมรับทั้ง null (ไม่เคยตั้งค่า) หรือ Normal
+// Function ตรวจว่า master_market แถวนี้ (ตลาด+แผง) ยังใช้งานได้ — boothStatus ต้อง Normal, marketStatus ยอมรับ null หรือ Normal
 function isActiveMasterMarketBooth(record: {
   boothStatus: string;
   marketStatus: string | null;
@@ -27,8 +25,7 @@ function isActiveMasterMarketBooth(record: {
   );
 }
 
-// Function สร้าง where clause กรองเฉพาะ master_market ที่ใช้งานได้ — ใช้ร่วมกันทุก query ที่ list
-// ตลาด/แผงให้ Gate เลือก
+// Function สร้าง where clause กรองเฉพาะ master_market ที่ใช้งานได้ — ใช้ร่วมกันทุก query ที่ list ตลาด/แผงให้ Gate เลือก
 function activeMasterMarketWhere(): {
   boothStatus: string;
   OR: Array<{ marketStatus: string | null }>;
@@ -109,8 +106,7 @@ export async function findActiveVendorLineTargetsByStall(
   );
 }
 
-// TEST HELPER: ใช้โดย GET /api/gate/options
-// Function ดึงรายการตลาดที่พร้อมใช้สำหรับ Gate integration testing
+// Function ดึงรายการตลาดที่พร้อมใช้ (TEST HELPER สำหรับ GET /api/gate/options)
 export async function listGateMarketOptions(
   marketCode?: string,
   connection?: DbConnection
@@ -140,8 +136,7 @@ export async function listGateMarketOptions(
   });
 }
 
-// TEST HELPER: ใช้โดย GET /api/gate/options
-// Function ดึงรายการแผงของตลาดที่มี Vendor LINE mapping พร้อมใช้งาน
+// Function ดึงรายการแผงของตลาดที่มี Vendor LINE mapping พร้อมใช้งาน (TEST HELPER สำหรับ GET /api/gate/options)
 export async function listGateBoothOptionsByMarketCode(
   marketCode: string,
   connection?: DbConnection
@@ -192,8 +187,7 @@ export async function listGateBoothOptionsByMarketCode(
     }));
 }
 
-// TEST HELPER: ใช้โดย GET /api/gate/options
-// Function ดึงรายการสินค้าและแพ็กเกจที่ยังใช้งานอยู่สำหรับ Gate integration testing
+// Function ดึงรายการสินค้าและแพ็กเกจที่ยังใช้งานอยู่ (TEST HELPER สำหรับ GET /api/gate/options)
 export async function listGateProductPackageOptions(
   connection?: DbConnection
 ) {
@@ -244,9 +238,8 @@ export async function findActiveMarketBoothByCodes(
   return marketBooth;
 }
 
-// Function ล็อก VehicleJob ตาม TicketNumber แล้วอ่านแถวปัจจุบัน (lock ก่อน read เสมอ กัน race condition
-// ตอน Gate ยิงพร้อมกันหลาย request บน TicketNumber เดียวกัน) — ตัดสินใจว่าจะสร้างใหม่หรือ append ให้
-// ผู้เรียก (service) จัดการเอง ฟังก์ชันนี้ทำหน้าที่ query อย่างเดียว ไม่มี business decision
+// Function ล็อก VehicleJob ตาม TicketNumber แล้วอ่านแถวปัจจุบัน (lock ก่อน read กัน race ตอน Gate ยิง
+// ซ้ำพร้อมกันบน TicketNumber เดียวกัน) — ทำหน้าที่ query อย่างเดียว ตัดสินใจสร้างใหม่/append ให้ service จัดการ
 export async function lockAndFindVehicleJobByRef(
   ticketNumber: string,
   connection?: DbConnection
@@ -330,9 +323,8 @@ export async function lockAndFindMarketJobById(
   return requireDto(mapMarketJob(marketJob), "market job lookup");
 }
 
-// Function เพิ่ม booth เข้า MarketJob (Business Ticket) ที่ยัง active อยู่แล้ว — boothCount บวกเพิ่ม
-// เฉพาะแผงใหม่ในคำขอนี้ ส่วน workersRequired ที่จะบันทึกเป็นค่าที่ผู้เรียก (service) ตัดสินใจมาแล้ว
-// (MAX ระหว่างของเดิมกับของคำขอนี้)
+// Function เพิ่ม booth เข้า MarketJob (Business Ticket) ที่ active อยู่ — boothCount บวกเฉพาะแผงใหม่
+// ส่วน workersRequired ใช้ค่าที่ service ตัดสินใจมาแล้ว (MAX ระหว่างของเดิมกับคำขอนี้)
 export async function appendMarketJobBooths(
   marketJobId: number,
   data: {

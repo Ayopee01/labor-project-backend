@@ -119,6 +119,7 @@ export async function resetAcceptTimeoutStreak(
   });
 }
 
+// Function ปิดกะของ worker แบบ idempotent รองรับ Double-submit/Retry โดยไม่ให้ผลลัพธ์เพี้ยนไปจากครั้งแรกที่ปิดจริง
 export async function closeWorkerShift(
   input: WorkerShiftAttendanceWriteInput & {
     reason: WorkerShiftCloseReason;
@@ -126,7 +127,6 @@ export async function closeWorkerShift(
   connection?: DbConnection
 ): Promise<WorkerShiftAttendance> {
   const db = client(connection);
-  const existing = await findByWorkerAndShift(input, connection);
   const now = new Date();
   const shiftSnapshot = buildShiftSnapshot(input);
   const closeData: Prisma.WorkerShiftAttendanceUncheckedUpdateInput = {
@@ -136,27 +136,57 @@ export async function closeWorkerShift(
     offlineAt: now,
   };
 
-  if (existing?.closedAt) {
+  // ปิดแบบมีเงื่อนไข (closedAt: null) กัน Double-submit เขียนทับกัน — เรียกซ้ำต้องได้ค่าของครั้งแรก
+  // ที่ปิดจริงเสมอ ไม่ใช่ค่าจาก Reason ล่าสุด
+  const closedNow = await db.workerShiftAttendance.updateMany({
+    where: {
+      ...buildShiftAttendanceKeyWhere(input),
+      closedAt: null,
+    },
+    data: closeData,
+  });
+
+  if (closedNow.count === 1) {
+    const updated = await findByWorkerAndShift(input, connection);
+
+    if (!updated) {
+      throw new Error("Worker shift attendance disappeared right after being closed.");
+    }
+
+    return updated;
+  }
+
+  // ไม่เจอแถวให้ปิด: อาจปิดไปแล้ว (คืนค่าเดิม) หรือยังไม่เคย Online เลย — กรณีหลัง create ใหม่ แต่ต้อง
+  // กัน P2002 จาก Double-submit ที่แข่งกัน create แถวเดียวกัน (Unique workerId+shiftInstanceKey)
+  const existing = await findByWorkerAndShift(input, connection);
+
+  if (existing) {
     return existing;
   }
 
-  if (existing) {
-    return db.workerShiftAttendance.update({
-      where: {
-        id: existing.id,
+  try {
+    return await db.workerShiftAttendance.create({
+      data: {
+        workerId: input.worker_id,
+        shiftInstanceKey: input.shift_instance_key,
+        ...shiftSnapshot,
+        closedAt: now,
+        closeReason: input.reason,
+        offlineAt: now,
       },
-      data: closeData,
     });
-  }
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const concurrentlyCreated = await findByWorkerAndShift(input, connection);
 
-  return db.workerShiftAttendance.create({
-    data: {
-      workerId: input.worker_id,
-      shiftInstanceKey: input.shift_instance_key,
-      ...shiftSnapshot,
-      closedAt: now,
-      closeReason: input.reason,
-      offlineAt: now,
-    },
-  });
+      if (concurrentlyCreated) {
+        return concurrentlyCreated;
+      }
+    }
+
+    throw error;
+  }
 }

@@ -1,5 +1,5 @@
 // Import Dependencies
-import { VEHICLE_JOB_STATUS } from "../../constants/job-status";
+import { VEHICLE_JOB_STATUS } from "../../constants/status";
 import { mapMarketJob } from "./mappers";
 import { client } from "./repository-utils";
 

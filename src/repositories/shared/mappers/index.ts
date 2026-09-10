@@ -23,7 +23,7 @@ function toIsoString(value: Date | string | null): string | null {
   return value;
 }
 
-// Function จัดการ เป็น date string จาก DB
+// Function แปลงวันที่จาก DB เป็น date string รูปแบบ YYYY-MM-DD
 function toDateString(value: Date | string): string {
   if (value instanceof Date) {
     return value.toISOString().slice(0, 10);
@@ -45,7 +45,7 @@ export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | nu
   return safeAccount;
 }
 
-// Function จัดการ เป็น account role จาก DB
+// Function แปลง role string จาก DB เป็น AccountRole (throw ถ้าไม่รู้จัก)
 function toAccountRole(role: string): AccountRole {
   if ((ACCOUNT_ROLES as readonly string[]).includes(role)) {
     return role as AccountRole;
@@ -54,7 +54,7 @@ function toAccountRole(role: string): AccountRole {
   throw new Error(`Unsupported account role: ${role}`);
 }
 
-// Function จัดการ เป็น account status จาก DB
+// Function แปลง status string จาก DB เป็น AccountStatus (throw ถ้าไม่รู้จัก)
 function toAccountStatus(status: string): AccountStatus {
   if ((ACCOUNT_STATUSES as readonly string[]).includes(status)) {
     return status as AccountStatus;
@@ -63,7 +63,7 @@ function toAccountStatus(status: string): AccountStatus {
   throw new Error(`Unsupported account status: ${status}`);
 }
 
-// Function จัดการ เป็น master worker source จาก DB
+// Function แปลง source string จาก DB เป็น MasterWorkerSource (default เป็น master_sync)
 function toMasterWorkerSource(source: string): MasterWorkerSource {
   if (source === "admin_created") {
     return "admin_created";
@@ -189,9 +189,8 @@ export function mapSession(record: UserSession | null): SessionDto | null {
   };
 }
 
-// Function แปลง session (Worker) จาก DB — คืน SessionDto shape เดียวกับ mapSession เพื่อให้ทุกจุดที่
-// อ่าน req.session (worker-push.service, controllers ฯลฯ) ใช้โค้ดเดียวกันได้ไม่ว่า session จะมาจาก
-// user_sessions (Admin) หรือ worker_sessions (Worker) — account_id ในที่นี้คือ MasterWorker.id
+// Function แปลง session (Worker) จาก DB ให้เป็น SessionDto shape เดียวกับ mapSession
+// เพื่อให้โค้ดที่อ่าน session ใช้ร่วมกันได้ทั้ง Admin และ Worker (account_id คือ MasterWorker.id)
 export function mapWorkerSession(record: WorkerSession | null): SessionDto | null {
   if (!record) {
     return null;

@@ -2556,8 +2556,22 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
     cancelled_at: null,
     completed_at: null,
   };
+  // Roster เพิ่มอีกหนึ่งคน (ไม่ผูก Assignment จริง แค่ไว้เป็น TicketWorker อีกคนของ Market Job เดียวกัน)
+  // เพื่อไม่ให้การถอน ticketWorker ออกจาก firstTicket ด้านล่างกลายเป็น "ถอน Worker คนสุดท้ายออกจาก
+  // Booth" ซึ่งตั้งแต่มี Fix ของ BUG-001 จะทำให้ระบบยกเลิกทั้ง Booth ให้อัตโนมัติ (ไม่ใช่ Behavior ที่
+  // Test นี้ตั้งใจตรวจ — Test นี้ตรวจแค่ว่า Snapshot การถอน Worker เป็นแบบเจาะจงต่อ Booth เท่านั้น)
+  const otherTicketWorker = {
+    id: state.nextTicketWorkerId++,
+    market_job_id: firstTicket.market_job_id,
+    worker_id: worker.id + 900000,
+    status: "WORKING",
+    final_earning_amount: null,
+    joined_at: new Date().toISOString(),
+    cancelled_at: null,
+    completed_at: null,
+  };
 
-  state.ticketWorkers.push(ticketWorker);
+  state.ticketWorkers.push(ticketWorker, otherTicketWorker);
 
   // ถอน worker ออกจาก firstTicket แผงเดียว ก่อน confirm ทั้งสองแผง
   const excludeResponse = await server.request(

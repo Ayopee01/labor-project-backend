@@ -1,67 +1,8 @@
-import fs from "fs";
-import path from "path";
-
 import { Prisma, PrismaClient } from "@prisma/client";
+import { uploadWorkerProfileImage } from "../src/config/spaces";
 import { hashPassword, normalizePhoneDigits } from "../src/utils/password";
 
-/**
- * Source: docs/worker.csv ([LMSDB].[dbo].[LaborMaster] joined with a Card-side record).
- *
- * Unlike the previous version of this file, the data below is copied in directly (one literal
- * object per LaborId) instead of being parsed from the CSV at seed-time — following the same
- * pattern as master-rate.seed.ts / master-market.seed.ts / master-product.seed.ts.
- *
- * Fields copied, per row, from the LEFT (LaborMaster) side of the CSV unless noted otherwise:
- * LaborId, LaborCode, LaborCountry, LaborColor, LaborCoat, LaborStatus, Prefix, Name,
- * WorkStartDate, Telephone, CoatNo, TimeWork, TimeIn, TimeOut — plus FullName and Picture, which
- * only exist on the RIGHT (joined Card) side of the export.
- *
- * A LaborId can appear on more than one CSV row because a worker can have more than one Card
- * (LaborCardId differs). Rows were deduplicated to 1-per-LaborId by keeping the row with the
- * smallest LaborCardId, matching the schema's `laborId @unique` constraint.
- *
- * Field-specific notes:
- * - Telephone: normalized to the "0XX-XXXXXXX" shape. A 9-digit value with no leading 0 (e.g.
- *   "973310585") gets "0" prepended then a dash after the first 3 digits ("097-3310585"). A value
- *   already in "0XX-XXXXXXX" form (e.g. "062-7826112") is left untouched. The placeholder "-" and
- *   truly empty values become null.
- * - TimeIn / TimeOut: the CSV carries a dummy-date-prefixed timestamp (e.g.
- *   "2026-01-01 06:00:00.000"); only the "HH:mm" time-of-day is kept, since the schema column is
- *   `@db.Char(5)`.
- * - WorkStartDate: CSV format is D/M/YYYY with no leading zeros; stored as a UTC date.
- * - UpdateDate (LEFT side): on all but 4 rows the CSV holds the literal Excel
- *   "###############" column-too-narrow marker, which is not a date and is stored as null. The 4
- *   rows with a real D/M/YYYY value keep that value.
- * - Picture (RIGHT side): every non-empty value in the export is 32,765 raw hex characters (odd
- *   count => the final nibble is an incomplete/truncated byte). Per explicit instruction the raw
- *   hex text is still copied in as-is; `hexToBytes` below decodes it, silently dropping only that
- *   last incomplete nibble (JS can't represent half a byte) — every other byte is preserved
- *   unchanged.
- * - There is no `CreateBy`/`CreateDate` column on the `master_workers` table (only the existing
- *   `source` field and the auto-managed `createdAt`/`updatedAt`). Per instruction the schema is
- *   left untouched: `source` keeps its existing "master_sync" value as the marker for
- *   seed/master-data-created rows, and `createdAt` (already `@default(now())`) serves as the
- *   creation timestamp.
- * - `status`: derived from LaborStatus — "Working" -> 1 (active), "Resign" -> 0, anything else ->
- *   null. This is a deliberate change from this field's original intent (see the comment on
- *   `status` in schema.prisma, updated alongside this file) of never being derived from
- *   laborStatus/workCode; per explicit instruction it now is, because without a source every
- *   seeded worker had `status = null` and could never log in (`auth.service.ts` requires
- *   `status === 1`).
- * - `workCode`: derived from LaborCode by stripping the letter prefix and parsing the remaining
- *   digits (e.g. "CG000085" -> 85). Per explicit instruction, even though — unlike
- *   LaborCoat/CoatNo, which the CSV already provides as two separate columns — LaborCode has no
- *   letter-free sibling column, so this collides across different LaborCode prefixes (e.g.
- *   CG000004 / MB000004 / MN000004 all become workCode 4).
- * - `shiftNo` / `shiftStartTime` / `shiftEndTime`: also a deliberate change from this field's
- *   original intent (see the comment on `shiftNo` in schema.prisma) of being purely operational
- *   state unrelated to Master sync. `shiftNo` is derived from TimeWork ("Morning" -> 1, "Evening"
- *   -> 2, else -> null), and `shiftStartTime`/`shiftEndTime` reuse the same TimeIn/TimeOut values
- *   as `timeIn`/`timeOut` above. This lines up with the existing shift-boundary rule in
- *   `src/utils/shift.ts` (`resolveShiftNoFromStartTime`: start >= 18:00 -> shift 2, else shift 1)
- *   since every "Morning" row has TimeIn 06:00 and every "Evening" row has TimeIn 18:00 in this
- *   export.
- */
+/* -------------------------------------- Types -------------------------------------- */
 
 interface MasterWorkerSeedRecord {
   laborId: number;
@@ -86,7 +27,8 @@ interface MasterWorkerSeedRecord {
   updateDate: string | null;
 }
 
-// AUTO-GENERATED literal data from docs/worker.csv — see generation notes in this file's header.
+/* -------------------------------------- Master Data -------------------------------------- */
+
 const masterWorkerSeeds: MasterWorkerSeedRecord[] = [
   {
     laborId: 1,
@@ -4817,28 +4759,19 @@ function hexToBytes(hex: string | null): Uint8Array<ArrayBuffer> | null {
   return bytes as Uint8Array<ArrayBuffer>;
 }
 
-// Function decode pictureHex ออกเป็นไฟล์ .jpg จริงบน disk (path มาจาก WORKER_IMAGE_STORAGE_DIR ใน
-// .env) ตั้งชื่อไฟล์ตาม laborCode (= WorkerCode) กันชนกัน — ถ้าไฟล์มีอยู่แล้วข้าม ไม่ decode/เขียนซ้ำ
-function ensureWorkerPictureFile(laborCode: string, pictureHex: string | null): string | null {
+// Function decode pictureHex แล้วอัปโหลดขึ้น DigitalOcean Spaces ตั้งชื่อไฟล์ตาม laborCode
+// (= WorkerCode) กันชนกัน คืน public URL หรือ null ถ้า worker คนนี้ไม่มีรูป
+async function uploadWorkerPictureImage(
+  laborCode: string,
+  pictureHex: string | null
+): Promise<string | null> {
   const bytes = hexToBytes(pictureHex);
 
   if (!bytes) {
     return null;
   }
 
-  const storageDir = process.env.WORKER_IMAGE_STORAGE_DIR ?? "./storage/worker-images";
-  fs.mkdirSync(storageDir, { recursive: true });
-
-  const filePath = path.join(storageDir, `${laborCode}.jpg`);
-
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, bytes);
-  }
-
-  // URL path คงที่ที่ app.ts mount static route ไว้ (/storage/worker-images) แยกจาก physical
-  // directory จริงบน disk (storageDir ด้านบน ตั้งค่าได้อิสระผ่าน WORKER_IMAGE_STORAGE_DIR) — ห้ามคืน
-  // filePath ดิบตรงๆ เพราะจะไม่มี "/" นำหน้าและอาจมี "./" ปนมาจาก storageDir ทำให้ client เปิด URL ไม่ได้
-  return `/storage/worker-images/${laborCode}.jpg`;
+  return uploadWorkerProfileImage(laborCode, Buffer.from(bytes));
 }
 
 // Function seed ข้อมูล master_workers จาก docs/worker.csv (คัดลอกเป็น literal array ด้านบน) ลง DB
@@ -4872,7 +4805,7 @@ export async function seedMasterWorkers(prisma: PrismaClient): Promise<void> {
         timeIn: worker.timeIn,
         timeOut: worker.timeOut,
         picture: hexToBytes(worker.pictureHex),
-        imageUrl: ensureWorkerPictureFile(worker.laborCode, worker.pictureHex),
+        imageUrl: await uploadWorkerPictureImage(worker.laborCode, worker.pictureHex),
         updateDate: worker.updateDate ? new Date(worker.updateDate) : null,
         source: "master_sync",
         passwordHash,

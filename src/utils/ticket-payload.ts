@@ -1,4 +1,4 @@
-import { VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { VEHICLE_JOB_STATUS } from "../constants/status";
 import type { VendorTicketCompletionFlowResult } from "../types/line.type";
 import type { GateTicketDto, TicketProductDto, VehicleJobDetailResponse } from "../types/worker.type";
 

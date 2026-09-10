@@ -3,10 +3,10 @@ name: CI
 on:
   pull_request:
     branches:
-      - render
+      - main
   push:
     branches:
-      - render
+      - main
 
 permissions:
   contents: read
@@ -54,7 +54,7 @@ jobs:
       BULLMQ_LINE_MESSAGE_QUEUE: ci-line-messages
       JWT_ACCESS_SECRET: ci-access-secret-ci-access-secret
       JWT_REFRESH_SECRET: ci-refresh-secret-ci-refresh-secret
-      JWT_LOGIN_CHALLENGE_SECRET: ci-login-secret-ci-login-secret
+      JWT_LOGIN_CHALLENGE_SECRET: ci-login-challenge-secret-ci-login
       REFRESH_TOKEN_HASH_SECRET: ci-refresh-hash-secret-ci-refresh-hash
       CORS_ORIGIN: http://localhost:3000
     steps:
@@ -97,10 +97,20 @@ jobs:
         run: RUN_DB_TESTS=1 npm run test:integration
 
   deploy:
-    name: Trigger Render deploy hook
+    name: Deploy to DigitalOcean droplet
     needs: build-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/render'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
-      - name: Call Render deploy hook
-        run: curl --fail -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            git fetch origin main
+            git reset --hard origin/main
+            docker compose --profile production up -d --build redis api-prod

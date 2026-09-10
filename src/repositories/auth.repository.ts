@@ -90,12 +90,8 @@ async function createPending(
   );
 }
 
-// Function อัปเดต refresh token hash จาก DB — เขียนแบบมีเงื่อนไข (refreshTokenHash ปัจจุบันต้องตรง
-// กับ expectedCurrentHash ที่ caller เพิ่ง verify มา ณ ตอนเขียนจริง) เพื่อกัน TOCTOU race เมื่อ
-// client ยิง /auth/refresh ด้วย refresh token เดิมพร้อมกันมากกว่า 1 request — ถ้าไม่เช็คเงื่อนไขนี้
-// request ที่ชนะ (commit ทีหลัง) จะเขียน hash ทับ request ที่แพ้แบบเงียบๆ ทำให้ client ฝั่งที่แพ้ถือ
-// refresh token ที่ใช้ไม่ได้อีกต่อไปทั้งที่เพิ่ง refresh สำเร็จ ต้อง login ใหม่ทั้งที่ไม่ได้ทำอะไรผิด
-// — คืน null เมื่อแพ้ race (มีอีก request รีเฟรชด้วย token เดิมนี้ไปก่อนแล้ว)
+// Function อัปเดต refresh token hash จาก DB — เขียนแบบมีเงื่อนไข (ต้องตรงกับ expectedCurrentHash เดิม)
+// กัน TOCTOU race เมื่อมี /auth/refresh พร้อมกันหลาย request ด้วย token เดิม คืน null เมื่อแพ้ race
 async function updateRefreshTokenHash(
   sessionId: number | string,
   refreshTokenHash: string,

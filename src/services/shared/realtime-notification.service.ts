@@ -9,6 +9,7 @@ import type { PublishRealtimeEventInput } from "../../types/notifications.type";
 import type { DbConnection } from "../../types/shared/common.type";
 import type { GateTicketDto, WorkerSocketEventType } from "../../types/worker.type";
 
+// Function กระจาย Event แบบ Realtime ไปหา Admin (publishNotification) และ Worker (บันทึกแจ้งเตือน, Push, Socket)
 export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
   const payload = input.payload ?? {};
 
@@ -87,10 +88,8 @@ export function publishRealtimeEvent(input: PublishRealtimeEventInput): void {
   }
 }
 
-// Function หา Worker ที่ต้องได้รับแจ้งเตือนผลของ Ticket — คืนเฉพาะ worker id เท่านั้น (Admin ไม่รวม
-// ในนี้อีกต่อไป เพราะ MasterWorker.id และ Account.id เป็นคนละ id space กันแล้วตั้งแต่แยก Worker ออก
-// จาก Account — ทุกจุดที่เรียกฟังก์ชันนี้ส่ง worker_ids ต่อให้ publishRealtimeEvent พร้อม admin: true
-// อยู่แล้วเสมอ ซึ่งกระจายแจ้งเตือนไปหา Admin ทุกคนผ่าน role แยกต่างหาก ไม่ต้องพึ่ง id list นี้)
+// Function หา Worker ที่ต้องได้รับแจ้งเตือนผลของ Ticket — คืนเฉพาะ worker id (ไม่รวม Admin เพราะ
+// MasterWorker.id เป็นคนละ id space กับ Account.id — Admin ถูกแจ้งแยกผ่าน publishRealtimeEvent ด้วย admin: true)
 export async function resolveTicketResultAudience(
   ticket: GateTicketDto,
   connection?: DbConnection

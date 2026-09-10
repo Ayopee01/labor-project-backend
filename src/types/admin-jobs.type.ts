@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import type { DAILY_WORKER_INCOME_PAYMENT_STATUS, VEHICLE_OPERATION_STATUS } from "../constants/job-status";
+import type { DAILY_WORKER_INCOME_PAYMENT_STATUS, VEHICLE_OPERATION_STATUS } from "../constants/status";
 
 // Type record สำหรับบอร์ด operation ของ VehicleJob
 export type VehicleJobOperationRecord = Prisma.VehicleJobGetPayload<{
@@ -383,9 +383,8 @@ export interface AdminHistoryBoothResponse
   extends Omit<AdminFinancialBoothResponse, "ticket_id" | "ticket_no" | "marketCode" | "marketName" | "products"> {
   products: AdminHistoryProductResponse[];
   vendor_line_id: string | null;
-  // De-duped Account codes (Worker or Admin) that submitted counts for this Booth, across all
-  // submissions — renamed from submitted_worker_codes since an Admin submitting on behalf now
-  // also appears here.
+  // รหัส Account (Worker หรือ Admin) ที่เคยส่งยอด Booth นี้ ไม่ซ้ำกัน — เปลี่ยนชื่อจาก
+  // submitted_worker_codes เพราะตอนนี้ Admin ส่งแทนก็ปรากฏในนี้ได้ด้วย
   submitted_by_codes: string[];
   submitted_by_role: "worker" | "admin" | null;
   // Account (Worker หรือ Admin) ที่ส่งยอดรอบล่าสุดจริง — คนละอันกับ submitted_by_codes ที่เป็น set
@@ -678,11 +677,9 @@ export interface AdminCancelVehicleJobAndRequeueResponse {
   message: string;
   ticket_number: string;
   status: string;
-  // Workers pulled off this vehicle job who are still within their shift — sent back to the front
-  // of the ready queue.
+  // Worker ที่ถูกถอดออกจากงานรถนี้และยังอยู่ในกะ — ถูกส่งกลับไปหน้าคิวพร้อมทำงาน
   worker_to_queue: Array<string | null>;
-  // Workers pulled off this vehicle job who had already ended their shift by the time of
-  // cancellation — sent to open_app instead of back into the ready queue.
+  // Worker ที่ถูกถอดออกจากงานรถนี้แต่หมดกะไปแล้วตอนถูกยกเลิก — ส่งไป open_app แทนการเข้าคิว
   worker_to_openapp: Array<string | null>;
 }
 
@@ -726,6 +723,9 @@ export interface AdminCancelTicketWorkerFromBoothResponse {
   boothCode: string;
   worker_code: string;
   status: string;
+  // true เมื่อ Worker ที่ถูกถอดออกเป็นคนสุดท้ายที่ยัง WORKING และไม่ถูก Exclude ของ Booth นี้ ทำให้ระบบ
+  // ยกเลิกทั้ง Booth ให้อัตโนมัติไปด้วย (ดู BUG-001) — ให้ Client ใช้แสดงผลแยกจาก Exclude ปกติเฉยๆ
+  booth_cancelled: boolean;
 }
 
 // Type response ของเส้นยกเลิกรวม (POST /vehicle-jobs/assignment/cancel) — shape จริงขึ้นกับ scope ที่
@@ -763,11 +763,11 @@ export interface AdminVehicleWaitResponse {
   ticket_number: string;
   status: string;
   dispatch_now: boolean;
-  // Workers pulled off this vehicle job and put back at the front of the FIFO queue. Only
-  // populated when dispatch was switched to false; always empty when switched to true.
+  // Worker ที่ถูกถอดออกจากงานรถนี้แล้วส่งกลับไปหน้าคิว FIFO — มีค่าเฉพาะตอนเปลี่ยน dispatch เป็น
+  // false เท่านั้น ถ้าเปลี่ยนเป็น true จะว่างเสมอ
   worker_to_queue: Array<string | null>;
-  // Workers pulled off this vehicle job who had already ended their shift by the time dispatch
-  // was switched to false — sent to open_app instead of back into the ready queue.
+  // Worker ที่ถูกถอดออกจากงานรถนี้แต่หมดกะไปแล้วตอนเปลี่ยน dispatch เป็น false — ส่งไป open_app
+  // แทนการเข้าคิว
   worker_to_openapp: Array<string | null>;
   reason_code: string;
   reason_text: string | null;

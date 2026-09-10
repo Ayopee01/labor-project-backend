@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 // Import Dependencies
 import * as workerAssignmentEventRepository from "./shared/worker-assignment-event.repository";
 import { withTransaction } from "../db/prisma";
-import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
 import { DEFAULT_PAGE_LIMIT } from "../constants/pagination";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
@@ -16,13 +16,12 @@ import type { DbConnection } from "../types/shared/common.type";
 import type { MasterWorkerDto } from "../types/admin-workers.type";
 import type { GateTicketDto, MarketJobDto, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 import type { AdminVehicleJobFinancialRecord, DailyStallFeeFilters, DailyStallFeeQueryResult, DailyWorkerIncomeFilters, DailyWorkerIncomeRecord, HistoryStatusFilter, MonthlyStallFeeFilters, MonthlyStallFeeQueryResult, VehicleJobHistoryListResult, VehicleJobListFilters, VehicleJobOperationFilters, VehicleJobOperationRecord } from "../types/admin-jobs.type";
-import { SHIRT_COLOR_SNAPSHOT } from "../constants/job-status";
+import { SHIRT_COLOR_SNAPSHOT } from "../constants/status";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function สร้าง data payload สำหรับยกเลิก TicketWorker — ใช้ร่วมกันทุกจุดที่ยกเลิก Roster
-// (cancelVehicleJob, cancelMarketJob, cancelAssignment, cancelTicketWorkerForMarketJob) ต่างกันแค่
-// where clause ว่ายกเลิกขอบเขตไหน
+// (cancelVehicleJob, cancelMarketJob, cancelAssignment, cancelTicketWorkerForMarketJob) ต่างกันแค่ where clause ว่ายกเลิกขอบเขตไหน
 function cancelledTicketWorkerData(cancelledAt: Date): Prisma.TicketWorkerUpdateManyMutationInput {
   return {
     status: TICKET_WORKER_STATUS.CANCELLED,
@@ -136,11 +135,8 @@ function buildVehicleJobSearchFilter(search: string): Prisma.VehicleJobWhereInpu
   };
 }
 
-// Function ประกอบ where clause ของแต่ละ business group ใน Work History (COMPLETED/CANCELLED/
-// REJECT_PENDING) — REJECT_PENDING คือรถที่ยังไม่ terminal และมี GateTicket อย่างน้อยหนึ่งใบสถานะ
-// REJECT ค้างอยู่ ณ ปัจจุบัน (ไม่ใช่เคย reject ในอดีตแล้วแก้สำเร็จ) ลำดับความสำคัญ CANCELLED →
-// COMPLETED → REJECT_PENDING ให้ formatAdminVehicleJobHistoryDetail ใช้ derive HistoryStatus ต่อ
-// record เดียวกันแบบเดียวกับที่นี่ ห้ามให้ตรรกะสองจุดเพี้ยนไปจากกัน
+// Function ประกอบ where clause ของแต่ละกลุ่มใน Work History (COMPLETED/CANCELLED/REJECT_PENDING) — REJECT_PENDING คือรถที่ยังไม่ terminal
+// และมี GateTicket สถานะ REJECT ค้างอยู่ปัจจุบัน — ต้องตรงกับตรรกะที่ formatAdminVehicleJobHistoryDetail ใช้ derive HistoryStatus ห้ามให้สองจุดเพี้ยนกัน
 function historyStatusGroupWhere(
   group: "COMPLETED" | "CANCELLED" | "REJECT_PENDING",
 ): Prisma.VehicleJobWhereInput {
@@ -162,8 +158,7 @@ function historyStatusGroupWhere(
   };
 }
 
-// Function ประกอบ where clause ของ history_status query — ALL คือ OR ของสามกลุ่มเท่านั้น ไม่ใช่ทุก
-// สถานะในฐานข้อมูล (ดู comment ของ historyStatusGroupWhere)
+// Function ประกอบ where clause ของ history_status query — ALL คือ OR ของสามกลุ่มเท่านั้น ไม่ใช่ทุกสถานะในฐานข้อมูล (ดู comment ของ historyStatusGroupWhere)
 function buildHistoryStatusFilter(
   historyStatus: HistoryStatusFilter,
 ): Prisma.VehicleJobWhereInput {
@@ -180,9 +175,8 @@ function buildHistoryStatusFilter(
   return historyStatusGroupWhere(historyStatus);
 }
 
-// Function รวม date range filter (createdAt) กับ andFilters ที่สะสมไว้ ให้เป็น where เดียว — ใช้ร่วมกัน
-// ระหว่าง listVehicleJobs และ listVehicleJobOperations (เรียกซ้ำ 2 ครั้งต่อฟังก์ชัน: ก่อน/หลังใส่
-// dropoff_point filter เข้า andFilters)
+// Function รวม date range filter (createdAt) กับ andFilters ที่สะสมไว้ ให้เป็น where เดียว
+// ใช้ร่วมกันระหว่าง listVehicleJobs และ listVehicleJobOperations (เรียก 2 ครั้งต่อฟังก์ชัน: ก่อน/หลังใส่ dropoff_point filter)
 function buildVehicleJobWhere(
   dateRange: { startAt?: Date; endAt?: Date },
   andFilters: Prisma.VehicleJobWhereInput[],
@@ -205,8 +199,7 @@ function buildVehicleJobWhere(
 }
 
 // Function หา distinct dropoff_point ที่มีจริงภายใต้ where ที่ยังไม่ใส่ dropoff_point filter เอง
-// (ให้ dropdown เสนอตัวเลือกอื่นได้แม้กำลังกรองอยู่แล้ว ไม่ใช่เหลือแค่ตัวที่เลือกไปตัวเดียว) — ใช้ร่วมกัน
-// ระหว่าง listVehicleJobs และ listVehicleJobOperations
+// ให้ dropdown เสนอตัวเลือกอื่นได้แม้กำลังกรองอยู่แล้ว — ใช้ร่วมกันระหว่าง listVehicleJobs และ listVehicleJobOperations
 async function resolveAvailableDropoffPoints(
   db: DbConnection,
   whereWithoutDropoffPoint: Prisma.VehicleJobWhereInput,
@@ -284,9 +277,7 @@ export async function listVehicleJobs(
     andFilters.push(buildVehicleJobSearchFilter(filters.search));
   }
 
-  // ใช้ where ก่อนใส่ dropoff_point เอง (ตัวแปรนี้) หา distinct dropoff_point ที่มีจริงภายใต้ filter
-  // อื่นๆ (date range/search/status) — ไม่รวม dropoff_point เอง เพื่อให้ dropdown ยังเสนอตัวเลือกอื่น
-  // ให้สลับได้แม้กำลังกรองอยู่แล้ว ไม่ใช่เหลือแค่ตัวที่เลือกไปตัวเดียว
+  // ใช้ where ก่อนใส่ dropoff_point filter เอง หา distinct dropoff_point ภายใต้ filter อื่น (date range/search/status) ให้ dropdown ยังเสนอตัวเลือกอื่นได้
   const whereWithoutDropoffPoint = buildVehicleJobWhere(filters, andFilters);
   const availableDropoffPoints = await resolveAvailableDropoffPoints(
     db,
@@ -425,8 +416,7 @@ export async function listVehicleJobOperations(
     andFilters.push(buildVehicleJobSearchFilter(filters.search));
   }
 
-  // เหมือนกับ listVehicleJobs — หา distinct dropoff_point จาก where ก่อนใส่ dropoff_point filter เอง
-  // เพื่อให้ dropdown เสนอตัวเลือกอื่นได้แม้กำลังกรองอยู่แล้ว
+  // เหมือนกับ listVehicleJobs — หา distinct dropoff_point จาก where ก่อนใส่ dropoff_point filter เอง ให้ dropdown เสนอตัวเลือกอื่นได้
   const whereWithoutDropoffPoint = buildVehicleJobWhere(filters, andFilters);
   const availableDropoffPoints = await resolveAvailableDropoffPoints(
     db,
@@ -669,8 +659,7 @@ export async function cancelVehicleJob(
     data: {
       status: VEHICLE_JOB_STATUS.CANCELLED,
       marketJobs: {
-        // ยกเว้น MarketJob ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับเป็น CANCELLED —
-        // ยกเลิกทั้งรถต้องไม่ไปเปลี่ยนประวัติตลาดที่จบไปแล้วจริงก่อนหน้า
+        // ยกเว้น MarketJob ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับเป็น CANCELLED — ยกเลิกทั้งรถต้องไม่เปลี่ยนประวัติตลาดที่จบไปแล้ว
         updateMany: {
           where: {
             status: {
@@ -701,9 +690,8 @@ export async function cancelVehicleJob(
   return requireDto(mapVehicleJob(vehicleJob), "vehicle job cancel");
 }
 
-// Function ยกเลิก assignment ที่ยัง active ทั้งหมดของ VehicleJob โดยไม่แตะ TicketWorker/MarketJob/
-// GateTicket/VehicleJob เอง (ต่างจาก cancelVehicleJob ด้านบนที่ยกเลิกทั้งคัน) — ใช้กับ Admin สั่งกลับ
-// ไป Wait ก่อนทีมเริ่มทำงานจริง (ทีมยัง scan ไม่ครบ) จึงไม่มี TicketWorker roster ให้ต้องยกเลิกอยู่แล้ว
+// Function ยกเลิก assignment ที่ยัง active ทั้งหมดของ VehicleJob โดยไม่แตะ TicketWorker/MarketJob/GateTicket/VehicleJob เอง (ต่างจาก cancelVehicleJob ที่ยกเลิกทั้งคัน)
+// ใช้เมื่อ Admin สั่งกลับไป Wait ก่อนทีมเริ่มทำงานจริง จึงไม่มี TicketWorker roster ให้ต้องยกเลิก
 export async function cancelActiveAssignmentsForVehicleJob(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -787,8 +775,7 @@ export async function cancelMarketJob(
     data: {
       status: VEHICLE_JOB_STATUS.CANCELLED,
       tickets: {
-        // ยกเว้น ticket ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับเป็น CANCELLED —
-        // ยกเลิกทั้งตลาดต้องไม่ไปเปลี่ยนประวัติ booth ที่จบไปแล้วจริงก่อนหน้า
+        // ยกเว้น ticket ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับเป็น CANCELLED — ยกเลิกทั้งตลาดต้องไม่เปลี่ยนประวัติ booth ที่จบไปแล้ว
         updateMany: {
           where: {
             status: {
@@ -806,10 +793,8 @@ export async function cancelMarketJob(
   return requireDto(mapMarketJob(marketJob), "market job cancel");
 }
 
-// Function ยกเลิก Gate ticket (booth) จาก DB
-//
-// ไม่แตะ TicketWorker (Worker Roster) เพราะ Roster เป็นระดับ Business Ticket (market job) แล้ว
-// ไม่ใช่ระดับ Booth การยกเลิก Booth เดียวไม่ควรกระทบสมาชิกที่ยังทำ Booth อื่นในใบเดียวกันอยู่
+// Function ยกเลิก Gate ticket (booth) จาก DB — ไม่แตะ TicketWorker (Worker Roster) เพราะ Roster เป็นระดับ Business Ticket (market job) ไม่ใช่ระดับ Booth
+// การยกเลิก Booth เดียวไม่ควรกระทบสมาชิกที่ยังทำ Booth อื่นในใบเดียวกัน
 export async function cancelGateTicket(
   ticketId: number,
   connection?: DbConnection,
@@ -905,9 +890,8 @@ export async function listAcceptedAssignmentsByVehicleJob(
     );
 }
 
-// Function ยกเลิก assignment จาก DB พร้อมถอด Worker ออกจาก Booth ที่ยังไม่ Complete — เขียนแบบมีเงื่อนไข
-// (status ต้องยังอยู่ใน ACTIVE_ASSIGNMENT_STATUSES ณ ตอนเขียนจริง) เพื่อกัน TOCTOU race กับ worker
-// ที่กำลัง accept/scan/timeout พร้อมกัน — คืน null เมื่อแพ้ race (assignment ไม่ active แล้วจริงๆ)
+// Function ยกเลิก assignment จาก DB พร้อมถอด Worker ออกจาก Booth ที่ยังไม่ Complete — เขียนแบบมีเงื่อนไข (status ต้องยังอยู่ใน ACTIVE_ASSIGNMENT_STATUSES ณ ตอนเขียนจริง)
+// กัน TOCTOU race กับ worker ที่กำลัง accept/scan/timeout พร้อมกัน — คืน null เมื่อแพ้ race
 export async function cancelAssignment(
   assignmentId: number,
   connection?: DbConnection,
@@ -956,8 +940,7 @@ export async function cancelAssignment(
     connection,
   );
 
-  // ถอด Worker ออกจาก Roster ของทุก Business Ticket ที่ยังไม่ Terminal ภายใต้ TicketNumber
-  // เดียวกัน (Ticket ที่ Lock/Terminal แล้วต้องไม่ถูกแก้ Roster ย้อนหลัง)
+  // ถอด Worker ออกจาก Roster ของทุก Business Ticket ที่ยังไม่ Terminal ภายใต้ TicketNumber เดียวกัน (Ticket ที่ Lock/Terminal แล้วต้องไม่ถูกแก้ Roster ย้อนหลัง)
   await db.ticketWorker.updateMany({
     where: {
       workerId: assignment.workerId,
@@ -979,10 +962,8 @@ export async function cancelAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment cancel");
 }
 
-// Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket (market job) ใบเดียว
-//
-// ต่างจาก cancelAssignment: ไม่แตะ VehicleJobAssignment เลย (worker ยังอยู่กับรถ/TicketNumber
-// และยังทำ Business Ticket อื่นได้) กระทบเฉพาะ Roster ของ Business Ticket ใบนี้ใบเดียว
+// Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket (market job) ใบเดียว — ต่างจาก cancelAssignment: ไม่แตะ VehicleJobAssignment เลย
+// (worker ยังอยู่กับรถ/TicketNumber และยังทำ Business Ticket อื่นได้) กระทบเฉพาะ Roster ของใบนี้ใบเดียว
 export async function cancelTicketWorkerForMarketJob(
   marketJobId: number,
   workerId: number,
@@ -1001,9 +982,8 @@ export async function cancelTicketWorkerForMarketJob(
   return result.count === 1;
 }
 
-// Function ต่อเวลา assignment scan deadline จาก DB — เขียนแบบมีเงื่อนไข (status ต้องยังเป็น
-// ACCEPTED ณ ตอนเขียนจริง) เพื่อกัน TOCTOU race กับ scan-timeout job หรือ worker ที่ scan สำเร็จ
-// ไปพร้อมกัน — คืน null เมื่อแพ้ race
+// Function ต่อเวลา assignment scan deadline จาก DB — เขียนแบบมีเงื่อนไข (status ต้องยังเป็น ACCEPTED ณ ตอนเขียนจริง)
+// กัน TOCTOU race กับ scan-timeout job หรือ worker ที่ scan สำเร็จพร้อมกัน — คืน null เมื่อแพ้ race
 export async function extendAssignmentScanDeadline(
   assignmentId: number,
   scanDeadlineAt: Date,
@@ -1036,9 +1016,8 @@ export async function extendAssignmentScanDeadline(
   );
 }
 
-// Function สร้าง where ของ listDailyWorkerIncome — แยก workerCode/shift ออกได้อิสระต่อกัน เพื่อใช้
-// คำนวณ available_worker_codes/available_shifts จาก filter อื่นๆ ทั้งหมด ไม่รวม filter ของตัวเอง
-// (แบบเดียวกับ dropoff_point) ให้ dropdown ยังเสนอตัวเลือกอื่นได้แม้กำลังกรองอยู่แล้ว
+// Function สร้าง where ของ listDailyWorkerIncome — แยก workerCode/shift ออกได้อิสระต่อกัน
+// เพื่อคำนวณ available_worker_codes/available_shifts จาก filter อื่นไม่รวมของตัวเอง (แบบเดียวกับ dropoff_point) ให้ dropdown ยังเสนอตัวเลือกอื่นได้
 function buildDailyWorkerIncomeWhere(
   filters: DailyWorkerIncomeFilters,
   options: { includeWorkerCode: boolean; includeShift: boolean },
@@ -1121,9 +1100,8 @@ function buildDailyWorkerIncomeWhere(
   };
 }
 
-// Function ดึงรายได้ Worker รายวันจาก DB — หนึ่งแถว = สมาชิกภาพของ Worker หนึ่งคนใน Business
-// Ticket หนึ่งใบ (TicketWorker) กรองตามช่วงวันที่จาก completedAt ถ้ามี ไม่งั้นใช้ joinedAt แทน
-// (Business Ticket ที่ยังไม่ Finalize จะยังไม่มี completedAt)
+// Function ดึงรายได้ Worker รายวันจาก DB — หนึ่งแถว = สมาชิกภาพของ Worker หนึ่งคนใน Business Ticket หนึ่งใบ (TicketWorker)
+// กรองตามช่วงวันที่จาก completedAt ถ้ามี ไม่งั้นใช้ joinedAt แทน (Business Ticket ที่ยังไม่ Finalize จะยังไม่มี completedAt)
 export async function listDailyWorkerIncome(
   filters: DailyWorkerIncomeFilters,
   connection?: DbConnection,
@@ -1137,10 +1115,8 @@ export async function listDailyWorkerIncome(
     includeWorkerCode: true,
     includeShift: true,
   });
-  // ไม่ paginate ที่ชั้น DB เพราะ payment_status (Success/Partially Paid/Cancel/Admin Reject/
-  // Worker Reject) เป็นค่า derive จากหลายตาราง ไม่ใช่ column ตรงๆ ให้ WHERE ได้ — ต้อง fetch ทุกแถวที่
-  // เข้าเงื่อนไข filter อื่นก่อน แล้วค่อย derive/กรอง/แบ่งหน้าใน service layer (รูปแบบเดียวกับที่
-  // listVehicleJobOperations ใช้กับ operation_status)
+  // ไม่ paginate ที่ชั้น DB เพราะ payment_status เป็นค่า derive จากหลายตาราง ไม่ใช่ column ให้ WHERE ได้โดยตรง
+  // ต้อง fetch ทุกแถวที่เข้าเงื่อนไข filter อื่นก่อน แล้วค่อย derive/กรอง/แบ่งหน้าใน service layer (แบบเดียวกับ listVehicleJobOperations กับ operation_status)
   const [data, workerCodeRows, shiftRows] = await Promise.all([
     db.ticketWorker.findMany({
       where,
@@ -1166,9 +1142,8 @@ export async function listDailyWorkerIncome(
                     worker: true,
                   },
                 },
-                // Fallback source เมื่อ ticket_no นี้ถูกยกเลิกทางอ้อมจากการยกเลิกทั้ง TicketNumber
-                // (marketJob.adminActionLogs ด้านล่างจะว่างเปล่า เพราะ cancelVehicleJob ไม่เขียน
-                // Log แยกต่อ MarketJob) — เอาแค่ log ล่าสุดของรถคันนี้
+                // Fallback source เมื่อ ticket_no นี้ถูกยกเลิกทางอ้อมจากการยกเลิกทั้ง TicketNumber (marketJob.adminActionLogs ด้านล่างจะว่างเปล่าเพราะ cancelVehicleJob ไม่เขียน log แยกต่อ MarketJob)
+                // เอาแค่ log ล่าสุดของรถคันนี้
                 adminActionLogs: {
                   where: {
                     actionType: ADMIN_ACTION_TYPE.VEHICLE_JOB_CANCELLED,
@@ -1199,10 +1174,8 @@ export async function listDailyWorkerIncome(
                 },
               },
             },
-            // ใช้เป็น source ของ Cancellation.CancelledByType/CancelledByName และ riskText
-            // เมื่อ payment_status = cancel — เอาแค่ log ล่าสุดของการยกเลิก TicketNo นี้ ไม่ว่าจะยกเลิก
-            // ทั้งใบตรงๆ (MARKET_JOB_CANCELLED) หรือ cascade มาจาก Booth สุดท้ายที่ถูกยกเลิกจนตลาดว่าง
-            // (STALL_JOB_CANCELLED มี market_job_id ผูกไว้ด้วยเหมือนกัน)
+            // ใช้เป็น source ของ Cancellation.CancelledByType/CancelledByName และ riskText เมื่อ payment_status = cancel
+            // เอาแค่ log ล่าสุดของการยกเลิก TicketNo นี้ ไม่ว่ายกเลิกทั้งใบตรงๆ (MARKET_JOB_CANCELLED) หรือ cascade จาก Booth สุดท้าย (STALL_JOB_CANCELLED)
             adminActionLogs: {
               where: {
                 actionType: {
@@ -1276,8 +1249,7 @@ export async function listDailyWorkerIncome(
 
 /* -------------------------------------- Daily Stall Fee -------------------------------------- */
 
-// Function แยก search เป็น token ด้วยช่องว่างหรือ comma ตาม docs/backend-missing-apis-spec V8.md ข้อ
-// 28.4.5 — ทุก token ต้อง match อย่างน้อยหนึ่ง field (AND ระหว่าง token, OR ระหว่าง field)
+// Function แยก search term เป็น token ด้วยช่องว่างหรือ comma — ต้อง match ทุก token (AND ระหว่าง token, OR ระหว่าง field)
 function splitDailyStallFeeSearchTokens(search: string): string[] {
   return search
     .split(/[\s,]+/)
@@ -1285,8 +1257,7 @@ function splitDailyStallFeeSearchTokens(search: string): string[] {
     .filter((token) => token.length > 0);
 }
 
-// Function สร้าง OR filter ของหนึ่ง search token ครอบคลุมเลขแผง/ทะเบียนรถ/เลขตั๋ว/รหัส-ชื่อสินค้า/
-// รหัส-ชื่อบรรจุภัณฑ์ — anchor ที่ TicketProductFinancial (ใช้กับ query หลัก)
+// Function สร้าง OR filter ของ search token หนึ่งตัว ครอบคลุมเลขแผง/ทะเบียนรถ/เลขตั๋ว/สินค้า/บรรจุภัณฑ์ — anchor ที่ TicketProductFinancial (ใช้กับ query หลัก)
 function buildDailyStallFeeTokenFilter(token: string): Prisma.TicketProductFinancialWhereInput {
   const contains = { contains: token, mode: "insensitive" as const };
 
@@ -1303,8 +1274,7 @@ function buildDailyStallFeeTokenFilter(token: string): Prisma.TicketProductFinan
   };
 }
 
-// Function เดียวกับด้านบนแต่ anchor ที่ TicketProduct (ใช้กับ query available_products/available_packages
-// ที่ query จาก TicketProduct ตรงๆ เพื่อใช้ distinct บน productCode/packageCode ได้)
+// Function เดียวกับด้านบนแต่ anchor ที่ TicketProduct — ใช้กับ query available_products/available_packages ที่ต้อง distinct บน productCode/packageCode
 function buildDailyStallFeeProductTokenFilter(token: string): Prisma.TicketProductWhereInput {
   const contains = { contains: token, mode: "insensitive" as const };
 
@@ -1321,11 +1291,8 @@ function buildDailyStallFeeProductTokenFilter(token: string): Prisma.TicketProdu
   };
 }
 
-// Function สร้าง where ของ query หลัก (data/summary/stall_count) — ใช้ product_code และ package_code
-// ทั้งคู่พร้อมกันเสมอ (includeProductCode/includePackageCode เป็น true ทั้งคู่ที่ caller เดียวใน
-// listDailyStallFees) ต่างจาก buildDailyStallFeeProductWhere ด้านล่างที่ใช้คำนวณ available_products/
-// available_packages แบบ faceted (รับ filter ของอีกมิติเท่านั้น) — คง flag นี้ไว้ให้ตรง pattern
-// เดียวกับ listDailyWorkerIncome
+// Function สร้าง where ของ query หลัก (data/summary/stall_count) — ใช้ product_code และ package_code พร้อมกันเสมอ
+// ต่างจาก buildDailyStallFeeProductWhere ด้านล่างที่คำนวณ available_products/available_packages แบบ faceted
 function buildDailyStallFeeWhere(
   filters: DailyStallFeeFilters,
   options: { includeProductCode: boolean; includePackageCode: boolean },
@@ -1346,10 +1313,8 @@ function buildDailyStallFeeWhere(
   };
 }
 
-// Function สร้าง where ของ available_products/available_packages แบบ faceted — date range + search
-// เสมอ ส่วน product_code/package_code รับได้ทีละอย่างตาม options (ไม่รวมมิติของตัวเอง) เพื่อให้แต่ละ
-// dropdown ถูกกรองด้วย "อีก filter หนึ่ง" แต่ยังไม่ถูกจำกัดด้วยค่าที่ผู้ใช้เลือกในมิติของตัวเอง —
-// available_products ใช้ package_code, available_packages ใช้ product_code (ไม่ narrow ข้ามกันเอง)
+// Function สร้าง where ของ available_products/available_packages แบบ faceted — date range + search เสมอ
+// ส่วน product_code/package_code กรองแค่มิติตรงข้าม ไม่ narrow ด้วยค่าที่เลือกในมิติของตัวเอง
 function buildDailyStallFeeProductWhere(
   filters: Pick<DailyStallFeeFilters, "startAt" | "endAt" | "search" | "productCode" | "packageCode">,
   options: { includeProductCode: boolean; includePackageCode: boolean },
@@ -1369,10 +1334,8 @@ function buildDailyStallFeeProductWhere(
   };
 }
 
-// Function ดึงรายงานค่าลงสินค้าแผงค้ารายวันสำหรับ Admin ใน repository — หนึ่งแถว = หนึ่ง
-// TicketProductFinancial ที่ finalize แล้ว ใช้ join เดียว + filter ที่ฐานข้อมูลทั้งหมด ตาม
-// docs/backend-missing-apis-spec V8.md ข้อ 28.7.2 (ห้าม N+1, ห้าม load worker payments เพราะรายงานนี้
-// ไม่ใช้รายได้แรงงาน)
+// Function ดึงรายงานค่าลงสินค้าแผงค้ารายวัน — หนึ่งแถว = หนึ่ง TicketProductFinancial ที่ finalize แล้ว
+// filter/join ที่ DB ทั้งหมด ไม่ load worker payments เพราะรายงานนี้ไม่ใช้รายได้แรงงาน
 export async function listDailyStallFees(
   filters: DailyStallFeeFilters,
   connection?: DbConnection,
@@ -1382,9 +1345,7 @@ export async function listDailyStallFees(
     includeProductCode: true,
     includePackageCode: true,
   });
-  // available_products แคบลงตาม package_code ที่เลือกไว้ (ไม่แคบตาม product_code ของตัวเอง) และ
-  // available_packages แคบลงตาม product_code ที่เลือกไว้ (ไม่แคบตาม package_code ของตัวเอง) — เป็น
-  // faceted filter คนละทิศทางกัน ไม่ใช่ where เดียวกันเหมือนเดิม
+  // available_products แคบตาม package_code ที่เลือก, available_packages แคบตาม product_code ที่เลือก — faceted filter คนละทิศทางกัน
   const productOptionsWhere = buildDailyStallFeeProductWhere(filters, {
     includeProductCode: false,
     includePackageCode: true,
@@ -1502,9 +1463,7 @@ const MONTHLY_STALL_FEE_FROM = Prisma.sql`
   JOIN market_jobs mj ON mj.id = gt.market_job_id
 `;
 
-// Function สร้าง WHERE fragment ของรายงานค่าลงสินค้าแผงค้ารายเดือน — แยก flag ต่อ filter ได้ เพื่อใช้
-// คำนวณ available_markets/available_stalls/available_shirt_colors แบบ faceted (ไม่ narrow ตาม
-// filter ของมิติตัวเอง) เหมือน buildDailyStallFeeWhere ด้านบน
+// Function สร้าง WHERE fragment ของรายงานรายเดือน — แยก flag ต่อ filter เพื่อคำนวณ available_markets/available_stalls/available_shirt_colors แบบ faceted เหมือน buildDailyStallFeeWhere
 function buildMonthlyStallFeeWhere(
   filters: MonthlyStallFeeFilters,
   options: {
@@ -1539,18 +1498,15 @@ function buildMonthlyStallFeeWhere(
   return Prisma.join(conditions, " AND ");
 }
 
-// ลำดับ canonical ของสีเสื้อสำหรับ dropdown available_shirt_colors — อ่านง่ายกว่าเรียงตัวอักษรล้วน
-const SHIRT_COLOR_SORT_ORDER = [
-  SHIRT_COLOR_SNAPSHOT.NAVY,
-  SHIRT_COLOR_SNAPSHOT.BLUE,
-  SHIRT_COLOR_SNAPSHOT.GREEN,
+// ลำดับ canonical ของ dropdown available_shirt_colors — สีจริงจาก master data (ไม่รู้ล่วงหน้าว่ามีอะไรบ้าง)
+// เรียงตามตัวอักษร ส่วน MIXED/UNKNOWN เป็นป้ายที่แอปคำนวณเอง (ไม่ใช่สีจริง) ให้อยู่ท้ายสุดเสมอ
+const SHIRT_COLOR_TRAILING_ORDER = [
   SHIRT_COLOR_SNAPSHOT.MIXED,
   SHIRT_COLOR_SNAPSHOT.UNKNOWN,
 ] as const;
 
-// Function ดึงรายงานค่าลงสินค้าแผงค้ารายเดือนจาก DB — ต้องใช้ raw SQL เพราะ GROUP BY ข้าม relation
-// (market_code จาก MarketJob, booth_code จาก GateTicket) Prisma groupBy ทำไม่ได้ตรงๆ — aggregate,
-// facet filters และ pagination (LIMIT/OFFSET) ทั้งหมดทำที่ DB ชั้นนี้ ไม่โหลดมารวมใน memory
+// Function ดึงรายงานค่าลงสินค้าแผงค้ารายเดือนจาก DB — ใช้ raw SQL เพราะ GROUP BY ข้าม relation (Prisma groupBy ทำตรงๆ ไม่ได้)
+// aggregate, facet filters และ pagination ทำที่ DB ทั้งหมด ไม่โหลดมารวมใน memory
 export async function listMonthlyStallFees(
   filters: MonthlyStallFeeFilters,
   connection?: DbConnection,
@@ -1661,9 +1617,19 @@ export async function listMonthlyStallFees(
     );
   const availableShirtColors = shirtColorRows
     .map((row) => row.shirt_color)
-    .sort(
-      (a, b) => SHIRT_COLOR_SORT_ORDER.indexOf(a as never) - SHIRT_COLOR_SORT_ORDER.indexOf(b as never),
-    );
+    .sort((a, b) => {
+      const aTrailingIndex = SHIRT_COLOR_TRAILING_ORDER.indexOf(a as never);
+      const bTrailingIndex = SHIRT_COLOR_TRAILING_ORDER.indexOf(b as never);
+
+      if (aTrailingIndex === -1 && bTrailingIndex === -1) {
+        return a.localeCompare(b, "th");
+      }
+
+      return (
+        (aTrailingIndex === -1 ? SHIRT_COLOR_TRAILING_ORDER.length : aTrailingIndex) -
+        (bTrailingIndex === -1 ? SHIRT_COLOR_TRAILING_ORDER.length : bTrailingIndex)
+      );
+    });
 
   return {
     data: dataRows,

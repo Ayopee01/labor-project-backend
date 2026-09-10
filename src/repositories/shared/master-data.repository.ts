@@ -150,9 +150,8 @@ export async function findOwnerStallsByMarketAndBooth(
   return map;
 }
 
-// Function ค้นหาชื่อเต็มของ MasterMemberStall แบบ batch ตาม owner + memberLineUserId หลายคู่พร้อมกัน
-// scope ด้วย marketCode + ownerIdCard + ownerLineUserId เหมือน
-// findActiveVendorLineTargetsByMarketAndBooth เพื่อป้องกัน LINE ID ชนกันข้าม Owner
+// Function ค้นหาชื่อเต็มของ MasterMemberStall แบบ batch ตาม owner + memberLineUserId หลายคู่
+// scope ด้วย marketCode+ownerIdCard+ownerLineUserId เหมือนกันเพื่อป้องกัน LINE ID ชนกันข้าม owner
 export async function findMemberStallFullNamesByOwnerAndLineUserId(
   requests: Array<{
     marketCode: string;

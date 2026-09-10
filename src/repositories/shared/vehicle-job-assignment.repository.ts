@@ -1,5 +1,5 @@
 // Import Dependencies
-import { ACCEPTED_ASSIGNMENT_STATUSES, ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, RELEASABLE_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, WORKING_ASSIGNMENT_STATUSES } from "../../constants/job-status";
+import { ACCEPTED_ASSIGNMENT_STATUSES, ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, RELEASABLE_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, WORKING_ASSIGNMENT_STATUSES } from "../../constants/status";
 import { withTransaction } from "../../db/prisma";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../../types/shared/worker-assignment-event.type";
 import * as workerAssignmentEventRepository from "./worker-assignment-event.repository";
@@ -29,6 +29,7 @@ export async function countActiveAssignments(
   });
 }
 
+// Function นับจำนวนงานของ worker ในวันที่ระบุ (ไม่นับ TIMEOUT) และจำนวนที่ทำเสร็จแล้ว
 export async function getWorkerDailyAssignmentCounts(
   workerId: number,
   startAt: Date,
@@ -151,6 +152,7 @@ export async function findAssignmentById(
   return mapVehicleJobAssignment(assignment);
 }
 
+// Function นับ scanned assignments จาก DB
 export async function countScannedAssignments(
   vehicleJobId: number,
   connection?: DbConnection
@@ -182,15 +184,13 @@ export async function countAcceptedAssignments(
   });
 }
 
+// Function ตรวจความพร้อมของทีมงาน (scan ครบตามจำนวนที่ต้องการหรือยัง) ของ VehicleJob
 export async function getVehicleJobTeamScanReadiness(
   vehicleJobId: number,
   connection?: DbConnection,
 ): Promise<VehicleWorkReadinessDto> {
   const db = client(connection);
-  // ต้องเทียบกับ vehicleJob.workersRequired (จำนวนที่ต้องการจริง) ไม่ใช่จำนวน assignment
-  // record ที่ถูกสร้างไว้แล้ว (FINISHED_ASSIGNMENT_STATUSES) — ไม่งั้นถ้า dispatch ยัง backfill
-  // worker ไม่ครบตามที่ต้องการ (เช่น ต้องการ 3 คน แต่คิวหาได้แค่ 2) พอ 2 คนที่มี scan ครบ
-  // ระบบจะเข้าใจผิดว่าทีมพร้อมแล้ว ทั้งที่ยังขาดคนตามที่งานต้องการจริง
+  // เทียบกับ workersRequired ไม่ใช่จำนวน assignment ที่สร้างจริง กันเข้าใจผิดว่าทีมพร้อมทั้งที่ dispatch ยังหา worker ไม่ครบ
   const [vehicleJob, checkedInCount] = await Promise.all([
     db.vehicleJob.findUnique({
       where: {
@@ -220,8 +220,7 @@ export async function getVehicleJobTeamScanReadiness(
   };
 }
 
-// Function ดึงทีม assignment ของ VehicleJob จาก DB ดิบๆ — ไม่คำนวณ scan_status ที่นี่ (เป็น business
-// classification ของ Service, ดู buildAssignmentScanStatus ใน worker.service.ts)
+// Function ดึงทีม assignment ของ VehicleJob จาก DB ดิบๆ ไม่คำนวณ scan_status ที่นี่ (ดู buildAssignmentScanStatus ใน worker.service.ts)
 export async function listVehicleJobAssignmentTeam(
   vehicleJobId: number,
   connection?: DbConnection
@@ -262,6 +261,7 @@ export async function listVehicleJobAssignmentTeam(
   });
 }
 
+// Function ค้นหา current assignment ของ worker ใน VehicleJob ตาม TicketNumber จาก DB
 export async function findCurrentAssignmentByVehicleJobRefAndWorker(
   ticketNumber: string,
   workerId: number,
@@ -286,9 +286,7 @@ export async function findCurrentAssignmentByVehicleJobRefAndWorker(
   return mapVehicleJobAssignment(assignment);
 }
 
-// Function หา assignment ปัจจุบันของ worker ใน VehicleJob นี้ — ใช้ resolve
-// TicketCompletionSubmission.assignmentId ตอน Submit ใช้ vehicleJobId ตรงๆ แทน ticketNumber
-// เพราะผู้เรียกส่วนใหญ่ (เช่น ticket-completion.service.ts) มี id อยู่แล้ว
+// Function หา assignment ปัจจุบันของ worker ด้วย vehicleJobId ตรงๆ (ไม่ผ่าน ticketNumber) ใช้ตอน resolve TicketCompletionSubmission.assignmentId
 export async function findCurrentAssignmentByVehicleJobIdAndWorker(
   vehicleJobId: number,
   workerId: number,
@@ -360,6 +358,7 @@ export async function acceptAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment accept");
 }
 
+// Function ดึงรายการ assignment ที่สถานะเป็น ACCEPTED ของ VehicleJob นี้ (ยกเว้น id ที่ระบุถ้ามี)
 export async function listAcceptedAssignmentsByVehicleJob(
   vehicleJobId: number,
   excludedAssignmentId?: number,
@@ -388,6 +387,7 @@ export async function listAcceptedAssignmentsByVehicleJob(
     .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
 }
 
+// Function อัปเดต scan deadline ของ assignment
 export async function updateAssignmentScanDeadline(
   assignmentId: number,
   scanDeadlineAt: Date,
@@ -460,9 +460,7 @@ export async function timeoutAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment timeout");
 }
 
-// Function เปลี่ยน assignment เป็น SCANNED — เขียนแบบมีเงื่อนไข (status ต้องยังเป็น ACCEPTED ณ
-// ตอนเขียนจริง) เพื่อกัน TOCTOU race กับ scan-timeout job ที่อาจแข่งกันเปลี่ยนสถานะ assignment
-// เดียวกันนี้พร้อมกัน — คืน null เมื่อแพ้ race
+// Function เปลี่ยน assignment เป็น SCANNED แบบมีเงื่อนไข (ต้องเป็น ACCEPTED อยู่ก่อน) กัน race กับ scan-timeout job ที่อาจแย่งเปลี่ยนสถานะเดียวกัน คืน null ถ้าแพ้ race
 export async function scanAssignment(
   assignmentId: number,
   metadata?: Record<string, unknown> | null,
@@ -509,8 +507,7 @@ export async function scanAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment scan");
 }
 
-// Function เปลี่ยนสถานะ VehicleJobAssignment ทุกใบของรถคันนี้ที่ยัง WORKING_ASSIGNMENT_STATUSES อยู่
-// ให้เป็น toStatus เดียวกันทั้งหมด — ใช้ตอนแผงหนึ่งจบ (Vendor confirm/reject) ซึ่งกระทบทั้งทีมงาน
+// Function เปลี่ยนสถานะ assignment ทุกใบของรถที่ยัง WORKING_ASSIGNMENT_STATUSES ให้เป็น toStatus เดียวกัน ใช้ตอน Vendor confirm/reject ซึ่งกระทบทั้งทีม
 export async function setVehicleAssignmentsStatus(
   vehicleJobId: number,
   toStatus: (typeof ASSIGNMENT_STATUS)[keyof typeof ASSIGNMENT_STATUS],
@@ -532,6 +529,7 @@ export async function setVehicleAssignmentsStatus(
   return result.count;
 }
 
+// Function เปลี่ยนสถานะ assignment หลายใบเป็น COMPLETED พร้อมกัน
 export async function completeAssignments(
   assignmentIds: number[],
   completedAt: Date,

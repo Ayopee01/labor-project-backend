@@ -265,8 +265,8 @@
         image_url:
           type: string
           nullable: true
-          description: Set by POST /api/auth/me/upload-image. Null (never omitted) when the admin has no profile image, so clients can tell "no image" apart from an older response shape without this field.
-          example: /uploads/admins/12-1699999999.jpg
+          description: Set by POST /api/auth/me/upload-image. Null (never omitted) when the admin has no profile image, so clients can tell "no image" apart from an older response shape without this field. Points to a DigitalOcean Spaces object (public URL).
+          example: https://labor-project-uploads.sgp1.digitaloceanspaces.com/admins/1699999999-c1a1e6f0.jpg
         permission_level:
           type: string
           nullable: true
@@ -4277,12 +4277,10 @@
           example: "GV5/6"
         shirt_color:
           type: string
-          enum:
-            - NAVY
-            - BLUE
-            - GREEN
-            - MIXED
-            - UNKNOWN
+          description: >-
+            Worker shirt color from master data, or MIXED/UNKNOWN when the app computes those
+            instead of a real color (see available_shirt_colors below). Not a fixed enum — new
+            colors added to master data appear here automatically.
           example: NAVY
         financial_item_count:
           type: integer
@@ -4369,15 +4367,11 @@
           type: array
           items:
             type: string
-            enum:
-              - NAVY
-              - BLUE
-              - GREEN
-              - MIXED
-              - UNKNOWN
           description: >-
             Distinct shirt colors under the current date range + market_search + booth_search
-            filters — never narrows by shirt_color itself, independent of page/limit.
+            filters — never narrows by shirt_color itself, independent of page/limit. Not a fixed
+            enum — reflects whatever colors exist in master data, plus MIXED/UNKNOWN when the app
+            computes those instead of a real color.
           example: ["NAVY", "MIXED"]
         pagination:
           type: object

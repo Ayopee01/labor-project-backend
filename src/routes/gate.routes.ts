@@ -21,8 +21,7 @@ router.post(
   }
 );
 
-// TEST HELPER: ใช้สำหรับ Postman / Swagger / Gate integration testing
-// Route ดึงรายการตลาด แผงค้า สินค้า และแพ็กเกจสำหรับช่วยสร้าง Gate request
+// TEST HELPER: ดึงรายการตลาด แผงค้า สินค้า และแพ็กเกจสำหรับช่วยสร้าง Gate request (ใช้กับ Postman/Swagger)
 router.get(
   "/options",
   gateClientAuthMiddleware,

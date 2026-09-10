@@ -11,7 +11,7 @@ import { TicketSubmissionAlreadyResolvedError } from "../repositories/shared/gat
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import { publishRealtimeEvent } from "./shared/realtime-notification.service";
 import { applyVendorTicketCompletionResult } from "./shared/ticket-completion.service";
-import { TICKET_STATUS } from "../constants/job-status";
+import { TICKET_STATUS } from "../constants/status";
 // Import Types
 import { MAX_RATING_SCORE, MIN_RATING_SCORE } from "../types/line.type";
 import type { LineMessage, LineWebhookEvent, VendorTicketAction, VendorTicketActionTokenPayload } from "../types/line.type";
@@ -121,8 +121,11 @@ async function verifyLineActionToken(
     return null;
   }
 
+  // ไม่เช็ค used_at ที่นี่เพราะ Token นี้ใช้ร่วมกันทุก Action: vendor_confirm/reject_completion ต้องตอบ
+  // already_handled ซ้ำได้ทุกครั้งที่ Vendor กดปุ่มเดิม ส่วน vendor_rate_ticket ไป Claim used_at เองด้านล่าง
   return {
     token_type: "vendor_ticket_action",
+    id: storedToken.id,
     action: storedToken.action,
     ticket_id: storedToken.ticket_id,
     submission_id: storedToken.submission_id,
@@ -147,7 +150,7 @@ function isValidRatingScore(score: number | null): score is number {
   );
 }
 
-// Function อ่านยอดสุดท้ายของแผงหลัง Financialization
+// Function ดึงยอด final_stall_amount ของ Ticket ที่ต้อง Financialize แล้วเท่านั้น
 function requireFinalStallAmountBaht(ticket: GateTicketDto): number {
   if (ticket.final_stall_amount === null || ticket.financialized_at === null) {
     throw new ApiError(
@@ -202,8 +205,8 @@ function buildVendorDuplicateActionMessages(): LineMessage[] {
   ];
 }
 
-// Function จัดการ vendor ให้คะแนน Ticket ผ่าน LINE postback (action: vendor_rate_ticket) — คืนค่า
-// true เมื่อประมวลผลสำเร็จ (ให้ caller นับ processed += 1), false เมื่อไม่เข้าเงื่อนไขใดๆ (ให้ continue เฉยๆ)
+// Function จัดการ vendor ให้คะแนน Ticket ผ่าน LINE postback (action: vendor_rate_ticket)
+// คืน true เมื่อประมวลผลสำเร็จ (caller นับ processed += 1), false เมื่อไม่เข้าเงื่อนไข
 async function handleVendorRateTicketPostback(
   tokenPayload: VendorTicketActionTokenPayload,
   lineUserId: string,
@@ -281,6 +284,14 @@ async function handleVendorRateTicketPostback(
     return false;
   }
 
+  // Claim used_at แบบ Atomic ก่อนส่งข้อความ/แจ้งเตือนเสมอ กัน LINE Redeliver Event ซ้ำทำให้ส่งข้อความซ้ำ
+  // (upsertTicketRating กันซ้ำแค่ระดับ DB ไม่ได้กันส่งข้อความซ้ำ) — Action นี้ตอบผลครั้งเดียวพอ ไม่ต้อง already_handled
+  const claimed = await lineRepository.claimLineActionTokenUsed(tokenPayload.id);
+
+  if (!claimed) {
+    return true;
+  }
+
   const stallAmountBaht = requireFinalStallAmountBaht(ratingResult.ticket);
 
   await enqueueLoggedLineMessage({
@@ -324,9 +335,8 @@ async function handleVendorRateTicketPostback(
   return true;
 }
 
-// Function จัดการ vendor ยืนยัน/ปฏิเสธ Ticket ผ่าน LINE postback (action: vendor_confirm_completion /
-// vendor_reject_completion) — คืนค่า true เมื่อประมวลผลสำเร็จ (รวม "already_handled" ด้วย เพราะฝั่ง
-// caller เดิมนับ processed += 1 ทั้งสองกรณี), false เมื่อไม่เข้าเงื่อนไขใดๆ
+// Function จัดการ vendor ยืนยัน/ปฏิเสธ Ticket ผ่าน LINE postback (vendor_confirm/reject_completion)
+// คืน true เมื่อประมวลผลสำเร็จ (รวม already_handled เพราะ caller นับ processed += 1 ทั้งคู่), false เมื่อไม่เข้าเงื่อนไข
 async function handleVendorCompletionDecisionPostback(
   tokenPayload: VendorTicketActionTokenPayload,
   lineUserId: string,
@@ -507,10 +517,7 @@ export async function handleLineWebhook(
   let processed = 0;
 
   for (const event of events) {
-    // ครอบทั้ง event ด้วย try/catch — LINE ส่งได้หลาย event ในคำขอ webhook เดียว ถ้า event ใดๆ
-    // throw (เช่น auto-confirm timeout job แข่งชนะไปพอดี ทำให้ applyVendorTicketCompletionResult
-    // เจอ Race Guard ของ Booth นั้นแล้ว throw) ต้องไม่ทำให้ event อื่นในคำขอเดียวกันที่ไม่เกี่ยวข้อง
-    // กันไม่ถูกประมวลผลไปด้วย — continue ทุกจุดในนี้ยังทำงานปกติเพราะอยู่ใน try ของ loop เดียวกัน
+    // ครอบแต่ละ event ด้วย try/catch เพราะ webhook เดียวมีได้หลาย event — event หนึ่ง throw ไม่ควรกัน event อื่น
     // ประกาศ lineUserId/tokenPayload ไว้นอก try ให้ catch block เข้าถึงได้ (ดูเหตุผลใน catch ด้านล่าง)
     let lineUserId: string | null = null;
     let tokenPayload: Awaited<ReturnType<typeof verifyLineActionToken>> = null;
@@ -534,9 +541,8 @@ export async function handleLineWebhook(
         continue;
       }
 
-      // ผูก const ที่ narrow แล้วไว้ใช้ต่อ เพราะ tokenPayload เป็น outer `let` (เพื่อให้ catch
-      // block เข้าถึงได้ตอน race error) — TS ไม่ narrow `let` ที่ถูก closure ของ withTransaction
-      // capture ไว้ข้ามขอบเขตฟังก์ชัน
+      // ผูกเป็น const เพราะ tokenPayload เป็น outer let (ให้ catch block ใช้ได้ตอน race error)
+      // ซึ่ง TS ไม่ narrow type ให้เมื่อถูก closure ของ withTransaction capture ไว้
       const verifiedTokenPayload = tokenPayload;
       const verifiedLineUserId = lineUserId;
 
@@ -566,8 +572,7 @@ export async function handleLineWebhook(
       }
     } catch (error) {
       if (error instanceof TicketSubmissionAlreadyResolvedError && lineUserId && tokenPayload) {
-        // vendor-confirm-timeout job ชนะ race ไปตัดหน้าก่อน (applyVendorTicketCompletionResult
-        // เจอ Race Guard แล้ว throw) — ตอบวลี "already handled" กลับไปหา Vendor แทนที่จะเงียบ
+        // vendor-confirm-timeout job ชนะ race ไปก่อน (Race Guard throw) — ตอบ already_handled กลับ Vendor แทนที่จะเงียบ
         await enqueueLoggedLineMessage({
           jobName: "send-vendor-ticket-already-handled",
           action: "send_vendor_ticket_already_handled",

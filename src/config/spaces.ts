@@ -1,22 +1,40 @@
 import crypto from "crypto";
-
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-
 import ApiError from "../utils/api-error";
 import { imageExtensionByMimeType } from "../middlewares/upload.middleware";
 
 let client: S3Client | null = null;
 
-// Function สร้าง S3Client แบบ lazy (ครั้งแรกที่ต้องใช้จริงเท่านั้น) เพื่อไม่ให้ import module นี้
-// พังตอนที่ SPACES_* ยังไม่ถูกตั้งค่า (เช่น environment ที่ยังไม่ setup DigitalOcean Spaces)
-function getClient(): S3Client {
+/* -------------------------------------- Functions -------------------------------------- */
+
+// Function อ่านค่า config ของ DigitalOcean Spaces จาก env — ถ้า env ไม่ครบให้ throw ApiError 503
+function getSpacesConfig() {
+  const endpoint = process.env.SPACES_ENDPOINT;
+  const region = process.env.SPACES_REGION;
+  const accessKeyId = process.env.SPACES_ACCESS_KEY;
+  const secretAccessKey = process.env.SPACES_SECRET_KEY;
+  const bucket = process.env.SPACES_ADMIN_BUCKET;
+
+  if (!endpoint || !region || !accessKeyId || !secretAccessKey || !bucket) {
+    throw new ApiError(
+      503,
+      "SPACES_NOT_CONFIGURED",
+      "Object storage is not configured."
+    );
+  }
+
+  return { endpoint, region, accessKeyId, secretAccessKey, bucket };
+}
+
+// Function create S3Client แบบ lazy เพื่อไม่ให้ import module นี้พังตอนที่ SPACES_* ยังไม่ถูกตั้งค่า
+function getClient(config: ReturnType<typeof getSpacesConfig>): S3Client {
   if (!client) {
     client = new S3Client({
-      endpoint: process.env.SPACES_ENDPOINT,
-      region: process.env.SPACES_REGION,
+      endpoint: config.endpoint,
+      region: config.region,
       credentials: {
-        accessKeyId: process.env.SPACES_ACCESS_KEY ?? "",
-        secretAccessKey: process.env.SPACES_SECRET_KEY ?? "",
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
       },
     });
   }
@@ -24,80 +42,78 @@ function getClient(): S3Client {
   return client;
 }
 
-// Function เช็คว่า config ของ DigitalOcean Spaces (ใช้เก็บรูปโปรไฟล์ Admin) ครบหรือไม่ — fail closed
-// เหมือน LINE webhook (line.service.ts) เพราะ endpoint นี้มีหน้าที่คุยกับ Spaces โดยตรงเป็นหลัก
-function assertSpacesConfigured(): void {
-  if (
-    !process.env.SPACES_ENDPOINT ||
-    !process.env.SPACES_REGION ||
-    !process.env.SPACES_ACCESS_KEY ||
-    !process.env.SPACES_SECRET_KEY ||
-    !process.env.SPACES_ADMIN_BUCKET
-  ) {
-    throw new ApiError(
-      503,
-      "SPACES_NOT_CONFIGURED",
-      "Object storage is not configured."
-    );
-  }
+function buildPublicUrl(config: ReturnType<typeof getSpacesConfig>, folder: string, key: string): string {
+  const host = config.endpoint.replace(/^https?:\/\//, "");
+
+  return `https://${config.bucket}.${host}/${folder}/${key}`;
 }
 
-function buildPublicUrl(key: string): string {
-  const bucket = process.env.SPACES_ADMIN_BUCKET;
+// Function extract key ของรูปจาก public URL ของ Spaces — ถ้าไม่ใช่ URL ของ Spaces ให้คืน null
+function extractKeyFromUrl(folder: string, url: string): string | null {
+  const bucket = process.env.SPACES_ADMIN_BUCKET ?? "";
   const host = (process.env.SPACES_ENDPOINT ?? "").replace(/^https?:\/\//, "");
-
-  return `https://${bucket}.${host}/${key}`;
-}
-
-// Function ดึง object key กลับจาก public URL ที่เคยสร้างด้วย buildPublicUrl — คืน null เฉยๆ (ไม่ throw)
-// ถ้า URL ไม่ตรง pattern ของ Spaces เช่น path เก่าที่เคยเก็บ local (/uploads/admins/...) ก่อน migrate
-function extractKeyFromUrl(url: string): string | null {
-  const bucket = process.env.SPACES_ADMIN_BUCKET;
-  const host = (process.env.SPACES_ENDPOINT ?? "").replace(/^https?:\/\//, "");
-  const prefix = `https://${bucket}.${host}/`;
+  const prefix = `https://${bucket}.${host}/${folder}/`;
 
   return url.startsWith(prefix) ? url.slice(prefix.length) : null;
 }
 
-// Function อัปโหลดรูปโปรไฟล์ Admin ขึ้น DigitalOcean Spaces แล้วคืน public URL — เก็บใต้ prefix
-// "admins/" ทั้งหมด (bucket นี้แยกจาก bucket backup ฐานข้อมูลใน scripts/backup-postgres.sh โดยตั้งใจ
-// เพราะต้อง public-read ให้ client โหลดรูปได้ตรงๆ ต่างจาก backup ที่ต้อง private)
-export async function uploadAdminProfileImage(
+// Function upload รูปขึ้น DigitalOcean Spaces — คืน public URL ของรูปที่อัปโหลดแล้ว
+async function putImage(
+  config: ReturnType<typeof getSpacesConfig>,
+  folder: string,
+  key: string,
   buffer: Buffer,
   mimeType: string
 ): Promise<string> {
-  assertSpacesConfigured();
-
-  const extension = imageExtensionByMimeType[mimeType] ?? ".bin";
-  const key = `admins/${Date.now()}-${crypto.randomUUID()}${extension}`;
-
-  await getClient().send(
+  await getClient(config).send(
     new PutObjectCommand({
-      Bucket: process.env.SPACES_ADMIN_BUCKET,
-      Key: key,
+      Bucket: config.bucket,
+      Key: `${folder}/${key}`,
       Body: buffer,
       ContentType: mimeType,
       ACL: "public-read",
     })
   );
 
-  return buildPublicUrl(key);
+  return buildPublicUrl(config, folder, key);
 }
 
-// Function ลบรูปโปรไฟล์ Admin เก่าออกจาก Spaces ตอนอัปโหลดรูปใหม่ทับ (กันไฟล์กำพร้าสะสมค่าเก็บไปเรื่อยๆ)
-// no-op เงียบๆ ถ้า URL ที่ส่งมาไม่ใช่ของ Spaces (เช่น path local เก่าก่อน migrate) — ผู้เรียกต้อง
-// ดักจับ error เองถ้าต้องการ (เป็น best-effort ไม่ควรทำให้ request หลักล้มเหลว)
+// Function upload รูปโปรไฟล์ Admin ขึ้น DigitalOcean Spaces — ใต้ folder "admin-images" 
+export async function uploadAdminProfileImage(
+  buffer: Buffer,
+  mimeType: string
+): Promise<string> {
+  const config = getSpacesConfig();
+  const extension = imageExtensionByMimeType[mimeType] ?? ".bin";
+  const key = `${Date.now()}-${crypto.randomUUID()}${extension}`;
+
+  return putImage(config, "admin-images", key, buffer, mimeType);
+}
+
+// Function delete รูปโปรไฟล์ Admin จาก DigitalOcean Spaces — ใต้ folder "admin-images" โดยใช้ public URL ของรูป
 export async function deleteAdminProfileImageByUrl(url: string): Promise<void> {
-  const key = extractKeyFromUrl(url);
+  const key = extractKeyFromUrl("admin-images", url);
 
   if (!key) {
     return;
   }
 
-  await getClient().send(
+  const config = getSpacesConfig();
+
+  await getClient(config).send(
     new DeleteObjectCommand({
-      Bucket: process.env.SPACES_ADMIN_BUCKET,
-      Key: key,
+      Bucket: config.bucket,
+      Key: `admin-images/${key}`,
     })
   );
+}
+
+// Function upload รูปโปรไฟล์ Worker ขึ้น DigitalOcean Spaces — ใต้ folder "worker-images" โดยใช้ laborCode เป็นชื่อไฟล์
+export async function uploadWorkerProfileImage(
+  laborCode: string,
+  buffer: Buffer
+): Promise<string> {
+  const config = getSpacesConfig();
+
+  return putImage(config, "worker-images", `${laborCode}.jpg`, buffer, "image/jpeg");
 }

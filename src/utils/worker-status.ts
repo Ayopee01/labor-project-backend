@@ -1,4 +1,4 @@
-import { ASSIGNMENT_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../constants/job-status";
+import { ASSIGNMENT_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../constants/status";
 import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerQueueEntryDto } from "../types/worker.type";
 import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 

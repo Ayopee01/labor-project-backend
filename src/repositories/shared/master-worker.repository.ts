@@ -9,7 +9,7 @@ import type { MasterWorkerDto, WorkScheduleDto } from "../../types/admin-workers
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ตรวจว่า master worker DTO จาก DB
+// Function ตรวจว่า master worker ที่ map แล้วไม่เป็น null (ใช้เป็น type guard)
 function isMasterWorkerDto(worker: MasterWorkerDto | null): worker is MasterWorkerDto {
   return worker !== null;
 }

@@ -1,5 +1,5 @@
 // Import Dependencies
-import { SCANNED_ASSIGNMENT_STATUSES, TICKET_WORKER_STATUS } from "../../constants/job-status";
+import { SCANNED_ASSIGNMENT_STATUSES, TICKET_WORKER_STATUS } from "../../constants/status";
 import { mapTicketWorker } from "./mappers";
 import { client } from "./repository-utils";
 

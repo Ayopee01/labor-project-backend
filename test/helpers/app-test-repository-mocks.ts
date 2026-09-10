@@ -941,6 +941,20 @@ export const workerApplicationRepositoryMock = {
       cancelled_at: new Date().toISOString(),
     });
   },
+  countEligibleWorkersForBooth: async (
+    marketJobId: number,
+    gateTicketId: number,
+  ) =>
+    state.ticketWorkers.filter(
+      (ticketWorker) =>
+        ticketWorker.market_job_id === marketJobId &&
+        ticketWorker.status === "WORKING" &&
+        !state.gateTicketWorkerExclusions.some(
+          (exclusion) =>
+            exclusion.gate_ticket_id === gateTicketId &&
+            exclusion.ticket_worker_id === ticketWorker.id,
+        ),
+    ).length,
   listActiveVendorLineTargetsForTicket: async (ticketId: number) => {
     const ticket = state.gateTickets.find((item) => item.id === ticketId);
 
@@ -1795,6 +1809,7 @@ const {
   hasSubmittedActiveTicketsForMarketJob,
   findGateTicketWorkerExclusion,
   createGateTicketWorkerExclusion,
+  countEligibleWorkersForBooth,
   findTicketCompletionSubmissionById,
   findMarketJobFinancializationContext,
   lockMarketJobWorkerRoster,
@@ -1934,6 +1949,7 @@ export const gateTicketRepositoryMock = {
   hasSubmittedActiveTicketsForMarketJob,
   findGateTicketWorkerExclusion,
   createGateTicketWorkerExclusion,
+  countEligibleWorkersForBooth,
   listActiveVendorLineTargetsForTicket,
   listTicketProducts,
   updateTicketProductConfirmations,
@@ -5217,10 +5233,22 @@ export const adminJobsRepositoryMock = {
         left.market_code.localeCompare(right.market_code, "th") ||
         left.booth_code.localeCompare(right.booth_code, "th"),
     );
-    const SHIRT_COLOR_SORT_ORDER = ["NAVY", "BLUE", "GREEN", "MIXED", "UNKNOWN"];
+    const SHIRT_COLOR_TRAILING_ORDER = ["MIXED", "UNKNOWN"];
     const availableShirtColors = Array.from(
       new Set(baseForShirtColorOptions.map(({ financial }) => shirtColorOf(financial))),
-    ).sort((left, right) => SHIRT_COLOR_SORT_ORDER.indexOf(left) - SHIRT_COLOR_SORT_ORDER.indexOf(right));
+    ).sort((left, right) => {
+      const leftTrailingIndex = SHIRT_COLOR_TRAILING_ORDER.indexOf(left);
+      const rightTrailingIndex = SHIRT_COLOR_TRAILING_ORDER.indexOf(right);
+
+      if (leftTrailingIndex === -1 && rightTrailingIndex === -1) {
+        return left.localeCompare(right, "th");
+      }
+
+      return (
+        (leftTrailingIndex === -1 ? SHIRT_COLOR_TRAILING_ORDER.length : leftTrailingIndex) -
+        (rightTrailingIndex === -1 ? SHIRT_COLOR_TRAILING_ORDER.length : rightTrailingIndex)
+      );
+    });
 
     base = applyShirtColor(applyBoothSearch(applyMarketSearch(base)));
 

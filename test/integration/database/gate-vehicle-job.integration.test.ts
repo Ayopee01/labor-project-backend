@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../../../src/constants/job-status";
+import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../../../src/constants/status";
 import * as gateService from "../../../src/services/gate.service";
 import type { DbConnection } from "../../../src/types/shared/common.type";
 import { assertSafeTestDatabaseUrl } from "../../setup/test-env";

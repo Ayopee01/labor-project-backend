@@ -8,7 +8,7 @@ import { client } from "./shared/repository-utils";
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
 import type { LineActionTokenDto, LineDevSubmissionItem, TicketRatingDto, VendorTicketAction } from "../types/line.type";
-import { TICKET_STATUS } from "../constants/job-status";
+import { TICKET_STATUS } from "../constants/status";
 
 export const MESSAGE_DELIVERY_STATUS = {
   PENDING: "PENDING",
@@ -138,6 +138,26 @@ export async function findLineActionToken(
   });
 
   return record ? toLineActionTokenDto(record) : null;
+}
+
+// Function ทำเครื่องหมาย LINE action token ว่าถูกใช้แล้วแบบ atomic (WHERE used_at IS NULL) — คืน true
+// เฉพาะตอนที่ตัวเรียกนี้เป็นคนอ้างสิทธิ์ใช้จริง กัน Token เดิมถูกใช้ซ้ำเมื่อ LINE Redeliver Event เดิม
+export async function claimLineActionTokenUsed(
+  id: number,
+  connection?: DbConnection
+): Promise<boolean> {
+  const db = client(connection);
+  const result = await db.lineActionToken.updateMany({
+    where: {
+      id,
+      usedAt: null,
+    },
+    data: {
+      usedAt: new Date(),
+    },
+  });
+
+  return result.count === 1;
 }
 
 // Function ดึง Submission สำหรับหน้า LINE dev tester

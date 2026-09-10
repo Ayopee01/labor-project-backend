@@ -19,7 +19,7 @@ export function toId(id: number | string): number {
   return Number(id);
 }
 
-// Function ตรวจสอบและดึง mapped จาก DB
+// Function ตรวจสอบว่า record ที่ map แล้วไม่เป็น null มิฉะนั้น throw error
 export function requireMapped<T>(
   record: T | null | undefined,
   subject: string,
@@ -32,12 +32,12 @@ export function requireMapped<T>(
   return record;
 }
 
-// Function สร้าง random token จาก DB
+// Function สร้าง random token พร้อม prefix
 export function createRandomToken(prefix: string): string {
   return `${prefix}_${randomBytes(24).toString("hex")}`;
 }
 
-// Function ตรวจสอบและดึง DTO จาก DB
+// Function ตรวจสอบว่า DTO ไม่เป็น null มิฉะนั้น throw error
 export function requireDto<TDto>(value: TDto | null, name: string): TDto {
   if (!value) {
     throw new Error(`${name} did not return a record.`);
@@ -46,7 +46,7 @@ export function requireDto<TDto>(value: TDto | null, name: string): TDto {
   return value;
 }
 
-// Function สร้าง revoke data จาก DB
+// Function สร้าง data object สำหรับ revoke session (isActive=false, revokedAt/updatedAt=ปัจจุบัน)
 export function buildRevokeData(): {
   isActive: false;
   revokedAt: Date;

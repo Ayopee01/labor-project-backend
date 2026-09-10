@@ -5,10 +5,6 @@ dotenv.config({ quiet: true });
 
 require("./src/config/sentry");
 
-const { assertRuntimeEnv } = require("./src/config/env.config");
-
-assertRuntimeEnv();
-
 const { default: app } = require("./src/app");
 const { startAssignmentTimeoutProcessing } = require("./src/queues/worker-dispatch");
 const { startLineMessageWorker } = require("./src/queues/line-message-queue");

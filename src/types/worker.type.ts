@@ -225,11 +225,11 @@ export interface TicketCompletionSubmissionDto {
   rejected_at: string | null;
   reject_reason: string | null;
   resolved_by_line_user_id: string | null;
-  // Count of WORKING TicketWorker rows at the moment this submission was created. Null for rows
-  // created before this feature — never backfilled/derived from current data.
+  // จำนวนแถว TicketWorker ที่ยัง WORKING ณ ตอนสร้าง submission นี้ — เป็น null สำหรับแถวเก่าก่อน
+  // มี feature นี้ ไม่ backfill/derive ย้อนหลัง
   worker_count_snapshot: number | null;
-  // VehicleJobAssignment the submitting worker was actively working under at submit time. Null
-  // for admin-submitted-on-behalf rows and for rows created before this feature.
+  // VehicleJobAssignment ที่ worker คนส่งกำลังทำงานอยู่ตอนส่งยอด — เป็น null สำหรับแถวที่ Admin
+  // ส่งแทนและแถวเก่าก่อนมี feature นี้
   assignment_id: number | null;
   created_at: string;
   updated_at: string;
@@ -318,8 +318,8 @@ export interface VehicleJobAssignmentDto {
   accepted_at: string | null;
   scanned_at: string | null;
   completed_at: string | null;
-  // Set when Admin releases this worker back to the FIFO queue early, before the whole
-  // TicketNumber closes. Distinct from completed_at (whole vehicle job finished).
+  // Admin ปล่อย worker กลับคิว FIFO ก่อนเวลา ก่อน TicketNumber จะปิดจริง ต่างจาก completed_at
+  // ที่หมายถึงงานทั้งคันจบแล้ว
   released_at: string | null;
   created_at: string;
   updated_at: string;
@@ -440,8 +440,7 @@ export interface WorkerCurrentJobBoothResponse {
 }
 
 export interface WorkerCurrentJobMarketResponse {
-  // Scan this Business Ticket's ticket_no (barcode on the Gate paper ticket) via
-  // check-in-barcode to check in the whole team.
+  // Scan ticket_no ของ Business Ticket นี้ (บาร์โค้ดบนใบ Gate) ผ่าน check-in-barcode เพื่อเช็คอินทั้งทีม
   ticket_no: string;
   marketCode: string;
   marketName: string;
@@ -477,14 +476,14 @@ export interface WorkerCurrentJobResponse {
   ticket_number: string;
   license_plate: string;
   license_plate_province: string | null;
-  // Set only while the assignment is still PENDING (worker has not pressed accept yet).
+  // มีค่าเฉพาะตอน assignment ยังเป็น PENDING (worker ยังไม่กด accept)
   accept_deadline_at: string | null;
   accept_deadline_unix_ms: number | null;
-  // Set only once the assignment is ACCEPTED (worker is waiting to scan the QR check-in).
+  // มีค่าเฉพาะตอน assignment เป็น ACCEPTED แล้ว (รอ worker scan QR เข้างาน)
   scan_deadline_at: string | null;
   scan_deadline_unix_ms: number | null;
-  // Set once the whole team has scanned in and the vehicle job's status becomes WORKING — null
-  // until then, and never changes again once set (see markVehicleJobInProgress).
+  // ตั้งค่าเมื่อทั้งทีม scan เข้างานครบและ vehicle job เปลี่ยนเป็น WORKING — เป็น null ก่อนหน้านั้น
+  // และไม่เปลี่ยนกลับอีก (ดู markVehicleJobInProgress)
   work_started_at: string | null;
   work_started_at_unix_ms: number | null;
   vehicle_type: string | null;
@@ -512,8 +511,7 @@ interface WorkerAssignmentStallDto {
 
 // Type ตลาดใน assignment ที่รวมแผงของตลาดนั้น (หนึ่งรายการ = หนึ่ง Business Ticket)
 interface WorkerAssignmentMarketDto {
-  // Scan this Business Ticket's ticket_no (barcode on the Gate paper ticket) via
-  // check-in-barcode to check in the whole team.
+  // Scan ticket_no ของ Business Ticket นี้ (บาร์โค้ดบนใบ Gate) ผ่าน check-in-barcode เพื่อเช็คอินทั้งทีม
   ticket_no: string;
   marketName: string;
   stall_count: number;
@@ -541,8 +539,8 @@ export interface WorkerAssignmentCheckInResponse {
   worker_status: WorkerWorkStatus;
   worker_code: string | null;
   ticket_number: string;
-  // Business Ticket (market) whose barcode this worker actually scanned — never guessed, always
-  // the one resolved from the ticket_no this request sent (see scanWorkerAssignment).
+  // Business Ticket ที่ worker คนนี้ scan บาร์โค้ดจริง — resolve จาก ticket_no ที่ request นี้ส่งมา
+  // เท่านั้น ไม่เดา (ดู scanWorkerAssignment)
   ticket_no: string;
   team_scan: WorkerCurrentJobTeamScanResponse;
 }

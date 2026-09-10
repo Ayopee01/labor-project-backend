@@ -34,6 +34,7 @@ export async function listSettings(
   return settings.map(mapSystemSetting);
 }
 
+// Function upsert หลาย settings พร้อมกัน (วนอัปเดตทีละ key)
 export async function upsertSettings(
   settings: Record<string, string>,
   updatedBy?: number | null,

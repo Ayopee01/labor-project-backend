@@ -9,12 +9,14 @@ import { seedMasterMarkets } from "./master-market.seed";
 import { seedMasterProducts } from "./master-product.seed";
 import { seedMasterRates } from "./master-rate.seed";
 import { seedMasterWorkers } from "./master-worker.seed";
-import { seedTestLine } from "./test-line.seed";
+import { seedLine } from "./line.seed";
 import { seedMobileAppVersion } from "./version.seed";
 
 dotenv.config({ quiet: true });
 
 const prisma = getPrisma();
+
+/* -------------------------------------- Types -------------------------------------- */
 
 type SeedAdminAccount = {
   username: string;
@@ -25,6 +27,9 @@ type SeedAdminAccount = {
   phone: string;
 };
 
+/* -------------------------------------- Mock Data -------------------------------------- */
+
+// Mock data สำหรับบัญชีผู้ดูแลระบบ (Admin) ของระบบ
 const SEED_ADMIN_ACCOUNTS: Record<AdminPermissionLevel, SeedAdminAccount> = {
   owner: {
     username: "admin",
@@ -52,12 +57,14 @@ const SEED_ADMIN_ACCOUNTS: Record<AdminPermissionLevel, SeedAdminAccount> = {
   },
 };
 
+// Mock data สำหรับ Gate Client
 const SEED_GATE_CLIENT = {
   clientId: "gate-main",
   name: "Main Gate Demo Client",
   secret: "gate_live_RnqzqVz1OCeLiEMMQRrddGDjaWxfDt2a7779bKJomTc",
 };
 
+// Mock data สำหรับ Runtime Settings
 const SEED_RUNTIME_SETTINGS = {
   driver_session_ttl_hours: 24,
   worker_accept_deadline_seconds: 60,
@@ -73,14 +80,13 @@ const SEED_RUNTIME_SETTINGS = {
   vendor_reconfirm_timeout_hours: 4,
 } as const;
 
+// Permission templates สำหรับแต่ละระดับ permission ของ admin
 const SEED_OPERATION_PERMISSIONS = ADMIN_PERMISSIONS.filter(
   (permission) =>
     permission !== "settings:update" && permission !== "permissions:update",
 );
 
-// manager ได้ทุก permission เหมือน owner ยกเว้นกลุ่ม OWNER_ONLY_PERMISSIONS (เช่น
-// mobile_app_versions:create/update) ที่ Owner แก้ให้ได้เท่านั้น — ยังคงให้ manager มี
-// mobile_app_versions:read ปกติ (แค่ create/update ที่ต้อง owner)
+// manager มี permission กลุ่ม OWNER_ONLY_PERMISSIONS แค่ read เท่านั้น
 const SEED_MANAGER_PERMISSIONS = ADMIN_PERMISSIONS.filter(
   (permission) =>
     permission === "mobile_app_versions:read" ||
@@ -93,6 +99,7 @@ const SEED_SUPERVISOR_PERMISSIONS = SEED_OPERATION_PERMISSIONS.filter(
     !(OWNER_ONLY_PERMISSIONS as readonly AdminPermission[]).includes(permission),
 );
 
+// role permission templates สำหรับแต่ละระดับ permission ของ admin
 const SEED_ROLE_PERMISSION_TEMPLATES: Record<
   AdminPermissionLevel,
   AdminPermission[]
@@ -101,6 +108,8 @@ const SEED_ROLE_PERMISSION_TEMPLATES: Record<
   manager: [...SEED_MANAGER_PERMISSIONS],
   supervisor: [...SEED_SUPERVISOR_PERMISSIONS],
 };
+
+/* -------------------------------------- Functions -------------------------------------- */
 
 // Function upsert บัญชีผู้ดูแลจาก seed โดยไม่เขียนทับ password เดิมเมื่อรัน seed ซ้ำ
 async function upsertSeedAdminAccount(
@@ -137,7 +146,7 @@ async function upsertSeedAdminAccount(
   });
 }
 
-// Function เตรียมข้อมูลเริ่มต้นของ admins ทุก permission level, workers, settings และ permissions
+// Function สำหรับ run seed ทั้งหมด
 async function main(): Promise<void> {
   const admin = await upsertSeedAdminAccount(SEED_ADMIN_ACCOUNTS.owner, "owner");
   const adminAccounts = [admin];
@@ -236,7 +245,7 @@ async function main(): Promise<void> {
   await seedMasterWorkers(prisma);
 
   console.log("Seeding test LINE mapping...");
-  await seedTestLine(prisma);
+  await seedLine(prisma);
 
   console.log("Seeding mobile app version...");
   await seedMobileAppVersion(prisma, admin.id);

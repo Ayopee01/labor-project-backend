@@ -5,6 +5,7 @@ import { client } from "./repository-utils";
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerAssignmentEventWriteInput } from "../../types/shared/worker-assignment-event.type";
 
+// Function บันทึก assignment event แบบ idempotent — ถ้าซ้ำ (unique constraint P2002) จะเงียบไว้ ไม่ throw
 export async function createOnce(
   input: WorkerAssignmentEventWriteInput,
   connection?: DbConnection,

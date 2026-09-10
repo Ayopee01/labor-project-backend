@@ -70,6 +70,7 @@ export type VendorTicketAction =
 // Type payload ใน token ที่ผูกกับ action ของ vendor ต่อ ticket
 export interface VendorTicketActionTokenPayload {
   token_type: "vendor_ticket_action";
+  id: number;
   action: VendorTicketAction;
   ticket_id: number;
   submission_id: number;

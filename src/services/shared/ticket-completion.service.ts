@@ -9,7 +9,7 @@ import * as rateResolutionService from "./rate-resolution.service";
 import { hasVendorConfirmationTimeout, scheduleVendorConfirmationTimeout } from "../../queues/worker-queue";
 import { enqueueLoggedLineMessage } from "../../queues/line-message-queue";
 import { getRuntimeSettings } from "./runtime-settings.service";
-import { ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS } from "../../constants/job-status";
+import { ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS } from "../../constants/status";
 import { resolveTicketResultAudience, publishRealtimeEvent } from "./realtime-notification.service";
 import { buildVendorCompletionReviewFlexMessage } from "../../utils/line-flex-message";
 import { buildWorkerTicketPayload } from "../../utils/ticket-payload";
@@ -46,9 +46,8 @@ export async function applyVendorTicketCompletionResult(input: {
         input.resolvedByLineUserId,
       );
 
-  // Financial finalize ไม่เกิดที่นี่อีกต่อไป (booth เดียวไม่พอ ต้องรอทุก Booth ของ Business
-  // Ticket จบก่อน) — closeCompletedVehicleJobIfReady จะเป็นคนเรียก finalizeMarketJobFinancials
-  // เองเมื่อ Business Ticket ที่ booth นี้สังกัดอยู่ Terminal ครบทุก Booth แล้ว
+  // ไม่ finalize การเงินที่นี่ ต้องรอทุก Booth จบก่อน (closeCompletedVehicleJobIfReady จะเรียก
+  // finalizeMarketJobFinancials เองเมื่อครบทุก Booth)
   const completedVehicleJob = isConfirmed
     ? await vehicleJobLifecycleService.closeCompletedVehicleJobIfReady(
         updated.ticket.vehicle_job_id,
@@ -126,12 +125,8 @@ function buildTicketProductKey(productCode: string, packageCode: string): string
   return JSON.stringify([productCode, packageCode]);
 }
 
-// Function ตรวจสอบ ticket completion items ใน service flow — ใช้ร่วมกันทั้ง Worker ส่งเองและ
-// Admin ส่งแทน
-//
-// รองรับเปลี่ยน PackageCode ของสินค้าเดิม: original_package_code (ถ้ามี) คือ PackageCode ที่ Gate
-// เคยประกาศไว้ ใช้จับคู่กับ TicketProduct เดิมที่มีอยู่แล้ว ส่วน packageCode คือค่าที่ส่งจริง (เดิม
-// หรือใหม่ก็ได้) — ProductCode ต้องเป็นตัวเดียวกับเดิมเสมอ ห้ามสลับสินค้า
+// Function ตรวจสอบ ticket completion items ใช้ร่วมกันทั้ง Worker และ Admin ส่งแทน
+// รองรับเปลี่ยน PackageCode ผ่าน original_package_code แต่ ProductCode ต้องเป็นตัวเดิมเสมอ ห้ามสลับสินค้า
 function validateTicketCompletionItems(
   products: TicketProductDto[],
   items: TicketProductConfirmationInput[],
@@ -192,10 +187,7 @@ function validateTicketCompletionItems(
 }
 
 // Function หา Rate Snapshot ใหม่ให้ item ที่เปลี่ยน PackageCode ก่อนบันทึกลง TicketProduct
-//
-// Rate Snapshot เดิมผูกกับ PackageCode เดิมเท่านั้น (น้ำหนัก/Rate ต่างกันตาม Package) จึงต้อง Query
-// Master Product + Master Rate ใหม่ทันทีที่เปลี่ยน PackageCode ห้ามเก็บ Rate Snapshot เดิมไว้ใช้กับ
-// PackageCode ใหม่ — item ที่ไม่ได้เปลี่ยน PackageCode จะผ่านฟังก์ชันนี้โดยไม่แตะต้อง
+// Rate เดิมผูกกับ PackageCode เดิม ห้ามใช้ซ้ำกับ PackageCode ใหม่ ต้อง Query ใหม่เสมอ (item ที่ไม่เปลี่ยนผ่านไปเลย)
 export async function resolvePackageSwitchesForItems(
   items: TicketProductConfirmationInput[],
   marketCode: string,
@@ -300,12 +292,8 @@ function buildVendorCompletionMessages(
   ];
 }
 
-// Function ส่งยอดปิด Booth หนึ่งใบ (validate + markTicketDelivered + สร้าง TicketCompletionSubmission
-// + snapshot จำนวน worker) ใช้ร่วมกันทั้ง Worker ส่งเอง (requireRosterMembership: true — ผู้ส่งต้อง
-// เป็นสมาชิก WORKING ของ Business Ticket นี้จริง) และ Admin ส่งแทนกรณี Worker กดส่งเองไม่ได้
-// (requireRosterMembership: false — Admin ไม่ใช่สมาชิกใน roster) — เงื่อนไขอื่นเหมือนกันทุกจุด
-// (ต้องมี Vendor LINE target, ทีมต้อง check-in ครบก่อน) เพื่อให้ผลลัพธ์ปลายทาง (รอ Vendor ยืนยันผ่าน
-// LINE) เหมือนกันไม่ว่าใครเป็นคนกดส่ง
+// Function ส่งยอดปิด Booth หนึ่งใบ (validate + markTicketDelivered + สร้าง Submission + snapshot จำนวน worker)
+// ใช้ร่วมกันทั้ง Worker ส่งเอง (requireRosterMembership: true) และ Admin ส่งแทน (false) เพื่อให้ผลลัพธ์เหมือนกัน
 export async function submitTicketCompletion(input: {
   findTicket: (connection: DbConnection) => Promise<GateTicketDto | null>;
   items: TicketProductConfirmationInput[];
@@ -375,8 +363,7 @@ export async function submitTicketCompletion(input: {
   );
 
   if (requireRosterMembership) {
-    // ตรวจสอบว่า Worker ที่ส่งยอดยังเป็นสมาชิกที่ทำงานอยู่ใน Business Ticket ของ Booth นี้ (Worker
-    // อาจถูก Cancel เฉพาะ Business Ticket นี้ แต่ยัง Check-in รถและทำ Ticket อื่นได้)
+    // ตรวจสอบว่า Worker ยังเป็นสมาชิกที่ทำงานอยู่ใน Business Ticket นี้ (อาจถูก Cancel เฉพาะ Ticket นี้แต่ยังทำ Ticket อื่นได้)
     const isTicketWorker = ticketWorkers.some(
       (worker) =>
         worker.worker_id === submittedByAccountId &&
@@ -408,8 +395,7 @@ export async function submitTicketCompletion(input: {
     throw new ApiError(404, "MARKET_JOB_NOT_FOUND", "Business ticket not found.");
   }
 
-  // Resolve ก่อน markTicketDelivered เสมอ: ถ้า PackageCode ใหม่ไม่ valid หรือหา Rate ไม่ได้ ต้องล้ม
-  // ก่อน ticket จะถูกเปลี่ยนสถานะเป็น DELIVERED
+  // ต้อง Resolve ก่อน markTicketDelivered เสมอ ถ้า PackageCode ใหม่ไม่ valid หรือหา Rate ไม่ได้ต้องล้มก่อนเปลี่ยนสถานะเป็น DELIVERED
   const resolvedItems = await resolvePackageSwitchesForItems(
     items,
     marketJob.marketCode,
@@ -437,16 +423,13 @@ export async function submitTicketCompletion(input: {
     );
   }
 
-  // Booth Worker Count Snapshot: จำนวน Worker WORKING ณ ตอน Submit จริง (จาก ticketWorkers ที่
-  // sync ไปแล้วด้านบน ในทรานแซกชันเดียวกัน) ไม่ใช่ Roster ปัจจุบันหรือ Confirm-time Snapshot — ต้อง
-  // Snapshot ใหม่ทุกครั้งที่ Submit ห้าม copy จาก Submission ก่อนหน้า และนับเหมือนกันไม่ว่าใครกดส่ง
-  // ใช้ชุดเดียวกับ workingTicketWorkerIds ด้านล่างเป๊ะ (count ต้องตรงกับ list เสมอ)
+  // Snapshot จำนวน Worker WORKING ณ ตอน Submit จริง (จาก ticketWorkers ที่ sync ไว้แล้วในทรานแซกชันเดียวกัน)
+  // ต้อง Snapshot ใหม่ทุกครั้ง ห้าม copy จาก Submission ก่อนหน้า และต้องตรงกับ workingTicketWorkerIds ด้านล่างเป๊ะ
   const workingTicketWorkerIds = ticketWorkers
     .filter((worker) => worker.status === TICKET_WORKER_STATUS.WORKING)
     .map((worker) => worker.id);
   const workerCountSnapshot = workingTicketWorkerIds.length;
-  // Assignment ปัจจุบันของผู้ส่งยอด ณ ตอน Submit จริง — เป็น null ตามธรรมชาติเมื่อ Admin submit
-  // แทน Worker (Admin ไม่มี VehicleJobAssignment ของตัวเอง) ห้ามเดาย้อนหลังตอนอ่าน Work History
+  // Assignment ปัจจุบันของผู้ส่งยอด ณ ตอน Submit — เป็น null ตามปกติถ้า Admin submit แทน Worker (ไม่มี Assignment ของตัวเอง)
   const submitterAssignment =
     await assignmentRepository.findCurrentAssignmentByVehicleJobIdAndWorker(
       ticket.vehicle_job_id,
@@ -462,8 +445,8 @@ export async function submitTicketCompletion(input: {
     connection,
   );
 
-  // Snapshot roster ณ ตอน Submit จริง (แยกจาก GateTicketWorkerSnapshot ที่จะถูก snapshot ทีหลังตอน
-  // Confirm) — ใช้สำหรับ Work History SubmissionWorkerSnapshot[] เท่านั้น ห้ามใช้เป็น divisor การเงิน
+  // Snapshot roster ณ ตอน Submit (แยกจาก GateTicketWorkerSnapshot ที่ snapshot ทีหลังตอน Confirm)
+  // ใช้สำหรับ Work History เท่านั้น ห้ามใช้เป็น divisor คำนวณเงิน
   await gateTicketRepository.createSubmissionWorkerSnapshots(
     submission.id,
     workingTicketWorkerIds,
@@ -504,9 +487,8 @@ export async function submitTicketCompletion(input: {
   };
 }
 
-// Function จัดการ notify หลัง submitTicketCompletion สำเร็จ (ตั้งเวลา auto-confirm + ส่ง LINE ไป
-// Vendor + publish realtime event) ใช้ร่วมกันทั้ง Worker ส่งเองและ Admin ส่งแทน — คืน detail ของ
-// vehicle job กลับไปให้ caller ใช้ประกอบ response ต่อ โดยไม่ต้อง query ซ้ำ
+// Function จัดการ notify หลัง submitTicketCompletion สำเร็จ (ตั้งเวลา auto-confirm + ส่ง LINE ไป Vendor + publish realtime event)
+// ใช้ร่วมกันทั้ง Worker และ Admin ส่งแทน คืน detail ของ vehicle job กลับไปให้ caller ใช้ต่อโดยไม่ต้อง query ซ้ำ
 export async function notifyTicketCompletionSubmitted(result: {
   ticket: GateTicketDto;
   submission: TicketCompletionSubmissionDto;
@@ -575,12 +557,9 @@ export async function notifyTicketCompletionSubmitted(result: {
   return { detail };
 }
 
-// Function กู้คืน Submission ที่ค้าง DELIVERED เพราะ Server ล่มไปก่อนที่ submitTicketCompletion จะ
-// schedule vendor-confirm-timeout job/ส่ง LINE ไปหา Vendor สำเร็จ (สอง step นี้เกิด "หลัง" DB
-// transaction ที่เปลี่ยน Ticket เป็น DELIVERED commit ไปแล้ว — ดู notifyTicketCompletionSubmitted)
-// เรียกครั้งเดียวตอน Server เริ่มทำงาน — เช็คกับ BullMQ จริงก่อนเสมอ (hasVendorConfirmationTimeout)
-// เพื่อไม่ไป reconcile Ticket ที่กำลังรอ Vendor ตามปกติอยู่แล้วซ้ำ (มี job จริงตั้งรออยู่แล้ว) คืนจำนวน
-// Ticket ที่กู้คืนสำเร็จ
+// Function กู้คืน Submission ที่ค้าง DELIVERED เพราะ Server ล่มก่อน schedule timeout job/ส่ง LINE สำเร็จ
+// (เกิดหลัง DB commit เปลี่ยนเป็น DELIVERED แล้ว — ดู notifyTicketCompletionSubmitted) เรียกครั้งเดียวตอน
+// Server เริ่มทำงาน เช็คกับ BullMQ จริงก่อนเสมอ (hasVendorConfirmationTimeout) เพื่อไม่ reconcile ซ้ำ Ticket ที่มี job รออยู่แล้ว คืนจำนวนที่กู้คืนสำเร็จ
 export async function reconcileOrphanedTicketSubmissions(): Promise<number> {
   const candidates = await gateTicketRepository.listDeliveredTicketsWithLatestSubmission();
   let reconciledCount = 0;
@@ -608,10 +587,8 @@ export async function reconcileOrphanedTicketSubmissions(): Promise<number> {
         continue;
       }
 
-      // ไม่มี "ค่าก่อนหน้า" ให้เทียบจริงในเส้นทาง recovery นี้ (ต่างจาก submitTicketCompletion ที่มี
-      // originalProducts จาก query ก่อนอัปเดต) — ใช้ products ปัจจุบันซ้ำทั้งสองฝั่ง ผลคือข้อความ LINE
-      // จะไม่โชว์ diff ของ PackageCode ที่เปลี่ยน (กรณี edge case หายาก) แต่ยังคงส่งแจ้งเตือน Vendor
-      // และ schedule timeout ใหม่ได้ถูกต้อง ซึ่งเป็นเป้าหมายหลักของ recovery นี้
+      // เส้นทาง recovery นี้ไม่มี originalProducts จริงให้เทียบ จึงใช้ products ปัจจุบันซ้ำทั้งสองฝั่ง
+      // ผลคือข้อความ LINE จะไม่โชว์ diff ของ PackageCode ที่เปลี่ยน (edge case หายาก) แต่ยังแจ้งเตือน Vendor และ schedule timeout ใหม่ได้ถูกต้อง
       await notifyTicketCompletionSubmitted({
         ticket,
         submission,

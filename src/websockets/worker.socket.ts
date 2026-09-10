@@ -234,9 +234,8 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
   await publishWorkerConnectionChanged(accountId, false, "socket_disconnected");
 }
 
-// Function ตัดการเชื่อมต่อ socket ของ worker คนหนึ่งจากฝั่ง server ทันที ใน Worker WebSocket — ใช้ตอน
-// session ถูก revoke แบบชัดเจน (logout/admin revoke) เพื่อให้ admin เห็นว่า worker หลุดการเชื่อมต่อทันที
-// ไม่ต้องรอ grace period 15 วิที่ออกแบบไว้กันกรณีเน็ตกระตุกเท่านั้น
+// Function ตัดการเชื่อมต่อ socket ของ worker ทันทีจากฝั่ง server — ใช้ตอน session ถูก revoke ชัดเจน
+// (logout/admin revoke) ให้ admin เห็นผลทันที ไม่ต้องรอ grace period 15 วิที่กันไว้เผื่อเน็ตกระตุก
 export async function disconnectWorkerSocket(
   accountId: number,
   reason: string,
@@ -323,9 +322,8 @@ export function sendWorkerSocketEvent(
     }
 
     const now = new Date();
-    // server_time/server_time_unix_ms คู่กับ occurred_at เดิม (ค่าเดียวกัน) เพื่อให้ชื่อ field ตรงกับ
-    // REST response (api-case.middleware.ts) — frontend ใช้คำนวณ offset เทียบเวลาเครื่องได้แบบเดียวกัน
-    // ไม่ว่าจะรับข้อมูลผ่าน REST หรือ WebSocket
+    // server_time/server_time_unix_ms ค่าเดียวกับ occurred_at แค่ตั้งชื่อให้ตรงกับ REST response
+    // (api-case.middleware.ts) เพื่อให้ frontend คำนวณ offset เวลาได้แบบเดียวกันทั้ง REST และ WebSocket
     const event = toPascalCasePayload({
       type,
       notification,
@@ -504,6 +502,7 @@ export function setupWorkerWebSocket(server: Server): void {
   }, 30000);
 }
 
+// Function ปิด Worker WebSocket server และเคลียร์ timer ทั้งหมดสำหรับ graceful shutdown
 export function closeWorkerWebSocketServer(): Promise<void> {
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);

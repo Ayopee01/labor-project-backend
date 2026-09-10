@@ -40,10 +40,8 @@ function canReceiveEvent(
   return false;
 }
 
-// Function บันทึก SSE event ใน service flow — ห่อด้วย try/catch เพราะ response อาจถูก destroy ไป
-// แล้ว (client หลุดกะทันหันแบบ ECONNRESET ก่อน "close" event ทัน) เขียนซ้ำเข้า stream ที่ตายแล้ว
-// จะ throw แบบ synchronous ได้ ถ้าไม่ครอบไว้จะทำให้ publishNotification ที่วน loop client อื่นๆ
-// หยุดกลางคันไปด้วย
+// Function เขียน SSE event ไปยัง client — ครอบด้วย try/catch เพราะ response อาจถูก destroy ไปแล้ว
+// (client หลุดกะทันหันก่อน "close" event) เขียนซ้ำจะ throw จนทำให้ loop client อื่นใน publishNotification หยุดไปด้วย
 function writeSseEvent(
   response: Response,
   eventName: string,
@@ -51,8 +49,7 @@ function writeSseEvent(
 ): void {
   try {
     const now = new Date();
-    // server_time/server_time_unix_ms ให้ frontend คำนวณ offset เทียบเวลาเครื่องได้เหมือนฝั่ง REST/
-    // WebSocket (api-case.middleware.ts, worker.socket.ts) — ใส่เฉพาะตอน data เป็น plain object
+    // server_time/server_time_unix_ms ให้ frontend คำนวณ offset เวลาได้เหมือนฝั่ง REST/WebSocket — ใส่เฉพาะตอน data เป็น plain object
     const eventData =
       data && typeof data === "object" && !Array.isArray(data)
         ? { ...data, server_time: now.toISOString(), server_time_unix_ms: now.getTime() }
@@ -65,9 +62,7 @@ function writeSseEvent(
   }
 }
 
-// Function เลิก subscribe และเคลียร์ client ตัวหนึ่งออกจาก in-memory list ใน service flow — ใช้ร่วม
-// กันทั้ง "close" (client ปิด connection แบบสุภาพ) และ "error" (connection หลุดกะทันหัน เช่น
-// ECONNRESET) เพื่อไม่ให้ heartbeat interval/reference ของ client ที่ตายไปแล้วค้างอยู่ในระบบ
+// Function เคลียร์ client ออกจาก in-memory list เมื่อ connection ปิดหรือหลุด กัน heartbeat interval ค้าง
 function removeSseClient(clientId: number): void {
   const client = clients.get(clientId);
 
@@ -110,10 +105,7 @@ export function subscribeAdminEvents(
     heartbeat,
   });
 
-  // "close" = client ปิด connection ปกติ, "error" = connection หลุดกะทันหัน (เช่น ECONNRESET) ก่อน
-  // "close" event ทัน — ถ้าไม่ดัก error ไว้ Node จะ throw error ที่ไม่มี listener แบบ uncaught เมื่อ
-  // เขียนซ้ำเข้า stream ที่หลุดไปแล้ว (เช่นจาก heartbeat/publishNotification รอบถัดไป) จนกระทบ process
-  // ทั้งตัว ทั้งที่เป็นแค่ client SSE หนึ่งตัวหลุดเน็ต
+  // ดัก "error" ไว้ด้วย ไม่ใช่แค่ "close" — ไม่งั้น error ที่ไม่มี listener จะ throw แบบ uncaught จน crash ทั้ง process
   response.req.on("close", () => removeSseClient(clientId));
   response.req.on("error", () => removeSseClient(clientId));
   response.on("error", () => removeSseClient(clientId));

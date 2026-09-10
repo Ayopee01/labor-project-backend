@@ -252,29 +252,15 @@ Port 3000 (Grafana) is deliberately **not** opened here — see the UFW rule in 
 
 ### Database backups
 
-`scripts/backup-postgres.sh` dumps the database with `pg_dump`, gzips it, uploads it to a DigitalOcean Spaces bucket (S3-compatible), and prunes backups older than `BACKUP_RETENTION_DAYS` from that bucket. Configure it entirely through the `SPACES_*` variables in `.env` (see `.env.example`) — no credentials are ever hardcoded in the script.
+Production PostgreSQL runs on a **DigitalOcean Managed Database** cluster, not in Docker on the droplet. Backups are handled entirely by DO itself — automatic daily backups with point-in-time recovery (7-day retention by default, extendable in the control panel under the cluster's **Backups & Restore** tab). There is no backup script or cron job in this repo to maintain.
 
-Install its dependencies once on the droplet:
+To point the app at the cluster:
 
-```bash
-sudo apt install -y postgresql-client s3cmd
-```
+1. Provision the Managed Database cluster in the DigitalOcean control panel (same region as the droplet, to keep latency low).
+2. Point `DATABASE_URL` (and `DOCKER_DATABASE_URL` if used) at the cluster's connection string, appending `?sslmode=require` — DO Managed Postgres requires SSL and refuses plain connections.
+3. Don't add the `local-db` profile to the production start command — just `docker compose --profile production up -d redis api-prod` (no `postgres` service needed on the droplet).
 
-Run it manually to test:
-
-```bash
-./scripts/backup-postgres.sh
-```
-
-**Cron** (every 6 hours, logging to a file so failures are visible):
-
-```bash
-crontab -e
-# add:
-0 */6 * * * cd /path/to/labor-project-backend && ./scripts/backup-postgres.sh >> /var/log/labor-backup.log 2>&1
-```
-
-**`loki_data` and whole-droplet safety net**: rather than a separate cron job, enable DigitalOcean's built-in **automatic daily Droplet snapshots** (Droplet → Backups, in the DigitalOcean control panel) — this covers `loki_data` and every other volume/file on the droplet as a single daily point-in-time image, independent of anything in this repo.
+**`loki_data` and whole-droplet safety net**: enable DigitalOcean's built-in **automatic daily Droplet snapshots** (Droplet → Backups, in the DigitalOcean control panel) — this covers `loki_data` and every other volume/file on the droplet as a single daily point-in-time image, independent of the database backups above.
 
 ### Pre-deploy secret checklist
 
@@ -285,8 +271,7 @@ Before starting the stack in production, replace every one of these in `.env` (a
 - `CORS_ORIGIN` — the real frontend origin(s), not `*`
 - `GRAFANA_ADMIN_PASSWORD` — required before exposing port 3000, even behind the UFW team-IP rule above
 - `SPACES_ENDPOINT`, `SPACES_REGION`, `SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY` — from the DigitalOcean control panel (API → Spaces Keys); required for the app to start at all (admin profile image uploads)
-- `SPACES_ADMIN_BUCKET` — a public-read Spaces bucket for admin profile images (separate from the private backup bucket below)
-- `SPACES_BUCKET` — a private Spaces bucket for `scripts/backup-postgres.sh` database backups
+- `SPACES_ADMIN_BUCKET` — a public-read Spaces bucket for admin profile images
 - `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET` — from the LINE Developers console
 - `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` — from the Firebase service account JSON
 - `SENTRY_DSN` — optional; leave empty to keep Sentry disabled

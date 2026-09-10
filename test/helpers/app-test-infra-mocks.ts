@@ -122,9 +122,17 @@ export class FakeRedis {
     return items.flatMap(([member, score]) => [member, String(score)]);
   }
 
-  async zrem(key: string, ...members: string[]): Promise<void> {
+  async zrem(key: string, ...members: string[]): Promise<number> {
     const set = FakeRedis.zsets.get(key);
-    members.forEach((member) => set?.delete(member));
+    let removedCount = 0;
+
+    members.forEach((member) => {
+      if (set?.delete(member)) {
+        removedCount += 1;
+      }
+    });
+
+    return removedCount;
   }
 
   async zrank(key: string, member: string): Promise<number | null> {
