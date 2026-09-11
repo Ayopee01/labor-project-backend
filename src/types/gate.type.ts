@@ -40,21 +40,13 @@ interface GateProductCreateInput {
   productCode: string;
   productFullCode: string;
   productName: string;
-
   packageCode: string;
   packageName: string;
-
   quantity: number;
-
   packageWeightSnapshot: string;
-
   rateIdSnapshot: number;
   sourceRateIdSnapshot: number;
-
-  // MarketCode ของ Rate ที่ถูกใช้จริง
-  // อาจเป็นตลาดที่ร้องขอ หรือ "0000" กรณีใช้ Central Rate
   rateMarketCode: string;
-
   rateSource:
   | "MARKET_RATE"
   | "CENTRAL_RATE";
@@ -62,14 +54,8 @@ interface GateProductCreateInput {
   weightRangeName: string;
   weightMinSnapshot: string;
   weightMaxSnapshot: string;
-
-  // PackagePrice
   stallRateSnapshot: string;
-
-  // PackageRate
   laborRateSnapshot: string;
-
-  // เวลาที่ Snapshot Rate
   rateSnapshotAt: Date;
 }
 
@@ -85,42 +71,27 @@ interface GateBoothCreateInput {
 }
 
 // Type ข้อมูล Business Ticket (market job) ก่อนบันทึกจาก Gate
-// หนึ่ง Business Ticket อยู่ได้เพียงหนึ่งตลาด แต่มีหลาย Booth ได้
 interface GateMarketCreateInput {
   ticketNo: string;
   ticket_created_at: Date;
-
   booth_count: number;
-
   gate_transaction_ref: string;
-
-  // Type จำนวน Worker สำหรับ dispatch ของ Business Ticket นี้
   workers_required: number;
-
   marketCode: string;
   marketName: string;
-
   dropoff_point: string;
-
   booths: GateBoothCreateInput[];
 }
 
 // Type input สำหรับสร้างหรือ append Business Ticket ใต้ VehicleJob — ทุก field ที่นี่มาจาก
-// GateVehicleJobBody ที่ผ่าน schema validation แล้วเสมอ (required ทั้งหมด) จึงไม่มี field ไหน optional
 export interface GateVehicleJobCreateInput {
   ticketNumber: string;
 
   license_plate: string;
   license_plate_province: string;
   vehicle_type: string;
-
   dispatch_now: boolean;
-
-  // เสมอมีสมาชิกเดียวใน array นี้ต่อหนึ่ง Gate request (หนึ่ง request = หนึ่ง Business Ticket)
   markets: GateMarketCreateInput[];
-
-  // ใส่ค่านี้เมื่อ TicketNo + MarketCode ของ request นี้ตรงกับ Business Ticket ที่ยัง active อยู่แล้ว
-  // ภายใต้ TicketNumber เดียวกัน — บอก repository ให้เพิ่มแผงเข้า MarketJob เดิม (id นี้) แทนการสร้างใหม่
   existingMarketJobId?: number;
 }
 
@@ -130,9 +101,6 @@ export interface GateVehicleJobCreateInput {
 export interface GateVehicleJobProductBody {
   ProductCode: string;
   PackageCode: string;
-
-  // จำนวนจาก Gate
-  // ใช้หา Worker requirement จาก Master
   Quantity: number;
 }
 
@@ -144,32 +112,18 @@ export interface GateVehicleJobBoothBody {
 
 // Type request หลักจาก Gate
 export interface GateVehicleJobBody {
-  // TicketNumber = ระดับรถ, อาจถูกส่งมาหลายครั้งพร้อม TicketNo ใหม่ทุกครั้งที่มี Business Ticket ใหม่
   TicketNumber: string;
-  // Type TicketNo ของ Business Ticket ใต้ TicketNumber
   TicketNo: string;
   TicketCreatedAt: string;
-
   BoothCount: number;
-
   MarketCode: string;
-
-  // จุดลงสินค้าของตลาดนี้ — บังคับส่งมาทุกครั้งคู่กับ MarketCode ตลาดเดียวกันส่งค่าซ้ำกันได้ปกติ (ไม่มี
-  // การเช็ค unique ใดๆ) เก็บลง MarketJob.dropoffPoint ตรงๆ ต่อ Ticket
   DropoffPoint: string;
-
   LicensePlate: string;
   LicensePlateProvince: string;
-
   VehicleTypeCode: string;
   VehicleTypeName: string;
-
   Booths: GateVehicleJobBoothBody[];
-
   Dispatch: boolean;
-
-  // Optional — ยังไม่มี Gate Vendor ส่งมาจริงในปัจจุบัน ดู Comment ที่ gateVehicleJobBodySchema
-  // (validation/schemas.ts) และ buildGateTransactionRef (gate.service.ts) สำหรับรายละเอียด (BUG-020)
   IdempotencyKey?: string;
 }
 
@@ -213,21 +167,13 @@ interface GateVehicleJobResponseProduct {
   ProductCode: string;
   ProductFullCode: string;
   ProductName: string;
-
   PackageCode: string;
   PackageName: string;
-
-  // จำนวนที่ Gate ส่งเข้ามา
   Quantity: number;
-
-  // จำนวน Worker ที่ Master กำหนดสำหรับ Product นี้
-  // ใช้ด้าน Operation / Dispatch เท่านั้น
   WorkerCount: number;
 }
 
 // Type ข้อมูล Booth ที่คืนให้ Gate
-//
-// ไม่มี StallPayment / WorkerPayment ในขั้นตอนนี้
 interface GateVehicleJobResponseBooth {
   BoothCode: string;
   BoothName: string | null;
@@ -238,17 +184,10 @@ interface GateVehicleJobResponseBooth {
 // Type response หลักของ Gate create
 export interface GateVehicleJobResponse {
   Result: GateVehicleJobResult;
-
-  // เลขงานใหญ่ระดับรถ (VehicleJob)
   TicketNumber: string;
-
   Ticket: GateVehicleJobResponseTicket;
-
   Market: GateVehicleJobResponseMarket;
-
   Booths: GateVehicleJobResponseBooth[];
-
-  // Type จำนวน Worker รวมสำหรับ dispatch ทั้ง TicketNumber
   WorkerCount: number;
 
   Qr: {
@@ -261,9 +200,7 @@ export interface GateVehicleJobResponse {
 // Type ข้อมูล Gate request สำหรับ replay
 export interface GateRequestReplayRecord {
   gate_transaction_ref: string;
-
   payload_snapshot: unknown;
-
   response_snapshot:
   GateVehicleJobResponse | null;
 }

@@ -1,20 +1,24 @@
 // Import Library
 import express from "express";
-// Import Dependencies
+// Import Middleware
 import authMiddleware from "../middlewares/auth.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
 import { matchesImageSignature, uploadAdminImage } from "../middlewares/upload.middleware";
+// Import Services
 import * as authService from "../services/auth.service";
+// Import Config
 import { uploadAdminProfileImage } from "../config/spaces";
+// Import Utils
 import ApiError from "../utils/api-error";
-
+// Import Types
 import type { Request } from "express";
 import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
 
 const router = express.Router();
 
-// Function ดึง IP/User-Agent/RequestId จาก request ปัจจุบันสำหรับ security audit log ไม่มี middleware ใดแนบให้อัตโนมัติ จึง extract เองตรงนี้
+/* -------------------------------------- Functions -------------------------------------- */
+
 function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
   return {
     ip_address: req.ip ?? null,
@@ -22,6 +26,8 @@ function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
     request_id: req.requestId ?? null,
   };
 }
+
+/* -------------------------------------- Authentication Routes -------------------------------------- */
 
 router.post(
   "/login",
@@ -76,7 +82,6 @@ router.post(
   }
 );
 
-// Route ลงทะเบียนหรือ refresh FCM token ให้ Worker Mobile เมื่อ login ไม่ได้ส่ง token มา
 router.post(
   "/push-token",
   authMiddleware,
@@ -96,7 +101,6 @@ router.post(
   }
 );
 
-// Route ดึง profile ของ account ปัจจุบันจาก access token ที่ใช้งานอยู่
 router.get(
   "/me",
   authMiddleware,
@@ -111,7 +115,6 @@ router.get(
   }
 );
 
-// Route เปลี่ยน password ของ admin ที่ login อยู่เอง (worker ไม่มี password อิสระ ใช้ telephone เสมอ จึงจำกัดเฉพาะ admin)
 router.patch(
   "/me/password",
   authMiddleware,
@@ -145,7 +148,6 @@ router.patch(
   }
 );
 
-// Route แก้ไขข้อมูลส่วนตัว (full_name/email/phone) ของ Admin ที่ login อยู่เอง
 router.patch(
   "/me",
   authMiddleware,
@@ -166,7 +168,6 @@ router.patch(
   }
 );
 
-// Route อัปโหลดรูปโปรไฟล์ของ Admin ที่ login อยู่เอง
 router.post(
   "/me/upload-image",
   authMiddleware,
@@ -179,7 +180,7 @@ router.post(
         throw new ApiError(400, "IMAGE_FILE_REQUIRED", "Image file is required.");
       }
 
-      // ตรวจ magic byte ของเนื้อไฟล์จริงจาก buffer ใน memory (fileFilter เชื่อได้แค่ Content-Type ที่ client ส่งมาเอง)
+      // ตรวจสอบว่า file ที่ upload ตรงกับ signature ของ image type ที่อนุญาตหรือไม่
       if (!matchesImageSignature(req.file.buffer, req.file.mimetype)) {
         throw new ApiError(
           400,

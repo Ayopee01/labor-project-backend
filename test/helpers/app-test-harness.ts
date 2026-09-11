@@ -5,11 +5,11 @@ import { normalizeApiRequestPayload } from "../../src/middlewares/api-case.middl
 import { applyIsolatedTestEnv } from "../setup/test-env";
 import { FakeQueue, FakeRedis, FakeWorker } from "./app-test-infra-mocks";
 import type { AccountRecord } from "./app-test-harness.records";
-import { lineRepositoryMock, notificationQueueMock, notificationServiceMock, realtimeNotificationServiceMock, workerSocketMock } from "./app-test-notification-mocks";
+import { lineActionTokenRepositoryMock, lineRepositoryMock, messageDeliveryLogRepositoryMock, notificationQueueMock, notificationServiceMock, realtimeNotificationServiceMock, workerSocketMock } from "./app-test-notification-mocks";
 import { spacesMock } from "./app-test-spaces-mock";
 
 export { resetSpacesMockState, spacesMockState } from "./app-test-spaces-mock";
-import { accountRepositoryMock, adminActionLogRepositoryMock, adminAuditRepositoryMock, adminJobsRepositoryMock, adminSettingsRepositoryMock, adminWorkersRepositoryMock, authRepositoryMock, driverRepositoryMock, gateClientRepositoryMock, gateTicketRepositoryMock, gateRepositoryMock, masterWorkerRepositoryMock, mobileAppVersionRepositoryMock, marketJobRepositoryMock, masterDataRepositoryMock, securityAuditLogRepositoryMock, systemSettingRepositoryMock, ticketFinancialRepositoryMock, ticketWorkerRepositoryMock, vehicleJobAssignmentRepositoryMock, vehicleJobRepositoryMock, profileRepositoryMock, workerShiftAttendanceRepositoryMock, workerNotificationRepositoryMock, workerPushTokenRepositoryMock, workerRepositoryMock, workerSessionRepositoryMock, workScheduleRepositoryMock } from "./app-test-repository-mocks";
+import { accountRepositoryMock, adminActionLogRepositoryMock, adminAuditRepositoryMock, adminJobsRepositoryMock, adminSettingsRepositoryMock, adminWorkersRepositoryMock, authRepositoryMock, driverRepositoryMock, driverSessionRepositoryMock, gateClientRepositoryMock, gateTicketRepositoryMock, gateRepositoryMock, masterWorkerRepositoryMock, mobileAppVersionRepositoryMock, marketJobRepositoryMock, masterDataRepositoryMock, securityAuditLogRepositoryMock, systemSettingRepositoryMock, ticketFinancialRepositoryMock, ticketWorkerRepositoryMock, vehicleJobAssignmentRepositoryMock, vehicleJobRepositoryMock, profileRepositoryMock, workerShiftAttendanceRepositoryMock, workerNotificationRepositoryMock, workerPushTokenRepositoryMock, workerRepositoryMock, workerSessionRepositoryMock, workScheduleRepositoryMock } from "./app-test-repository-mocks";
 import { state } from "./app-test-state";
 
 export { state } from "./app-test-state";
@@ -118,6 +118,27 @@ function patchModuleLoader(): void {
       request === "../../repositories/driver.repository"
     ) {
       return driverRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/driver-session.repository" ||
+      request === "../../repositories/shared/driver-session.repository"
+    ) {
+      return driverSessionRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/line-action-token.repository" ||
+      request === "../../repositories/shared/line-action-token.repository"
+    ) {
+      return lineActionTokenRepositoryMock;
+    }
+
+    if (
+      request === "../repositories/shared/message-delivery-log.repository" ||
+      request === "../../repositories/shared/message-delivery-log.repository"
+    ) {
+      return messageDeliveryLogRepositoryMock;
     }
 
     if (

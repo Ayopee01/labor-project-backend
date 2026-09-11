@@ -7,7 +7,8 @@ import * as gateService from "../services/gate.service";
 
 const router = express.Router();
 
-// Route รับ ticket หนึ่งใบจาก Gate และสร้างหรือ replay งานแรงงานที่ตรงกัน
+/* -------------------------------------- Gate Routes -------------------------------------- */
+
 router.post(
   "/tickets",
   gateClientAuthMiddleware,
@@ -21,7 +22,6 @@ router.post(
   }
 );
 
-// TEST HELPER: ดึงรายการตลาด แผงค้า สินค้า และแพ็กเกจสำหรับช่วยสร้าง Gate request (ใช้กับ Postman/Swagger)
 router.get(
   "/options",
   gateClientAuthMiddleware,

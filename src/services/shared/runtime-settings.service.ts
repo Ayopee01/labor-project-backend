@@ -1,9 +1,13 @@
+// Import Config
 import { RUNTIME_SETTING_KEYS } from "../../config/runtime.config";
+// Import Repositories
 import { listSettings } from "../../repositories/shared/system-setting.repository";
+// Import Validation
 import { runtimeSettingsSchema } from "../../validation/schemas";
 import { parseWithSchema } from "../../validation/parser";
+// Import Utils
 import ApiError from "../../utils/api-error";
-
+// Import Config
 import type { RuntimeSettingKey, RuntimeSettings } from "../../config/runtime.config";
 
 const SETTINGS_CACHE_TTL_MS = 30 * 1000;
@@ -43,6 +47,7 @@ function mergeRuntimeSettings(
   return parseWithSchema(runtimeSettingsSchema, rawSettings);
 }
 
+// Function ล้าง cache ของ runtime settings ที่เก็บไว้ในหน่วยความจำ
 export function clearRuntimeSettingsCache(): void {
   cachedSettings = null;
 }

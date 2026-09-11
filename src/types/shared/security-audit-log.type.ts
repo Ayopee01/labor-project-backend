@@ -1,11 +1,8 @@
-// Config ประเภท event สำหรับ SecurityAuditLog (27.12) — phase 1 คือ auth/session
-// (login/logout/force-login) phase 2-4 คือ account/settings/gate-client/mobile-version mutation
 export const SECURITY_AUDIT_EVENT_TYPE = {
   AUTH_LOGIN_SUCCEEDED: "auth_login_succeeded",
   AUTH_LOGIN_FAILED: "auth_login_failed",
   AUTH_LOGOUT: "auth_logout",
   AUTH_FORCE_LOGIN: "auth_force_login",
-  // 27.14.1 — เขียนคู่กับ AUTH_FORCE_LOGIN เสมอในธุรกรรมเดียวกัน ไม่มีทางเกิดแยกจากกัน
   AUTH_SESSION_REVOKED: "auth_session_revoked",
   ACCOUNT_PASSWORD_CHANGED: "account_password_changed",
   ACCOUNT_PASSWORD_RESET: "account_password_reset",
@@ -37,8 +34,6 @@ export type SecurityAuditOutcome =
 
 export type SecurityAuditActorType = "admin" | "worker";
 
-// Context ของ request ที่ต้อง thread จาก route ผ่าน service ไปจนถึงจุดเขียน log — ไม่มี middleware
-// ใดแนบเข้า req.auth ให้อัตโนมัติ (ดู request-logger.middleware.ts) จึงต้องส่งเป็น parameter ตรงๆ
 export interface SecurityAuditRequestContext {
   ip_address: string | null;
   user_agent: string | null;

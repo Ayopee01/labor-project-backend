@@ -1,15 +1,21 @@
+// Import Library
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
+// Import Repositories
 import * as masterWorkerRepository from "../../repositories/shared/master-worker.repository";
 import * as workerPushTokenRepository from "../../repositories/shared/worker-push-token.repository";
-import { createMessageDeliveryLog, MESSAGE_DELIVERY_STATUS, updateMessageDeliveryLogStatus } from "../../repositories/line.repository";
+import { createMessageDeliveryLog, MESSAGE_DELIVERY_STATUS, updateMessageDeliveryLogStatus } from "../../repositories/shared/message-delivery-log.repository";
+// Import Utils
 import { buildLocalizedNotification } from "../../utils/notification-localization";
+// Import Types
 import { MASTER_WORKER_STATUS } from "../../types/admin-workers.type";
 import type { AccessTokenPayload, SessionDto } from "../../types/auth.type";
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerPushEventInput, WorkerPushTokenDto, WorkerPushRegistrationResponse } from "../../types/notifications.type";
+// Import Validation
 import { parseWithSchema } from "../../validation/parser";
 import { workerPushTokenBodySchema } from "../../validation/schemas";
+// Import Utils
 import ApiError from "../../utils/api-error";
 import { logger } from "../../utils/logger";
 
@@ -294,7 +300,7 @@ export async function sendWorkerPushNotificationByWorkerIds(input: {
   notification_params?: Record<string, unknown>;
   payload?: Record<string, unknown>;
 }): Promise<void> {
-  const workers = await masterWorkerRepository.findByIds(input.worker_ids);
+  const workers = await masterWorkerRepository.listByIds(input.worker_ids);
   const workerById = new Map(workers.map((worker) => [worker.id, worker]));
 
   for (const workerId of [...new Set(input.worker_ids)]) {

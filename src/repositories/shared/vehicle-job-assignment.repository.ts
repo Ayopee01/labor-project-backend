@@ -1,11 +1,12 @@
-// Import Dependencies
-import { ACCEPTED_ASSIGNMENT_STATUSES, ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, RELEASABLE_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, WORKING_ASSIGNMENT_STATUSES } from "../../constants/status";
+// Import Config
+import { ACCEPTED_ASSIGNMENT_STATUSES, ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, FINISHED_ASSIGNMENT_STATUSES, RELEASABLE_ASSIGNMENT_STATUSES, SCANNED_ASSIGNMENT_STATUSES, TICKET_STATUS, TICKET_WORKER_STATUS, WORKING_ASSIGNMENT_STATUSES } from "../../constants/status";
 import { withTransaction } from "../../db/prisma";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../../types/shared/worker-assignment-event.type";
+// Import Repositories
 import * as workerAssignmentEventRepository from "./worker-assignment-event.repository";
+// Import Mappers
 import { mapVehicleJobAssignment } from "./mappers";
 import { client, requireDto } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerAssignmentEventType } from "../../types/shared/worker-assignment-event.type";
@@ -358,21 +359,49 @@ export async function acceptAssignment(
   return requireDto(mapVehicleJobAssignment(assignment), "assignment accept");
 }
 
-// Function ดึงรายการ assignment ที่สถานะเป็น ACCEPTED ของ VehicleJob นี้ (ยกเว้น id ที่ระบุถ้ามี)
+// Function ดึงรายการ assignment ที่สถานะเป็น ACCEPTED ของ VehicleJob นี้ — filters.excludedAssignmentId ใช้ตอน
+// ต่อเวลาทีมที่เหลือ (ยกเว้นคนที่เพิ่ง scan เข้ามาเอง) ส่วน filters.workerCodes ใช้ตอน Admin เจาะจงต่อเวลาบางคน
 export async function listAcceptedAssignmentsByVehicleJob(
   vehicleJobId: number,
-  excludedAssignmentId?: number,
+  filters?: { excludedAssignmentId?: number; workerCodes?: string[] },
   connection?: DbConnection
 ): Promise<VehicleJobAssignmentDto[]> {
   const db = client(connection);
+  const workerCodes = filters?.workerCodes;
+  const workerIds =
+    workerCodes && workerCodes.length > 0
+      ? (
+          await db.masterWorker.findMany({
+            where: {
+              laborCode: {
+                in: workerCodes,
+              },
+            },
+            select: {
+              id: true,
+            },
+          })
+        ).map((worker) => worker.id)
+      : undefined;
+
+  if (workerCodes && workerCodes.length > 0 && workerIds?.length === 0) {
+    return [];
+  }
+
   const assignments = await db.vehicleJobAssignment.findMany({
     where: {
       vehicleJobId,
       status: ASSIGNMENT_STATUS.ACCEPTED,
-      ...(excludedAssignmentId
+      ...(workerIds &&
+        workerIds.length > 0 && {
+          workerId: {
+            in: workerIds,
+          },
+        }),
+      ...(filters?.excludedAssignmentId
         ? {
           id: {
-            not: excludedAssignmentId,
+            not: filters.excludedAssignmentId,
           },
         }
         : {}),
@@ -385,6 +414,206 @@ export async function listAcceptedAssignmentsByVehicleJob(
   return assignments
     .map((assignment) => mapVehicleJobAssignment(assignment))
     .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
+}
+
+// Function ดึงรายการ active assignments ตาม vehicle job จาก DB
+export async function listActiveAssignmentsByVehicleJob(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<VehicleJobAssignmentDto[]> {
+  const db = client(connection);
+  const assignments = await db.vehicleJobAssignment.findMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: ACTIVE_ASSIGNMENT_STATUSES,
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+
+  return assignments
+    .map((assignment) => mapVehicleJobAssignment(assignment))
+    .filter(
+      (assignment): assignment is VehicleJobAssignmentDto =>
+        assignment !== null,
+    );
+}
+
+// Function ยกเลิก assignment ที่ยัง active ทั้งหมดของ VehicleJob พร้อมบันทึก WorkerAssignmentEvent — ไม่แตะ
+// TicketWorker/MarketJob/GateTicket/VehicleJob เอง (ต่างจาก cancelAssignment ที่ถอด Worker ออกจาก Booth ด้วย)
+// source แยกความหมาย metadata ตาม flow ที่เรียก (เช่น ยกเลิกทั้งคัน vs กลับไป Wait ก่อนทีมเริ่มทำงานจริง)
+export async function cancelActiveAssignmentsForVehicleJob(
+  vehicleJobId: number,
+  source: string,
+  connection?: DbConnection,
+): Promise<VehicleJobAssignmentDto[]> {
+  if (!connection) {
+    return withTransaction((transaction) =>
+      cancelActiveAssignmentsForVehicleJob(vehicleJobId, source, transaction),
+    );
+  }
+
+  const db = client(connection);
+  const activeAssignments = await db.vehicleJobAssignment.findMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: ACTIVE_ASSIGNMENT_STATUSES,
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+
+  if (activeAssignments.length === 0) {
+    return [];
+  }
+
+  await db.vehicleJobAssignment.updateMany({
+    where: {
+      vehicleJobId,
+      status: {
+        in: ACTIVE_ASSIGNMENT_STATUSES,
+      },
+    },
+    data: {
+      status: ASSIGNMENT_STATUS.CANCELLED,
+    },
+  });
+
+  const now = new Date();
+
+  await workerAssignmentEventRepository.createManyOnce(
+    activeAssignments.map((assignment) => ({
+      assignment_id: assignment.id,
+      worker_id: assignment.workerId,
+      vehicle_job_id: assignment.vehicleJobId,
+      event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED,
+      occurred_at: now,
+      metadata: {
+        source,
+      },
+    })),
+    connection,
+  );
+
+  return activeAssignments
+    .map(mapVehicleJobAssignment)
+    .filter((assignment): assignment is VehicleJobAssignmentDto => assignment !== null);
+}
+
+// Function ยกเลิก assignment จาก DB พร้อมถอด Worker ออกจาก Booth ที่ยังไม่ Complete — เขียนแบบมีเงื่อนไข (status ต้องยังอยู่ใน ACTIVE_ASSIGNMENT_STATUSES ณ ตอนเขียนจริง)
+// กัน TOCTOU race กับ worker ที่กำลัง accept/scan/timeout พร้อมกัน — คืน null เมื่อแพ้ race
+export async function cancelAssignment(
+  assignmentId: number,
+  connection?: DbConnection,
+): Promise<VehicleJobAssignmentDto | null> {
+  if (!connection) {
+    return withTransaction((transaction) =>
+      cancelAssignment(assignmentId, transaction),
+    );
+  }
+
+  const db = client(connection);
+  const now = new Date();
+
+  const updateResult = await db.vehicleJobAssignment.updateMany({
+    where: {
+      id: assignmentId,
+      status: {
+        in: ACTIVE_ASSIGNMENT_STATUSES,
+      },
+    },
+    data: {
+      status: ASSIGNMENT_STATUS.CANCELLED,
+    },
+  });
+
+  if (updateResult.count === 0) {
+    return null;
+  }
+
+  const assignment = await db.vehicleJobAssignment.findUniqueOrThrow({
+    where: {
+      id: assignmentId,
+    },
+  });
+  await workerAssignmentEventRepository.createOnce(
+    {
+      assignment_id: assignment.id,
+      worker_id: assignment.workerId,
+      vehicle_job_id: assignment.vehicleJobId,
+      event_type: WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED,
+      occurred_at: now,
+      metadata: {
+        source: "admin_assignment_cancel",
+      },
+    },
+    connection,
+  );
+
+  // ถอด Worker ออกจาก Roster ของทุก Business Ticket ที่ยังไม่ Terminal ภายใต้ TicketNumber เดียวกัน (Ticket ที่ Lock/Terminal แล้วต้องไม่ถูกแก้ Roster ย้อนหลัง)
+  await db.ticketWorker.updateMany({
+    where: {
+      workerId: assignment.workerId,
+
+      status: TICKET_WORKER_STATUS.WORKING,
+
+      marketJob: {
+        vehicleJobId: assignment.vehicleJobId,
+
+        status: {
+          notIn: [TICKET_STATUS.COMPLETED, TICKET_STATUS.CANCELLED],
+        },
+      },
+    },
+
+    data: {
+      status: TICKET_WORKER_STATUS.CANCELLED,
+      cancelledAt: now,
+      completedAt: null,
+    },
+  });
+
+  return requireDto(mapVehicleJobAssignment(assignment), "assignment cancel");
+}
+
+// Function ต่อเวลา assignment scan deadline จาก DB — เขียนแบบมีเงื่อนไข (status ต้องยังเป็น ACCEPTED ณ ตอนเขียนจริง)
+// กัน TOCTOU race กับ scan-timeout job หรือ worker ที่ scan สำเร็จพร้อมกัน — คืน null เมื่อแพ้ race
+export async function extendAssignmentScanDeadline(
+  assignmentId: number,
+  scanDeadlineAt: Date,
+  connection?: DbConnection,
+): Promise<VehicleJobAssignmentDto | null> {
+  const db = client(connection);
+  const updateResult = await db.vehicleJobAssignment.updateMany({
+    where: {
+      id: assignmentId,
+      status: ASSIGNMENT_STATUS.ACCEPTED,
+    },
+    data: {
+      scanDeadlineAt,
+    },
+  });
+
+  if (updateResult.count === 0) {
+    return null;
+  }
+
+  const assignment = await db.vehicleJobAssignment.findUniqueOrThrow({
+    where: {
+      id: assignmentId,
+    },
+  });
+
+  return requireDto(
+    mapVehicleJobAssignment(assignment),
+    "assignment extend scan",
+  );
 }
 
 // Function อัปเดต scan deadline ของ assignment

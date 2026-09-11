@@ -1,8 +1,9 @@
+// Import Repositories
 import * as baseMasterWorkerRepository from "./shared/master-worker.repository";
-import * as workerSessionRepository from "./shared/worker-session.repository";
+// Import Mappers
 import { mapMasterWorker } from "./shared/mappers";
 import { client, requireMapped, toId } from "./shared/repository-utils";
-
+// Import Types
 import type { Prisma } from "@prisma/client";
 import type { DbConnection } from "../types/shared/common.type";
 import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
@@ -270,16 +271,3 @@ export async function updateShift(
 
   return requireMapped(mapMasterWorker(updated), "MasterWorker", "shift update");
 }
-
-const workerRepository = {
-  ...baseMasterWorkerRepository,
-  laborCodeExists,
-  create,
-  listUsers,
-  countUsers,
-  findByIdentifier,
-  update,
-  updateShift,
-};
-
-export { workerRepository, workerSessionRepository };

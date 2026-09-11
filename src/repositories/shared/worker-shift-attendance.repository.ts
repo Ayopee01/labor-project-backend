@@ -1,7 +1,8 @@
+// Import Library
 import { Prisma } from "@prisma/client";
-
+// Import Utils
 import { client } from "./repository-utils";
-
+// Import Types
 import type { WorkerShiftAttendance } from "@prisma/client";
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerShiftAttendanceKeyInput, WorkerShiftAttendanceWriteInput, WorkerShiftCloseReason } from "../../types/worker.type";
@@ -28,6 +29,7 @@ function buildShiftAttendanceKeyWhere(input: WorkerShiftAttendanceKeyInput) {
   };
 }
 
+// Function ค้นหา attendance ของ worker ตาม shift instance key จาก DB
 export async function findByWorkerAndShift(
   input: WorkerShiftAttendanceKeyInput,
   connection?: DbConnection
@@ -39,6 +41,7 @@ export async function findByWorkerAndShift(
   });
 }
 
+// Function ทำเครื่องหมายว่า worker online ในกะนี้ (สร้างใหม่ถ้ายังไม่มี หรืออัปเดตถ้ามีอยู่แล้ว)
 export async function markWorkerShiftOnline(
   input: WorkerShiftAttendanceWriteInput,
   connection?: DbConnection
@@ -63,6 +66,7 @@ export async function markWorkerShiftOnline(
   });
 }
 
+// Function เพิ่มจำนวนครั้งที่ worker ปล่อย accept timeout ติดกันในกะนี้
 export async function incrementAcceptTimeoutStreak(
   input: WorkerShiftAttendanceWriteInput,
   connection?: DbConnection
@@ -92,6 +96,7 @@ export async function incrementAcceptTimeoutStreak(
   });
 }
 
+// Function รีเซ็ตจำนวนครั้ง accept timeout ที่ติดกันของ worker ในกะนี้
 export async function resetAcceptTimeoutStreak(
   input: WorkerShiftAttendanceWriteInput,
   connection?: DbConnection

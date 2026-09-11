@@ -1,12 +1,10 @@
 // Import Library
 import { Prisma, type MasterProduct, type MasterRate } from "@prisma/client";
 
-// Import Dependencies
+// Import Repositories
 import * as masterDataRepository from "../../repositories/shared/master-data.repository";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
-
 // Import Utils
 import ApiError from "../../utils/api-error";
 import { decimalToWeightString, packageWeightToDecimal } from "../../utils/labor-job-pricing";
@@ -51,13 +49,13 @@ function resolveDeterministicCandidate<
 // Function หา Product + Package แบบเจาะจง (ProductCode + PackageCode ต้องตรงเป๊ะ) ใช้ตอน Gate สร้าง
 // Ticket เพราะต้องใช้ Worker Requirement (range) ของ Product นี้โดยเฉพาะ — ห้าม fallback ด้วย PackageCode
 // อย่างเดียว ถ้าต้องการแค่ PackageWeight ให้ใช้ resolvePackageWeight แทน
-export async function findActiveMasterProduct(
+export async function requireActiveMasterProduct(
   productCode: string,
   packageCode: string,
   connection?: DbConnection
 ): Promise<MasterProduct> {
   const products =
-    await masterDataRepository.findActiveProductsByProductCodeAndPackageCode(
+    await masterDataRepository.listActiveProductsByProductCodeAndPackageCode(
       productCode,
       packageCode,
       connection
@@ -94,7 +92,7 @@ export async function resolvePackageWeight(
   connection?: DbConnection
 ): Promise<ResolvedPackageWeight> {
   const specificProducts =
-    await masterDataRepository.findActiveProductsByProductCodeAndPackageCode(
+    await masterDataRepository.listActiveProductsByProductCodeAndPackageCode(
       productCode,
       packageCode,
       connection
@@ -117,7 +115,7 @@ export async function resolvePackageWeight(
     };
   }
 
-  const fallbackProducts = await masterDataRepository.findActiveProductsByPackageCode(
+  const fallbackProducts = await masterDataRepository.listActiveProductsByPackageCode(
     packageCode,
     connection
   );
@@ -151,7 +149,7 @@ export async function resolvePackageWeight(
 }
 
 // Function หา rate ตามตลาดและน้ำหนักสินค้า
-export async function findApplicableRate(
+export async function requireApplicableRate(
   marketCode: string,
   packageWeight: Prisma.Decimal,
   connection?: DbConnection
@@ -162,7 +160,7 @@ export async function findApplicableRate(
   rateSource: "MARKET_RATE" | "CENTRAL_RATE";
 }> {
   const marketRates =
-    await masterDataRepository.findActiveRatesByMarketAndWeight(
+    await masterDataRepository.listActiveRatesByMarketAndWeight(
       marketCode,
       packageWeight,
       connection
@@ -190,7 +188,7 @@ export async function findApplicableRate(
   }
 
   const centralRates =
-    await masterDataRepository.findActiveRatesByMarketAndWeight(
+    await masterDataRepository.listActiveRatesByMarketAndWeight(
       "0000",
       packageWeight,
       connection

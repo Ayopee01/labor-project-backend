@@ -1,9 +1,8 @@
+// Import Library
 import type { Prisma } from "@prisma/client";
-
 // Import Mappers
 import { mapWorkerSession } from "./mappers";
 import { buildRevokeData, client, requireMapped, toId } from "./repository-utils";
-
 // Import Types
 import type { SessionDto } from "../../types/auth.type";
 import type { DbConnection } from "../../types/shared/common.type";

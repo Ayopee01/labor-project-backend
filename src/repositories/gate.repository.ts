@@ -1,12 +1,13 @@
 // Import Library
 import { Prisma, type MasterMarket } from "@prisma/client";
 
-// Import Dependencies
+// Import Config
 import { MASTER_MARKET_ACTIVE_STATUS, MASTER_OWNER_STALL_ACTIVE_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
+// Import Repositories
 import * as gateTicketRepository from "./shared/gate-ticket.repository";
+// Import Mappers
 import { mapMarketJob, mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
-
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
 import type { GateRequestReplayRecord, GateVehicleJobCreateInput, GateVehicleJobResponse, GateBoothOption } from "../types/gate.type";
@@ -76,7 +77,7 @@ export async function findVehicleJobByRef(
 
 // Function ค้นหา BoothCode ที่มีอยู่แล้วภายใต้ Business Ticket (market job) หนึ่งใบ — ใช้ตรวจก่อนรับ
 // แผงเพิ่มเข้า Ticket เดิม (เมื่อ Gate ส่ง TicketNo + ตลาดเดิมซ้ำ) กัน BoothCode ชนกัน
-export async function findGateTicketBoothCodesByMarketJobId(
+export async function listGateTicketBoothCodesByMarketJobId(
   marketJobId: number,
   connection?: DbConnection
 ): Promise<string[]> {
@@ -94,12 +95,12 @@ export async function findGateTicketBoothCodesByMarketJobId(
 }
 
 // Function ค้นหา active vendor LINE targets ตาม stall จาก DB
-export async function findActiveVendorLineTargetsByStall(
+export async function listActiveVendorLineTargetsByStall(
   marketCode: string,
   boothCode: string,
   connection?: DbConnection
 ): Promise<VendorLineTargetDto[]> {
-  return gateTicketRepository.findActiveVendorLineTargetsByMarketAndBooth(
+  return gateTicketRepository.listActiveVendorLineTargetsByMarketAndBooth(
     marketCode,
     boothCode,
     connection

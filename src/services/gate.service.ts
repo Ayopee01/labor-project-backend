@@ -1,32 +1,30 @@
 // Import Library
 import { createHash } from "crypto";
 import { Prisma, type MasterMarket } from "@prisma/client";
-
-// Import Dependencies
+// Import Config
 import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
 import { withTransaction } from "../db/prisma";
+// Import Queues
 import { enqueueLoggedLineMessage } from "../queues/line-message-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
+// Import Repositories
 import * as gateRepository from "../repositories/gate.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
+// Import Services
 import { publishNotification } from "./notifications.service";
 import * as rateResolutionService from "./shared/rate-resolution.service";
-
 // Import Types
 import type { GateOptionsResponse, GateProductOption, GateVehicleJobBody, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVehicleJobResponseStatus, GateVehicleJobResult } from "../types/gate.type";
 import type { DbConnection } from "../types/shared/common.type";
 import type { LineMessage } from "../types/line.type";
 import type { MarketJobDto, VehicleJobDto, VendorLineTargetDto } from "../types/worker.type";
-
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { gateVehicleJobBodySchema } from "../validation/schemas";
-
 // Import Utils
 import ApiError from "../utils/api-error";
 import { calculateRequiredWorkerCount, packageWeightToDecimal, parseMasterProductRange } from "../utils/labor-job-pricing";
 import { logger } from "../utils/logger";
-
 // Import Flex Message Builder
 import { buildGateTicketCreatedFlexMessage } from "../utils/line-flex-message";
 
@@ -177,7 +175,7 @@ function isGateVehicleJobBody(
 }
 
 // Function หา Market + Booth จาก master
-async function findActiveMasterMarketBooth(
+async function requireActiveMasterMarketBooth(
   marketCode: string,
   boothCode: string,
   connection?: DbConnection
@@ -232,7 +230,7 @@ async function prepareLaborJob(
 
   for (const boothInput of input.Booths) {
     const marketBooth =
-      await findActiveMasterMarketBooth(
+      await requireActiveMasterMarketBooth(
         input.MarketCode,
         boothInput.BoothCode,
         connection
@@ -251,7 +249,7 @@ async function prepareLaborJob(
       of boothInput.Products
     ) {
       const product =
-        await rateResolutionService.findActiveMasterProduct(
+        await rateResolutionService.requireActiveMasterProduct(
           productInput.ProductCode,
           productInput.PackageCode,
           connection
@@ -280,7 +278,7 @@ async function prepareLaborJob(
 
       // หา Rate ที่ใช้ ณ ตอนสร้างงาน
       const applicableRate =
-        await rateResolutionService.findApplicableRate(
+        await rateResolutionService.requireApplicableRate(
           input.MarketCode,
           packageWeight,
           connection
@@ -822,7 +820,7 @@ async function buildGateCreateInputWithVendorLineIds(
               market.booths.map(
                 async (booth) => {
                   const vendorLineTargets =
-                    await gateRepository.findActiveVendorLineTargetsByStall(
+                    await gateRepository.listActiveVendorLineTargetsByStall(
                       market.marketCode,
                       booth.boothCode,
                       connection
@@ -1314,7 +1312,7 @@ export async function createVehicleJobFromGate(
       }
 
       const existingBoothCodes =
-        await gateRepository.findGateTicketBoothCodesByMarketJobId(
+        await gateRepository.listGateTicketBoothCodesByMarketJobId(
           existingMarketJob.id
         );
       const duplicateBoothCode = input.Booths.find((booth) =>

@@ -1,16 +1,13 @@
 // Import Library
 import { Prisma } from "@prisma/client";
 
-// Import Dependencies
+// Import Repositories
 import * as ticketFinancialRepository from "../../repositories/shared/ticket-financial.repository";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { TicketFinancializationResult } from "../../types/shared/ticket-financial.type";
-
 // Import Config
 import { SHIRT_COLOR_SNAPSHOT, TICKET_STATUS, TICKET_WORKER_STATUS, TERMINAL_TICKET_STATUSES } from "../../constants/status";
-
 // Import Utils
 import ApiError from "../../utils/api-error";
 import { calculateProductStallCharge, calculateProductWorkerPayment } from "../../utils/labor-job-pricing";

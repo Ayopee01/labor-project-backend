@@ -1,9 +1,10 @@
-// Import Dependencies
+// Import Config
 import { VEHICLE_JOB_STATUS } from "../constants/status";
+// Import Mappers
 import { mapDriverSession, mapVehicleJob } from "./shared/mappers";
 import { client, createRandomToken, requireDto } from "./shared/repository-utils";
+// Import Utils
 import { hashRefreshToken } from "../utils/refresh-token-hash";
-
 // Import Types
 import type { DbConnection } from "../types/shared/common.type";
 import type { DriverSessionDto } from "../types/driver.type";
@@ -48,24 +49,6 @@ export async function createDriverSession(
     ...mapped,
     session_token: rawToken,
   };
-}
-
-// Function เพิกถอน driver session ที่ยัง active ทั้งหมดของ vehicle job นี้ (เรียกตอนงานจบ/ถูกยกเลิก)
-export async function revokeDriverSessionsByVehicleJobId(
-  vehicleJobId: number,
-  connection?: DbConnection,
-): Promise<void> {
-  const db = client(connection);
-
-  await db.driverSession.updateMany({
-    where: {
-      vehicleJobId,
-      revokedAt: null,
-    },
-    data: {
-      revokedAt: new Date(),
-    },
-  });
 }
 
 // Function ค้นหา active driver session ตาม token จาก DB — เทียบด้วย Hash เสมอ (Token ดิบไม่เคยถูกเก็บลง DB)

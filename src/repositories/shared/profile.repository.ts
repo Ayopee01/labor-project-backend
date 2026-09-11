@@ -1,6 +1,5 @@
-// Import Library
+// Import Repositories
 import * as masterWorkerRepository from "./master-worker.repository";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 
@@ -27,5 +26,5 @@ export async function findWorkerCodesByAccountIds(
   workerIds: number[],
   connection?: DbConnection,
 ): Promise<Array<string | null>> {
-  return masterWorkerRepository.findWorkerCodesByWorkerIds(workerIds, connection);
+  return masterWorkerRepository.listWorkerCodesByWorkerIds(workerIds, connection);
 }

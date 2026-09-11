@@ -10,6 +10,8 @@ import * as notificationsService from "../services/notifications.service";
 
 const router = express.Router();
 
+/* -------------------------------------- Notifications Routes -------------------------------------- */
+
 router.get(
   "/",
   authMiddleware,

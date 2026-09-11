@@ -1,17 +1,28 @@
+// Import Library
 import { Prisma } from "@prisma/client";
+// Import Config
 import { withTransaction } from "../db/prisma";
+import { EMPTY_SECURITY_AUDIT_CONTEXT } from "../config/security-audit.config";
+// Import Queues
 import { enqueueWorker, getWorkerBreakCount, getWorkerPresence, getWorkerPresences, getWorkerQueueStatus, getWorkerQueueStatuses, getWorkerReadyQueueRanks, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, removeWorkerBreakReturn, scheduleWorkerBreakReturn } from "../queues/worker-queue";
-import { workerRepository, workerSessionRepository } from "../repositories/admin-workers.repository";
+// Import Repositories
+import * as adminWorkersRepository from "../repositories/admin-workers.repository";
 import * as accountRepository from "../repositories/shared/account.repository";
 import * as adminActionLogRepository from "../repositories/shared/admin-action-log.repository";
+import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import * as assignmentRepository from "../repositories/shared/vehicle-job-assignment.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
+import * as workerSessionRepository from "../repositories/shared/worker-session.repository";
+// Import Queues
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
+// Import Utils
 import { disconnectWorkerSocket, isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
+// Import Services
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
 import { closeWorkerAttendanceShift, scheduleWorkerShiftEndIfNeeded } from "./shared/worker-attendance.service";
 import { publishAdminWorkerStatusChanged } from "./notifications.service";
 import { writeSecurityAuditLog, diffChangedFields } from "./shared/security-audit-log.service";
+// Import Types
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { AccountStatus } from "../types/shared/account.type";
@@ -20,8 +31,10 @@ import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AdminWorkerBoardStatus, AdminWorkerStatusItem, MasterWorkerDto, PaginationMeta, UserDetailResponse, UserListItem, UserListFilters, UserListSchedule, WorkScheduleDto, WorkScheduleWithShiftDto } from "../types/admin-workers.type";
 import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerPresenceDto, WorkerQueueEntryDto } from "../types/worker.type";
 import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
+// Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { adminForceWorkerStatusBodySchema, createUserBodySchema, paginationQuerySchema, resetPasswordBodySchema, updateUserBodySchema } from "../validation/schemas";
+// Import Utils
 import { requireActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
 import { logger } from "../utils/logger";
@@ -31,17 +44,13 @@ import { buildDeadline, formatBangkokDate, toUnixMs } from "../utils/time";
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 import { buildWorkerCode } from "../utils/worker-code";
 import { resolveWorkerWorkStatus } from "../utils/worker-status";
+// Import Config
 import { ASSIGNMENT_STATUS } from "../constants/status";
+// Import Types
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
-
-const EMPTY_SECURITY_AUDIT_CONTEXT: SecurityAuditRequestContext = {
-  ip_address: null,
-  user_agent: null,
-  request_id: null,
-};
 
 // Function สร้าง worker assignment socket payload ใน service flow
 async function buildWorkerAssignmentSocketPayload(
@@ -73,8 +82,8 @@ async function requireWorker(
 ): Promise<MasterWorkerDto> {
   const worker =
     typeof id === "number"
-      ? await workerRepository.findById(id, connection)
-      : await workerRepository.findByIdentifier(id, connection);
+      ? await masterWorkerRepository.findById(id, connection)
+      : await adminWorkersRepository.findByIdentifier(id, connection);
 
   if (!worker) {
     throw new ApiError(404, "WORKER_NOT_FOUND", `Worker ${id} not found.`);
@@ -188,7 +197,7 @@ async function assertWorkerCodeAvailable(
   exceptWorkerId?: number | null,
   connection?: DbConnection
 ): Promise<void> {
-  const exists = await workerRepository.laborCodeExists(
+  const exists = await adminWorkersRepository.laborCodeExists(
     workerCode,
     exceptWorkerId,
     connection
@@ -343,7 +352,7 @@ export async function createUser(
     await assertWorkerCodeAvailable(laborCode, null, transaction);
 
     try {
-      await workerRepository.create(
+      await adminWorkersRepository.create(
         {
           labor_code: laborCode,
           full_name: fullName,
@@ -365,10 +374,10 @@ export async function createUser(
     }
 
     const passwordHash = await hashPassword(normalizedPhone);
-    const created = await workerRepository.findByIdentifier(laborCode, transaction);
+    const created = await adminWorkersRepository.findByIdentifier(laborCode, transaction);
 
     if (created) {
-      await workerRepository.updatePasswordHash(created.id, passwordHash, transaction);
+      await masterWorkerRepository.updatePasswordHash(created.id, passwordHash, transaction);
     }
 
     const actor = await accountRepository.findById(actorId, transaction);
@@ -424,8 +433,8 @@ export async function listUsers(
     limit,
   };
   const [users, total] = await Promise.all([
-    workerRepository.listUsers(filters),
-    workerRepository.countUsers(filters),
+    adminWorkersRepository.listUsers(filters),
+    adminWorkersRepository.countUsers(filters),
   ]);
   const data = users.map((user) => formatUserListItem(user));
 
@@ -495,7 +504,7 @@ export async function updateUser(
 
     if (hasFieldUpdates) {
       try {
-        await workerRepository.update(
+        await adminWorkersRepository.update(
           worker.id,
           {
             labor_code: nextWorkerCode,
@@ -511,7 +520,7 @@ export async function updateUser(
       }
 
       if (normalizedPhone !== undefined) {
-        await workerRepository.updatePasswordHash(
+        await masterWorkerRepository.updatePasswordHash(
           worker.id,
           await hashPassword(normalizedPhone),
           transaction
@@ -520,11 +529,11 @@ export async function updateUser(
     }
 
     if (workStartDate !== undefined) {
-      await workerRepository.update(worker.id, { work_start_date: workStartDate }, transaction);
+      await adminWorkersRepository.update(worker.id, { work_start_date: workStartDate }, transaction);
     }
 
     if (status !== undefined) {
-      await workerRepository.update(
+      await adminWorkersRepository.update(
         worker.id,
         { status: status === "active" ? MASTER_WORKER_STATUS.ACTIVE : MASTER_WORKER_STATUS.INACTIVE },
         transaction
@@ -546,7 +555,7 @@ export async function updateUser(
 
       const resolvedTimeWork = resolveTimeWorkFromTimeIn(timeIn);
 
-      await workerRepository.updateShift(
+      await adminWorkersRepository.updateShift(
         worker.id,
         {
           time_work: resolvedTimeWork,
@@ -638,7 +647,7 @@ export async function resetPassword(
     const worker = await requireWorker(id, transaction);
     const actor = await accountRepository.findById(actorId, transaction);
 
-    await workerRepository.updatePasswordHash(
+    await masterWorkerRepository.updatePasswordHash(
       worker.id,
       await hashPassword(newPassword),
       transaction
@@ -913,7 +922,7 @@ export async function listAdminWorkerStatuses(): Promise<{
   summary: ReturnType<typeof buildAdminWorkerStatusSummary>;
   data: AdminWorkerStatusItem[];
 }> {
-  const workers = await workerRepository.listUsers({ offset: 0, limit: Number.MAX_SAFE_INTEGER });
+  const workers = await adminWorkersRepository.listUsers({ offset: 0, limit: Number.MAX_SAFE_INTEGER });
   const workerIds = workers.map((worker) => worker.id);
   const [queueStatuses, queueRanks, presences, assignments, settings] = await Promise.all([
     getWorkerQueueStatuses(workerIds),

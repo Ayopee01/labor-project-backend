@@ -1,16 +1,21 @@
 // Import Library
 import crypto from "crypto";
-// Import Dependencies
+// Import Config
 import { withTransaction } from "../db/prisma";
+// Import Queues
 import { enqueueLoggedLineMessage } from "../queues/line-message-queue";
 import { returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
 import { removeVendorConfirmationTimeout } from "../queues/worker-queue";
+// Import Repositories
 import * as lineRepository from "../repositories/line.repository";
 import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
 import { TicketSubmissionAlreadyResolvedError } from "../repositories/shared/gate-ticket.repository";
+import * as lineActionTokenRepository from "../repositories/shared/line-action-token.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
+// Import Services
 import { publishRealtimeEvent } from "./shared/realtime-notification.service";
 import { applyVendorTicketCompletionResult } from "./shared/ticket-completion.service";
+// Import Config
 import { TICKET_STATUS } from "../constants/status";
 // Import Types
 import { MAX_RATING_SCORE, MIN_RATING_SCORE } from "../types/line.type";
@@ -179,7 +184,7 @@ async function buildVendorRatingMessages(
   submissionId: number,
   detail: VehicleJobDetailResponse | null
 ): Promise<LineMessage[]> {
-  const ratingToken = await lineRepository.createLineActionToken({
+  const ratingToken = await lineActionTokenRepository.createLineActionToken({
     action: "vendor_rate_ticket",
     ticket_id: ticket.id,
     submission_id: submissionId,

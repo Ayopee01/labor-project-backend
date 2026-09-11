@@ -5,12 +5,13 @@ import authMiddleware from "../middlewares/auth.middleware";
 import permissionMiddleware from "../middlewares/permission.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
-
 // Import Services
 import * as adminJobsService from "../services/admin-jobs.service";
 import * as adminWorkersService from "../services/admin-workers.service";
 
 const router = express.Router();
+
+/* -------------------------------------- Admin Jobs Routes -------------------------------------- */
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 
@@ -44,8 +45,6 @@ router.post(
   }
 );
 
-// Route ยกเลิกรวม scope ตัดสินจาก body ว่าระบุ ticketNo/boothCode/workerCode ตัวไหนมาบ้าง
-// (ticketNumber อย่างเดียว = ทั้งคัน, +ticketNo = ทั้ง business ticket, +boothCode = แค่ booth, +workerCode = worker คนนั้น)
 router.post(
   "/vehicle-jobs/assignment/cancel",
   permissionMiddleware(["jobs:cancel"]),
@@ -88,7 +87,6 @@ router.get(
   }
 );
 
-// Route รายได้ worker รายวัน อยู่ใต้ namespace /vehicle-jobs/history เดิมเพราะ derive จากข้อมูลเดียวกัน
 router.get(
   "/vehicle-jobs/history/daily-worker-income",
   permissionMiddleware(["jobs:read"]),
@@ -102,7 +100,6 @@ router.get(
   }
 );
 
-// Route รายงานค่าลงสินค้าแผงค้ารายวัน อยู่ใต้ namespace เดียวกับ daily-worker-income ด้านบน
 router.get(
   "/vehicle-jobs/history/daily-stall-fees",
   permissionMiddleware(["jobs:read"]),
@@ -116,7 +113,6 @@ router.get(
   }
 );
 
-// Route รายงานค่าลงสินค้าแผงค้ารายเดือน group ด้วย market_code+booth_code+shirt_color ต่างจาก daily-stall-fees ที่ list ทีละแถวตรงๆ
 router.get(
   "/vehicle-jobs/history/monthly-stall-fees",
   permissionMiddleware(["jobs:read"]),
@@ -179,8 +175,6 @@ router.post(
   }
 );
 
-// Route admin ส่ง/แก้ยอดสินค้าของ booth หนึ่งใบแทน worker ต้องระบุ ticketNo เสมอ
-// เพราะ stallCode ไม่ unique ข้าม business ticket (unique แค่ภายใน MarketJob เดียว)
 router.post(
   "/vehicle-jobs/:ticketNumber/tickets/:ticketNo/stalls/:stallCode/override-count",
   permissionMiddleware(["jobs:override_count"]),
@@ -200,7 +194,6 @@ router.post(
   }
 );
 
-// Route Admin สั่งให้ VehicleJob กลับไปสถานะ WAIT (รถยังไม่พร้อมเข้าจุดลงสินค้า)
 router.post(
   "/vehicle-jobs/:ticketNumber/wait",
   permissionMiddleware(["jobs:wait"]),
@@ -218,7 +211,6 @@ router.post(
   }
 );
 
-// Route Admin ปล่อย Worker ทั้งทีมของ VehicleJob กลับคิวก่อนเวลา (ส่งยอดครบทุก Booth แล้ว)
 router.post(
   "/vehicle-jobs/:ticketNumber/release-workers",
   permissionMiddleware(["jobs:release_workers"]),

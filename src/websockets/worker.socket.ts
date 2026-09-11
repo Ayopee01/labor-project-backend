@@ -3,21 +3,20 @@ import type { IncomingMessage } from "http";
 import type { Server } from "http";
 import type { Duplex } from "stream";
 import { WebSocket, WebSocketServer } from "ws";
-
-// Import Dependencies
+// Import Repositories
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import { findActiveById as findActiveWorkerSessionById } from "../repositories/shared/worker-session.repository";
 import { findCurrentAssignmentByWorker, getVehicleJobTeamScanReadiness } from "../repositories/shared/vehicle-job-assignment.repository";
 import { clearWorkerPresence, getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";
-import { buildWorkerNotification, persistWorkerNotification, publishNotification } from "../services/notifications.service";
+import { publishNotification } from "../services/notifications.service";
+import { buildWorkerNotification, persistWorkerNotification } from "../services/shared/realtime-notification.service";
 import { sendWorkerPushNotificationByWorkerIds } from "../services/shared/worker-push.service";
+// Import Middlewares
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
-import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
-
 // Import Types
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { WorkerSocket, WorkerSocketEventOptions, WorkerSocketEventType, WorkerSocketPayload } from "../types/worker.type";
-
 // Import Utils
 import ApiError from "../utils/api-error";
 import { verifyAccessToken } from "../utils/jwt";

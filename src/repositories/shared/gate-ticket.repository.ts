@@ -1,7 +1,9 @@
+// Import Config
 import { MASTER_MARKET_ACTIVE_STATUS, MASTER_OWNER_STALL_ACTIVE_STATUS, SCANNED_ASSIGNMENT_STATUSES, TICKET_STATUS, TICKET_SUBMITTER_ROLE, TICKET_WORKER_STATUS } from "../../constants/status";
+// Import Mappers
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct } from "./mappers";
 import { client, requireDto } from "./repository-utils";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, VendorLineTargetDto } from "../../types/worker.type";
 
@@ -91,6 +93,7 @@ export async function createGateTicketWorkerExclusion(
   });
 }
 
+// Function ค้นหา gate ticket ตาม ID สำหรับส่งยอด
 export async function findGateTicketForCompletion(
   ticketId: number,
   connection?: DbConnection
@@ -188,7 +191,7 @@ export async function findGateTicketForCompletionByWorkerHistoryAndTicketNoAndBo
   return mapGateTicket(ticket);
 }
 
-// Function หา LINE target ของแผงในตั๋วนี้ (wrap findActiveVendorLineTargetsByMarketAndBooth ด้วย ticketId)
+// Function หา LINE target ของแผงในตั๋วนี้ (wrap listActiveVendorLineTargetsByMarketAndBooth ด้วย ticketId)
 export async function listActiveVendorLineTargetsForTicket(
   ticketId: number,
   connection?: DbConnection
@@ -207,7 +210,7 @@ export async function listActiveVendorLineTargetsForTicket(
     return [];
   }
 
-  return findActiveVendorLineTargetsByMarketAndBooth(
+  return listActiveVendorLineTargetsByMarketAndBooth(
     ticket.marketJob.marketCode,
     ticket.boothCode,
     connection
@@ -216,7 +219,7 @@ export async function listActiveVendorLineTargetsForTicket(
 
 // Function หา LINE target (owner + member) ของแผงหนึ่งใบ ใช้ร่วมกันทั้งจาก ticketId
 // (ผ่าน listActiveVendorLineTargetsForTicket) และจาก marketCode+boothCode ตรงๆ ตอนยังไม่มี ticket
-export async function findActiveVendorLineTargetsByMarketAndBooth(
+export async function listActiveVendorLineTargetsByMarketAndBooth(
   marketCode: string,
   boothCode: string,
   connection?: DbConnection
@@ -293,6 +296,26 @@ export async function listTicketProducts(
   return products
     .map((product) => mapTicketProduct(product))
     .filter((product): product is TicketProductDto => product !== null);
+}
+
+// Function ยกเลิก Gate ticket (booth) จาก DB — ไม่แตะ TicketWorker (Worker Roster) เพราะ Roster เป็นระดับ Business Ticket (market job) ไม่ใช่ระดับ Booth
+// การยกเลิก Booth เดียวไม่ควรกระทบสมาชิกที่ยังทำ Booth อื่นในใบเดียวกัน
+export async function cancelGateTicket(
+  ticketId: number,
+  connection?: DbConnection
+): Promise<GateTicketDto> {
+  const db = client(connection);
+
+  const ticket = await db.gateTicket.update({
+    where: {
+      id: ticketId,
+    },
+    data: {
+      status: TICKET_STATUS.CANCELLED,
+    },
+  });
+
+  return requireDto(mapGateTicket(ticket), "gate ticket cancel");
 }
 
 // Function อัปเดตยอดยืนยันของสินค้าในตั๋ว รองรับกรณีเปลี่ยน package (package_switch) ด้วย
@@ -477,6 +500,7 @@ export async function listDeliveredTicketsWithLatestSubmission(
   return results;
 }
 
+// Function ค้นหา ticket completion submission ตาม ID จาก DB
 export async function findTicketCompletionSubmissionById(
   submissionId: number,
   connection?: DbConnection

@@ -1,20 +1,19 @@
-// Import Dependencies
+// Import Repositories
 import * as mobileAppVersionRepository from "../../repositories/shared/mobile-app-version.repository";
+// Import Config
+import { EMPTY_SECURITY_AUDIT_CONTEXT } from "../../config/security-audit.config";
+// Import Services
 import { sendWorkerPushNotificationToAllActive } from "./worker-push.service";
+// Import Queues
 import { removeMobileAppForceUpdateNotification, removeMobileAppReleaseNotification, scheduleMobileAppForceUpdateNotification, scheduleMobileAppReleaseNotification } from "../../queues/worker-queue";
+// Import Services
 import { diffChangedFields, writeSecurityAuditLog } from "./security-audit-log.service";
+// Import Config
 import { withTransaction } from "../../db/prisma";
-import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../../types/shared/security-audit-log.type";
-
 // Import Types
+import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../../types/shared/security-audit-log.type";
 import type { MobileAppVersionCreateInput, MobileAppVersionDto, MobileAppVersionStatus, MobileAppVersionUpdateInput } from "../../types/shared/mobile-app-version.type";
 import type { SecurityAuditRequestContext } from "../../types/shared/security-audit-log.type";
-
-const EMPTY_SECURITY_AUDIT_CONTEXT: SecurityAuditRequestContext = {
-  ip_address: null,
-  user_agent: null,
-  request_id: null,
-};
 
 // Actor snapshot ที่ caller resolve มาให้แล้ว — ไฟล์นี้ตั้งใจไม่มี accountRepository เอง
 // เพื่อไม่ให้ shared service ผูกกับ Account model โดยตรง

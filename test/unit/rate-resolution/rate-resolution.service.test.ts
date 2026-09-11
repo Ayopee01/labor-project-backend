@@ -32,16 +32,16 @@ const moduleWithLoad = Module as ModuleWithLoad;
 const originalLoad = moduleWithLoad._load;
 
 const masterDataRepositoryStub = {
-  findActiveProductsByProductCodeAndPackageCode: async (
+  listActiveProductsByProductCodeAndPackageCode: async (
     _productCode: string,
     _packageCode: string
   ): Promise<MasterProduct[]> => [],
 
-  findActiveProductsByPackageCode: async (
+  listActiveProductsByPackageCode: async (
     _packageCode: string
   ): Promise<MasterProduct[]> => [],
 
-  findActiveRatesByMarketAndWeight: async (
+  listActiveRatesByMarketAndWeight: async (
     _marketCode: string,
     _packageWeight: Prisma.Decimal
   ): Promise<MasterRate[]> => [],
@@ -131,9 +131,9 @@ function buildMasterRate(
 
 // Function reset stub กลับสู่ default ("ไม่พบอะไรเลย") ก่อนทุก test กันไม่ให้ test ก่อนหน้าตกค้าง
 function resetMasterDataStub(): void {
-  masterDataRepositoryStub.findActiveProductsByProductCodeAndPackageCode = async () => [];
-  masterDataRepositoryStub.findActiveProductsByPackageCode = async () => [];
-  masterDataRepositoryStub.findActiveRatesByMarketAndWeight = async () => [];
+  masterDataRepositoryStub.listActiveProductsByProductCodeAndPackageCode = async () => [];
+  masterDataRepositoryStub.listActiveProductsByPackageCode = async () => [];
+  masterDataRepositoryStub.listActiveRatesByMarketAndWeight = async () => [];
 }
 
 before(resetMasterDataStub);
@@ -232,10 +232,10 @@ test("resolvePackageWeight uses the specific ProductCode + PackageCode weight wh
     packageName: "ลัง 20",
   });
 
-  masterDataRepositoryStub.findActiveProductsByProductCodeAndPackageCode = async () => [
+  masterDataRepositoryStub.listActiveProductsByProductCodeAndPackageCode = async () => [
     specific,
   ];
-  masterDataRepositoryStub.findActiveProductsByPackageCode = async () => {
+  masterDataRepositoryStub.listActiveProductsByPackageCode = async () => {
     throw new Error("must not fall back when specific match exists");
   };
 
@@ -258,8 +258,8 @@ test("resolvePackageWeight falls back to PackageCode-only weight when the specif
     packageName: "กล่อง 25",
   });
 
-  masterDataRepositoryStub.findActiveProductsByProductCodeAndPackageCode = async () => [];
-  masterDataRepositoryStub.findActiveProductsByPackageCode = async () => [fallbackCandidate];
+  masterDataRepositoryStub.listActiveProductsByProductCodeAndPackageCode = async () => [];
+  masterDataRepositoryStub.listActiveProductsByPackageCode = async () => [fallbackCandidate];
 
   const resolved = await rateResolutionService.resolvePackageWeight("999999999", "22");
 
@@ -275,10 +275,10 @@ test("resolvePackageWeight falls back to PackageCode-only weight when the specif
     laborRate: "0.90",
   });
 
-  masterDataRepositoryStub.findActiveRatesByMarketAndWeight = async (marketCode: string) =>
+  masterDataRepositoryStub.listActiveRatesByMarketAndWeight = async (marketCode: string) =>
     marketCode === "0000" ? [centralRate] : [];
 
-  const applicableRate = await rateResolutionService.findApplicableRate(
+  const applicableRate = await rateResolutionService.requireApplicableRate(
     "9999",
     resolved.packageWeight
   );
@@ -291,7 +291,7 @@ test("resolvePackageWeight falls back to PackageCode-only weight when the specif
 
 /* -------------------------------------- Test 3: ProductCode+PackageCode ซ้ำ แต่ Weight เหมือนกัน -------------------------------------- */
 
-test("findActiveMasterProduct resolves duplicate ProductCode + PackageCode rows when every PackageWeight matches", async () => {
+test("requireActiveMasterProduct resolves duplicate ProductCode + PackageCode rows when every PackageWeight matches", async () => {
   resetMasterDataStub();
 
   const recordA = buildMasterProduct({
@@ -307,12 +307,12 @@ test("findActiveMasterProduct resolves duplicate ProductCode + PackageCode rows 
     productFullCode: "02011002400000000000",
   });
 
-  masterDataRepositoryStub.findActiveProductsByProductCodeAndPackageCode = async () => [
+  masterDataRepositoryStub.listActiveProductsByProductCodeAndPackageCode = async () => [
     recordA,
     recordB,
   ];
 
-  const resolved = await rateResolutionService.findActiveMasterProduct("02011002", "29");
+  const resolved = await rateResolutionService.requireActiveMasterProduct("02011002", "29");
 
   assert.equal(resolved.packageWeight, 20);
   // ต้องได้แถวแรกตาม id asc เสมอ (deterministic) ไม่ใช่แถวสุ่ม
@@ -333,7 +333,7 @@ test("resolvePackageWeight also resolves duplicate specific rows when every Pack
     packageWeight: 20,
   });
 
-  masterDataRepositoryStub.findActiveProductsByProductCodeAndPackageCode = async () => [
+  masterDataRepositoryStub.listActiveProductsByProductCodeAndPackageCode = async () => [
     recordA,
     recordB,
   ];
@@ -346,7 +346,7 @@ test("resolvePackageWeight also resolves duplicate specific rows when every Pack
 
 /* -------------------------------------- Test 4: ProductCode+PackageCode ซ้ำ และ Weight ต่างกัน -------------------------------------- */
 
-test("findActiveMasterProduct throws AMBIGUOUS_PRODUCT_PACKAGE when duplicate rows disagree on PackageWeight and never guesses the first row", async () => {
+test("requireActiveMasterProduct throws AMBIGUOUS_PRODUCT_PACKAGE when duplicate rows disagree on PackageWeight and never guesses the first row", async () => {
   resetMasterDataStub();
 
   const recordA = buildMasterProduct({
@@ -360,13 +360,13 @@ test("findActiveMasterProduct throws AMBIGUOUS_PRODUCT_PACKAGE when duplicate ro
     packageWeight: 20,
   });
 
-  masterDataRepositoryStub.findActiveProductsByProductCodeAndPackageCode = async () => [
+  masterDataRepositoryStub.listActiveProductsByProductCodeAndPackageCode = async () => [
     recordA,
     recordB,
   ];
 
   await assertApiErrorCode(
-    () => rateResolutionService.findActiveMasterProduct("02011002", "13"),
+    () => rateResolutionService.requireActiveMasterProduct("02011002", "13"),
     "AMBIGUOUS_PRODUCT_PACKAGE"
   );
 });
@@ -387,8 +387,8 @@ test("resolvePackageWeight throws AMBIGUOUS_PACKAGE_WEIGHT when the PackageCode 
     packageWeight: 20,
   });
 
-  masterDataRepositoryStub.findActiveProductsByProductCodeAndPackageCode = async () => [];
-  masterDataRepositoryStub.findActiveProductsByPackageCode = async () => [recordA, recordB];
+  masterDataRepositoryStub.listActiveProductsByProductCodeAndPackageCode = async () => [];
+  masterDataRepositoryStub.listActiveProductsByPackageCode = async () => [recordA, recordB];
 
   await assertApiErrorCode(
     () => rateResolutionService.resolvePackageWeight("CCC", "21"),
@@ -407,22 +407,22 @@ test("resolvePackageWeight throws PRODUCT_PACKAGE_NOT_FOUND when neither the spe
   );
 });
 
-test("findActiveMasterProduct still throws PRODUCT_PACKAGE_NOT_FOUND without falling back — Worker Requirement Logic needs the exact ProductCode + PackageCode row", async () => {
+test("requireActiveMasterProduct still throws PRODUCT_PACKAGE_NOT_FOUND without falling back — Worker Requirement Logic needs the exact ProductCode + PackageCode row", async () => {
   resetMasterDataStub();
 
-  masterDataRepositoryStub.findActiveProductsByPackageCode = async () => {
-    throw new Error("findActiveMasterProduct must never consult the package fallback table");
+  masterDataRepositoryStub.listActiveProductsByPackageCode = async () => {
+    throw new Error("requireActiveMasterProduct must never consult the package fallback table");
   };
 
   await assertApiErrorCode(
-    () => rateResolutionService.findActiveMasterProduct("999999999", "22"),
+    () => rateResolutionService.requireActiveMasterProduct("999999999", "22"),
     "PRODUCT_PACKAGE_NOT_FOUND"
   );
 });
 
 /* -------------------------------------- Test 6: Market Rate พบโดยตรง -------------------------------------- */
 
-test("findApplicableRate uses the market-specific rate directly without falling back to 0000", async () => {
+test("requireApplicableRate uses the market-specific rate directly without falling back to 0000", async () => {
   resetMasterDataStub();
 
   const marketRate = buildMasterRate({
@@ -434,10 +434,10 @@ test("findApplicableRate uses the market-specific rate directly without falling 
     laborRate: "0.15",
   });
 
-  masterDataRepositoryStub.findActiveRatesByMarketAndWeight = async (marketCode: string) =>
+  masterDataRepositoryStub.listActiveRatesByMarketAndWeight = async (marketCode: string) =>
     marketCode === "1111" ? [marketRate] : [];
 
-  const applicableRate = await rateResolutionService.findApplicableRate(
+  const applicableRate = await rateResolutionService.requireApplicableRate(
     "1111",
     new Prisma.Decimal("3")
   );
@@ -449,7 +449,7 @@ test("findApplicableRate uses the market-specific rate directly without falling 
 
 /* -------------------------------------- Test 7: Market ไม่มี Rate -------------------------------------- */
 
-test("findApplicableRate falls back to central MarketCode 0000 (never '000') when the requested market has no rate", async () => {
+test("requireApplicableRate falls back to central MarketCode 0000 (never '000') when the requested market has no rate", async () => {
   resetMasterDataStub();
 
   const centralRate = buildMasterRate({
@@ -461,10 +461,10 @@ test("findApplicableRate falls back to central MarketCode 0000 (never '000') whe
     laborRate: "0.90",
   });
 
-  masterDataRepositoryStub.findActiveRatesByMarketAndWeight = async (marketCode: string) =>
+  masterDataRepositoryStub.listActiveRatesByMarketAndWeight = async (marketCode: string) =>
     marketCode === "0000" ? [centralRate] : [];
 
-  const applicableRate = await rateResolutionService.findApplicableRate(
+  const applicableRate = await rateResolutionService.requireApplicableRate(
     "9999",
     new Prisma.Decimal("25")
   );
@@ -475,11 +475,11 @@ test("findApplicableRate falls back to central MarketCode 0000 (never '000') whe
   assert.equal(applicableRate.requestedMarketCode, "9999");
 });
 
-test("findApplicableRate throws RATE_NOT_FOUND when even the central 0000 fallback has no matching weight range", async () => {
+test("requireApplicableRate throws RATE_NOT_FOUND when even the central 0000 fallback has no matching weight range", async () => {
   resetMasterDataStub();
 
   await assertApiErrorCode(
-    () => rateResolutionService.findApplicableRate("9999", new Prisma.Decimal("999999")),
+    () => rateResolutionService.requireApplicableRate("9999", new Prisma.Decimal("999999")),
     "RATE_NOT_FOUND"
   );
 });
@@ -495,8 +495,8 @@ test("golden flow: package fallback + central rate fallback feeds the existing p
     packageWeight: 25,
   });
 
-  masterDataRepositoryStub.findActiveProductsByProductCodeAndPackageCode = async () => [];
-  masterDataRepositoryStub.findActiveProductsByPackageCode = async () => [fallbackCandidate];
+  masterDataRepositoryStub.listActiveProductsByProductCodeAndPackageCode = async () => [];
+  masterDataRepositoryStub.listActiveProductsByPackageCode = async () => [fallbackCandidate];
 
   const centralRate = buildMasterRate({
     marketCode: "0000",
@@ -507,14 +507,14 @@ test("golden flow: package fallback + central rate fallback feeds the existing p
     laborRate: "0.90",
   });
 
-  masterDataRepositoryStub.findActiveRatesByMarketAndWeight = async (marketCode: string) =>
+  masterDataRepositoryStub.listActiveRatesByMarketAndWeight = async (marketCode: string) =>
     marketCode === "0000" ? [centralRate] : [];
 
   const resolvedPackage = await rateResolutionService.resolvePackageWeight("999999999", "22");
 
   assert.equal(resolvedPackage.packageWeight.toString(), "25");
 
-  const applicableRate = await rateResolutionService.findApplicableRate(
+  const applicableRate = await rateResolutionService.requireApplicableRate(
     "9999",
     resolvedPackage.packageWeight
   );
@@ -562,8 +562,8 @@ test("resolvePackageWeight resolves the PACKAGE_FALLBACK branch when multiple fa
     buildMasterProduct({ productCode: "DDD", packageCode: "22", packageWeight: 25 }),
   ];
 
-  masterDataRepositoryStub.findActiveProductsByProductCodeAndPackageCode = async () => [];
-  masterDataRepositoryStub.findActiveProductsByPackageCode = async () => fallbackRows;
+  masterDataRepositoryStub.listActiveProductsByProductCodeAndPackageCode = async () => [];
+  masterDataRepositoryStub.listActiveProductsByPackageCode = async () => fallbackRows;
 
   const resolved = await rateResolutionService.resolvePackageWeight("999999999", "22");
 
@@ -573,7 +573,7 @@ test("resolvePackageWeight resolves the PACKAGE_FALLBACK branch when multiple fa
 
 /* -------------------------------------- Gap 2: Weight Range Boundary ผ่าน where-clause จริง -------------------------------------- */
 
-test("findActiveRatesByMarketAndWeight matches the real Prisma where-clause at the exact weight boundary", async () => {
+test("listActiveRatesByMarketAndWeight matches the real Prisma where-clause at the exact weight boundary", async () => {
   const rangeA = buildMasterRate({
     marketCode: "0000",
     weightRangeName: "0-25",
@@ -594,7 +594,7 @@ test("findActiveRatesByMarketAndWeight matches the real Prisma where-clause at t
   const connection = buildFakeMasterRateConnection([rangeA, rangeB]);
 
   // Weight = 25.00 พอดี ต้องตกใน Range A (weightMax gte รวมขอบบน)
-  const atBoundary = await masterDataRepositoryReal.findActiveRatesByMarketAndWeight(
+  const atBoundary = await masterDataRepositoryReal.listActiveRatesByMarketAndWeight(
     "0000",
     new Prisma.Decimal("25.00"),
     connection
@@ -604,7 +604,7 @@ test("findActiveRatesByMarketAndWeight matches the real Prisma where-clause at t
   assert.equal(atBoundary[0].weightRangeName, "0-25");
 
   // Test Range A upper-bound exclusivity after 25.00
-  const pastBoundary = await masterDataRepositoryReal.findActiveRatesByMarketAndWeight(
+  const pastBoundary = await masterDataRepositoryReal.listActiveRatesByMarketAndWeight(
     "0000",
     new Prisma.Decimal("25.01"),
     connection
@@ -614,7 +614,7 @@ test("findActiveRatesByMarketAndWeight matches the real Prisma where-clause at t
   assert.equal(pastBoundary[0].weightRangeName, "25-50");
 
   // Weight = 0.00 พอดี ต้องไม่ match Range A เลย (weightMin lt คือ exclusive ที่ขอบล่าง เช่นกัน)
-  const atLowerBoundary = await masterDataRepositoryReal.findActiveRatesByMarketAndWeight(
+  const atLowerBoundary = await masterDataRepositoryReal.listActiveRatesByMarketAndWeight(
     "0000",
     new Prisma.Decimal("0.00"),
     connection

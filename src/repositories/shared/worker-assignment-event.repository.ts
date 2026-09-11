@@ -1,7 +1,8 @@
+// Import Library
 import { Prisma } from "@prisma/client";
-
+// Import Utils
 import { client } from "./repository-utils";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerAssignmentEventWriteInput } from "../../types/shared/worker-assignment-event.type";
 
@@ -37,6 +38,7 @@ export async function createOnce(
   }
 }
 
+// Function บันทึก assignment event หลายรายการแบบ idempotent (เรียก createOnce วนทีละรายการ)
 export async function createManyOnce(
   inputs: WorkerAssignmentEventWriteInput[],
   connection?: DbConnection,

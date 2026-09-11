@@ -28,7 +28,7 @@ test(
     process.env.REFRESH_TOKEN_HASH_SECRET = "service-test-refresh-hash-secret-min-32";
 
     const authService = await import("../../../src/services/auth.service");
-    const { workerRepository } = await import(
+    const { findByIdentifier } = await import(
       "../../../src/repositories/admin-workers.repository"
     );
     const userService = await import("../../../src/services/admin-workers.service");
@@ -69,15 +69,15 @@ test(
       );
 
       assert.equal(created.message, "Worker created successfully.");
-      const worker = await workerRepository.findByIdentifier(workerCode);
+      const worker = await findByIdentifier(workerCode);
       assert.ok(worker);
       assert.equal(worker.telephone, phone);
       assert.equal(await verifyPassword(phone, worker.password_hash ?? ""), true);
 
-      const { accountRepository } = await import(
+      const { createAdmin } = await import(
         "../../../src/repositories/admin-settings.repository"
       );
-      const admin = await accountRepository.createAdmin({
+      const admin = await createAdmin({
         username: `service-admin-${suffix}`,
         password_hash: await hashPassword("Admin@123456"),
         role: "admin",

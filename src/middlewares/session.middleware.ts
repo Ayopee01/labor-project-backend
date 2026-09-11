@@ -1,7 +1,8 @@
 // Import Library
 import type { NextFunction, Request, Response } from "express";
 // Import Repositories
-import { accountRepository, sessionRepository } from "../repositories/auth.repository";
+import { findActiveById } from "../repositories/auth.repository";
+import * as accountRepository from "../repositories/shared/account.repository";
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import * as workerSessionRepository from "../repositories/shared/worker-session.repository";
 // Import Utils
@@ -65,7 +66,7 @@ export default async function sessionMiddleware(
       return;
     }
 
-    const session = await sessionRepository.findActiveById(auth.session_id);
+    const session = await findActiveById(auth.session_id);
 
     if (!sessionMatchesAuth(session, auth)) {
       throw new ApiError(401, "INVALID_TOKEN", "Session is no longer active.");

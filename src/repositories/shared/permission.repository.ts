@@ -1,7 +1,7 @@
 // Import Config
 import { isAdminPermission } from "../../config/permission.config";
+// Import Utils
 import { client } from "./repository-utils";
-
 // Import Types
 import type { AdminPermission } from "../../config/permission.config";
 import type { DbConnection } from "../../types/shared/common.type";

@@ -8,12 +8,6 @@ import type { AdminPermission } from "../config/permission.config";
 export type TokenType = "access" | "refresh" | "login_challenge";
 
 // Type payload ของ access token ที่ใช้เรียก API หลัง login
-//
-// account_id มีความหมายสองแบบขึ้นกับ role โดยตั้งใจ: เมื่อ role = "admin" คือ Account.id, เมื่อ
-// role = "worker" คือ MasterWorker.id (Worker ไม่มี Account record อีกต่อไปตั้งแต่ MasterWorker
-// refactor) — เก็บชื่อ field เดิมไว้เพราะโค้ด business logic ของ worker (queue/websocket/assignment/
-// ticket-worker ฯลฯ) อ่านค่านี้ไปใช้เป็น FK worker_id อยู่แล้วจำนวนมาก การเปลี่ยนชื่อ field จะทำให้
-// ต้องแก้ทุกจุดเหล่านั้นโดยไม่ได้ประโยชน์เพิ่ม เพราะ role ก็บอกอยู่แล้วว่าต้องตีความเป็นตารางไหน
 export interface AccessTokenPayload {
   account_id: number;
   role: AccountRole;
@@ -25,9 +19,7 @@ export interface AccessTokenPayload {
   exp?: number;
 }
 
-// Type payload ของ refresh token สำหรับขอ access token ชุดใหม่ (account_id มีความหมายสองแบบตาม role
-// เช่นเดียวกับ AccessTokenPayload) — role ต้องอยู่ในนี้ด้วยเพราะ /auth/refresh ต้องรู้ว่าจะมองหา
-// session ใน user_sessions (Admin) หรือ worker_sessions (Worker)
+// Type payload ของ refresh token สำหรับขอ access token ชุดใหม่
 export interface RefreshTokenPayload {
   account_id: number;
   role: AccountRole;
@@ -37,8 +29,7 @@ export interface RefreshTokenPayload {
   exp?: number;
 }
 
-// Type payload ชั่วคราวเมื่อ worker ต้อง confirm-force-login จากเครื่องใหม่ (account_id มีความหมาย
-// สองแบบตาม role เช่นเดียวกับ AccessTokenPayload)
+// Type payload ชั่วคราวเมื่อ worker ต้อง confirm-force-login
 export interface LoginChallengeTokenPayload {
   account_id: number;
   role: AccountRole;
@@ -57,7 +48,6 @@ export type TokenPayloadByType = {
 };
 
 // Type session ที่บันทึกใน DB และผูกกับ refresh token — account_id มีความหมายสองแบบตาม role
-// เช่นเดียวกับ AccessTokenPayload (แถวจริงอาจมาจาก user_sessions หรือ worker_sessions ก็ได้)
 export interface SessionDto {
   id: number;
   account_id: number;

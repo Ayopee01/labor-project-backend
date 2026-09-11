@@ -1,13 +1,26 @@
-// Import Dependencies
+// Import Library
+import { Prisma } from "@prisma/client";
+
+// Import Config
 import { SCANNED_ASSIGNMENT_STATUSES, TICKET_WORKER_STATUS } from "../../constants/status";
+// Import Mappers
 import { mapTicketWorker } from "./mappers";
 import { client } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { TicketWorkerDto } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
+
+// Function สร้าง data payload สำหรับยกเลิก TicketWorker จาก Admin action (ต่างจาก cancelDroppedTicketWorkers
+// ที่เป็น roster diff sync) — ใช้ร่วมกันทุกจุดที่ Admin สั่งยกเลิก Roster ต่างกันแค่ where clause ว่ายกเลิกขอบเขตไหน
+function buildCancelledTicketWorkerData(cancelledAt: Date): Prisma.TicketWorkerUpdateManyMutationInput {
+  return {
+    status: TICKET_WORKER_STATUS.CANCELLED,
+    cancelledAt,
+    completedAt: null,
+  };
+}
 
 // Function ค้นหา TicketWorker หนึ่งแถวของ worker คนหนึ่งใน Business Ticket ใบหนึ่งจาก DB — ใช้หา id
 // ก่อนสร้าง GateTicketWorkerExclusion (ต้องใช้ ticketWorkerId เป็น FK ไม่ใช่ workerId ตรงๆ)
@@ -144,4 +157,57 @@ export async function cancelDroppedTicketWorkers(
       finalEarningAmount: null,
     },
   });
+}
+
+// Function ยกเลิก TicketWorker (roster) ที่ยัง WORKING ทั้งหมดของ VehicleJob จาก DB — ใช้ตอน Admin ยกเลิกทั้งคัน
+export async function cancelTicketWorkersByVehicleJob(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<void> {
+  const db = client(connection);
+
+  await db.ticketWorker.updateMany({
+    where: {
+      status: TICKET_WORKER_STATUS.WORKING,
+      marketJob: {
+        vehicleJobId,
+      },
+    },
+    data: buildCancelledTicketWorkerData(new Date()),
+  });
+}
+
+// Function ยกเลิก TicketWorker (roster) ที่ยัง WORKING ทั้งหมดของ Business Ticket (market job) ใบเดียว จาก DB — ใช้ตอน Admin ยกเลิกทั้งใบ
+export async function cancelTicketWorkersByMarketJob(
+  marketJobId: number,
+  connection?: DbConnection,
+): Promise<void> {
+  const db = client(connection);
+
+  await db.ticketWorker.updateMany({
+    where: {
+      status: TICKET_WORKER_STATUS.WORKING,
+      marketJobId,
+    },
+    data: buildCancelledTicketWorkerData(new Date()),
+  });
+}
+
+// Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket (market job) ใบเดียว จาก DB — คืน true ถ้ามีแถวถูกยกเลิกจริง
+export async function cancelTicketWorkerForMarketJob(
+  marketJobId: number,
+  workerId: number,
+  connection?: DbConnection,
+): Promise<boolean> {
+  const db = client(connection);
+  const result = await db.ticketWorker.updateMany({
+    where: {
+      marketJobId,
+      workerId,
+      status: TICKET_WORKER_STATUS.WORKING,
+    },
+    data: buildCancelledTicketWorkerData(new Date()),
+  });
+
+  return result.count === 1;
 }

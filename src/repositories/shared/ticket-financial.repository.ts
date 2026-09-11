@@ -1,8 +1,10 @@
+// Import Library
 import { Prisma } from "@prisma/client";
-
+// Import Config
 import { VEHICLE_JOB_STATUS, TICKET_WORKER_STATUS } from "../../constants/status";
+// Import Utils
 import { client } from "./repository-utils";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 
 /* -------------------------------------- Functions -------------------------------------- */

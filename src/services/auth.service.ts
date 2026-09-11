@@ -1,15 +1,25 @@
-import { accountRepository, sessionRepository } from "../repositories/auth.repository";
+// Import Repositories
+import { createPending, findActiveById, findByUsername, revoke, updateRefreshTokenHash } from "../repositories/auth.repository";
+import * as accountRepository from "../repositories/shared/account.repository";
+import * as sessionRepository from "../repositories/shared/session.repository";
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import * as workerSessionRepository from "../repositories/shared/worker-session.repository";
+// Import Queues
 import { getWorkerQueueStatus } from "../queues/worker-queue";
+// Import Config
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
+import { EMPTY_SECURITY_AUDIT_CONTEXT } from "../config/security-audit.config";
+// Import Services
 import { getAccountPermissions } from "./shared/account-permission.service";
 import { performWorkerOfflineCascade } from "./worker.service";
 import { registerWorkerPushToken as registerWorkerPushTokenForSession, registerWorkerPushTokenForAccount, revokeWorkerPushTokensBySession, sendWorkerPushNotificationToSession } from "./shared/worker-push.service";
 import { diffChangedFields, writeSecurityAuditLog, writeSecurityAuditLogBestEffort } from "./shared/security-audit-log.service";
+// Import Utils
 import { disconnectWorkerSocket, sendWorkerSocketEvent } from "../websockets/worker.socket";
+// Import Config
 import { deleteAdminProfileImageByUrl } from "../config/spaces";
 import { withTransaction } from "../db/prisma";
+// Import Types
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto, UpdateLangResponse } from "../types/auth.type";
 import type { DbConnection } from "../types/shared/common.type";
@@ -17,8 +27,10 @@ import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AccountDto, MasterWorkerDto } from "../types/admin-workers.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
+// Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { changeOwnPasswordBodySchema, confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema, updateOwnLangBodySchema, updateOwnProfileBodySchema } from "../validation/schemas";
+// Import Utils
 import ApiError from "../utils/api-error";
 import { signAccessToken, signLoginChallengeToken, signRefreshToken, verifyLoginChallengeToken, verifyRefreshToken } from "../utils/jwt";
 import { logger } from "../utils/logger";
@@ -236,7 +248,7 @@ async function createAdminSession(
   const expiresAt = new Date(
     Date.now() + AUTH_DEFAULTS.sessionExpiresInMilliseconds
   ).toISOString();
-  const session = await sessionRepository.createPending(
+  const session = await createPending(
     {
       account_id: account.id,
       device_id: deviceId,
@@ -259,7 +271,7 @@ async function createAdminSession(
     session_id: session.id,
   });
 
-  await sessionRepository.updateRefreshTokenHash(
+  await updateRefreshTokenHash(
     session.id,
     hashRefreshToken(refreshToken),
     session.refresh_token_hash,
@@ -333,12 +345,6 @@ async function buildAuthSuccessResponse(
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-const EMPTY_SECURITY_AUDIT_CONTEXT: SecurityAuditRequestContext = {
-  ip_address: null,
-  user_agent: null,
-  request_id: null,
-};
-
 // Function จัดการ login — dispatch ไปหา Account (Admin) หรือ MasterWorker (Worker login ด้วย LaborCode
 // เป็น username) ต้องเรียก verifyPassword เสมอไม่ว่าจะเจอ identity ฝั่งไหนหรือไม่เจอเลย เพื่อกัน timing-based username enumeration
 export async function login(
@@ -356,7 +362,7 @@ export async function login(
   // เรียก findByUsername และ findByLaborCode พร้อมกันเสมอ (ไม่ query แบบ fallback ทีละขั้น) เพื่อไม่ให้
   // เวลาตอบสนองต่างกันระหว่าง username ที่เป็น Admin กับไม่ใช่ ซึ่งจะเป็นช่องทาง timing enumeration ใหม่
   const [account, workerLookup] = await Promise.all([
-    accountRepository.findByUsername(username),
+    findByUsername(username),
     masterWorkerRepository.findByLaborCode(username),
   ]);
   const worker = account ? null : workerLookup;
@@ -424,7 +430,7 @@ export async function login(
       );
 
       if (activeSession) {
-        await sessionRepository.revoke(activeSession.id, transaction);
+        await revoke(activeSession.id, transaction);
       }
 
       const tokens = await createAdminSession(
@@ -737,7 +743,7 @@ export async function refresh(body: unknown) {
     };
   }
 
-  const session = await sessionRepository.findActiveById(payload.session_id);
+  const session = await findActiveById(payload.session_id);
 
   if (!session || session.account_id !== payload.account_id) {
     throw new ApiError(
@@ -778,7 +784,7 @@ export async function refresh(body: unknown) {
     session_id: session.id,
   });
 
-  const rotated = await sessionRepository.updateRefreshTokenHash(
+  const rotated = await updateRefreshTokenHash(
     session.id,
     hashRefreshToken(nextRefreshToken),
     session.refresh_token_hash
@@ -874,7 +880,7 @@ export async function logout(
   const account = await accountRepository.findById(auth.account_id);
 
   await withTransaction(async (transaction) => {
-    await sessionRepository.revoke(auth.session_id, transaction);
+    await revoke(auth.session_id, transaction);
 
     await writeSecurityAuditLog(
       {

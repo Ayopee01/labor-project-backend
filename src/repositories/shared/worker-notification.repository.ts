@@ -1,7 +1,8 @@
+// Import Library
 import { Prisma } from "@prisma/client";
-
+// Import Utils
 import { client } from "./repository-utils";
-
+// Import Types
 import type { CreateWorkerNotificationInput, WorkerNotificationDto } from "../../types/notifications.type";
 import type { DbConnection } from "../../types/shared/common.type";
 
@@ -55,6 +56,7 @@ function toJsonValue(
   return payload as Prisma.InputJsonValue;
 }
 
+// Function สร้าง notification ของ worker หนึ่งรายการลง DB
 export async function createWorkerNotification(
   input: CreateWorkerNotificationInput,
   connection?: DbConnection,
@@ -74,6 +76,7 @@ export async function createWorkerNotification(
   return mapWorkerNotification(record);
 }
 
+// Function สร้าง notification ของ worker หลายรายการพร้อมกันลง DB
 export async function createWorkerNotifications(
   inputs: CreateWorkerNotificationInput[],
   connection?: DbConnection,
@@ -95,6 +98,7 @@ export async function createWorkerNotifications(
   });
 }
 
+// Function ดึงรายการ notification ของ worker แบบแบ่งหน้า พร้อมยอดรวมทั้งหมด
 export async function listWorkerNotifications(
   workerId: number,
   page: number,

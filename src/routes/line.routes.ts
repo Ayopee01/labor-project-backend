@@ -3,9 +3,12 @@ import express from "express";
 // Import Services
 import * as lineDevService from "../services/line-dev.service";
 import * as lineService from "../services/line.service";
+// Import Utils
 import { LINE_DEV_PAGE_HTML } from "../utils/line-dev-page";
 
 const router = express.Router();
+
+/* -------------------------------------- Line Routes -------------------------------------- */
 
 router.get("/dev", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");

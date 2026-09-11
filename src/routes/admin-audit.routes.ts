@@ -1,12 +1,16 @@
+// Import Library
 import express from "express";
-
+// Import Middleware
 import authMiddleware from "../middlewares/auth.middleware";
 import permissionMiddleware from "../middlewares/permission.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
+// Import Services
 import * as adminAuditService from "../services/admin-audit.service";
 
 const router = express.Router();
+
+/* -------------------------------------- Admin Audit Routes -------------------------------------- */
 
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 

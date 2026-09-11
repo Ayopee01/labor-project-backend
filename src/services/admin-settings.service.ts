@@ -1,21 +1,26 @@
-// Import Config
+// Import Library
 import { randomBytes } from "crypto";
+// Import Config
 import { ADMIN_PERMISSION_DEPENDENCIES, ADMIN_PERMISSION_LEVELS, OWNER_ONLY_PERMISSIONS, canManagePermissionLevel } from "../config/permission.config";
 import type { AdminPermission } from "../config/permission.config";
-// Import Dependencies
+import { EMPTY_SECURITY_AUDIT_CONTEXT } from "../config/security-audit.config";
 import { withTransaction } from "../db/prisma";
-import { accountRepository } from "../repositories/admin-settings.repository";
+// Import Repositories
+import * as adminSettingsRepository from "../repositories/admin-settings.repository";
+import * as accountRepository from "../repositories/shared/account.repository";
 import * as gateClientRepository from "../repositories/shared/gate-client.repository";
 import * as permissionRepository from "../repositories/shared/permission.repository";
 import * as sessionRepository from "../repositories/shared/session.repository";
 import { listSettings, upsertSettings } from "../repositories/shared/system-setting.repository";
+// Import Queues
 import { publishRuntimeSettingsInvalidation } from "../queues/runtime-settings-sync";
+// Import Services
 import { getAccountPermissions } from "./shared/account-permission.service";
 import { clearRuntimeSettingsCache, getRuntimeSettings } from "./shared/runtime-settings.service";
 import { diffChangedFields, writeSecurityAuditLog } from "./shared/security-audit-log.service";
 import * as mobileAppVersionService from "./shared/mobile-app-version.service";
-import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 // Import Types
+import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import type { DbConnection } from "../types/shared/common.type";
@@ -32,12 +37,6 @@ import { getActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
 
-const EMPTY_SECURITY_AUDIT_CONTEXT: SecurityAuditRequestContext = {
-  ip_address: null,
-  user_agent: null,
-  request_id: null,
-};
-
 // Function ประกอบ actor snapshot (username/full_name) จาก actorId สำหรับ Security Audit Log — คืน null ทั้งคู่ถ้าไม่มี actorId
 async function findActorSnapshot(
   actorId: number | null,
@@ -47,7 +46,7 @@ async function findActorSnapshot(
     return { username: null, full_name: null };
   }
 
-  const actor = await accountRepository.findAdminById(actorId, connection);
+  const actor = await adminSettingsRepository.findAdminById(actorId, connection);
 
   return {
     username: actor?.username ?? null,
@@ -129,7 +128,7 @@ async function requireAdminActor(auth?: AccessTokenPayload): Promise<AccountDto>
     throw new ApiError(401, "UNAUTHORIZED", "Authentication is required.");
   }
 
-  const actorAccount = await accountRepository.findAdminById(actorId);
+  const actorAccount = await adminSettingsRepository.findAdminById(actorId);
 
   if (!actorAccount) {
     throw new ApiError(403, "ADMIN_ACTOR_NOT_FOUND", "Admin actor not found.");
@@ -306,7 +305,7 @@ async function assertCanCreateAdminLevel(
 // Function โหลดแอดมินเป้าหมายจาก DB ตาม id หรือ 404 — จุดร่วมที่ endpoint แก้ไข/อ่านแอดมินอื่นเรียกก่อนเช็คสิทธิ์เฉพาะของตัวเอง
 async function requireAdminAccount(accountIdParam: unknown): Promise<AccountDto> {
   const accountId = parseId(accountIdParam);
-  const account = await accountRepository.findAdminById(accountId);
+  const account = await adminSettingsRepository.findAdminById(accountId);
 
   if (!account) {
     throw new ApiError(404, "ADMIN_NOT_FOUND", "Admin account not found.");
@@ -317,7 +316,7 @@ async function requireAdminAccount(accountIdParam: unknown): Promise<AccountDto>
 
 // Function ตรวจสอบเงื่อนไข admin username available ใน service flow
 async function assertAdminUsernameAvailable(username: string): Promise<void> {
-  const exists = await accountRepository.usernameExists(username);
+  const exists = await adminSettingsRepository.usernameExists(username);
 
   if (exists) {
     throw new ApiError(
@@ -685,7 +684,7 @@ export async function createAdminAccount(
   await assertAdminUsernameAvailable(input.username);
 
   return withTransaction(async (transaction) => {
-    const account = await accountRepository.createAdmin(
+    const account = await adminSettingsRepository.createAdmin(
       {
         username: input.username,
         password_hash: await hashPassword(input.password),
@@ -776,7 +775,7 @@ export async function updateAdminUserPermissions(
     // (เช่น Owner ลดระดับ target ขณะอีก manager กำลังเช็ค hierarchy จาก state เก่า) — fetch ใหม่หลัง lock เพื่อเช็คกฎล่าสุด
     await transaction.$queryRaw`SELECT id FROM accounts WHERE id = ${account.id} FOR UPDATE`;
 
-    const freshTarget = await accountRepository.findAdminById(account.id, transaction);
+    const freshTarget = await adminSettingsRepository.findAdminById(account.id, transaction);
 
     if (!freshTarget) {
       throw new ApiError(404, "ADMIN_NOT_FOUND", "Admin account not found.");
@@ -810,7 +809,7 @@ export async function updateAdminUserPermissions(
       input.permissions
     );
 
-    let updatedAccount = await accountRepository.updatePermissionLevel(
+    let updatedAccount = await adminSettingsRepository.updatePermissionLevel(
       account.id,
       input.permission_level,
       transaction
@@ -911,7 +910,7 @@ export async function updateAdminAccount(
   await assertCanManageAdminAccount(account, auth);
 
   return withTransaction(async (transaction) => {
-    const updatedAccount = await accountRepository.updateAdminAccount(
+    const updatedAccount = await adminSettingsRepository.updateAdminAccount(
       account.id,
       {
         full_name: input.full_name,

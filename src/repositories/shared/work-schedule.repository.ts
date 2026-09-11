@@ -1,6 +1,5 @@
-// Import Library
+// Import Repositories
 import * as masterWorkerRepository from "./master-worker.repository";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkScheduleDto } from "../../types/admin-workers.type";

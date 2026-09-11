@@ -1,10 +1,8 @@
 // Import Library
 import { Prisma } from "@prisma/client";
 import type { SecurityAuditLog } from "@prisma/client";
-
-// Import Dependencies
+// Import Utils
 import { client } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { SecurityAuditLogDto, SecurityAuditLogWriteInput } from "../../types/shared/security-audit-log.type";

@@ -1,5 +1,6 @@
+// Import Utils
 import { client } from "./repository-utils";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { SystemSettingDto } from "../../types/shared/system-setting.type";
 
@@ -21,6 +22,7 @@ function mapSystemSetting(record: {
   };
 }
 
+// Function ดึงรายการ system setting ทั้งหมดจาก DB
 export async function listSettings(
   connection?: DbConnection,
 ): Promise<SystemSettingDto[]> {

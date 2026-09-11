@@ -68,7 +68,70 @@ export const workerApplicationRepositoryMock = {
         .filter(
           (account): account is NonNullable<typeof account> => account !== null,
         ),
-    listAdmins: async () => [],
+    listAdmins: async () =>
+      Array.from(state.authAccountsById.values())
+        .filter((account) => account.role === "admin")
+        .sort((left, right) => left.id - right.id),
+    updatePassword: async (accountId: number, passwordHash: string) => {
+      const account = state.authAccountsById.get(accountId);
+
+      if (!account) {
+        throw new Error("Account not found.");
+      }
+
+      account.password_hash = passwordHash;
+      return account;
+    },
+    updateStatus: async (accountId: number, status: string) => {
+      const account = state.authAccountsById.get(accountId);
+
+      if (!account) {
+        throw new Error("Account not found.");
+      }
+
+      account.status = status;
+      return account;
+    },
+    updateLang: async (accountId: number, lang: string) => {
+      const account = state.authAccountsById.get(accountId);
+
+      if (!account) {
+        throw new Error("Account not found.");
+      }
+
+      account.lang = lang;
+      return account;
+    },
+    updateProfile: async (
+      accountId: number,
+      fields: {
+        full_name?: string;
+        email?: string | null;
+        phone?: string | null;
+        image_url?: string;
+      },
+    ) => {
+      const account = state.authAccountsById.get(accountId);
+
+      if (!account) {
+        throw new Error("Account not found.");
+      }
+
+      if (fields.full_name !== undefined) account.full_name = fields.full_name;
+      if (fields.email !== undefined) account.email = fields.email;
+      if (fields.phone !== undefined) account.phone = fields.phone;
+      if (fields.image_url !== undefined) account.image_url = fields.image_url;
+
+      return account;
+    },
+    sanitizeAccount: (account: AccountRecord | null) => {
+      if (!account) {
+        return null;
+      }
+
+      const { password_hash: _passwordHash, ...safeAccount } = account;
+      return safeAccount;
+    },
   },
   profileRepository: {
     findByAccountId: async (workerId: number) =>
@@ -1861,12 +1924,17 @@ const {
 
 export const accountRepositoryMock = accountRepository;
 
-// ยังไม่มี route test สำหรับ driver flow เอง มีแค่ revokeDriverSessionsByVehicleJobId ที่ถูกเรียกจาก
-// closeCompletedVehicleJobIfReady / cancelVehicleJob ซึ่งถูก test อยู่แล้ว จึง mock ไว้เป็น no-op พอ —
-// markVehicleJobReady ใส่ไว้ให้ตรงกับ repository จริง (เผื่อมี test เรียกในอนาคต) แม้ยังไม่มี route
-// test ของ driver flow เรียกใช้จริงตอนนี้
-export const driverRepositoryMock = {
+// Mock ของ src/repositories/shared/driver-session.repository.ts — ย้ายมาจาก driverRepositoryMock ตาม
+// Fix D เพราะถูกเรียกจาก closeCompletedVehicleJobIfReady / cancelVehicleJob (vehicle-job-lifecycle.service.ts
+// ซึ่งเป็น shared service ไม่ควร depend กับ route-specific driver.repository) มี mock ไว้เป็น no-op พอ
+// เพราะถูก test ทางอ้อมผ่าน flow ที่เรียกอยู่แล้ว
+export const driverSessionRepositoryMock = {
   revokeDriverSessionsByVehicleJobId: async () => {},
+};
+
+// ยังไม่มี route test สำหรับ driver flow เอง — markVehicleJobReady ใส่ไว้ให้ตรงกับ repository จริง
+// (เผื่อมี test เรียกในอนาคต) แม้ยังไม่มี route test ของ driver flow เรียกใช้จริงตอนนี้
+export const driverRepositoryMock = {
   markVehicleJobReady: async (vehicleJobId: number) => {
     const job = state.vehicleJobs.find((item) => item.id === vehicleJobId);
 
@@ -1916,6 +1984,45 @@ export const vehicleJobRepositoryMock = {
   findVehicleJobLifecycleState,
   updateVehicleJobStatus,
   setVehicleJobDispatch,
+  // Function ยกเลิก VehicleJob พร้อม cascade MarketJob/GateTicket ที่ยังไม่ terminal — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix B
+  cancelVehicleJobWithCascade: async (vehicleJobId: number) => {
+    const job = state.vehicleJobs.find((item) => item.id === vehicleJobId);
+
+    if (!job) {
+      throw new Error("Vehicle job not found.");
+    }
+
+    const now = new Date().toISOString();
+
+    // ยกเว้น MarketJob/GateTicket ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับเป็น
+    // CANCELLED — ยกเลิกทั้งรถต้องไม่ไปเปลี่ยนประวัติตลาด/booth ที่จบไปแล้วจริงก่อนหน้า
+    state.marketJobs
+      .filter(
+        (market) =>
+          market.vehicle_job_id === vehicleJobId &&
+          !["COMPLETED", "CANCELLED"].includes(market.status),
+      )
+      .forEach((market) => {
+        market.status = "CANCELLED";
+        market.updated_at = now;
+      });
+
+    state.gateTickets
+      .filter(
+        (ticket) =>
+          ticket.vehicle_job_id === vehicleJobId &&
+          !["COMPLETED", "CANCELLED"].includes(ticket.status),
+      )
+      .forEach((ticket) => {
+        ticket.status = "CANCELLED";
+        ticket.updated_at = now;
+      });
+
+    job.status = "CANCELLED";
+    job.updated_at = now;
+
+    return job;
+  },
 };
 
 export const vehicleJobAssignmentRepositoryMock = {
@@ -1931,7 +2038,6 @@ export const vehicleJobAssignmentRepositoryMock = {
   findCurrentAssignmentByVehicleJobRefAndWorker,
   findCurrentAssignmentByVehicleJobIdAndWorker,
   acceptAssignment,
-  listAcceptedAssignmentsByVehicleJob,
   updateAssignmentScanDeadline,
   timeoutAssignment,
   scanAssignment,
@@ -1939,6 +2045,121 @@ export const vehicleJobAssignmentRepositoryMock = {
   completeAssignments,
   listReleasableAssignmentsByVehicleJob,
   releaseAssignments,
+  // Function ดึงรายการ active assignments ตาม vehicle job — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix A
+  listActiveAssignmentsByVehicleJob: async (vehicleJobId: number) =>
+    state.assignments.filter(
+      (assignment) =>
+        assignment.vehicle_job_id === vehicleJobId &&
+        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status),
+    ),
+  // Function ดึงรายการ accepted assignments ตาม vehicle job — merge ทั้ง excludedAssignmentId และ
+  // workerCodes filter ไว้ในฟังก์ชันเดียว (ทับ listAcceptedAssignmentsByVehicleJob เดิมด้านบนที่ destructure มา)
+  listAcceptedAssignmentsByVehicleJob: async (
+    vehicleJobId: number,
+    filters?: { excludedAssignmentId?: number; workerCodes?: string[] },
+  ) => {
+    const workerIds = filters?.workerCodes?.length
+      ? new Set(
+          Array.from(state.workers.values())
+            .filter((worker) => filters.workerCodes!.includes(worker.labor_code))
+            .map((worker) => worker.id),
+        )
+      : null;
+
+    return state.assignments.filter(
+      (assignment) =>
+        assignment.vehicle_job_id === vehicleJobId &&
+        assignment.status === "ACCEPTED" &&
+        (!workerIds || workerIds.has(assignment.worker_id)) &&
+        assignment.id !== filters?.excludedAssignmentId,
+    );
+  },
+  // Function ต่อเวลา assignment scan deadline — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix A
+  extendAssignmentScanDeadline: async (
+    assignmentId: number,
+    scanDeadlineAt: Date,
+  ) => {
+    const assignment = state.assignments.find(
+      (item) => item.id === assignmentId,
+    );
+
+    if (!assignment) {
+      throw new Error("Assignment not found.");
+    }
+
+    assignment.scan_deadline_at = scanDeadlineAt.toISOString();
+    assignment.updated_at = new Date().toISOString();
+    return assignment;
+  },
+  // Function ยกเลิก assignment พร้อมถอด Worker ออกจาก Booth ที่ยังไม่ Complete — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix A
+  cancelAssignment: async (assignmentId: number) => {
+    const assignment = state.assignments.find(
+      (item) => item.id === assignmentId,
+    );
+
+    if (!assignment) {
+      throw new Error("Assignment not found.");
+    }
+
+    const now = new Date().toISOString();
+
+    assignment.status = "CANCELLED";
+    assignment.updated_at = now;
+    recordWorkerAssignmentEventOnce(
+      assignment,
+      "ADMIN_CANCELLED",
+      {
+        source: "admin_assignment_cancel",
+      },
+      now,
+    );
+
+    state.ticketWorkers
+      .filter((ticketWorker) => {
+        if (
+          ticketWorker.worker_id !== assignment.worker_id ||
+          ticketWorker.status !== "WORKING"
+        ) {
+          return false;
+        }
+
+        const marketJob = state.marketJobs.find(
+          (market) => market.id === ticketWorker.market_job_id,
+        );
+
+        return (
+          marketJob?.vehicle_job_id === assignment.vehicle_job_id &&
+          !["COMPLETED", "CANCELLED"].includes(marketJob.status)
+        );
+      })
+      .forEach((ticketWorker) => {
+        ticketWorker.status = "CANCELLED";
+        ticketWorker.cancelled_at = now;
+        ticketWorker.completed_at = null;
+      });
+
+    return assignment;
+  },
+  // Function ยกเลิก assignment ที่ยัง active ทั้งหมดของ VehicleJob — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix A/B
+  // (source เป็น metadata เฉยๆ ในของจริง มี mock ไม่ต้องแยกพฤติกรรมตามค่านี้)
+  cancelActiveAssignmentsForVehicleJob: async (
+    vehicleJobId: number,
+    _source?: string,
+  ) => {
+    const now = new Date().toISOString();
+    const activeAssignments = state.assignments.filter(
+      (assignment) =>
+        assignment.vehicle_job_id === vehicleJobId &&
+        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status),
+    );
+
+    activeAssignments.forEach((assignment) => {
+      assignment.status = "CANCELLED";
+      assignment.updated_at = now;
+    });
+
+    return activeAssignments;
+  },
 };
 
 export const gateTicketRepositoryMock = {
@@ -1962,6 +2183,19 @@ export const gateTicketRepositoryMock = {
   confirmTicketCompletion,
   rejectTicketCompletion,
   TicketSubmissionAlreadyResolvedError,
+  // Function ยกเลิก Gate ticket (booth) — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix B
+  cancelGateTicket: async (ticketId: number) => {
+    const ticket = state.gateTickets.find((item) => item.id === ticketId);
+
+    if (!ticket) {
+      throw new Error("Gate ticket not found.");
+    }
+
+    ticket.status = "CANCELLED";
+    ticket.updated_at = new Date().toISOString();
+
+    return ticket;
+  },
 };
 
 export const ticketWorkerRepositoryMock = {
@@ -1971,6 +2205,66 @@ export const ticketWorkerRepositoryMock = {
   listActiveScannedAssignmentWorkerIds,
   createTicketWorkersIfMissing,
   cancelDroppedTicketWorkers,
+  // Function ยกเลิก TicketWorker (roster) ที่ยัง WORKING ทั้งหมดของ VehicleJob — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix B
+  cancelTicketWorkersByVehicleJob: async (vehicleJobId: number) => {
+    const now = new Date().toISOString();
+
+    state.ticketWorkers
+      .filter((ticketWorker) => {
+        if (ticketWorker.status !== "WORKING") {
+          return false;
+        }
+
+        const marketJob = state.marketJobs.find(
+          (market) => market.id === ticketWorker.market_job_id,
+        );
+
+        return marketJob?.vehicle_job_id === vehicleJobId;
+      })
+      .forEach((ticketWorker) => {
+        ticketWorker.status = "CANCELLED";
+        ticketWorker.cancelled_at = now;
+        ticketWorker.completed_at = null;
+      });
+  },
+  // Function ยกเลิก TicketWorker (roster) ที่ยัง WORKING ทั้งหมดของ Business Ticket ใบเดียว — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix B
+  cancelTicketWorkersByMarketJob: async (marketJobId: number) => {
+    const now = new Date().toISOString();
+
+    state.ticketWorkers
+      .filter(
+        (ticketWorker) =>
+          ticketWorker.market_job_id === marketJobId &&
+          ticketWorker.status === "WORKING",
+      )
+      .forEach((ticketWorker) => {
+        ticketWorker.status = "CANCELLED";
+        ticketWorker.cancelled_at = now;
+        ticketWorker.completed_at = null;
+      });
+  },
+  // Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket ใบเดียว — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix B
+  cancelTicketWorkerForMarketJob: async (
+    marketJobId: number,
+    workerId: number,
+  ) => {
+    const ticketWorker = state.ticketWorkers.find(
+      (worker) =>
+        worker.market_job_id === marketJobId &&
+        worker.worker_id === workerId &&
+        worker.status === "WORKING",
+    );
+
+    if (!ticketWorker) {
+      return false;
+    }
+
+    ticketWorker.status = "CANCELLED";
+    ticketWorker.cancelled_at = new Date().toISOString();
+    ticketWorker.completed_at = null;
+
+    return true;
+  },
 };
 
 export const ticketFinancialRepositoryMock = {
@@ -2011,7 +2305,7 @@ export const gateRepositoryMock = {
         market.ticket_no === ticketNo &&
         market.status !== "CANCELLED",
     ) ?? null,
-  findGateTicketBoothCodesByMarketJobId: async (marketJobId: number) =>
+  listGateTicketBoothCodesByMarketJobId: async (marketJobId: number) =>
     state.gateTickets
       .filter((ticket) => ticket.market_job_id === marketJobId)
       .map((ticket) => ticket.boothCode),
@@ -2087,7 +2381,7 @@ export const gateRepositoryMock = {
         product.packageCode === packageCode &&
         product.status === "ACTIVE",
     ) ?? null,
-  findActiveVendorLineTargetsByStall: async (
+  listActiveVendorLineTargetsByStall: async (
     _marketCode: string,
     boothCode: string,
   ) => [
@@ -2387,7 +2681,7 @@ export const gateRepositoryMock = {
 
 // Mock ของ src/repositories/shared/master-data.repository.ts
 export const masterDataRepositoryMock = {
-  findActiveProductsByProductCodeAndPackageCode: async (
+  listActiveProductsByProductCodeAndPackageCode: async (
     productCode: string,
     packageCode: string,
   ) =>
@@ -2399,14 +2693,14 @@ export const masterDataRepositoryMock = {
           product.status === "ACTIVE",
       )
       .sort((left, right) => left.id - right.id),
-  findActiveProductsByPackageCode: async (packageCode: string) =>
+  listActiveProductsByPackageCode: async (packageCode: string) =>
     state.masterProducts
       .filter(
         (product) =>
           product.packageCode === packageCode && product.status === "ACTIVE",
       )
       .sort((left, right) => left.id - right.id),
-  findActiveRatesByMarketAndWeight: async (
+  listActiveRatesByMarketAndWeight: async (
     marketCode: string,
     packageWeight: Prisma.Decimal,
   ) =>
@@ -2417,7 +2711,7 @@ export const masterDataRepositoryMock = {
         rate.weightMin.lt(packageWeight) &&
         rate.weightMax.gte(packageWeight),
     ),
-  findActiveMasterProductPackagesByProductCode: async (productCode: string) =>
+  listActiveMasterProductPackagesByProductCode: async (productCode: string) =>
     state.masterProducts
       .filter(
         (product) =>
@@ -2522,6 +2816,33 @@ export const marketJobRepositoryMock = {
       )
       .sort((left, right) => left.id - right.id)
       .map((market) => market.ticket_no),
+  // Function ยกเลิก Business Ticket (market job) พร้อม cascade GateTicket ที่ยังไม่ terminal — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix B
+  cancelMarketJobWithCascade: async (marketJobId: number) => {
+    const marketJob = state.marketJobs.find((item) => item.id === marketJobId);
+
+    if (!marketJob) {
+      throw new Error("Market job not found.");
+    }
+
+    const now = new Date().toISOString();
+
+    // ยกเว้น ticket ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับ — ตรงกับ repository จริง
+    state.gateTickets
+      .filter(
+        (ticket) =>
+          ticket.market_job_id === marketJobId &&
+          !["COMPLETED", "CANCELLED"].includes(ticket.status),
+      )
+      .forEach((ticket) => {
+        ticket.status = "CANCELLED";
+        ticket.updated_at = now;
+      });
+
+    marketJob.status = "CANCELLED";
+    marketJob.updated_at = now;
+
+    return marketJob;
+  },
 };
 
 // Mock ของ src/repositories/shared/admin-action-log.repository.ts
@@ -2619,135 +2940,65 @@ export const securityAuditLogRepositoryMock = {
   },
 };
 
+// Mock ของ src/repositories/auth.repository.ts — เก็บเฉพาะ method เฉพาะ route (findByUsername,
+// findActiveById, createPending, updateRefreshTokenHash, revoke) ส่วน method ที่ owner เป็น shared
+// repository จริง (account/session) ใช้ accountRepositoryMock / shared session mock ตรงๆ แทน
 export const authRepositoryMock = {
-  accountRepository: {
-    findByUsername: async (username: string) =>
-      state.authAccountsByUsername.get(username) ?? null,
-    findById: async (accountId: number) =>
-      state.authAccountsById.get(accountId) ?? null,
-    updatePassword: async (accountId: number, passwordHash: string) => {
-      const account = state.authAccountsById.get(accountId);
+  findByUsername: async (username: string) =>
+    state.authAccountsByUsername.get(username) ?? null,
+  findActiveById: async (sessionId: number) => {
+    const session = state.sessions.get(sessionId);
 
-      if (!account) {
-        throw new Error("Account not found.");
-      }
+    if (!session || !session.is_active) {
+      return null;
+    }
 
-      account.password_hash = passwordHash;
-      return account;
-    },
-    updateLang: async (accountId: number, lang: string) => {
-      const account = state.authAccountsById.get(accountId);
+    if (
+      typeof session.expires_at === "string" &&
+      new Date(session.expires_at).getTime() <= Date.now()
+    ) {
+      return null;
+    }
 
-      if (!account) {
-        throw new Error("Account not found.");
-      }
-
-      account.lang = lang;
-      return account;
-    },
-    updateProfile: async (
-      accountId: number,
-      fields: {
-        full_name?: string;
-        email?: string | null;
-        phone?: string | null;
-        image_url?: string;
-      },
-    ) => {
-      const account = state.authAccountsById.get(accountId);
-
-      if (!account) {
-        throw new Error("Account not found.");
-      }
-
-      if (fields.full_name !== undefined) account.full_name = fields.full_name;
-      if (fields.email !== undefined) account.email = fields.email;
-      if (fields.phone !== undefined) account.phone = fields.phone;
-      if (fields.image_url !== undefined) account.image_url = fields.image_url;
-
-      return account;
-    },
-    sanitizeAccount: (account: AccountRecord | null) => {
-      if (!account) {
-        return null;
-      }
-
-      const { password_hash: _passwordHash, ...safeAccount } = account;
-      return safeAccount;
-    },
+    return session;
   },
-  sessionRepository: {
-    findActiveByAccountId: async (accountId: number) =>
-      Array.from(state.sessions.values()).find(
-        (session) => session.account_id === accountId && session.is_active,
-      ) ?? null,
-    findActiveById: async (sessionId: number) => {
-      const session = state.sessions.get(sessionId);
+  createPending: async (session: Record<string, unknown>) => {
+    const created = {
+      id: state.nextSessionId++,
+      ...session,
+      refresh_token_hash: "",
+      is_active: true,
+      last_active_at: new Date().toISOString(),
+    };
+    state.sessions.set(created.id, created);
+    return created;
+  },
+  updateRefreshTokenHash: async (
+    sessionId: number,
+    refreshTokenHash: string,
+    expectedCurrentHash: string,
+  ) => {
+    const session = state.sessions.get(sessionId);
 
-      if (!session || !session.is_active) {
-        return null;
-      }
+    if (!session) {
+      throw new Error("Session not found.");
+    }
 
-      if (
-        typeof session.expires_at === "string" &&
-        new Date(session.expires_at).getTime() <= Date.now()
-      ) {
-        return null;
-      }
+    if (session.refresh_token_hash !== expectedCurrentHash) {
+      return null;
+    }
 
-      return session;
-    },
-    createPending: async (session: Record<string, unknown>) => {
-      const created = {
-        id: state.nextSessionId++,
-        ...session,
-        refresh_token_hash: "",
-        is_active: true,
-        last_active_at: new Date().toISOString(),
-      };
-      state.sessions.set(created.id, created);
-      return created;
-    },
-    updateRefreshTokenHash: async (
-      sessionId: number,
-      refreshTokenHash: string,
-      expectedCurrentHash: string,
-    ) => {
-      const session = state.sessions.get(sessionId);
+    session.refresh_token_hash = refreshTokenHash;
+    return session;
+  },
+  revoke: async (sessionId: number) => {
+    const session = state.sessions.get(sessionId);
 
-      if (!session) {
-        throw new Error("Session not found.");
-      }
+    if (session) {
+      session.is_active = false;
+    }
 
-      if (session.refresh_token_hash !== expectedCurrentHash) {
-        return null;
-      }
-
-      session.refresh_token_hash = refreshTokenHash;
-      return session;
-    },
-    revoke: async (sessionId: number) => {
-      const session = state.sessions.get(sessionId);
-
-      if (session) {
-        session.is_active = false;
-      }
-
-      return session ?? null;
-    },
-    revokeActiveByAccountIdExcept: async (
-      accountId: number,
-      exceptSessionId: number,
-    ) => {
-      for (const session of state.sessions.values()) {
-        if (
-          session.account_id === accountId &&
-          session.id !== exceptSessionId
-        ) {
-          session.is_active = false;
-        }
-      }
-    },
+    return session ?? null;
   },
 };
 
@@ -2988,7 +3239,7 @@ function matchesUserListFilters(
 const baseMasterWorkerRepositoryMock = {
   findById: async (workerId: number | string) =>
     state.workers.get(Number(workerId)) ?? null,
-  findByIds: async (workerIds: Array<number | string>) =>
+  listByIds: async (workerIds: Array<number | string>) =>
     workerIds
       .map((workerId) => state.workers.get(Number(workerId)) ?? null)
       .filter((worker): worker is MasterWorkerRecord => worker !== null),
@@ -3030,7 +3281,7 @@ const baseMasterWorkerRepositoryMock = {
         state.workers.get(workerId)?.labor_code ?? null,
       ]),
     ),
-  findWorkerCodesByWorkerIds: async (workerIds: number[]) =>
+  listWorkerCodesByWorkerIds: async (workerIds: number[]) =>
     workerIds.map((workerId) => state.workers.get(workerId)?.labor_code ?? null),
   findCurrentScheduleByWorkerId: async (workerId: number | string) =>
     state.schedules.get(Number(workerId)) ?? null,
@@ -3109,10 +3360,11 @@ export const workerSessionRepositoryMock = {
   },
 };
 
+// Mock ของ src/repositories/admin-workers.repository.ts — เก็บเฉพาะ method เฉพาะ route ส่วน
+// method ที่ owner เป็น shared master-worker repository จริง (findById, findByLaborCode,
+// updatePasswordHash) ใช้ masterWorkerRepositoryMock ตรงๆ แทน
 export const adminWorkersRepositoryMock = {
-  workerRepository: {
-    ...baseMasterWorkerRepositoryMock,
-    laborCodeExists: async (
+  laborCodeExists: async (
       laborCode: string,
       exceptWorkerId?: number | string | null,
     ) => {
@@ -3288,118 +3540,86 @@ export const adminWorkersRepositoryMock = {
 
       return worker;
     },
-  },
-  workerSessionRepository: workerSessionRepositoryMock,
 };
 
+// Mock ของ src/repositories/admin-settings.repository.ts — เก็บเฉพาะ method เฉพาะ route
+// (findAdminById, usernameExists, createAdmin, updatePermissionLevel, updateAdminAccount) ส่วน
+// method ที่ owner เป็น shared account repository จริง (listAdmins, updateStatus, updatePassword,
+// sanitizeAccount) ใช้ accountRepositoryMock ตรงๆ แทน
 export const adminSettingsRepositoryMock = {
-  accountRepository: {
-    findAdminById: async (accountId: number) => {
-      const account = state.authAccountsById.get(accountId);
+  findAdminById: async (accountId: number) => {
+    const account = state.authAccountsById.get(accountId);
 
-      return account?.role === "admin" ? account : null;
+    return account?.role === "admin" ? account : null;
+  },
+  usernameExists: async (username: string) =>
+    state.authAccountsByUsername.has(username),
+  createAdmin: async (account: {
+    username: string;
+    password_hash: string;
+    role: "admin";
+    status?: string;
+    full_name: string;
+    position?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    permission_level?: string | null;
+    created_by?: number | null;
+  }) => {
+    const nextId = Math.max(0, ...state.authAccountsById.keys()) + 1;
+    const created: AccountRecord = {
+      id: nextId,
+      username: account.username,
+      password_hash: account.password_hash,
+      role: "admin",
+      status: account.status ?? "active",
+      full_name: account.full_name,
+      position: account.position ?? null,
+      email: account.email ?? null,
+      phone: account.phone ?? null,
+      permission_level: account.permission_level ?? null,
+      lang: "TH",
+    };
+
+    state.authAccountsByUsername.set(created.username, created);
+    state.authAccountsById.set(created.id, created);
+
+    return created;
+  },
+  updatePermissionLevel: async (
+    accountId: number,
+    permissionLevel: string,
+  ) => {
+    const account = state.authAccountsById.get(accountId);
+
+    if (!account) {
+      throw new Error("Admin account not found.");
+    }
+
+    account.permission_level = permissionLevel;
+    return account;
+  },
+  updateAdminAccount: async (
+    accountId: number,
+    fields: {
+      full_name?: string;
+      position?: string;
+      email?: string;
+      phone?: string;
     },
-    listAdmins: async () =>
-      Array.from(state.authAccountsById.values())
-        .filter((account) => account.role === "admin")
-        .sort((left, right) => left.id - right.id),
-    usernameExists: async (username: string) =>
-      state.authAccountsByUsername.has(username),
-    createAdmin: async (account: {
-      username: string;
-      password_hash: string;
-      role: "admin";
-      status?: string;
-      full_name: string;
-      position?: string | null;
-      email?: string | null;
-      phone?: string | null;
-      permission_level?: string | null;
-      created_by?: number | null;
-    }) => {
-      const nextId = Math.max(0, ...state.authAccountsById.keys()) + 1;
-      const created: AccountRecord = {
-        id: nextId,
-        username: account.username,
-        password_hash: account.password_hash,
-        role: "admin",
-        status: account.status ?? "active",
-        full_name: account.full_name,
-        position: account.position ?? null,
-        email: account.email ?? null,
-        phone: account.phone ?? null,
-        permission_level: account.permission_level ?? null,
-        lang: "TH",
-      };
+  ) => {
+    const account = state.authAccountsById.get(accountId);
 
-      state.authAccountsByUsername.set(created.username, created);
-      state.authAccountsById.set(created.id, created);
+    if (!account) {
+      throw new Error("Admin account not found.");
+    }
 
-      return created;
-    },
-    updatePermissionLevel: async (
-      accountId: number,
-      permissionLevel: string,
-    ) => {
-      const account = state.authAccountsById.get(accountId);
+    if (fields.full_name !== undefined) account.full_name = fields.full_name;
+    if (fields.position !== undefined) account.position = fields.position;
+    if (fields.email !== undefined) account.email = fields.email;
+    if (fields.phone !== undefined) account.phone = fields.phone;
 
-      if (!account) {
-        throw new Error("Admin account not found.");
-      }
-
-      account.permission_level = permissionLevel;
-      return account;
-    },
-    updateStatus: async (accountId: number, status: string) => {
-      const account = state.authAccountsById.get(accountId);
-
-      if (!account) {
-        throw new Error("Admin account not found.");
-      }
-
-      account.status = status;
-      return account;
-    },
-    updatePassword: async (accountId: number, passwordHash: string) => {
-      const account = state.authAccountsById.get(accountId);
-
-      if (!account) {
-        throw new Error("Admin account not found.");
-      }
-
-      account.password_hash = passwordHash;
-      return account;
-    },
-    updateAdminAccount: async (
-      accountId: number,
-      fields: {
-        full_name?: string;
-        position?: string;
-        email?: string;
-        phone?: string;
-      },
-    ) => {
-      const account = state.authAccountsById.get(accountId);
-
-      if (!account) {
-        throw new Error("Admin account not found.");
-      }
-
-      if (fields.full_name !== undefined) account.full_name = fields.full_name;
-      if (fields.position !== undefined) account.position = fields.position;
-      if (fields.email !== undefined) account.email = fields.email;
-      if (fields.phone !== undefined) account.phone = fields.phone;
-
-      return account;
-    },
-    sanitizeAccount: (account: AccountRecord | null) => {
-      if (!account) {
-        return null;
-      }
-
-      const { password_hash: _passwordHash, ...safeAccount } = account;
-      return safeAccount;
-    },
+    return account;
   },
   permissionRepository: {
     listByAccountId: async (accountId: number) =>
@@ -3412,9 +3632,26 @@ export const adminSettingsRepositoryMock = {
     },
   },
   sessionRepository: {
+    findActiveByAccountId: async (accountId: number) =>
+      Array.from(state.sessions.values()).find(
+        (session) => session.account_id === accountId && session.is_active,
+      ) ?? null,
     revokeActiveByAccountId: async (accountId: number) => {
       for (const session of state.sessions.values()) {
         if (session.account_id === accountId) {
+          session.is_active = false;
+        }
+      }
+    },
+    revokeActiveByAccountIdExcept: async (
+      accountId: number,
+      exceptSessionId: number,
+    ) => {
+      for (const session of state.sessions.values()) {
+        if (
+          session.account_id === accountId &&
+          session.id !== exceptSessionId
+        ) {
           session.is_active = false;
         }
       }
@@ -4073,7 +4310,7 @@ function buildDailyWorkerIncomeRecordForTest(ticketWorkerId: number) {
 
 const TERMINAL_JOB_STATUSES_FOR_TEST = ["COMPLETED", "CANCELLED"];
 
-// Function จำลอง historyStatusGroupWhere ของ admin-jobs.repository.ts จริง — ต้องคง priority
+// Function จำลอง buildHistoryStatusGroupWhere ของ admin-jobs.repository.ts จริง — ต้องคง priority
 // CANCELLED/COMPLETED/REJECT_PENDING แบบเดียวกันไม่งั้น mock กับ production เพี้ยนไปจากกัน
 function jobMatchesHistoryStatusGroup(
   job: VehicleJobRecord,
@@ -4221,214 +4458,6 @@ export const adminJobsRepositoryMock = {
       .reverse()
       .find((ticket) => ticket.boothCode === boothCode) ?? null,
 
-  listActiveAssignmentsByVehicleJob: async (vehicleJobId: number) =>
-    state.assignments.filter(
-      (assignment) =>
-        assignment.vehicle_job_id === vehicleJobId &&
-        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status),
-    ),
-
-  listAcceptedAssignmentsByVehicleJob: async (
-    vehicleJobId: number,
-    workerCodes?: string[],
-  ) => {
-    const workerIds = workerCodes?.length
-      ? new Set(
-          Array.from(state.workers.values())
-            .filter((worker) => workerCodes.includes(worker.labor_code))
-            .map((worker) => worker.id),
-        )
-      : null;
-
-    return state.assignments.filter(
-      (assignment) =>
-        assignment.vehicle_job_id === vehicleJobId &&
-        assignment.status === "ACCEPTED" &&
-        (!workerIds || workerIds.has(assignment.worker_id)),
-    );
-  },
-
-  extendAssignmentScanDeadline: async (
-    assignmentId: number,
-    scanDeadlineAt: Date,
-  ) => {
-    const assignment = state.assignments.find(
-      (item) => item.id === assignmentId,
-    );
-
-    if (!assignment) {
-      throw new Error("Assignment not found.");
-    }
-
-    assignment.scan_deadline_at = scanDeadlineAt.toISOString();
-    assignment.updated_at = new Date().toISOString();
-    return assignment;
-  },
-
-  // Function ยกเลิก vehicle job (ทั้ง TicketNumber) จาก DB
-  cancelVehicleJob: async (vehicleJobId: number) => {
-    const job = state.vehicleJobs.find((item) => item.id === vehicleJobId);
-
-    if (!job) {
-      throw new Error("Vehicle job not found.");
-    }
-
-    const now = new Date().toISOString();
-
-    state.ticketWorkers
-      .filter((ticketWorker) => {
-        if (ticketWorker.status !== "WORKING") {
-          return false;
-        }
-
-        const marketJob = state.marketJobs.find(
-          (market) => market.id === ticketWorker.market_job_id,
-        );
-
-        return marketJob?.vehicle_job_id === vehicleJobId;
-      })
-      .forEach((ticketWorker) => {
-        ticketWorker.status = "CANCELLED";
-        ticketWorker.cancelled_at = now;
-        ticketWorker.completed_at = null;
-      });
-
-    state.assignments
-      .filter(
-        (assignment) =>
-          assignment.vehicle_job_id === vehicleJobId &&
-          ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status),
-      )
-      .forEach((assignment) => {
-        assignment.status = "CANCELLED";
-        assignment.updated_at = now;
-      });
-
-    // ยกเว้น MarketJob/GateTicket ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับเป็น
-    // CANCELLED — ยกเลิกทั้งรถต้องไม่ไปเปลี่ยนประวัติตลาด/booth ที่จบไปแล้วจริงก่อนหน้า
-    state.marketJobs
-      .filter(
-        (market) =>
-          market.vehicle_job_id === vehicleJobId &&
-          !["COMPLETED", "CANCELLED"].includes(market.status),
-      )
-      .forEach((market) => {
-        market.status = "CANCELLED";
-        market.updated_at = now;
-      });
-
-    state.gateTickets
-      .filter(
-        (ticket) =>
-          ticket.vehicle_job_id === vehicleJobId &&
-          !["COMPLETED", "CANCELLED"].includes(ticket.status),
-      )
-      .forEach((ticket) => {
-        ticket.status = "CANCELLED";
-        ticket.updated_at = now;
-      });
-
-    job.status = "CANCELLED";
-    job.updated_at = now;
-
-    return job;
-  },
-
-  // Function ยกเลิก assignment ที่ยัง active ทั้งหมดของ VehicleJob โดยไม่แตะ TicketWorker/MarketJob/
-  // GateTicket/VehicleJob เอง (ต่างจาก cancelVehicleJob ด้านบน)
-  cancelActiveAssignmentsForVehicleJob: async (vehicleJobId: number) => {
-    const now = new Date().toISOString();
-    const activeAssignments = state.assignments.filter(
-      (assignment) =>
-        assignment.vehicle_job_id === vehicleJobId &&
-        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status),
-    );
-
-    activeAssignments.forEach((assignment) => {
-      assignment.status = "CANCELLED";
-      assignment.updated_at = now;
-    });
-
-    return activeAssignments;
-  },
-
-  // Function ยกเลิก Business Ticket (market job) จาก DB
-  cancelMarketJob: async (marketJobId: number) => {
-    const marketJob = state.marketJobs.find((item) => item.id === marketJobId);
-
-    if (!marketJob) {
-      throw new Error("Market job not found.");
-    }
-
-    const now = new Date().toISOString();
-
-    state.ticketWorkers
-      .filter(
-        (ticketWorker) =>
-          ticketWorker.market_job_id === marketJobId &&
-          ticketWorker.status === "WORKING",
-      )
-      .forEach((ticketWorker) => {
-        ticketWorker.status = "CANCELLED";
-        ticketWorker.cancelled_at = now;
-        ticketWorker.completed_at = null;
-      });
-
-    // ยกเว้น ticket ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับ — ตรงกับ repository จริง
-    state.gateTickets
-      .filter(
-        (ticket) =>
-          ticket.market_job_id === marketJobId &&
-          !["COMPLETED", "CANCELLED"].includes(ticket.status),
-      )
-      .forEach((ticket) => {
-        ticket.status = "CANCELLED";
-        ticket.updated_at = now;
-      });
-
-    marketJob.status = "CANCELLED";
-    marketJob.updated_at = now;
-
-    return marketJob;
-  },
-
-  // Function ยกเลิก Gate ticket (booth) จาก DB — ไม่แตะ TicketWorker (Roster) อีกต่อไป
-  cancelGateTicket: async (ticketId: number) => {
-    const ticket = state.gateTickets.find((item) => item.id === ticketId);
-
-    if (!ticket) {
-      throw new Error("Gate ticket not found.");
-    }
-
-    ticket.status = "CANCELLED";
-    ticket.updated_at = new Date().toISOString();
-
-    return ticket;
-  },
-
-  // Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket ใบเดียว
-  cancelTicketWorkerForMarketJob: async (
-    marketJobId: number,
-    workerId: number,
-  ) => {
-    const ticketWorker = state.ticketWorkers.find(
-      (worker) =>
-        worker.market_job_id === marketJobId &&
-        worker.worker_id === workerId &&
-        worker.status === "WORKING",
-    );
-
-    if (!ticketWorker) {
-      return false;
-    }
-
-    ticketWorker.status = "CANCELLED";
-    ticketWorker.cancelled_at = new Date().toISOString();
-    ticketWorker.completed_at = null;
-
-    return true;
-  },
-
   findWorkerByCode: async (workerCode: string) =>
     Array.from(state.workers.values()).find(
       (worker) => worker.labor_code === workerCode,
@@ -4501,54 +4530,6 @@ export const adminJobsRepositoryMock = {
     );
   },
 
-  cancelAssignment: async (assignmentId: number) => {
-    const assignment = state.assignments.find(
-      (item) => item.id === assignmentId,
-    );
-
-    if (!assignment) {
-      throw new Error("Assignment not found.");
-    }
-
-    const now = new Date().toISOString();
-
-    assignment.status = "CANCELLED";
-    assignment.updated_at = now;
-    recordWorkerAssignmentEventOnce(
-      assignment,
-      "ADMIN_CANCELLED",
-      {
-        source: "admin_assignment_cancel",
-      },
-      now,
-    );
-
-    state.ticketWorkers
-      .filter((ticketWorker) => {
-        if (
-          ticketWorker.worker_id !== assignment.worker_id ||
-          ticketWorker.status !== "WORKING"
-        ) {
-          return false;
-        }
-
-        const marketJob = state.marketJobs.find(
-          (market) => market.id === ticketWorker.market_job_id,
-        );
-
-        return (
-          marketJob?.vehicle_job_id === assignment.vehicle_job_id &&
-          !["COMPLETED", "CANCELLED"].includes(marketJob.status)
-        );
-      })
-      .forEach((ticketWorker) => {
-        ticketWorker.status = "CANCELLED";
-        ticketWorker.cancelled_at = now;
-        ticketWorker.completed_at = null;
-      });
-
-    return assignment;
-  },
   findVehicleJobFinancialByRef: async (ticketNumber: string) => {
     const vehicleJob = state.vehicleJobs.find(
       (job) => job.ticket_number === ticketNumber,

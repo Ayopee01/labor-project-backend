@@ -6,7 +6,7 @@ import { buildBullConnection, REDIS_CONFIG } from "../config/redis.config";
 // Import Utils
 import { logger } from "../utils/logger";
 // Import Repositories
-import * as lineRepository from "../repositories/line.repository";
+import * as messageDeliveryLogRepository from "../repositories/shared/message-delivery-log.repository";
 // Import Types
 import type { LineMessage, LineMessageJobData } from "../types/line.type";
 
@@ -75,7 +75,7 @@ export async function enqueueLoggedLineMessage(input: {
   payload: unknown;
   messages: LineMessage[];
 }): Promise<number> {
-  const logId = await lineRepository.createMessageDeliveryLog(
+  const logId = await messageDeliveryLogRepository.createMessageDeliveryLog(
     "LINE",
     input.action,
     input.payload as Prisma.InputJsonValue,
@@ -103,14 +103,14 @@ export function startLineMessageWorker(): void {
     async (job: Job<LineMessageJobData>) => {
       try {
         await sendLinePushMessage(job.data);
-        await lineRepository.updateMessageDeliveryLogStatus(
+        await messageDeliveryLogRepository.updateMessageDeliveryLogStatus(
           job.data.log_id,
-          lineRepository.MESSAGE_DELIVERY_STATUS.SENT
+          messageDeliveryLogRepository.MESSAGE_DELIVERY_STATUS.SENT
         );
       } catch (error) {
-        await lineRepository.updateMessageDeliveryLogStatus(
+        await messageDeliveryLogRepository.updateMessageDeliveryLogStatus(
           job.data.log_id,
-          lineRepository.MESSAGE_DELIVERY_STATUS.FAILED,
+          messageDeliveryLogRepository.MESSAGE_DELIVERY_STATUS.FAILED,
           error instanceof Error ? error.message : String(error)
         );
         throw error;

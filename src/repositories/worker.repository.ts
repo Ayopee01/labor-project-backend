@@ -1,6 +1,7 @@
+// Import Mappers
 import { mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
-
+// Import Types
 import type { DbConnection } from "../types/shared/common.type";
 import type { WorkerAssignmentHistoryItemDto, WorkerEarningsSummaryResponse } from "../types/worker.type";
 

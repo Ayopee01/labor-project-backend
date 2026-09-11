@@ -1,20 +1,20 @@
-import * as accountRepository from "./shared/account.repository";
-import * as sessionRepository from "./shared/session.repository";
+// Import Mappers
 import { mapAccount, mapSession } from "./shared/mappers";
 import { buildRevokeData, client, requireMapped, toId } from "./shared/repository-utils";
-
+// Import Types
 import type { DbConnection } from "../types/shared/common.type";
 import type { PendingSessionInput, SessionDto } from "../types/auth.type";
 import type { AccountDto } from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config ค่า refresh token hash ชั่วคราวสำหรับ pending session ก่อนออก token จริง
 const PENDING_REFRESH_TOKEN_HASH = "";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
 // Function ค้นหา account ตาม username จาก DB
-async function findByUsername(
+export async function findByUsername(
   username: string,
   connection?: DbConnection,
 ): Promise<AccountDto | null> {
@@ -26,11 +26,6 @@ async function findByUsername(
 
   return mapAccount(account);
 }
-
-const authAccountRepository = {
-  ...accountRepository,
-  findByUsername,
-};
 
 // Function สร้าง pending session data จาก DB
 function buildPendingSessionData(session: PendingSessionInput) {
@@ -57,7 +52,7 @@ function buildRefreshTokenHashData(refreshTokenHash: string) {
 }
 
 // Function ค้นหา active session ตาม ID จาก DB
-async function findActiveById(
+export async function findActiveById(
   sessionId: number | string,
   connection?: DbConnection,
 ): Promise<SessionDto | null> {
@@ -75,7 +70,7 @@ async function findActiveById(
 }
 
 // Function สร้าง pending session จาก DB
-async function createPending(
+export async function createPending(
   session: PendingSessionInput,
   connection?: DbConnection,
 ): Promise<SessionDto> {
@@ -92,7 +87,7 @@ async function createPending(
 
 // Function อัปเดต refresh token hash จาก DB — เขียนแบบมีเงื่อนไข (ต้องตรงกับ expectedCurrentHash เดิม)
 // กัน TOCTOU race เมื่อมี /auth/refresh พร้อมกันหลาย request ด้วย token เดิม คืน null เมื่อแพ้ race
-async function updateRefreshTokenHash(
+export async function updateRefreshTokenHash(
   sessionId: number | string,
   refreshTokenHash: string,
   expectedCurrentHash: string,
@@ -125,7 +120,7 @@ async function updateRefreshTokenHash(
 }
 
 // Function revoke active session จาก DB
-async function revoke(
+export async function revoke(
   sessionId: number | string,
   connection?: DbConnection,
 ): Promise<SessionDto | null> {
@@ -150,16 +145,3 @@ async function revoke(
     }),
   );
 }
-
-const authSessionRepository = {
-  ...sessionRepository,
-  findActiveById,
-  createPending,
-  updateRefreshTokenHash,
-  revoke,
-};
-
-export {
-  authAccountRepository as accountRepository,
-  authSessionRepository as sessionRepository,
-};

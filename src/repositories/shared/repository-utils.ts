@@ -1,9 +1,7 @@
 // Import Library
 import { randomBytes } from "crypto";
-
-// Import Dependencies
+// Import Config
 import { prisma } from "../../db/prisma";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 

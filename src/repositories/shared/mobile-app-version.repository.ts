@@ -1,5 +1,6 @@
+// Import Utils
 import { client, requireMapped } from "./repository-utils";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { MobileAppVersionCreateInput, MobileAppVersionDto, MobileAppVersionUpdateInput } from "../../types/shared/mobile-app-version.type";
 
@@ -68,6 +69,7 @@ export async function listMobileAppVersions(
     .filter((record): record is MobileAppVersionDto => record !== null);
 }
 
+// Function ค้นหา mobile app version ตาม ID จาก DB
 export async function findMobileAppVersionById(
   id: number,
   connection?: DbConnection
@@ -96,6 +98,7 @@ export async function findMobileAppVersionByBuildNumber(
   return mapMobileAppVersion(record);
 }
 
+// Function สร้าง mobile app version ใหม่ลง DB
 export async function createMobileAppVersion(
   input: MobileAppVersionCreateInput,
   connection?: DbConnection
@@ -121,6 +124,7 @@ export async function createMobileAppVersion(
   return requireMapped(mapMobileAppVersion(record), "Mobile app version", "create");
 }
 
+// Function อัปเดตข้อมูล mobile app version จาก DB
 export async function updateMobileAppVersion(
   id: number,
   input: MobileAppVersionUpdateInput,

@@ -1,6 +1,5 @@
 // Import Library
 import type { Account, AdminActionLog, DriverSession, GateTicket, MarketJob, MasterWorker, TicketCompletionSubmission, TicketProduct, TicketWorker, UserSession, VehicleJob, VehicleJobAssignment, WorkerSession } from "@prisma/client";
-
 // Import Types
 import type { SessionDto } from "../../../types/auth.type";
 import type { DriverSessionDto } from "../../../types/driver.type";

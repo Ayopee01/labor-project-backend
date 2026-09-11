@@ -43,15 +43,12 @@ export const MASTER_WORKER_SOURCES = ["master_sync", "admin_created"] as const;
 export type MasterWorkerSource = (typeof MASTER_WORKER_SOURCES)[number];
 
 // Config ค่า status ตัวเลขของ MasterWorker (1 = active, 0 = inactive) — ใช้แทน magic number 1/0
-// ที่กระจายอยู่หลายไฟล์ (auth, worker, admin-workers, session/socket middleware)
 export const MASTER_WORKER_STATUS = {
   ACTIVE: 1,
   INACTIVE: 0,
 } as const;
 
-// Type DTO ของ MasterWorker — source of truth เดียวของข้อมูล Worker ทั้งหมดในระบบ (แทน
-// Account/Profile/WorkSchedule เดิม) picture ถูกแปลงเป็น base64 ไว้แล้วที่ชั้น mapper ตามข้อ 29 ของ
-// worker.md ไม่ส่ง Buffer ดิบออกไป
+// Type DTO ของ MasterWorker — source of truth เดียวของข้อมูล Worker ทั้งหมดในระบบ
 export interface MasterWorkerDto {
   id: number;
   labor_id: number | null;
@@ -81,8 +78,6 @@ export interface MasterWorkerDto {
   updated_at: string;
 }
 
-// Type schedule ปัจจุบันของ worker หนึ่งคน — field เก็บอยู่บน MasterWorker เอง (timeWork/timeIn/
-// timeOut) ไม่ใช่ entity แยก เหมือนที่เคยเป็น Account มาก่อน
 export interface WorkScheduleDto {
   id: number;
   worker_id: number;
@@ -132,9 +127,6 @@ export interface UserAccountUpdateInput {
   phone?: string | null;
 }
 
-// Type input สร้าง MasterWorker จาก Admin panel (source = "admin_created") — labor_code ถูก
-// generate จาก nationality/shirt_type/shirt_number ด้วย buildWorkerCode() เดิม (ดู worker-code.ts)
-// ไม่ใช้กับ record ที่ sync มาจาก Master ซึ่ง labor_code มาจาก Master ตรงๆ
 export interface MasterWorkerCreateInput {
   labor_code: string;
   full_name: string;

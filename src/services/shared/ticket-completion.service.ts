@@ -1,21 +1,28 @@
+// Import Repositories
 import * as profileRepository from "../../repositories/shared/profile.repository";
 import * as assignmentRepository from "../../repositories/shared/vehicle-job-assignment.repository";
 import * as gateTicketRepository from "../../repositories/shared/gate-ticket.repository";
 import * as marketJobRepository from "../../repositories/shared/market-job.repository";
-import * as lineRepository from "../../repositories/line.repository";
+import * as lineActionTokenRepository from "../../repositories/shared/line-action-token.repository";
 import * as vehicleJobRepository from "../../repositories/shared/vehicle-job.repository";
+// Import Services
 import * as vehicleJobLifecycleService from "./vehicle-job-lifecycle.service";
 import * as rateResolutionService from "./rate-resolution.service";
+// Import Queues
 import { hasVendorConfirmationTimeout, scheduleVendorConfirmationTimeout } from "../../queues/worker-queue";
 import { enqueueLoggedLineMessage } from "../../queues/line-message-queue";
+// Import Services
 import { getRuntimeSettings } from "./runtime-settings.service";
+// Import Config
 import { ASSIGNMENT_STATUS, TICKET_STATUS, TICKET_WORKER_STATUS } from "../../constants/status";
+// Import Services
 import { resolveTicketResultAudience, publishRealtimeEvent } from "./realtime-notification.service";
+// Import Utils
 import { buildVendorCompletionReviewFlexMessage } from "../../utils/line-flex-message";
 import { buildWorkerTicketPayload } from "../../utils/ticket-payload";
 import ApiError from "../../utils/api-error";
 import { logger } from "../../utils/logger";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { LineMessage } from "../../types/line.type";
 import type { VendorTicketCompletionAction, VendorTicketCompletionFlowResult } from "../../types/line.type";
@@ -208,7 +215,7 @@ export async function resolvePackageSwitchesForItems(
       );
 
       const packageWeight = resolvedPackage.packageWeight;
-      const applicableRate = await rateResolutionService.findApplicableRate(
+      const applicableRate = await rateResolutionService.requireApplicableRate(
         marketCode,
         packageWeight,
         connection,
@@ -254,13 +261,13 @@ async function buildVendorCompletionPostbackData(
   ticket: GateTicketDto,
   submission: TicketCompletionSubmissionDto,
 ): Promise<{ confirm: string; reject: string }> {
-  const confirmToken = await lineRepository.createLineActionToken({
+  const confirmToken = await lineActionTokenRepository.createLineActionToken({
     action: "vendor_confirm_completion",
     ticket_id: ticket.id,
     submission_id: submission.id,
     boothCode: ticket.boothCode,
   });
-  const rejectToken = await lineRepository.createLineActionToken({
+  const rejectToken = await lineActionTokenRepository.createLineActionToken({
     action: "vendor_reject_completion",
     ticket_id: ticket.id,
     submission_id: submission.id,

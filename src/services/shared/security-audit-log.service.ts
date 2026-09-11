@@ -1,6 +1,8 @@
+// Import Repositories
 import * as securityAuditLogRepository from "../../repositories/shared/security-audit-log.repository";
+// Import Utils
 import { logger } from "../../utils/logger";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { SecurityAuditLogWriteInput } from "../../types/shared/security-audit-log.type";
 

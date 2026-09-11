@@ -1,7 +1,9 @@
+// Import Library
 import IORedis from "ioredis";
-
+// Import Config
 import { REDIS_CONFIG } from "../config/redis.config";
 import { getPrisma } from "../db/prisma";
+// Import Utils
 import { isReadinessShuttingDown } from "../runtime/readiness-state";
 import { logger } from "../utils/logger";
 
@@ -78,6 +80,7 @@ export async function closeHealthCheckRedisConnections(): Promise<void> {
   }
 }
 
+// Function ตรวจความพร้อมของระบบ (database + redis) สำหรับ endpoint /ready
 export async function checkReadiness(): Promise<ReadinessResult> {
   if (isReadinessShuttingDown()) {
     return {

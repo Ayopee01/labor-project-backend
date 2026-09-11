@@ -21,9 +21,6 @@ export type VehicleJobOperationRecord = Prisma.VehicleJobGetPayload<{
   };
 }>;
 
-// Type record สำหรับอ่าน Financial breakdown ของ VehicleJob จาก DB
-// Worker Roster (ticketWorkers) อยู่ระดับ Business Ticket (marketJob) ส่วน Booth/Product
-// ยังอยู่ระดับ tickets (GateTicket) เหมือนเดิม
 export type AdminVehicleJobFinancialRecord = Prisma.VehicleJobGetPayload<{
   include: {
     marketJobs: {
@@ -61,11 +58,6 @@ export type AdminVehicleJobFinancialRecord = Prisma.VehicleJobGetPayload<{
 }>;
 
 // Type record สำหรับอ่าน Work History แบบละเอียดของ VehicleJob จาก DB
-//
-// เป็น superset ของ AdminVehicleJobFinancialRecord โดยตั้งใจ (marketJobs.ticketWorkers,
-// marketJobs.tickets.products.financial.workerPayments.ticketWorker.worker เหมือนกันทุก field)
-// เพื่อให้ formatAdminFinancialBooth / formatAdminFinancialProduct ใช้ซ้ำได้ตรงๆ โดยไม่คำนวณเงินใหม่
-// ส่วนที่เพิ่มมาคือ completionSubmissions (Rejection History) และ assignments.events (Timeline)
 export type AdminVehicleJobHistoryRecord = Prisma.VehicleJobGetPayload<{
   include: {
     marketJobs: {
@@ -144,7 +136,7 @@ export interface AdminFinancialRateSnapshotResponse {
   rate_snapshot_at: string | null;
 }
 
-// Typeยอดเงินจริงของ Worker ต่อ Product
+// Type ยอดเงินจริงของ Worker ต่อ Product
 export interface AdminFinancialWorkerPaymentResponse {
   ticket_worker_id: number;
   worker_code: string;
@@ -194,7 +186,6 @@ export interface AdminFinancialBoothWorkerResponse {
 // Type Booth breakdown สำหรับ Admin
 export interface AdminFinancialBoothResponse {
   ticket_id: number;
-  // Business Ticket (market job) ที่ Booth นี้สังกัดอยู่
   ticket_no: string;
   marketCode: string;
   marketName: string;
@@ -234,18 +225,10 @@ export interface AdminVehicleJobFinancialResponse {
   booths: AdminFinancialBoothResponse[];
 }
 
-// Type business group ของ Work History — ALL คือ OR ของ COMPLETED/CANCELLED/REJECT_PENDING
-// เท่านั้น ไม่ใช่ทุกสถานะในฐานข้อมูล (ดู buildHistoryStatusFilter)
 export type HistoryStatusFilter = "ALL" | "COMPLETED" | "CANCELLED" | "REJECT_PENDING";
 
-// Type ค่า HistoryStatus ที่ derive ต่อ record สำหรับ response — เหมือน HistoryStatusFilter แต่ไม่มี
-// ALL และเป็น null เมื่อ VehicleJob ไม่เข้ากลุ่มใดเลย (เช่น WAIT/WORKING ที่ไม่มี Booth REJECT ค้าง —
-// เกิดได้เมื่อไม่ได้ส่ง history_status มา default ยังคืนทุกสถานะเหมือนเดิม)
 export type HistoryStatusValue = "COMPLETED" | "CANCELLED" | "REJECT_PENDING";
 
-// Type เหตุการณ์สำคัญย้อนหลังของ VehicleJob — คนละความหมายกับ HistoryStatusValue (สถานะหลักปัจจุบัน)
-// งานหนึ่งงานมีได้หลายค่าพร้อมกัน ยกเว้น VEHICLE_CANCELLED_AFTER_START/BEFORE_START ที่ mutually
-// exclusive กันเอง (ดู deriveHistoryFlags) เรียงตามลำดับความสำคัญที่ deriveHistoryFlags ใช้คืนค่า
 export const HISTORY_FLAG_VALUES = [
   "FINANCE_CALCULATED",
   "WORKERS_RELEASED",
@@ -342,26 +325,10 @@ interface AdminVehicleJobHistoryMarketResponse {
   booths: AdminVehicleJobHistoryTicketResponse[];
 }
 
-// ---- ส่วนขยายของ Work History (Workers / Timeline / Finance / Rejection History) ----
-// แยกจาก AdminVehicleJobHistoryTicketResponse/MarketResponse โดยตั้งใจ เพราะสองอันนั้นถูก
-// Operations board (admin-job-operations.formatter.ts) extend ใช้ต่อ การเพิ่ม field ที่นี่แทน
-// ทำให้ Operations board ไม่ต้อง fetch ข้อมูล Finance/Roster ที่มันไม่ได้ใช้
-
-// Type ประวัติการ Reject หนึ่งครั้งของ Booth (จาก TicketCompletionSubmission ที่ rejectedAt ไม่ null)
 export interface AdminHistoryRejectionResponse {
-  // ใช้ camelCase ตาม field เดิม "rejectedAt" ของ /assignments/history (TicketCompletionSubmission
-  // concept เดียวกัน) เพื่อไม่ให้ PascalCase "RejectedAt" บน Wire ชนกันระหว่างสอง endpoint
   rejectedAt: string;
-  // Current Master Owner ของ Booth นี้ (MasterOwnerStall ตาม marketCode+boothCode) ไม่ใช่
-  // Historical Snapshot ณ เวลาที่ Reject เกิดขึ้น
   correction_owner: string | null;
-  // ใครควรเป็นคนแก้ยอด — ประเมินจาก VehicleJob.status ปัจจุบัน (เหมือน correction_owner ข้างบน คือ
-  // current state ไม่ใช่ historical snapshot ณ เวลา Reject): "worker" เมื่อ VehicleJob ยังไม่ถูก
-  // Release (ทีมยังอยู่หน้างาน กลับไปแก้ยอดเองได้) "admin" เมื่อ VehicleJob ถูก Release แล้ว (ทีมกลับ
-  // เข้าคิวไปแล้ว ต้อง Admin เป็นคนจัดการแทน)
   correction_owner_type: "worker" | "admin";
-  // ผู้กด Reject จริงผ่าน LINE (resolve จาก resolvedByLineUserId) — null เมื่อเป็น Auto Timeout
-  // Confirm หรือ resolve ไม่ได้
   rejected_by_type: "owner" | "member" | null;
   rejected_by_name: string | null;
 }
@@ -371,50 +338,23 @@ export interface AdminHistorySubmissionWorkerResponse {
   full_name: string;
 }
 
-// Type Product ใน Work History — เหมือน AdminFinancialProductResponse ทุกประการ ยกเว้นไม่มี
-// ticket_product_id (internal PK ที่ /financials ต้องใช้ระบุแถวสำหรับ override แต่ Work History
-// ไม่มีปุ่มแก้ไขจึงไม่ต้องเปิดเผย)
 export type AdminHistoryProductResponse = Omit<AdminFinancialProductResponse, "ticket_product_id">;
 
-// Type Booth ใน Work History แบบละเอียด ต่อยอดจาก AdminFinancialBoothResponse ด้วยข้อมูล
-// การส่งยอด/Reject ที่หน้าจอ Financial เดิมไม่ต้องใช้ — ตัด ticket_id/ticket_no/marketCode/marketName
-// ออกเพราะซ้ำกับข้อมูลที่มีอยู่แล้วระดับ Markets[] หนึ่งชั้นเหนือขึ้นไป
 export interface AdminHistoryBoothResponse
   extends Omit<AdminFinancialBoothResponse, "ticket_id" | "ticket_no" | "marketCode" | "marketName" | "products"> {
   products: AdminHistoryProductResponse[];
   vendor_line_id: string | null;
-  // รหัส Account (Worker หรือ Admin) ที่เคยส่งยอด Booth นี้ ไม่ซ้ำกัน — เปลี่ยนชื่อจาก
-  // submitted_worker_codes เพราะตอนนี้ Admin ส่งแทนก็ปรากฏในนี้ได้ด้วย
   submitted_by_codes: string[];
   submitted_by_role: "worker" | "admin" | null;
-  // Account (Worker หรือ Admin) ที่ส่งยอดรอบล่าสุดจริง — คนละอันกับ submitted_by_codes ที่เป็น set
-  // รวมทุกคนที่เคยส่งทุกรอบ ไม่บอกว่าใครคือคนล่าสุด
   latest_submitted_by_code: string | null;
   latest_submitted_by_name: string | null;
-  // Worker roster ที่ยัง WORKING ณ เวลา Submit จริง (SubmissionWorkerSnapshot ของ submission ล่าสุด)
-  // ต่างจาก GateTicketWorkerSnapshot (roster ตอน Confirm) ถ้าทีมเปลี่ยนระหว่าง Submit กับ Confirm สอง
-  // อันนี้จะให้ผลไม่เหมือนกัน — field นี้ต้องเป็น roster ตอน Submit เท่านั้น ห้ามใช้แทน divisor การเงิน
   submission_worker_snapshot: AdminHistorySubmissionWorkerResponse[];
   submitted_at: string | null;
-  // ใช้ camelCase ตาม field เดิม "confirmedAt" ของ /assignments/history (TicketCompletionSubmission
-  // concept เดียวกัน) เพื่อไม่ให้ PascalCase "ConfirmedAt" บน Wire ชนกันระหว่างสอง endpoint
   confirmedAt: string | null;
-  // ประเภทของการ Confirm ล่าสุด — "vendor" เมื่อ Vendor กดยืนยันเองผ่าน LINE (resolved_by_line_user_id
-  // มีค่า), "timeout" เมื่อ Auto-confirm จาก BullMQ Timeout (resolved_by_line_user_id เป็น null แต่
-  // confirmedAt ยังมีค่าจริงเสมอทั้งสองกรณี), null เมื่อยังไม่เคย Confirm เลย
   confirmed_by_type: "vendor" | "timeout" | null;
   rejection_history: AdminHistoryRejectionResponse[];
-  // (fund_amount / labor_fee_raw) * 100 จาก Finalized Financial Snapshot เดิม — "0.00" เมื่อ
-  // labor_fee_raw เป็น 0
   company_share_rate: string;
-  // จำนวน Worker WORKING ณ ตอน Submission ล่าสุดของ Booth นี้ (TicketCompletionSubmission.
-  // worker_count_snapshot) ไม่ใช่ Roster ปัจจุบัน ไม่ใช่ GateTicketWorkerSnapshot (Confirm-time)
-  // และไม่ใช่ Financial worker_count — null เมื่อไม่มี Submission หรือเป็น Submission เก่าก่อน
-  // Feature นี้ (ไม่ fallback ไปนับ Worker ปัจจุบัน)
   worker_count: number | null;
-  // ข้อมูลการยกเลิกระดับแผงนี้โดยตรง (STALL_JOB_CANCELLED) — null เมื่อ status ไม่ใช่ CANCELLED ถ้า
-  // แผงนี้ถูกยกเลิกทางอ้อมจากการยกเลิกทั้งตลาดหรือทั้งคัน (ไม่มี Log ระดับแผงเอง) จะ fallback ไปที่ Log
-  // ของระดับที่เป็นสาเหตุจริงแทน (ดู findBoothCancelLog)
   cancellation: AdminHistoryCancellationResponse | null;
 }
 
@@ -425,29 +365,20 @@ export interface AdminHistoryMarketResponse {
   marketName: string;
   dropoff_point: string | null;
   status: string;
-  // ข้อมูลการยกเลิกระดับตลาดนี้โดยตรง (MARKET_JOB_CANCELLED) — null เมื่อ status ไม่ใช่ CANCELLED ถ้า
-  // ตลาดนี้ถูกยกเลิกทางอ้อมจากการยกเลิกทั้งคัน (ไม่มี Log ระดับตลาดเอง) จะ fallback ไปที่ Log ระดับรถ
-  // แทน (ดู findMarketCancelLog)
   cancellation: AdminHistoryCancellationResponse | null;
   booths: AdminHistoryBoothResponse[];
 }
 
-// Type ข้อมูลการยกเลิกหนึ่งรายการ — ใช้ร่วมกันทุกระดับที่มี Status = CANCELLED ได้ (VehicleJob,
-// MarketJob/ตลาด, GateTicket/แผง, และ Worker คนเดียวที่ถูกถอดออกจากทีม) null ทั้งก้อนเมื่อระดับนั้น
-// ไม่ได้ถูกยกเลิก ส่วน sub-field เป็น null ได้เองถ้าหา AdminActionLog ที่ตรงกันไม่เจอ
 export interface AdminHistoryCancellationResponse {
   cancelled_at: string | null;
   reason_code: string | null;
   reason_text: string | null;
-  // role ของ Actor จริงที่กด Cancel (AdminActionLog.actor_role) — null เมื่อไม่มี Log ที่ตรงกัน
   cancelled_by_type: string | null;
   cancelled_by_name: string | null;
 }
 
 export interface AdminHistoryWorkerResponse {
-  // Stable identity สำหรับ join กับ finance.workers[] และรายงานอื่น — ห้าม join ด้วยชื่อ/เบอร์เสื้อ
   worker_id: number;
-  // Accepted assignment ที่ถูกเลือกมาแสดงแถวนี้ (ดู selectLatestAcceptedAssignmentPerWorker)
   assignment_id: number;
   worker_code: string | null;
   full_name: string;
@@ -455,8 +386,6 @@ export interface AdminHistoryWorkerResponse {
   shirt_number: string | null;
   accepted_at: string | null;
   scanned_at: string | null;
-  // Business Definition: Worker ถือว่าเริ่มงานตั้งแต่ Scan เข้างานจริง — null จนกว่าจะ Scan, ใช้
-  // VehicleJob.workStartedAt เป็นหลัก fallback เป็น scanned_at เฉพาะข้อมูลเก่าที่ไม่มี workStartedAt
   started_at: string | null;
   submitted_at: string | null;
   released_at: string | null;
@@ -474,18 +403,12 @@ export interface AdminHistoryTimelineItemResponse {
 }
 
 // Type สรุป Finance ระดับ VehicleJob ทั้งคัน (รวมทุก Business Ticket) — Reuse ค่าที่ Finalize แล้ว
-// จาก TicketProductFinancial/TicketWorkerPayment ห้ามคำนวณสูตรใหม่
 export interface AdminHistoryFinanceResponse {
   stall_fee_total: string;
   labor_fee_total: string;
   total_worker_share: string;
   fund_amount: string;
-  // จำนวน Worker ที่ไม่ซ้ำกันซึ่งกดรับงานจริง — ชุดเดียวกับ workers[] ด้านล่างและกับ
-  // vehicle_job history workers[] (formatAdminHistoryWorkers) เป๊ะ
   worker_count: number;
-  // เงินจริงต่อ Worker แต่ละคน รวมทุก Business Ticket ของ VehicleJob นี้ — ห้ามหารเฉลี่ย (SUM ของ
-  // TicketWorker.finalEarningAmount ต่อ workerId) ชุด Worker คือคนที่กดรับงานจริงและไม่ซ้ำ
-  // ต่อคน (เดียวกับ vehicle_job history workers[]) — "0.00" เมื่อกดรับแล้วแต่ยังไม่มีรายได้จริง
   workers: Array<{
     worker_id: number;
     worker_code: string | null;
@@ -502,14 +425,8 @@ export interface AdminVehicleJobHistoryItemResponse {
     submitted_complete_at: string | null;
     completed_at: string | null;
     duration_seconds: number | null;
-    // Business group ของ Work History (CANCELLED > COMPLETED > REJECT_PENDING ตามลำดับความสำคัญ) —
-    // null เมื่อไม่เข้ากลุ่มใดเลย ให้ Frontend แสดงป้ายสถานะได้โดยไม่ต้อง derive ซ้ำจาก markets/booths
     history_status: HistoryStatusValue | null;
-    // เหตุการณ์สำคัญย้อนหลังที่เคยเกิดขึ้นกับงานนี้ — คนละความหมายกับ history_status (สถานะหลัก
-    // ปัจจุบัน) เรียงตามลำดับใน HISTORY_FLAG_VALUES ไม่ซ้ำ ไม่เป็น null (เป็น [] เมื่อไม่พบเหตุการณ์ใด)
     history_flags: HistoryFlagValue[];
-    // ข้อมูลการยกเลิกทั้งคันโดยตรง (VEHICLE_JOB_CANCELLED) — null เมื่อ status ไม่ใช่ CANCELLED เป็น
-    // ระดับบนสุดจึงไม่มี fallback ไปที่ระดับอื่น (ต่างจาก markets[].cancellation/booths[].cancellation)
     cancellation: AdminHistoryCancellationResponse | null;
   };
   markets: AdminHistoryMarketResponse[];
@@ -623,8 +540,6 @@ export interface AdminVehicleJobOperationListResponse {
   server_time: string;
   summary: AdminVehicleJobOperationSummaryResponse;
   data: AdminVehicleJobOperationItemResponse[];
-  // ทุก dropoff_point ที่มีจริงภายใต้ filter อื่น (date range/search) ไม่รวม dropoff_point เอง — ให้
-  // Frontend ใช้สร้าง dropdown ได้ครบทุกตัวเลือกเสมอ ไม่ว่าจะกำลัง paginate/กรองอยู่หรือไม่ก็ตาม
   available_dropoff_points: string[];
   pagination?: {
     page: number;
@@ -677,9 +592,7 @@ export interface AdminCancelVehicleJobAndRequeueResponse {
   message: string;
   ticket_number: string;
   status: string;
-  // Worker ที่ถูกถอดออกจากงานรถนี้และยังอยู่ในกะ — ถูกส่งกลับไปหน้าคิวพร้อมทำงาน
   worker_to_queue: Array<string | null>;
-  // Worker ที่ถูกถอดออกจากงานรถนี้แต่หมดกะไปแล้วตอนถูกยกเลิก — ส่งไป open_app แทนการเข้าคิว
   worker_to_openapp: Array<string | null>;
 }
 
@@ -703,8 +616,7 @@ export interface AdminStallJobActionResponse {
   confirmation_status: string;
 }
 
-// Type response หลังยกเลิก Worker หนึ่งคนออกจาก Business Ticket ใบเดียว (ไม่แตะ Assignment
-// ระดับรถ ต่างจาก AdminCancelAssignmentResponse ที่ยกเลิกทั้ง TicketNumber)
+// Type response หลังยกเลิก Worker หนึ่งคนออกจาก Business Ticket ใบเดียว
 export interface AdminCancelTicketWorkerResponse {
   message: string;
   ticket_number: string;
@@ -713,9 +625,7 @@ export interface AdminCancelTicketWorkerResponse {
   status: string;
 }
 
-// Type response หลังถอด Worker หนึ่งคนออกจากแค่ Booth เดียว (ไม่แตะ TicketWorker.status — worker
-// ยังเป็นสมาชิก WORKING ของ Business Ticket ตามปกติ ยังทำ Booth อื่นในใบเดียวกันต่อได้) ต่างจาก
-// AdminCancelTicketWorkerResponse ที่ถอดออกทั้ง Business Ticket
+// Type response หลังถอด Worker หนึ่งคนออกจากแค่ Booth เดียว
 export interface AdminCancelTicketWorkerFromBoothResponse {
   message: string;
   ticket_number: string;
@@ -723,13 +633,10 @@ export interface AdminCancelTicketWorkerFromBoothResponse {
   boothCode: string;
   worker_code: string;
   status: string;
-  // true เมื่อ Worker ที่ถูกถอดออกเป็นคนสุดท้ายที่ยัง WORKING และไม่ถูก Exclude ของ Booth นี้ ทำให้ระบบ
-  // ยกเลิกทั้ง Booth ให้อัตโนมัติไปด้วย (ดู BUG-001) — ให้ Client ใช้แสดงผลแยกจาก Exclude ปกติเฉยๆ
   booth_cancelled: boolean;
 }
 
-// Type response ของเส้นยกเลิกรวม (POST /vehicle-jobs/assignment/cancel) — shape จริงขึ้นกับ scope ที่
-// caller ระบุมา (ดู adminVehicleJobAssignmentCancelBodySchema/cancelVehicleJobAssignment)
+// Type response ของเส้นยกเลิกรวม (POST /vehicle-jobs/assignment/cancel)
 export type AdminVehicleJobAssignmentCancelResponse =
   | AdminCancelVehicleJobAndRequeueResponse
   | AdminMarketJobActionResponse
@@ -763,11 +670,7 @@ export interface AdminVehicleWaitResponse {
   ticket_number: string;
   status: string;
   dispatch_now: boolean;
-  // Worker ที่ถูกถอดออกจากงานรถนี้แล้วส่งกลับไปหน้าคิว FIFO — มีค่าเฉพาะตอนเปลี่ยน dispatch เป็น
-  // false เท่านั้น ถ้าเปลี่ยนเป็น true จะว่างเสมอ
   worker_to_queue: Array<string | null>;
-  // Worker ที่ถูกถอดออกจากงานรถนี้แต่หมดกะไปแล้วตอนเปลี่ยน dispatch เป็น false — ส่งไป open_app
-  // แทนการเข้าคิว
   worker_to_openapp: Array<string | null>;
   reason_code: string;
   reason_text: string | null;
@@ -785,8 +688,6 @@ export interface AdminReleaseWorkersResponse {
 /* -------------------------------------- Daily Worker Income -------------------------------------- */
 
 // Type record สำหรับอ่านรายได้ Worker รายวันจาก DB — หนึ่งแถว = สมาชิกภาพของ Worker หนึ่งคนใน
-// Business Ticket (TicketWorker) หนึ่งใบ ใช้ final_earning_amount ที่ Finalize แล้วตรงๆ
-// ห้ามคำนวณสูตรใหม่
 export type DailyWorkerIncomeRecord = Prisma.TicketWorkerGetPayload<{
   include: {
     worker: true;
@@ -845,9 +746,6 @@ export interface DailyWorkerIncomeWorkerResponse {
 
 export interface DailyWorkerIncomeCancellationResponse {
   cancelled_at: string | null;
-  // Actor ที่ยกเลิก ticket_no นี้ (จาก admin_action_logs) — มีค่าเฉพาะตอน payment_status = cancel
-  // เท่านั้น (การถอด worker คนเดียวออกจาก roster โดยที่ ticket_no ยังไม่ถูกยกเลิกทั้งใบ ยังไม่มี Audit
-  // Log ผูกอยู่ จึงเป็น null)
   cancelled_by_type: string | null;
   cancelled_by_name: string | null;
 }
@@ -855,28 +753,17 @@ export interface DailyWorkerIncomeCancellationResponse {
 export type DailyWorkerIncomePaymentStatus =
   (typeof DAILY_WORKER_INCOME_PAYMENT_STATUS)[keyof typeof DAILY_WORKER_INCOME_PAYMENT_STATUS];
 
-// Type แถวรายได้ Worker รายวันหนึ่งแถว (หนึ่ง Worker หนึ่ง Business Ticket) — เฉพาะแถวที่มี
-// payment_status ตรงกับ 5 สถานะที่ UI ต้องการเท่านั้น แถวที่ไม่เข้าเงื่อนไขไหนเลย (เช่นยัง WORKING
-// อยู่เฉยๆ ไม่มี reject ค้าง) จะถูกกรองออกทั้งแถวตั้งแต่ใน service layer ไม่ถึง type นี้เลย
+// Type แถวรายได้ Worker รายวันหนึ่งแถว (หนึ่ง Worker หนึ่ง Business Ticket) 
 export interface DailyWorkerIncomeItemResponse {
   worker: DailyWorkerIncomeWorkerResponse;
   accepted_at: string | null;
   shift: string | null;
   ticket_no: string;
   plate: string;
-  // ยอดรวมที่ worker คนนี้ได้จาก ticket_no ใบนี้เท่านั้น (TicketWorker.final_earning_amount
-  // ผูกกับ marketJobId+workerId อยู่แล้ว จึงไม่ต้องรวมข้าม ticket_no อื่น แม้จะเป็น
-  // ticket_number/รถคันเดียวกัน)
   payable: string;
   scanned_at: string | null;
-  // ทุกแถวของ worker บนรถคันเดียวกันใช้ค่าเดียวกัน (VehicleJob.workStartedAt) — เวลาที่ทีมทั้งหมด
-  // scan เข้างานครบ ไม่ใช่เวลา scan ของ worker คนนั้นเอง (ต่างจาก scanned_at)
   started_at: string | null;
-  // เวลาส่งยอดล่าสุดของ booth ล่าสุดใน ticket_no นี้ ไม่ว่า worker คนไหนในทีมเป็นคนกดส่ง (ทุกแถวของ
-  // ticket_no เดียวกันใช้ค่าเดียวกัน เหมือน confirmedAt)
   submitted_at: string | null;
-  // ใช้ camelCase ตาม field เดิม "confirmedAt" ของ /assignments/history เพื่อไม่ให้ PascalCase
-  // "ConfirmedAt" บน Wire ชนกันระหว่างสอง endpoint
   confirmedAt: string | null;
   released_at: string | null;
   payment_status: DailyWorkerIncomePaymentStatus;
@@ -887,9 +774,6 @@ export interface DailyWorkerIncomeItemResponse {
 /* -------------------------------------- Daily Stall Fee -------------------------------------- */
 
 // Type record สำหรับอ่านรายงานค่าลงสินค้าแผงค้ารายวันจาก DB — หนึ่งแถว = หนึ่ง TicketProductFinancial
-// ที่ finalize แล้ว join ตามสาย TicketProductFinancial -> TicketProduct -> GateTicket -> MarketJob ->
-// VehicleJob ตาม docs/backend-missing-apis-spec V8.md ข้อ 28.2 — ห้ามอ่านชื่อ/ราคาสินค้าจาก master
-// ปัจจุบัน ใช้ snapshot ใน TicketProduct เท่านั้น
 export type DailyStallFeeRecord = Prisma.TicketProductFinancialGetPayload<{
   include: {
     product: {
@@ -994,8 +878,6 @@ export interface MonthlyStallFeeFilters {
 }
 
 // Type แถวดิบจาก raw SQL aggregation (GROUP BY market_code + booth_code + shirt_color) — ต้องใช้ raw
-// SQL เพราะ Prisma groupBy ทำ GROUP BY ข้าม relation (TicketProductFinancial -> TicketProduct ->
-// GateTicket -> MarketJob) ไม่ได้ตรงๆ
 export interface MonthlyStallFeeGroupRow {
   market_code: string;
   market_name: string;

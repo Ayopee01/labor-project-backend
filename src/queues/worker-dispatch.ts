@@ -1,4 +1,6 @@
+// Import Libraries
 import { withTransaction } from "../db/prisma";
+// Import Repositories
 import * as adminActionLogRepository from "../repositories/shared/admin-action-log.repository";
 import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
@@ -7,26 +9,29 @@ import * as assignmentRepository from "../repositories/shared/vehicle-job-assign
 import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import * as workerShiftAttendanceRepository from "../repositories/shared/worker-shift-attendance.repository";
+// Import Services
 import { getRuntimeSettings } from "../services/shared/runtime-settings.service";
 import * as vehicleJobLifecycleService from "../services/shared/vehicle-job-lifecycle.service";
 import { publishAdminWorkerStatusChanged, publishNotification } from "../services/notifications.service";
 import { publishRealtimeEvent } from "../services/shared/realtime-notification.service";
 import { applyVendorTicketCompletionResult } from "../services/shared/ticket-completion.service";
 import { sendMobileAppForceUpdateNotification, sendMobileAppReleaseNotification } from "../services/shared/mobile-app-version.service";
-import { enqueueWorker, enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerShiftEnd, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
-import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
+// Import Types
 import type { DbConnection } from "../types/shared/common.type";
 import type { AssignmentAcceptTimeoutResult, CompletedWorkerQueueResult, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 import type { WorkScheduleDto } from "../types/admin-workers.type";
+import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
+import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
+import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
+// Import Utils
+import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
+import { enqueueWorker, enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerShiftEnd, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
 import { buildWorkScheduleShiftInstanceKey, getWorkScheduleShiftEndDelayMs, isTimeInWorkSchedule } from "../utils/shift";
 import { buildTicketCompletionResultExtraFields, buildWorkerTicketPayload } from "../utils/ticket-payload";
 import { logger } from "../utils/logger";
 import { buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload, buildWorkerQueueSocketPayload } from "../utils/worker-payload";
 import { ASSIGNMENT_STATUS, SUBMITTED_TICKET_STATUSES, TERMINAL_JOB_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
-import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
-import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
-import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -77,11 +82,12 @@ async function dispatchReadyWorkersForVehicleJob(
   while (workersNeeded > 0) {
     const readyWorkers = await popReadyWorkers(workersNeeded);
 
+    // ถ้าไม่มี Worker ที่พร้อมจะ dispatch ให้ VehicleJob คันนี้แล้ว ให้ break ออกจาก loop
     if (readyWorkers.length === 0) {
       break;
     }
-    // popReadyWorkers ด้านบน mark ASSIGNED ใน Redis ไปแล้วนอก DB Transaction (ไม่มี Reconciliation Job มาแก้ให้ภายหลัง)
-    // worker_code เป็นแค่ข้อมูลแสดงผล ไม่ใช่ business logic จึง fallback เป็น Map ว่างได้อย่างปลอดภัยเมื่อ fail
+
+    // ดึง workerCode ของ Worker ที่ dispatch ได้จาก DB เพื่อใช้ใน notification และ log
     let workerCodeMap: Map<number, string | null>;
 
     try {
@@ -103,8 +109,6 @@ async function dispatchReadyWorkersForVehicleJob(
       let assignment: VehicleJobAssignmentDto;
 
       try {
-        // Function ดีด Worker นอกกะออกจากคิวก่อน dispatch — อยู่ใน try เดียวกับการสร้าง Assignment เสมอ
-        // ด้วยเหตุผลเดียวกับ workerCodeMap ด้านบน (Redis ถูก mark ASSIGNED ไปก่อนแล้ว)
         const workerSchedule = await workScheduleRepository.findCurrentByAccountId(
           worker.worker_id,
           connection
@@ -133,7 +137,7 @@ async function dispatchReadyWorkersForVehicleJob(
           acceptDeadlineMs
         );
       } catch (error) {
-        // คืน Worker เข้า FIFO เมื่อ fail ก่อน Assignment ถูกสร้างสำเร็จ — log ไว้เสมอเพื่อสืบสาเหตุถ้า fail ต่อเนื่องเป็นระบบ
+        // ถ้าเกิด error ระหว่างสร้าง Assignment ให้ VehicleJob ให้ log error
         logger.error("Failed to create assignment while dispatching worker.", {
           vehicleJobId: vehicleJob.id,
           workerId: worker.worker_id,
@@ -143,8 +147,7 @@ async function dispatchReadyWorkersForVehicleJob(
         continue;
       }
 
-      // Assignment ถูกสร้างและ mark ASSIGNED ใน Redis สำเร็จแล้ว ส่วนที่เหลือเป็นแค่ best-effort notification
-      // ห้าม enqueueWorker คืนคิวถ้า fail ตรงนี้ เพราะ Redis จะบอก READY ทั้งที่ DB มี Assignment จริงรออยู่
+      // ส่ง notification ไปยัง Worker และ Admin หลังจากสร้าง Assignment สำเร็จแล้ว
       try {
         const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
           vehicleJob.id,
@@ -253,9 +256,7 @@ export async function handleAssignmentAcceptTimeout(input: {
     reason = "assignment_timeout_shift_unavailable";
   }
 
-  // dispatchReadyWorkers ไม่เรียกที่นี่ — ต้องให้ caller เรียกแยกเองหลัง transaction commit แล้วเท่านั้น
-  // เพราะ dispatch เขียน DB+Redis/BullMQ ของ worker คนอื่นแยกจาก transaction นี้ rollback พร้อมกันไม่ได้
-
+  // ส่ง notification ไปยัง Worker และ Admin หลังจากจัดการ assignment accept timeout
   return {
     queue,
     reason,
@@ -265,8 +266,7 @@ export async function handleAssignmentAcceptTimeout(input: {
   };
 }
 
-// Function จัดการกรณี worker accept งานแล้วไม่ scan QR ภายในเวลา — คืน true เมื่อ timeout เกิดขึ้นจริง (caller ต้องเรียก
-// dispatchReadyWorkers เองหลัง transaction commit แล้ว) คืน false เมื่อไม่มีอะไรเปลี่ยนแปลง (reschedule/แพ้ race)
+// Function จัดการ assignment scan timeout แบบกัน race
 async function handleAssignmentScanTimeout(input: {
   assignment: VehicleJobAssignmentDto;
   workerId: number;
@@ -300,9 +300,8 @@ async function handleAssignmentScanTimeout(input: {
     input.connection
   );
 
+  // ถ้า assignment ถูก accept หรือ complete ไปแล้วก่อนหน้านี้ ให้ return false เพราะไม่ต้องทำอะไรต่อ
   if (!timedOutAssignment) {
-    // แพ้ race ให้ worker scan สำเร็จไปแล้วหรือถูก Admin cancel พร้อมกัน — ไม่ต้องแจ้งเตือน
-    // timeout ที่จริงๆ ไม่ได้เกิดขึ้น
     return false;
   }
 
@@ -417,7 +416,7 @@ async function handleAssignmentScanWarning(input: {
 
 /* -------------------------------------- Completion Helpers -------------------------------------- */
 
-// Function ส่ง worker ที่จบงานกลับเข้าคิวเมื่อกะยังทำงานต่อได้
+// Function ส่ง worker ที่จบงานกลับเข้าคิวเมื่อ Shift ยังทำงานต่อได้
 export async function returnCompletedWorkersToQueue(
   input: CompletedWorkerQueueResult | null
 ): Promise<Array<string | null>> {
@@ -489,8 +488,7 @@ export async function returnCompletedWorkersToQueue(
   return requeuedWorkerCodes;
 }
 
-// Function คืน Worker กลับเข้าคิวหน้าสุด (priority requeue) โดยเช็คกะสดก่อนเสมอ — enqueueWorkersAtFront เองไม่เช็คกะ
-// ถ้าเรียกตรงๆ Worker ที่หมดกะไปแล้วจะถูกดันกลับเข้า READY ทั้งที่ไม่ควรได้งานใหม่อีก
+// Function พยายาม requeue worker ที่จบงานกลับเข้าคิวถ้ายังอยู่ใน Shift และ mark open_app ถ้าไม่อยู่ใน Shift
 export async function requeueWorkersAtFrontRespectingShift(
   workerIds: number[]
 ): Promise<{ requeuedWorkerIds: number[]; openAppWorkerIds: number[] }> {
@@ -526,8 +524,7 @@ export async function requeueWorkersAtFrontRespectingShift(
   return { requeuedWorkerIds, openAppWorkerIds };
 }
 
-// Function เรียง assignments ตาม accepted_at (fallback created_at) ให้เป็นลำดับเดียวกับตอนเข้าคิว
-// ครั้งแรก — ใช้เฉพาะตอนปล่อย Worker กลับคิวจาก autoReleaseVehicleJobWorkersIfShiftEnded ด้านล่าง
+// Function เรียง assignment ของ VehicleJob ตามเวลาที่ accept หรือเวลาที่สร้าง (ถ้า accept_at เป็น null) และ fallback ไปตาม id ถ้าเวลาเท่ากัน
 function sortAssignmentsByAcceptedAt(
   assignments: VehicleJobAssignmentDto[]
 ): VehicleJobAssignmentDto[] {
@@ -550,8 +547,7 @@ function sortAssignmentsByAcceptedAt(
   });
 }
 
-// Function พยายามปล่อย Worker ทั้งทีมของ VehicleJob กลับคิวอัตโนมัติหลังส่งยอด ถ้าทั้งทีมหมดกะไปแล้วทุกคน (best-effort ไม่ throw)
-// ถ้ามีแค่บางคนหมดกะจะไม่ทำอะไร ต้องรอ Admin กด release-workers เองเพื่อปล่อยทั้งทีม
+// Function ตรวจสอบว่า Shift ของทีมงาน VehicleJob หมดแล้วหรือไม่ ถ้าหมดแล้วให้ปล่อย Worker ทั้งทีม
 export async function autoReleaseVehicleJobWorkersIfShiftEnded(
   vehicleJob: Pick<VehicleJobDto, "id" | "ticket_number" | "status">,
   actorId: number,
@@ -597,7 +593,7 @@ export async function autoReleaseVehicleJobWorkersIfShiftEnded(
         workScheduleRepository.findCurrentByAccountId(assignment.worker_id, transaction),
       ),
     );
-    // ต้องหมดกะทั้งทีมถึงจะปล่อยอัตโนมัติ — ถ้ามีแค่บางคนหมดกะ ต้องรอ Admin กด release-workers เองเพื่อปล่อยทั้งทีม
+    // เช็คว่า Shift ของทีมงานทั้งหมดหมดแล้วหรือยัง ถ้ายังมีคนที่ Shift ยังไม่หมดก็ไม่ปล่อย Worker ทั้งทีม
     const isWholeTeamShiftEnded = schedules.every(
       (schedule) => !schedule || !isTimeInWorkSchedule(schedule),
     );
@@ -738,7 +734,7 @@ async function handleVendorConfirmationTimeout(input: {
 
 /* -------------------------------------- Shift Handlers -------------------------------------- */
 
-// Function ปิดกะ worker เมื่อถึงเวลาสิ้นสุด และย้าย worker ที่ว่างกลับ open_app
+// Function ปิด Shift worker เมื่อถึงเวลาสิ้นสุด และย้าย worker ที่ว่างกลับ open_app
 async function handleWorkerShiftEnd(input: {
   workerId: number;
   scheduleId: number;
@@ -750,7 +746,7 @@ async function handleWorkerShiftEnd(input: {
     return;
   }
 
-  // เช็ค schedule สดอีกครั้งก่อนปิดกะ เผื่อกะถูกต่อเวลาไปแล้วตอน delayed job มาถึง
+  // ถ้าเวลาปัจจุบันยังอยู่ในช่วง Shift ให้ schedule งานปิด Shift อีกครั้งหลังจาก delay ที่กำหนดไว้ใน Shift
   if (isTimeInWorkSchedule(schedule)) {
     await scheduleWorkerShiftEnd(
       input.workerId,
@@ -765,7 +761,7 @@ async function handleWorkerShiftEnd(input: {
   await ejectWorkerForShiftEnd(input.workerId, schedule, input.shiftInstanceKey);
 }
 
-// Function ปิด attendance ของกะที่จบแล้วและคืน Worker เป็น open_app
+// Function ปิด attendance ของ Shift ที่จบแล้วและคืน Worker เป็น open_app
 async function ejectWorkerForShiftEnd(
   workerId: number,
   schedule: WorkScheduleDto,
@@ -821,7 +817,7 @@ async function ejectWorkerForShiftEnd(
   });
 }
 
-// Function พา worker กลับจาก break เข้าคิว หรือกลับ open_app ถ้า socket/กะ/assignment ไม่พร้อม
+// Function พา worker กลับจาก break เข้าคิว หรือกลับ open_app ถ้า socket/shift/assignment ไม่พร้อม
 async function handleWorkerBreakReturn(input: {
   workerId: number;
   scheduleId: number;
@@ -868,7 +864,7 @@ async function handleWorkerBreakReturn(input: {
   });
 }
 
-// Function เริ่ม BullMQ worker กลางสำหรับงาน timeout, accept, scan, warning, vendor และกะงาน
+// Function เริ่ม BullMQ worker กลางสำหรับงาน timeout, accept, scan, warning, vendor และ shift งาน
 export function startAssignmentTimeoutProcessing(): void {
   startAssignmentTimeoutWorker(async ({ assignmentId, workerId, ticketId, submissionId, mobileAppVersionId, kind }) => {
     if (kind === "mobile_app_release_notification") {
@@ -894,8 +890,6 @@ export function startAssignmentTimeoutProcessing(): void {
       return;
     }
 
-    // shouldDispatch บอกว่ามี timeout เกิดขึ้นจริงในทรานแซกชันนี้หรือไม่ — ใช้ตัดสินว่าต้องเรียก dispatchReadyWorkers
-    // หลัง transaction commit แล้วหรือเปล่า ห้ามเรียกในทรานแซกชันเดียวกับงาน timeout นี้ (ดูเหตุผลด้านบน)
     let shouldDispatch = false;
 
     await withTransaction(async (transaction) => {
@@ -942,7 +936,7 @@ export function startAssignmentTimeoutProcessing(): void {
       });
 
       if (!timeoutResult) {
-        // แพ้ race ให้คนอื่นเปลี่ยนสถานะไปก่อนแล้ว ข้าม notification
+        // ถ้า assignment ถูก accept หรือ complete ไปแล้วก่อนหน้านี้ ให้ return เพราะไม่ต้องทำอะไรต่อ
         return;
       }
 

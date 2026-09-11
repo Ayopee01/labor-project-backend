@@ -1,7 +1,6 @@
 // Import Mappers
 import { mapMasterWorker, mapWorkerSchedule } from "./mappers";
 import { client, requireMapped, toId } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import { MASTER_WORKER_STATUS } from "../../types/admin-workers.type";
@@ -30,7 +29,7 @@ export async function findById(
 }
 
 // Function ค้นหาหลาย ID พร้อมกันจาก DB
-export async function findByIds(
+export async function listByIds(
   ids: Array<number | string>,
   connection?: DbConnection,
 ): Promise<MasterWorkerDto[]> {
@@ -148,13 +147,13 @@ export async function findWorkerCodeMapByWorkerIds(
     return new Map();
   }
 
-  const workers = await findByIds(workerIds, connection);
+  const workers = await listByIds(workerIds, connection);
 
   return new Map(workers.map((worker) => [worker.id, worker.labor_code]));
 }
 
 // Function คืน WorkerCode ตามลำดับเดียวกับ worker id ที่ส่งเข้ามา
-export async function findWorkerCodesByWorkerIds(
+export async function listWorkerCodesByWorkerIds(
   workerIds: number[],
   connection?: DbConnection,
 ): Promise<Array<string | null>> {

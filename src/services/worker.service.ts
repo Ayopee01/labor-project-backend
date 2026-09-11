@@ -1,10 +1,13 @@
 // Import Library
 import { Prisma } from "@prisma/client";
-// Import Dependencies
+// Import Config
 import { withTransaction } from "../db/prisma";
+// Import Queues
 import { claimWorkerFromReadyQueue, decrementWorkerBreakCount, enqueueWorker, getWorkerQueueStatus, incrementWorkerBreakCount, markWorkerBreak, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, removeWorkerBreakReturn, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerBreakReturn } from "../queues/worker-queue";
 import { autoReleaseVehicleJobWorkersIfShiftEnded, dispatchReadyWorkers, handleAssignmentAcceptTimeout } from "../queues/worker-dispatch";
+// Import Utils
 import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
+// Import Repositories
 import * as workerApplicationRepository from "../repositories/worker.repository";
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
@@ -15,6 +18,7 @@ import * as marketJobRepository from "../repositories/shared/market-job.reposito
 import * as masterDataRepository from "../repositories/shared/master-data.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import * as workerShiftAttendanceRepository from "../repositories/shared/worker-shift-attendance.repository";
+// Import Services
 import * as vehicleJobLifecycleService from "./shared/vehicle-job-lifecycle.service";
 import * as ticketCompletionService from "./shared/ticket-completion.service";
 import { checkMobileAppVersionForClient } from "./shared/mobile-app-version.service";
@@ -31,6 +35,7 @@ import type { GateTicketDto, TicketCompletionResponse, VehicleJobAssignmentDto, 
 import { WORKER_WORK_STATUS, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
 import type { DbConnection } from "../types/shared/common.type";
+// Import Config
 import { ASSIGNMENT_STATUS, TICKET_SUBMITTER_ROLE, WORKING_ASSIGNMENT_STATUSES } from "../constants/status";
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
@@ -468,7 +473,7 @@ async function findWorkerAssignmentByReference(
 
 // Function ค้นหา Gate ticket สำหรับ completion จาก assignment ปัจจุบันของ worker + booth — scope
 // ด้วย vehicle_job_id ของ assignment ที่ worker active อยู่ ไม่รับ TicketNumber จาก client โดยตรง
-async function findGateTicketForCompletionByCurrentAssignment(
+async function requireGateTicketForCompletionByCurrentAssignment(
   workerId: number,
   ticketNoParam: unknown,
   boothCodeParam: unknown,
@@ -537,7 +542,7 @@ export async function getWorkerProductPackageOptions(
   }
 
   const rows =
-    await masterDataRepository.findActiveMasterProductPackagesByProductCode(
+    await masterDataRepository.listActiveMasterProductPackagesByProductCode(
       productCode,
     );
 
@@ -1515,7 +1520,7 @@ async function resolveScanAssignmentOutcome(
     const remainingAssignments =
       await assignmentRepository.listAcceptedAssignmentsByVehicleJob(
         assignment.vehicle_job_id,
-        assignment.id,
+        { excludedAssignmentId: assignment.id },
         transaction,
       );
     const teamScanDeadline = buildDeadline(
@@ -1677,6 +1682,7 @@ async function buildScannedOutcomeResponse(
   };
 }
 
+// Function จัดการ worker สแกน barcode เข้ารับงาน ใน service flow
 export async function scanWorkerAssignment(
   body: unknown,
   auth?: AccessTokenPayload,
@@ -1707,7 +1713,7 @@ async function completeWorkerAssignmentTicket(
 ): Promise<TicketCompletionResponse> {
   return completeResolvedWorkerTicket(
     (connection, workerId) =>
-      findGateTicketForCompletionByCurrentAssignment(
+      requireGateTicketForCompletionByCurrentAssignment(
         workerId,
         ticketNoParam,
         boothCodeParam,

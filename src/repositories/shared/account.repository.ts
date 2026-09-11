@@ -1,14 +1,13 @@
-// Import Library
 // Import Mappers
 import { mapAccount, sanitizeAccount } from "./mappers";
 import { client, requireMapped, toId } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { AccountDto } from "../../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config ค่า role ของ admin account
 const ADMIN_ROLE = "admin";
 
 /* -------------------------------------- Functions -------------------------------------- */

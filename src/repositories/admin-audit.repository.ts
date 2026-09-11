@@ -1,26 +1,18 @@
+// Import Library
 import { Prisma } from "@prisma/client";
-
+// Import Mappers
 import { client } from "./shared/repository-utils";
 import { mapAdminActionLog } from "./shared/mappers";
+// Import Config
 import { ASSIGNMENT_STATUS } from "../constants/status";
+// Import Types
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
-
 import type { DbConnection } from "../types/shared/common.type";
 import type { AdminActionLogDto } from "../types/shared/admin-action-log.type";
 import type { SecurityAuditLogDto } from "../types/shared/security-audit-log.type";
-import type {
-  AdminAuditActionLogRow,
-  AdminAuditCompletionSubmissionRow,
-  AdminAuditDriverSessionRow,
-  AdminAuditGateRequestLogRow,
-  AdminAuditMessageDeliveryLogRow,
-  AdminAuditTicketRatingRow,
-  AdminAuditVehicleJobRow,
-  AdminAuditWorkerAssignmentEventRow,
-  AdminAuditWorkerPerformanceQuery,
-  AdminAuditWorkerPerformanceRecord,
-} from "../types/admin-audit.type";
+import type { AdminAuditActionLogRow, AdminAuditCompletionSubmissionRow, AdminAuditDriverSessionRow, AdminAuditGateRequestLogRow, AdminAuditMessageDeliveryLogRow, AdminAuditTicketRatingRow, AdminAuditVehicleJobRow, AdminAuditWorkerAssignmentEventRow, AdminAuditWorkerPerformanceQuery, AdminAuditWorkerPerformanceRecord } from "../types/admin-audit.type";
 
+// Type ส่วน ช่วงเวลาที่ใช้ query ข้อมูล Admin Audit
 export interface AdminAuditDateRange {
   startAt: Date;
   endAt: Date;
@@ -31,6 +23,7 @@ function toNullableIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
+// Type ส่วน ผลลัพธ์ query ผลงาน worker แบบแบ่งหน้า
 export interface WorkerPerformanceResult {
   total: number;
   data: AdminAuditWorkerPerformanceRecord[];

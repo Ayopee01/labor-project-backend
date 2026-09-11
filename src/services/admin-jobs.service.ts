@@ -1,14 +1,17 @@
 // Import Library
 import { Prisma } from "@prisma/client";
-
+// Import Config
 import { withTransaction } from "../db/prisma";
+// Import Queues
 import { getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, removeAssignmentTimeout, removeScanTimeout, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning } from "../queues/worker-queue";
 import { autoReleaseVehicleJobWorkersIfShiftEnded, dispatchReadyWorkers, requeueWorkersAtFrontRespectingShift, returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
+// Import Utils
 import { sendWorkerSocketEvent } from "../websockets/worker.socket";
+// Import Repositories
 import * as adminActionLogRepository from "../repositories/shared/admin-action-log.repository";
 import * as adminJobsRepository from "../repositories/admin-jobs.repository";
 import * as assignmentRepository from "../repositories/shared/vehicle-job-assignment.repository";
-import * as driverRepository from "../repositories/driver.repository";
+import * as driverSessionRepository from "../repositories/shared/driver-session.repository";
 import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
 import * as masterDataRepository from "../repositories/shared/master-data.repository";
@@ -16,12 +19,14 @@ import * as profileRepository from "../repositories/shared/profile.repository";
 import * as ticketWorkerRepository from "../repositories/shared/ticket-worker.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
+// Import Services
 import { publishNotification } from "./notifications.service";
 import { publishRealtimeEvent } from "./shared/realtime-notification.service";
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
 import * as vehicleJobLifecycleService from "./shared/vehicle-job-lifecycle.service";
 import * as ticketCompletionService from "./shared/ticket-completion.service";
 import { notifyVehicleJobTeamScanReadiness } from "./worker.service";
+// Import Utils
 import { buildVehicleOperationSummary, formatVehicleOperationItem } from "../utils/admin-job-operations.formatter";
 import { isTimeInWorkSchedule } from "../utils/shift";
 import { logger } from "../utils/logger";
@@ -38,6 +43,7 @@ import { adminAssignWorkersBodySchema, adminCancelAssignmentBodySchema, adminCan
 // Import Utils
 import { requireActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
+// Import Config
 import { ACTIVE_ASSIGNMENT_STATUSES, ASSIGNMENT_STATUS, DAILY_WORKER_INCOME_PAYMENT_STATUS, SUBMITTED_TICKET_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, TICKET_SUBMITTER_ROLE, TICKET_WORKER_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
 import { DEFAULT_PAGE_LIMIT } from "../constants/pagination";
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
@@ -1242,7 +1248,7 @@ async function listVehicleJobWorkerIds(
   vehicleJobId: number,
 ): Promise<number[]> {
   const assignments =
-    await adminJobsRepository.listActiveAssignmentsByVehicleJob(vehicleJobId);
+    await assignmentRepository.listActiveAssignmentsByVehicleJob(vehicleJobId);
 
   return [
     ...new Set(assignments.map((assignment) => assignment.worker_id)),
@@ -1562,7 +1568,7 @@ async function performVehicleJobCancellation(
 
       // ต้องดึงก่อน cancelVehicleJob เท่านั้น เพราะ cancel ทำให้ MarketJob ทุกใบกลายเป็น CANCELLED ไปด้วย
       const activeAssignments =
-        await adminJobsRepository.listActiveAssignmentsByVehicleJob(
+        await assignmentRepository.listActiveAssignmentsByVehicleJob(
           vehicleJobId,
           transaction,
         );
@@ -1572,13 +1578,13 @@ async function performVehicleJobCancellation(
           transaction,
         );
 
-      const cancelled = await adminJobsRepository.cancelVehicleJob(
+      const cancelled = await vehicleJobLifecycleService.cancelVehicleJob(
         vehicleJobId,
         transaction,
       );
 
       // เพิกถอน driver session ที่ยัง active ของรถคันนี้ทันที (เหตุผลเดียวกับ closeCompletedVehicleJobIfReady)
-      await driverRepository.revokeDriverSessionsByVehicleJobId(
+      await driverSessionRepository.revokeDriverSessionsByVehicleJobId(
         vehicleJobId,
         transaction,
       );
@@ -2005,7 +2011,7 @@ async function cancelAssignment(
   );
   const { cancelledAssignment, teamScan } = await withTransaction(async (transaction) =>
     {
-      const result = await adminJobsRepository.cancelAssignment(
+      const result = await assignmentRepository.cancelAssignment(
         assignment.id,
         transaction,
       );
@@ -2107,9 +2113,9 @@ export async function extendVehicleJobScanDeadline(
   const actorId = requireActorId(auth);
 
   const assignments = (
-    await adminJobsRepository.listAcceptedAssignmentsByVehicleJob(
+    await assignmentRepository.listAcceptedAssignmentsByVehicleJob(
       vehicleJobId,
-      input.worker_codes,
+      { workerCodes: input.worker_codes },
     )
   ).filter((assignment) => isScanDeadlineActive(assignment.scan_deadline_at));
 
@@ -2125,7 +2131,7 @@ export async function extendVehicleJobScanDeadline(
     const results: VehicleJobAssignmentDto[] = [];
 
     for (const assignment of assignments) {
-      const extended = await adminJobsRepository.extendAssignmentScanDeadline(
+      const extended = await assignmentRepository.extendAssignmentScanDeadline(
         assignment.id,
         extendDeadline(assignment.scan_deadline_at, input.minutes),
         transaction,
@@ -2329,7 +2335,7 @@ async function cancelMarketJobById(
       );
     }
 
-    const cancelled = await adminJobsRepository.cancelMarketJob(marketJobId, transaction);
+    const cancelled = await vehicleJobLifecycleService.cancelMarketJob(marketJobId, transaction);
 
     // Audit log สำหรับ actor/reason ของการยกเลิก TicketNo นี้ — ใช้เป็น source ของ
     // Daily Worker Income Cancellation.CancelledByType/CancelledByName และ riskText
@@ -2448,7 +2454,7 @@ async function cancelStallJobRecord(
   ticket: GateTicketDto;
   completedVehicleJob: CompletedVehicleJobResult | null;
 }> {
-  const cancelled = await adminJobsRepository.cancelGateTicket(ticket.id, transaction);
+  const cancelled = await vehicleJobLifecycleService.cancelGateTicket(ticket.id, transaction);
 
   await adminActionLogRepository.create(
     {
@@ -2594,7 +2600,7 @@ async function cancelTicketWorker(
   }
 
   const cancelled = await withTransaction(async (transaction) => {
-    const result = await adminJobsRepository.cancelTicketWorkerForMarketJob(
+    const result = await vehicleJobLifecycleService.cancelTicketWorkerForMarketJob(
       marketJob.id,
       worker.id,
       transaction,
@@ -3035,7 +3041,7 @@ export async function changeVehicleJobToWait(
 
     const cancelled = input.dispatch
       ? []
-      : await adminJobsRepository.cancelActiveAssignmentsForVehicleJob(
+      : await vehicleJobLifecycleService.cancelActiveAssignmentsForVehicleJob(
           vehicleJob.id,
           transaction,
         );

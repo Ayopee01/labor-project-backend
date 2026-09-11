@@ -7,6 +7,8 @@ import * as driverService from "../services/driver.service";
 
 const router = express.Router();
 
+/* -------------------------------------- Driver Routes -------------------------------------- */
+
 router.post(
   "/qr-sessions",
   async (req, res, next) => {

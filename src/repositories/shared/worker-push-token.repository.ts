@@ -1,8 +1,10 @@
+// Import Library
 import { createHash } from "crypto";
-
+// Import Config
 import { prisma } from "../../db/prisma";
+// Import Utils
 import { client } from "./repository-utils";
-
+// Import Types
 import type { WorkerPushToken } from "@prisma/client";
 import type { DbConnection } from "../../types/shared/common.type";
 import type { PushPlatform, UpsertWorkerPushTokenInput, WorkerPushTokenDto } from "../../types/notifications.type";
@@ -45,6 +47,7 @@ function mapWorkerPushToken(record: WorkerPushToken): WorkerPushTokenDto {
   };
 }
 
+// Function สร้างหรืออัปเดต push token ของ worker ตาม worker + device + platform
 export async function upsertWorkerPushToken(
   input: UpsertWorkerPushTokenInput,
   connection?: DbConnection,
@@ -84,6 +87,7 @@ export async function upsertWorkerPushToken(
   return mapWorkerPushToken(record);
 }
 
+// Function ดึง push token ที่ active ของ worker หลายคนตาม worker_code
 export async function listActiveTokensByWorkerCodes(
   workerCodes: string[],
   connection?: DbConnection,
@@ -119,6 +123,7 @@ export async function listAllActiveTokens(
   return records.map(mapWorkerPushToken);
 }
 
+// Function ดึง push token ที่ active ของ session นี้
 export async function listActiveTokensBySessionId(
   sessionId: number,
   connection?: DbConnection,
@@ -133,6 +138,7 @@ export async function listActiveTokensBySessionId(
   return records.map(mapWorkerPushToken);
 }
 
+// Function ยกเลิก push token ที่ active ทั้งหมดของ session นี้
 export async function revokeBySessionId(
   sessionId: number,
   connection?: DbConnection,
@@ -153,6 +159,7 @@ export async function revokeBySessionId(
   return result.count;
 }
 
+// Function ยกเลิก push token ตาม fcm token hash หลายตัว
 export async function revokeByTokenHashes(
   fcmTokenHashes: string[],
   connection?: DbConnection,
