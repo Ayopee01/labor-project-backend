@@ -75,9 +75,15 @@ function ensureRateLimitCleanupTimer(): void {
   cleanupTimer.unref();
 }
 
+// Config CSP เข้มงวดสำหรับ route ทั่วไป (ไม่มี resource ให้โหลดเลย)
+const DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'";
+// Config CSP ผ่อนปรนเฉพาะ /api-docs เพื่อให้ Swagger UI โหลด script/style ของตัวเองได้
+const SWAGGER_CSP =
+  "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'";
+
 // Function จัดการ security headers middleware สำหรับ Express middleware
 export function securityHeadersMiddleware(
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction,
 ): void {
@@ -87,7 +93,8 @@ export function securityHeadersMiddleware(
   res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()"); // ป้องกันการเข้าถึง feature ของ browser ที่ไม่จำเป็น
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin"); // ป้องกันการโจมตีแบบ cross-origin
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains"); // บังคับให้ใช้ HTTPS Max-age 1 ปี และรวม subdomains ด้วย
-  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"); // ป้องกันการโหลด resource จาก domain อื่น และป้องกันการฝังหน้าเว็บใน iframe
+  // ป้องกันการโหลด resource จาก domain อื่น และป้องกันการฝังหน้าเว็บใน iframe — /api-docs ใช้ CSP ผ่อนปรนกว่าเพราะ Swagger UI ต้องโหลด script/style ของตัวเอง
+  res.setHeader("Content-Security-Policy", req.path.startsWith("/api-docs") ? SWAGGER_CSP : DEFAULT_CSP);
   next();
 }
 

@@ -53,7 +53,18 @@ async function checkRedisReady(): Promise<ReadinessCheck> {
     const redis = getHealthRedisClient();
 
     if (redis.status !== "ready" && redis.status !== "connecting") {
-      await redis.connect();
+      try {
+        await redis.connect();
+      } catch (connectError) {
+        // Request อื่นอาจเริ่ม connect() ไปพร้อมกันแล้ว (race condition) — ไม่ต้อง fail ทั้ง check ถ้าเจอ error นี้
+        const isAlreadyConnecting =
+          connectError instanceof Error &&
+          connectError.message === "Redis is already connecting/connected";
+
+        if (!isAlreadyConnecting) {
+          throw connectError;
+        }
+      }
     }
 
     await redis.ping();
