@@ -101,8 +101,14 @@ jobs:
     needs: build-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
     steps:
       - name: SSH deploy
+        # ข้าม step นี้ (ไม่ fail job) ถ้ายังไม่ได้ตั้ง DEPLOY_HOST secret — กันไม่ให้ push main
+        # ล้มเหลวก่อน droplet พร้อม ตั้ง secret ครบเมื่อไร step นี้จะรันจริงเองอัตโนมัติโดยไม่ต้องแก้ไฟล์นี้ซ้ำ
+        # (if: ใช้ secrets ตรงๆ ไม่ได้ ต้องผ่าน env ก่อนตามที่ GitHub Actions กำหนด)
+        if: env.DEPLOY_HOST != ''
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}

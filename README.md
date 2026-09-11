@@ -234,7 +234,7 @@ Set these **GitHub repository secrets** (Settings → Secrets and variables → 
 
 `git reset --hard origin/main` runs as part of the deploy step — safe because `.env` is gitignored (never touched by it) and the deploy path is expected to only ever be updated by this job, not edited by hand on the droplet.
 
-Without these secrets set, the `deploy` job simply fails on every push to `main` (the rest of CI — typecheck/build/tests — is unaffected); leave them unset if auto-deploy isn't wanted yet and keep deploying manually via steps 1–5.
+Without `DEPLOY_HOST` set, the `deploy` job's SSH step is skipped (not failed) on every push to `main` (the rest of CI — typecheck/build/tests — is unaffected); leave the secrets unset if auto-deploy isn't wanted yet and keep deploying manually via steps 1–5. This also matters if a third-party service (e.g. Render) watches this repo's commit checks before deploying — a skipped step keeps the check green, whereas a hard SSH failure would not.
 
 ### UFW firewall
 
