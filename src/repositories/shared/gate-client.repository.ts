@@ -1,5 +1,6 @@
+// Import Utils
 import { client, requireMapped } from "./repository-utils";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { GateClientCreateInput, GateClientDto, GateClientUpdateInput } from "../../types/shared/gate-client.type";
 
@@ -13,6 +14,7 @@ function toGateClientIsoString(value: Date | string | null): string | null {
   return value;
 }
 
+// Function แปลง GateClient record จาก DB เป็น DTO (normalize status ให้เป็น active/inactive เท่านั้น)
 function mapGateClient(record: {
   id: number;
   clientId: string;
@@ -43,6 +45,7 @@ function mapGateClient(record: {
   };
 }
 
+// Function ดึงรายการ gate client ทั้งหมดจาก DB
 export async function listGateClients(
   connection?: DbConnection
 ): Promise<GateClientDto[]> {
@@ -57,6 +60,7 @@ export async function listGateClients(
     .filter((record): record is GateClientDto => record !== null);
 }
 
+// Function ค้นหา gate client ตาม client_id จาก DB
 export async function findByClientId(
   clientId: string,
   connection?: DbConnection
@@ -70,6 +74,7 @@ export async function findByClientId(
   return mapGateClient(record);
 }
 
+// Function ตรวจว่า client_id นี้มีอยู่ใน DB แล้วหรือไม่
 export async function clientIdExists(
   clientId: string,
   connection?: DbConnection
@@ -86,6 +91,7 @@ export async function clientIdExists(
   return Boolean(record);
 }
 
+// Function สร้าง gate client ใหม่ลง DB
 export async function createGateClient(
   input: GateClientCreateInput,
   connection?: DbConnection
@@ -104,6 +110,7 @@ export async function createGateClient(
   return requireMapped(mapGateClient(record), "Gate client", "create");
 }
 
+// Function อัปเดตข้อมูล gate client (name/status) จาก DB
 export async function updateGateClient(
   clientId: string,
   input: GateClientUpdateInput,
@@ -123,6 +130,7 @@ export async function updateGateClient(
   return requireMapped(mapGateClient(record), "Gate client", "update");
 }
 
+// Function อัปเดต secret hash ของ gate client จาก DB
 export async function updateGateClientSecret(
   clientId: string,
   secretHash: string,
@@ -142,6 +150,7 @@ export async function updateGateClientSecret(
   return requireMapped(mapGateClient(record), "Gate client", "secret update");
 }
 
+// Function อัปเดตเวลาที่ gate client ถูกใช้งานล่าสุด
 export async function updateLastUsedAt(
   clientId: string,
   connection?: DbConnection

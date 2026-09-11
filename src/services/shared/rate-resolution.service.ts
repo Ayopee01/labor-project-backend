@@ -1,12 +1,10 @@
 // Import Library
 import { Prisma, type MasterProduct, type MasterRate } from "@prisma/client";
 
-// Import Dependencies
+// Import Repositories
 import * as masterDataRepository from "../../repositories/shared/master-data.repository";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
-
 // Import Utils
 import ApiError from "../../utils/api-error";
 import { decimalToWeightString, packageWeightToDecimal } from "../../utils/labor-job-pricing";
@@ -17,18 +15,15 @@ export type ResolvedPackageWeight = {
   packageWeight: Prisma.Decimal;
   packageName: string;
   // SPECIFIC_PRODUCT_PACKAGE = เจอตรง ProductCode + PackageCode
-  // PACKAGE_FALLBACK = ไม่เจอ ProductCode + PackageCode เจาะจง แต่เจอ PackageWeight จาก PackageCode
-  // เดียวกันของ Product อื่น (Business Rule: PackageWeight เป็นคุณสมบัติของแพ็กเกจ ไม่ผูกกับสินค้า)
+  // PACKAGE_FALLBACK = ไม่เจอเจาะจง แต่เจอ PackageWeight จาก PackageCode เดียวกันของสินค้าอื่น
+  // (PackageWeight เป็นคุณสมบัติของแพ็กเกจ ไม่ผูกกับสินค้า)
   resolvedVia: "SPECIFIC_PRODUCT_PACKAGE" | "PACKAGE_FALLBACK";
 };
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function เลือกแถวที่ใช้ได้จาก candidate หลายแถวแบบ deterministic ห้ามใช้ candidates[0] เฉยๆ โดยไม่
-// เช็ค PackageWeight ก่อน เพราะ Master Data มีเคสจริงที่ ProductCode+PackageCode เดียวกันมีมากกว่า 1
-// แถว (ต่างกันที่ ProductFullCode) — ถ้าทุกแถว PackageWeight เท่ากันถือว่า Resolve ได้ (ไม่ ambiguous
-// จริง) ให้ใช้แถวแรกตาม id asc (มาจาก orderBy ของ query) ถ้า PackageWeight ไม่เท่ากันคือ ambiguous จริง
-// ห้ามเลือกแถวใดแถวหนึ่งแบบสุ่ม ต้อง throw
+// Function เลือกแถวที่ใช้ได้จาก candidate หลายแถวแบบ deterministic — ถ้าทุกแถว PackageWeight เท่ากัน
+// ถือว่าไม่ ambiguous จริง ใช้แถวแรกตาม id asc ได้เลย แต่ถ้า PackageWeight ต่างกันคือ ambiguous จริง ต้อง throw
 function resolveDeterministicCandidate<
   T extends { packageWeight: number }
 >(candidates: T[], ambiguousErrorCode: string, context: Record<string, unknown>): T {
@@ -51,19 +46,16 @@ function resolveDeterministicCandidate<
   return candidates[0];
 }
 
-// Function หา Product + Package จาก master แบบเจาะจง (ProductCode + PackageCode ต้องตรงเป๊ะ)
-// ใช้ตอน Gate สร้าง Ticket เพราะต้องใช้ทั้ง PackageWeight และ range (Worker Requirement) ของ Product
-// นี้โดยเฉพาะ — ห้าม fallback ด้วย PackageCode อย่างเดียวตรงนี้ เพราะ range ของ Product อื่นเอามาใช้แทน
-// กันไม่ได้ (Worker Requirement เป็นคุณสมบัติเฉพาะของ ProductCode+PackageCode คู่นั้นจริงๆ) ถ้าต้องการ
-// แค่ PackageWeight สำหรับ Rate อย่างเดียวและยอมรับ Package Fallback ได้ ให้ใช้ resolvePackageWeight
-// แทน (ดู resolvePackageWeight ด้านล่าง)
-export async function findActiveMasterProduct(
+// Function หา Product + Package แบบเจาะจง (ProductCode + PackageCode ต้องตรงเป๊ะ) ใช้ตอน Gate สร้าง
+// Ticket เพราะต้องใช้ Worker Requirement (range) ของ Product นี้โดยเฉพาะ — ห้าม fallback ด้วย PackageCode
+// อย่างเดียว ถ้าต้องการแค่ PackageWeight ให้ใช้ resolvePackageWeight แทน
+export async function requireActiveMasterProduct(
   productCode: string,
   packageCode: string,
   connection?: DbConnection
 ): Promise<MasterProduct> {
   const products =
-    await masterDataRepository.findActiveProductsByProductCodeAndPackageCode(
+    await masterDataRepository.listActiveProductsByProductCodeAndPackageCode(
       productCode,
       packageCode,
       connection
@@ -91,26 +83,16 @@ export async function findActiveMasterProduct(
   });
 }
 
-// Function หา PackageWeight จาก ProductCode + PackageCode สำหรับ Rate Resolution เท่านั้น (ไม่ใช้
-// สำหรับ Worker Requirement) รองรับ Package Fallback ตาม Business Rule:
-//
-// ProductCode + PackageCode
-//   → เจอ Specific PackageWeight → ใช้ตัวนั้น
-//   → ไม่เจอ → fallback ด้วย PackageCode อย่างเดียว (PackageWeight เป็นคุณสมบัติของแพ็กเกจ ไม่ผูกกับ
-//     สินค้า — ดู comment ใน master-product.seed.ts: PackageWeight มาจากตัวเลขท้าย PackageName เช่น
-//     "ลัง 20" => 20 ซึ่งเป็น label ของแพ็กเกจ ไม่ใช่ของสินค้า)
-//   → ไม่เจอทั้งคู่ → PRODUCT_PACKAGE_NOT_FOUND (คง error code เดิมไว้เพื่อ backward compatibility)
-//
-// ใช้ตอน Worker เปลี่ยน PackageCode ระหว่างส่งยอด (resolvePackageSwitchesForItems) เท่านั้น เพราะ Flow
-// นี้ไม่ต้องคำนวณ Worker Requirement ใหม่ (ล็อกไปแล้วตอน Gate สร้าง Ticket) จึงไม่ผิด Business Logic
-// เดิมที่ห้ามแตะ — ห้ามเรียกจาก Flow ที่ต้องใช้ range/Worker Requirement (เช่น Gate สร้าง Ticket) เด็ดขาด
+// Function หา PackageWeight จาก ProductCode+PackageCode สำหรับ Rate Resolution เท่านั้น — เจอ Specific
+// ใช้ตัวนั้น ไม่เจอ fallback ด้วย PackageCode อย่างเดียว (PackageWeight เป็นคุณสมบัติของแพ็กเกจ ไม่ผูกสินค้า)
+// ใช้เฉพาะตอน Worker เปลี่ยน PackageCode ระหว่างส่งยอด ห้ามใช้กับ Flow ที่ต้องใช้ Worker Requirement (เช่น Gate สร้าง Ticket)
 export async function resolvePackageWeight(
   productCode: string,
   packageCode: string,
   connection?: DbConnection
 ): Promise<ResolvedPackageWeight> {
   const specificProducts =
-    await masterDataRepository.findActiveProductsByProductCodeAndPackageCode(
+    await masterDataRepository.listActiveProductsByProductCodeAndPackageCode(
       productCode,
       packageCode,
       connection
@@ -133,7 +115,7 @@ export async function resolvePackageWeight(
     };
   }
 
-  const fallbackProducts = await masterDataRepository.findActiveProductsByPackageCode(
+  const fallbackProducts = await masterDataRepository.listActiveProductsByPackageCode(
     packageCode,
     connection
   );
@@ -167,7 +149,7 @@ export async function resolvePackageWeight(
 }
 
 // Function หา rate ตามตลาดและน้ำหนักสินค้า
-export async function findApplicableRate(
+export async function requireApplicableRate(
   marketCode: string,
   packageWeight: Prisma.Decimal,
   connection?: DbConnection
@@ -178,7 +160,7 @@ export async function findApplicableRate(
   rateSource: "MARKET_RATE" | "CENTRAL_RATE";
 }> {
   const marketRates =
-    await masterDataRepository.findActiveRatesByMarketAndWeight(
+    await masterDataRepository.listActiveRatesByMarketAndWeight(
       marketCode,
       packageWeight,
       connection
@@ -206,7 +188,7 @@ export async function findApplicableRate(
   }
 
   const centralRates =
-    await masterDataRepository.findActiveRatesByMarketAndWeight(
+    await masterDataRepository.listActiveRatesByMarketAndWeight(
       "0000",
       packageWeight,
       connection

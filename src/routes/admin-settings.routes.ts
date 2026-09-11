@@ -1,20 +1,22 @@
 // Import Library
 import express from "express";
-// Import Dependencies
+// Import  Middleware
 import authMiddleware from "../middlewares/auth.middleware";
 import permissionMiddleware from "../middlewares/permission.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
+// Import Services
 import * as adminSettingsService from "../services/admin-settings.service";
-
+// Import Types
 import type { Request } from "express";
 import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
 
 const router = express.Router();
 
+/* -------------------------------------- Admin Settings Routes -------------------------------------- */
+
 router.use(authMiddleware, sessionMiddleware, roleMiddleware(["admin"]));
 
-// Function ดึง IP/User-Agent/RequestId จาก request ปัจจุบันสำหรับ Security Audit Log (27.12)
 function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
   return {
     ip_address: req.ip ?? null,

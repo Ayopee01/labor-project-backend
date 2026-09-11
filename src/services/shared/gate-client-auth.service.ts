@@ -1,6 +1,8 @@
+// Import Repositories
 import * as gateClientRepository from "../../repositories/shared/gate-client.repository";
+// Import Utils
 import { verifyPassword } from "../../utils/password";
-
+// Import Types
 import type { GateClientDto, PublicGateClient } from "../../types/shared/gate-client.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -11,6 +13,7 @@ function toPublicGateClient(client: GateClientDto): PublicGateClient {
   return publicClient;
 }
 
+// Function ตรวจสอบ client_id/secret ของ gate client แล้วอัปเดตเวลาใช้งานล่าสุดถ้าถูกต้อง
 export async function verifyGateClientCredentials(
   clientId: string,
   clientSecret: string

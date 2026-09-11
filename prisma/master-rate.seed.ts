@@ -1,5 +1,7 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 
+/* -------------------------------------- Master Data -------------------------------------- */
+
 const masterRateSeeds: Prisma.MasterRateCreateInput[] = [
   {
     sourceRateId: 1,

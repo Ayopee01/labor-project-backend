@@ -45,7 +45,6 @@ export interface AdminAuditWorkerPerformanceResponse {
 
 /* -------------------------------------- Audit Events -------------------------------------- */
 
-// Config actor type ของ Audit Event หนึ่งรายการ — ตรงกับ source เดิม 8 แหล่งที่ endpoint นี้ project
 export const ADMIN_AUDIT_ACTOR_TYPE_VALUES = [
   "system",
   "admin",
@@ -57,8 +56,6 @@ export const ADMIN_AUDIT_ACTOR_TYPE_VALUES = [
 
 export type AdminAuditActorType = (typeof ADMIN_AUDIT_ACTOR_TYPE_VALUES)[number];
 
-// 27.15.1 — quick filter การ์ด ต้องมาทีหลัง Summary เสมอ (ไม่ปนกับ search/date/actor_type/event_type
-// ที่เป็น filter จากแถบค้นหาและต้องมีผลต่อ Summary) เลือกได้ทีละ 1 การ์ดเท่านั้น ไม่ส่งหมายถึงไม่ใช้
 export type AdminAuditQuickFilter =
   | "has_vehicle"
   | "system"
@@ -90,9 +87,6 @@ export interface AdminAuditEventItem {
   reason_code: string | null;
   reason_text: string | null;
   metadata: Record<string, unknown> | null;
-  // Field ที่เกี่ยวข้องก่อน/หลังดำเนินการ — มีเฉพาะ event ที่ source เก็บสถานะก่อนหน้าไว้จริง (เช่น
-  // worker_force_status_changed) event operational เดิมที่ไม่มีข้อมูลนี้จะไม่ส่ง field มาเลย (undefined)
-  // ไม่ใช่ null เพื่อไม่ให้ Frontend เข้าใจผิดว่าเป็นค่าที่ตรวจสอบแล้วว่าไม่มี
   before?: Record<string, unknown>;
   after?: Record<string, unknown>;
   occurred_at: string;
@@ -117,9 +111,6 @@ export interface AdminAuditEventsResponse {
 }
 
 /* -------------------------------------- Audit Events: Raw Source Rows -------------------------------------- */
-// Row ดิบจาก source เดิมแต่ละแหล่ง ก่อนแปลง/merge เป็น AdminAuditEventItem ใน service — ทั้ง
-// repository จริง (Prisma) และ mock ของ test harness คืนรูปแบบนี้เหมือนกัน เพื่อให้ merge logic
-// ใน service ทดสอบได้เหมือนกันทั้งสองฝั่ง
 
 export interface AdminAuditVehicleJobRow {
   id: number;
@@ -157,6 +148,7 @@ export interface AdminAuditWorkerAssignmentEventRow {
   occurred_at: string;
   metadata: Record<string, unknown> | null;
   worker_code: string | null;
+  worker_full_name: string | null;
   ticket_number: string | null;
 }
 
@@ -168,6 +160,7 @@ export interface AdminAuditCompletionSubmissionRow {
   submitted_by_worker_id: number | null;
   submitted_by_role: string;
   submitted_by_code: string | null;
+  submitted_by_full_name: string | null;
   created_at: string;
   rejected_at: string | null;
   confirmed_at: string | null;
@@ -206,8 +199,6 @@ export interface AdminAuditMessageDeliveryLogRow {
   failed_at: string | null;
 }
 
-// AdminActionLogDto + business code เสริมสำหรับค้นหา/แสดงผล (Metadata) — resolve จาก relation เดียว
-// ตอน query ไม่ต้อง round-trip เพิ่ม
 export interface AdminAuditActionLogRow {
   vehicle_ticket_number: string | null;
   market_ticket_no: string | null;

@@ -2,11 +2,12 @@
 import type { GateVehicleJobResponse } from "../types/gate.type";
 import type { GateTicketDto, TicketProductDto, VehicleJobDetailResponse } from "../types/worker.type";
 
+import { MAX_RATING_SCORE, MIN_RATING_SCORE } from "../types/line.type";
 import type { LineFlexComponent, LineMessage } from "../types/line.type";
 
 // Import Utils
 import { findTicketMarket } from "./ticket-payload";
-import { BANGKOK_TIME_ZONE } from "./time";
+import { formatBangkokDisplayDate } from "./time";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -56,28 +57,6 @@ function formatQuantity(
     : numberValue
       .toFixed(2)
       .replace(/\.?0+$/, "");
-}
-
-// Function format วันที่ตาม timezone กรุงเทพฯ
-function formatBangkokDisplayDate(
-  value: string | null | undefined
-): string {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-
-  if (!Number.isFinite(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: BANGKOK_TIME_ZONE,
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
 }
 
 // Function สร้างแถว label/value ใน Flex
@@ -549,7 +528,10 @@ export function buildVendorRatingPromptFlexMessage(input: {
           spacing: "sm",
           margin: "lg",
 
-          contents: [1, 2, 3, 4, 5].map(
+          contents: Array.from(
+            { length: MAX_RATING_SCORE - MIN_RATING_SCORE + 1 },
+            (_, index) => MIN_RATING_SCORE + index
+          ).map(
             (score) =>
               postbackButton({
                 label: String(score),
@@ -590,7 +572,7 @@ export function buildVendorRatingResultFlexMessages(input: {
 
   const stars =
     `${"★".repeat(input.score)}` +
-    `${"☆".repeat(5 - input.score)}`;
+    `${"☆".repeat(MAX_RATING_SCORE - input.score)}`;
 
   return [
     {

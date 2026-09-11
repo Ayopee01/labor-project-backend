@@ -35,65 +35,69 @@ function sortSwaggerOperations(
     // System
     "get /ready": 0,
     // Auth
-    "post /api/auth/login": 10,
-    "post /api/auth/login/confirm-force": 11,
-    "post /api/auth/refresh": 12,
-    "post /api/auth/logout": 13,
-    "post /api/auth/push-token": 14,
-    "get /api/auth/me": 15,
-    // Admin
-    "get /api/admin/users": 20,
-    "get /api/admin/users/{id}": 21,
-    "post /api/admin/users": 22,
-    "patch /api/admin/users/{id}": 23,
-    "patch /api/admin/users/{id}/password": 24,
-    "get /api/admin/jobs/workers/status": 26,
-    "post /api/admin/jobs/workers/{id}/status/force": 28,
-    "post /api/admin/vehicle-jobs/assignment/cancel": 29,
-    "get /api/admin/vehicle-jobs/operations": 30,
-    "get /api/admin/vehicle-jobs/history": 31,
-    "get /api/admin/vehicle-jobs/history/daily-worker-income": 31.5,
-    "get /api/admin/vehicle-jobs/{ticketNumber}/financials": 32,
-    "post /api/admin/vehicle-jobs/{ticketNumber}/assign-workers": 33,
-    "post /api/admin/vehicle-jobs/{ticketNumber}/scan-deadline/extend": 34,
-    "post /api/admin/vehicle-jobs/{ticketNumber}/tickets/{ticketNo}/stalls/{stallCode}/override-count": 35.6,
-    "post /api/admin/vehicle-jobs/{ticketNumber}/wait": 35.7,
-    "post /api/admin/vehicle-jobs/{ticketNumber}/release-workers": 35.8,
-    "get /api/admin/audit/workers/performance": 36,
-    "get /api/admin/settings": 39,
-    "patch /api/admin/settings": 40,
-    "get /api/admin/mobile-app-versions": 40.1,
-    "post /api/admin/mobile-app-versions": 40.2,
-    "patch /api/admin/mobile-app-versions/{id}": 40.3,
-    "get /api/admin/roles": 41,
-    "get /api/admin/users/{id}/permissions": 42,
-    "patch /api/admin/users/{id}/permissions": 43,
+    "post /api/auth/login": 1,
+    "post /api/auth/login/confirm-force": 2,
+    "post /api/auth/refresh": 3,
+    "post /api/auth/logout": 4,
+    "post /api/auth/push-token": 5,
+    "get /api/auth/me": 6,
+    // Admin Workers
+    "get /api/admin/users": 7,
+    "get /api/admin/users/{workerCode}": 8,
+    "post /api/admin/users": 9,
+    "patch /api/admin/users/{workerCode}": 10,
+    "patch /api/admin/users/{workerCode}/password": 11,
+    // Admin Jobs
+    "get /api/admin/jobs/workers/status": 12,
+    "post /api/admin/jobs/workers/{workerCode}/status/force": 13,
+    "post /api/admin/vehicle-jobs/assignment/cancel": 14,
+    "get /api/admin/vehicle-jobs/operations": 15,
+    "get /api/admin/vehicle-jobs/history": 16,
+    "get /api/admin/vehicle-jobs/history/daily-worker-income": 17,
+    "get /api/admin/vehicle-jobs/{ticketNumber}/financials": 18,
+    "post /api/admin/vehicle-jobs/{ticketNumber}/assign-workers": 19,
+    "post /api/admin/vehicle-jobs/{ticketNumber}/scan-deadline/extend": 20,
+    "post /api/admin/vehicle-jobs/{ticketNumber}/tickets/{ticketNo}/stalls/{stallCode}/override-count": 21,
+    "post /api/admin/vehicle-jobs/{ticketNumber}/wait": 22,
+    "post /api/admin/vehicle-jobs/{ticketNumber}/release-workers": 23,
+    // Admin Audit
+    "get /api/admin/audit/workers/performance": 24,
+    // Admin Settings
+    "get /api/admin/settings": 25,
+    "patch /api/admin/settings": 26,
+    "get /api/admin/mobile-app-versions": 27,
+    "post /api/admin/mobile-app-versions": 28,
+    "patch /api/admin/mobile-app-versions/{id}": 29,
+    "get /api/admin/roles": 30,
+    "get /api/admin/users/{id}/permissions": 31,
+    "patch /api/admin/users/{id}/permissions": 32,
     // Gate
-    "get /api/gate/options": 49,
-    "post /api/gate/tickets": 50,
+    "get /api/gate/options": 33,
+    "post /api/gate/tickets": 34,
     // Driver
-    "post /api/driver/qr-sessions": 60,
-    "get /api/driver/jobs/current": 61,
-    "post /api/driver/jobs/{ticketNumber}/ready": 62,
+    "post /api/driver/qr-sessions": 35,
+    "get /api/driver/jobs/current": 36,
+    "post /api/driver/jobs/{ticketNumber}/ready": 37,
     // Worker Application
-    "get /api/workers/app-version/check": 69.5,
-    "get /ws/workers": 70,
-    "get /api/workers/me/status": 71,
-    "get /api/workers/me/assignments/history": 72,
-    "get /api/workers/me/earnings/summary": 73,
-    "post /api/workers/me/online": 74,
-    "post /api/workers/me/offline": 75,
-    "post /api/workers/me/break": 76,
-    "post /api/workers/me/assignments/{ticketNumber}/accept": 77,
-    "post /api/workers/me/assignments/check-in-barcode": 78,
-    "get /api/workers/me/products/{productCode}/packages": 78.5,
-    "post /api/workers/me/assignments/tickets/complete": 79,
-    "get /api/admin/events": 85,
-    "post /api/line/webhook": 90,
-    "get /api/line/dev": 91,
-    "get /api/line/dev/submissions": 92,
-    "post /api/line/dev/submissions/{submissionId}/confirm": 93,
-    "post /api/line/dev/submissions/{submissionId}/reject": 94,
+    "get /api/workers/app-version/check": 38,
+    "get /ws/workers": 39,
+    "get /api/workers/me/status": 40,
+    "get /api/workers/me/assignments/history": 41,
+    "get /api/workers/me/earnings/summary": 42,
+    "post /api/workers/me/online": 43,
+    "post /api/workers/me/offline": 44,
+    "post /api/workers/me/break": 45,
+    "post /api/workers/me/assignments/{ticketNumber}/accept": 46,
+    "post /api/workers/me/assignments/check-in-barcode": 47,
+    "get /api/workers/me/products/{productCode}/packages": 48,
+    "post /api/workers/me/assignments/tickets/complete": 49,
+    "get /api/admin/events": 50,
+    // Line
+    "post /api/line/webhook": 51,
+    "get /api/line/dev": 52,
+    "get /api/line/dev/submissions": 53,
+    "post /api/line/dev/submissions/{submissionId}/confirm": 54,
+    "post /api/line/dev/submissions/{submissionId}/reject": 55,
   };
   const firstKey = `${firstOperation.get("method")} ${firstOperation.get("path")}`;
   const secondKey = `${secondOperation.get("method")} ${secondOperation.get("path")}`;
@@ -138,7 +142,6 @@ const swaggerDescriptionReplacements: Array<[string, string]> = [
   ["refresh_token", "RefreshToken"],
   ["login_challenge_token", "LoginChallengeToken"],
   ["target_type", "TargetType"],
-  // Format specific replacement patterns before shorter patterns
   ["driver_qr_token", "DriverQrToken"],
   ["qr_token", "QrToken"],
   ["client_id", "ClientId"],
@@ -160,7 +163,7 @@ const swaggerAcronymDocTerms = new Map<string, string>([
   ["ui", "UI"],
 ]);
 
-// Function ปรับคำอังกฤษในคำอธิบาย Swagger ให้ขึ้นต้นด้วยพิมพ์ใหญ่
+// Function แปลงคำอธิบาย EN ให้เป็น PascalCase และคงรูปตัวพิมพ์ใหญ่ของ acronym บางคำ โดยไม่แตะ path หรือ URL
 function capitalizeSwaggerEnglishTerms(text: string): string {
   const protectedSegments: string[] = [];
   const pathOrUrlPattern = /https?:\/\/\S+|\/[A-Za-z0-9_{}:.-]+(?:\/[A-Za-z0-9_{}:.-]+)*/g;
@@ -253,9 +256,98 @@ function transformSchemaKeys(schema: unknown, seen = new Set<unknown>()): void {
   }
 }
 
+// Config schema ของ response ทุกจุดใน spec ที่ต้องมี server_time และ server_time_unix_ms
+const SERVER_TIME_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    server_time: {
+      type: "string",
+      format: "date-time",
+      description: "current server time (ISO 8601), present on every response.",
+    },
+    server_time_unix_ms: {
+      type: "integer",
+      description: "current server time in epoch milliseconds, present on every response.",
+    },
+  },
+};
+
+// Function แนบ server_time และ server_time_unix_ms เข้าทุก response schema ใน spec แบบ recursive โดยไม่ต้องแก้ทีละไฟล์ YAML
+function addServerTimeToResponseSchemas(spec: Record<string, unknown>): void {
+  const paths = spec.paths;
+
+  if (!isObject(paths)) {
+    return;
+  }
+
+  for (const pathItem of Object.values(paths)) {
+    if (!isObject(pathItem)) {
+      continue;
+    }
+
+    for (const operation of Object.values(pathItem)) {
+      if (!isObject(operation) || !isObject(operation.responses)) {
+        continue;
+      }
+
+      for (const response of Object.values(operation.responses)) {
+        if (!isObject(response) || !isObject(response.content)) {
+          continue;
+        }
+
+        const jsonContent = response.content["application/json"];
+
+        if (!isObject(jsonContent) || !("schema" in jsonContent)) {
+          continue;
+        }
+
+        jsonContent.schema = {
+          allOf: [jsonContent.schema, SERVER_TIME_RESPONSE_SCHEMA],
+        };
+      }
+    }
+  }
+}
+
+// Config header parameter ของ log/observability ที่ต้องแนบเข้าทุก operation ใน spec
+const OBSERVABILITY_HEADER_PARAMETERS = [
+  { $ref: "#/components/parameters/RequestIdHeader" },
+  { $ref: "#/components/parameters/ClientTypeHeader" },
+  { $ref: "#/components/parameters/ClientVersionHeader" },
+];
+
+// Function แนบ header parameter ของ log/observability เข้าทุก operation ใน spec แบบ recursive โดยไม่ต้องแก้ทีละไฟล์ YAML
+function addObservabilityHeaderParameters(spec: Record<string, unknown>): void {
+  const paths = spec.paths;
+
+  if (!isObject(paths)) {
+    return;
+  }
+
+  for (const pathItem of Object.values(paths)) {
+    if (!isObject(pathItem)) {
+      continue;
+    }
+
+    for (const operation of Object.values(pathItem)) {
+      if (!isObject(operation)) {
+        continue;
+      }
+
+      const existingParameters = Array.isArray(operation.parameters)
+        ? operation.parameters
+        : [];
+
+      operation.parameters = [...existingParameters, ...OBSERVABILITY_HEADER_PARAMETERS];
+    }
+  }
+}
+
 // Function สร้าง external open API spec สำหรับ Swagger/OpenAPI
 function buildExternalOpenApiSpec(): Record<string, unknown> {
   const externalOpenapi = JSON.parse(JSON.stringify(openapi)) as Record<string, unknown>;
+  addServerTimeToResponseSchemas(externalOpenapi);
+  addObservabilityHeaderParameters(externalOpenapi);
   transformSchemaKeys(externalOpenapi);
 
   return externalOpenapi;

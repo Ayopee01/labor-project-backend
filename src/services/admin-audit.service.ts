@@ -1,32 +1,23 @@
+// Import Repositories
 import * as adminAuditRepository from "../repositories/admin-audit.repository";
-
+// Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { adminAuditEventsQuerySchema, adminAuditWorkerPerformanceQuerySchema } from "../validation/schemas";
+// Import Utils
 import { buildBangkokDateRange, buildBangkokDateSpanRange, formatBangkokDate } from "../utils/time";
+// Import Types
 import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
-
 import type { AdminActionLogDto } from "../types/shared/admin-action-log.type";
-import type {
-  AdminAuditActionLogRow,
-  AdminAuditCompletionSubmissionRow,
-  AdminAuditDriverSessionRow,
-  AdminAuditEventItem,
-  AdminAuditEventsQuery,
-  AdminAuditEventsResponse,
-  AdminAuditGateRequestLogRow,
-  AdminAuditMessageDeliveryLogRow,
-  AdminAuditTicketRatingRow,
-  AdminAuditVehicleJobRow,
-  AdminAuditWorkerAssignmentEventRow,
-  AdminAuditWorkerPerformanceQuery,
-  AdminAuditWorkerPerformanceResponse,
-} from "../types/admin-audit.type";
+import type { AdminAuditActionLogRow, AdminAuditCompletionSubmissionRow, AdminAuditDriverSessionRow, AdminAuditEventItem, AdminAuditEventsQuery, AdminAuditEventsResponse, AdminAuditGateRequestLogRow, AdminAuditMessageDeliveryLogRow, AdminAuditTicketRatingRow, AdminAuditVehicleJobRow, AdminAuditWorkerAssignmentEventRow, AdminAuditWorkerPerformanceQuery, AdminAuditWorkerPerformanceResponse } from "../types/admin-audit.type";
+// Import Repositories
 import type { AdminAuditDateRange } from "../repositories/admin-audit.repository";
+// Import Types
 import type { SecurityAuditLogDto } from "../types/shared/security-audit-log.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
+// Function ดึงสรุปผลงาน Worker ตามช่วงวันที่ พร้อม pagination
 export async function listWorkerPerformance(
   query: unknown,
 ): Promise<AdminAuditWorkerPerformanceResponse> {
@@ -68,18 +59,16 @@ export async function listWorkerPerformance(
 }
 
 /* -------------------------------------- Audit Events -------------------------------------- */
-// Merge event จากข้อมูลเดิม 8 source เป็น unified timeline เดียว — ทำที่ TypeScript layer นี้แทน SQL
-// UNION เดียว เพราะกฎ merge บางข้อ (ดู mapWorkerAssignmentEvents/mapAdminActionLogEvents ด้านล่าง)
-// ต้อง cross-reference ข้าม source กัน (เช่น WorkerAssignmentEvent.ADMIN_CANCELLED กับ
+// Merge event จากข้อมูลเดิม 8 source เป็น unified timeline เดียว ทำที่ TypeScript layer แทน SQL UNION
+// เพราะบางกฎต้อง cross-reference ข้าม source กัน (เช่น WorkerAssignmentEvent.ADMIN_CANCELLED กับ
 // AdminActionLog.ASSIGNMENT_CANCELLED ต้องรวมเป็น event เดียว ไม่ใช่สอง row ซ้ำกัน)
 
 interface RawAuditEvent extends AdminAuditEventItem {
   search_text: string;
 }
 
-// Config event_type ที่นับเป็น severity=critical สำหรับการ์ด "ต้องตรวจสอบ" (27.10) — ต้องตรงกับ
-// กฎที่ Frontend ใช้คำนวณการ์ดนี้อยู่แล้ว ห้ามเพิ่ม/ลดโดยไม่เช็คกับ Frontend ก่อน เพราะยอด backend
-// (quick filter) กับยอดการ์ดฝั่ง Frontend ต้องตรงกันเป๊ะ
+// Config event_type ที่นับเป็น severity=critical สำหรับการ์ด "ต้องตรวจสอบ" — ต้องตรงกับกฎที่ Frontend
+// ใช้คำนวณการ์ดนี้อยู่แล้ว ห้ามเพิ่ม/ลดโดยไม่เช็คกับ Frontend ก่อน เพราะยอดต้องตรงกันเป๊ะ
 const SEVERITY_CRITICAL_EVENT_TYPES = new Set<string>([
   "message_delivery_failed",
   "worker_accept_timeout",
@@ -102,9 +91,8 @@ function toIdString(value: number | string | null | undefined): string | null {
   return String(value);
 }
 
-// Function ตรวจว่า timestamp (ISO string) อยู่ในช่วงที่ filter มาหรือไม่ — ใช้ตอน 1 แถวจาก DB อาจมี
-// ได้หลาย timestamp (เช่น VehicleJob.createdAt/workStartedAt/completedAt) แต่ query กรองแบบ OR รวม
-// จึงต้องเช็คซ้ำเป็นรายฟิลด์ว่าฟิลด์ไหนที่อยู่ในช่วงจริงถึงจะสร้าง event นั้น
+// Function ตรวจว่า timestamp (ISO string) อยู่ในช่วงที่ filter มาหรือไม่ — ใช้ตอน 1 แถวมีหลาย timestamp
+// (เช่น createdAt/workStartedAt/completedAt) ต้องเช็คแยกรายฟิลด์ว่าฟิลด์ไหนอยู่ในช่วงจริงถึงสร้าง event
 function isWithinRange(iso: string, range: AdminAuditDateRange): boolean {
   const time = new Date(iso).getTime();
 
@@ -275,10 +263,8 @@ const WORKER_ASSIGNMENT_EVENT_TYPE_MAP: Record<string, string> = {
 };
 
 // Function map แถว WorkerAssignmentEvent ดิบเป็น event ตามชนิด พร้อม merge กับ AdminActionLog
-// ตามกฎ 27.4.6 (ADMIN_CANCELLED จับคู่ ASSIGNMENT_CANCELLED) และ 27.4.7 (ASSIGNED ที่มาจาก Manual
-// Assign ให้ Manual Assign log เป็น event หลักแทน ไม่คืน worker_assigned ซ้ำ) — คืน
-// consumedAdminActionLogIds กลับไปด้วยเพื่อกันไม่ให้ AdminActionLog แถวที่ถูก merge ไปแล้วถูกคืนซ้ำ
-// เป็น event แยกอีกรอบ
+// (ADMIN_CANCELLED จับคู่กับ ASSIGNMENT_CANCELLED, ASSIGNED ที่มาจาก Manual Assign ให้ Manual Assign log
+// เป็น event หลักแทน ไม่คืน worker_assigned ซ้ำ) — คืน consumedAdminActionLogIds กันไม่ให้ AdminActionLog ที่ merge ไปแล้วถูกคืนซ้ำเป็น event แยก
 function mapWorkerAssignmentEvents(
   rows: AdminAuditWorkerAssignmentEventRow[],
   manualAssignmentAssignmentIds: Set<number>,
@@ -314,6 +300,9 @@ function mapWorkerAssignmentEvents(
       ...(row.metadata ?? {}),
       ticketNumber: row.ticket_number,
       workerCode: row.worker_code,
+      // ผู้กระทำจริง (ACCEPTED/SCANNED คือ worker เอง) แยกจาก workerCode ด้านบนที่หมายถึงเจ้าของ assignment เสมอ
+      ...(isWorkerActor && row.worker_code && { actorCode: row.worker_code }),
+      ...(isWorkerActor && row.worker_full_name && { actorName: row.worker_full_name }),
     };
 
     if (row.event_type === WORKER_ASSIGNMENT_EVENT_TYPE.ADMIN_CANCELLED) {
@@ -330,8 +319,8 @@ function mapWorkerAssignmentEvents(
         metadata = {
           ...metadata,
           ...(matchedLog.metadata ?? {}),
-          ...(matchedLog.actor_worker_code && {
-            actorCode: matchedLog.actor_worker_code,
+          ...(matchedLog.actor_username && {
+            actorCode: matchedLog.actor_username,
           }),
           ...(matchedLog.actor_full_name && {
             actorName: matchedLog.actor_full_name,
@@ -359,6 +348,7 @@ function mapWorkerAssignmentEvents(
         eventType,
         row.ticket_number,
         row.worker_code,
+        row.worker_full_name,
         reasonCode,
         reasonText,
       ]),
@@ -406,7 +396,11 @@ function mapCompletionSubmissionEvents(
             : null,
         reason_code: null,
         reason_text: null,
-        metadata: { ...baseMetadata, workerCode: row.submitted_by_code },
+        metadata: {
+          ...baseMetadata,
+          actorCode: row.submitted_by_code,
+          ...(row.submitted_by_full_name && { actorName: row.submitted_by_full_name }),
+        },
         occurred_at: row.created_at,
         search_text: buildSearchText([
           `submission:${row.id}:submitted`,
@@ -416,6 +410,7 @@ function mapCompletionSubmissionEvents(
           row.booth_code,
           row.booth_name,
           row.submitted_by_code,
+          row.submitted_by_full_name,
         ]),
       });
     }
@@ -562,11 +557,9 @@ function mapMessageDeliveryLogEvents(
   return events;
 }
 
-// Function map แถว SecurityAuditLog ดิบเป็น auth/security event (27.12 phase 1) — ไม่มี
-// vehicle_job_id/market_job_id/ticket_id/assignment_id เกี่ยวข้องเลย (source นี้เป็น auth event
-// ล้วนๆ ไม่ผูกกับ job ใดๆ) actor_type เป็น null ได้กรณี login ด้วย username ที่ไม่มีตัวตนจริง — แปลง
-// เป็น "system" ใน response เพราะ AdminAuditActorType ไม่มีค่า "unknown" แต่ยังคง attemptedUsername
-// ไว้ใน Metadata แยกจาก actorCode/workerCode ของ actor ที่ resolve ได้จริง เพื่อไม่ให้ปนกัน
+// Function map แถว SecurityAuditLog ดิบเป็น auth/security event — ไม่ผูกกับ vehicle/market/ticket/assignment ใดๆ
+// actor_type เป็น null ได้กรณี login ด้วย username ที่ไม่มีตัวตนจริง แปลงเป็น "system" ใน response เพราะ
+// AdminAuditActorType ไม่มีค่า "unknown" แต่เก็บ attemptedUsername แยกจาก actorCode ไว้ใน Metadata ไม่ให้ปนกัน
 function mapSecurityAuditLogEvents(
   rows: SecurityAuditLogDto[],
 ): RawAuditEvent[] {
@@ -583,9 +576,8 @@ function mapSecurityAuditLogEvents(
       : isWorkerActor
         ? toIdString(row.actor_worker_id)
         : null;
-    // Mutation event (account/settings/gate-client/mobile-version, 27.12 phase 2-4) เก็บ before/after
-    // ไว้ใน row.metadata.before/.after ตอนเขียน (ดู services ที่เรียก writeSecurityAuditLog) — ต้อง
-    // ดึงออกมาเป็น top-level field ตาม contract ของ 27.13 ไม่ใช่ปล่อยให้ซ้ำอยู่ใน Metadata ด้วย
+    // Mutation event เก็บ before/after ไว้ใน row.metadata.before/.after ตอนเขียน ต้องดึงออกมาเป็น
+    // top-level field ตาม contract ไม่ใช่ปล่อยให้ซ้ำอยู่ใน Metadata ด้วย
     const rowMetadata = (row.metadata ?? {}) as {
       before?: Record<string, unknown>;
       after?: Record<string, unknown>;
@@ -607,9 +599,8 @@ function mapSecurityAuditLogEvents(
       reason_text: null,
       metadata: {
         outcome: row.outcome,
-        ...(isAdminActor && row.actor_username && { actorCode: row.actor_username }),
-        ...(isAdminActor && row.actor_full_name && { actorName: row.actor_full_name }),
-        ...(isWorkerActor && row.actor_username && { workerCode: row.actor_username }),
+        ...((isAdminActor || isWorkerActor) && row.actor_username && { actorCode: row.actor_username }),
+        ...((isAdminActor || isWorkerActor) && row.actor_full_name && { actorName: row.actor_full_name }),
         ...(!isAdminActor && !isWorkerActor && row.actor_username && {
           attemptedUsername: row.actor_username,
         }),
@@ -635,8 +626,8 @@ function mapSecurityAuditLogEvents(
   });
 }
 
-// Config map AdminActionLog.action_type -> Audit EventType คงที่ (ตาราง 27.5) — action ที่ต้อง
-// derive event_type จาก metadata เพิ่ม (OVERRIDE_COUNT/VEHICLE_WAIT/MANUAL_ASSIGNMENT) handle แยก
+// Config map AdminActionLog.action_type -> Audit EventType คงที่ — action ที่ต้อง derive event_type
+// จาก metadata เพิ่ม (OVERRIDE_COUNT/VEHICLE_WAIT/MANUAL_ASSIGNMENT) handle แยกต่างหาก
 const ADMIN_ACTION_EVENT_TYPE_MAP: Partial<Record<string, string>> = {
   [ADMIN_ACTION_TYPE.WORKERS_RELEASED]: "workers_released",
   [ADMIN_ACTION_TYPE.ASSIGNMENT_CANCELLED]: "worker_assignment_cancelled",
@@ -649,7 +640,7 @@ const ADMIN_ACTION_EVENT_TYPE_MAP: Partial<Record<string, string>> = {
   [ADMIN_ACTION_TYPE.WORKER_STATUS_FORCED]: "worker_force_status_changed",
 };
 
-// Function หา event_type + metadata เสริมของ AdminActionLog แถวหนึ่ง ตามตาราง 27.5
+// Function หา event_type + metadata เสริมของ AdminActionLog แถวหนึ่ง
 function resolveAdminActionEventTypeAndMetadata(
   log: AdminActionLogDto & AdminAuditActionLogRow,
 ): { eventType: string; metadata: Record<string, unknown> | null } {
@@ -688,8 +679,8 @@ function resolveAdminActionEventTypeAndMetadata(
   }
 }
 
-// Function map แถว AdminActionLog ดิบเป็น event ตามตาราง 27.5 — ข้ามแถวที่ถูก merge เข้ากับ
-// WorkerAssignmentEvent.ADMIN_CANCELLED ไปแล้ว (consumedAdminActionLogIds) เพื่อไม่ให้คืนซ้ำสอง event
+// Function map แถว AdminActionLog ดิบเป็น event — ข้ามแถวที่ถูก merge เข้ากับ WorkerAssignmentEvent.ADMIN_CANCELLED
+// ไปแล้ว (consumedAdminActionLogIds) เพื่อไม่ให้คืนซ้ำสองครั้ง
 function mapAdminActionLogEvents(
   rows: Array<AdminActionLogDto & AdminAuditActionLogRow>,
   consumedAdminActionLogIds: Set<number>,
@@ -717,13 +708,12 @@ function mapAdminActionLogEvents(
       ...(row.gate_ticket_booth_code && {
         boothCode: row.gate_ticket_booth_code,
       }),
-      ...(row.actor_worker_code && { actorCode: row.actor_worker_code }),
+      ...(row.actor_username && { actorCode: row.actor_username }),
       ...(row.actor_full_name && { actorName: row.actor_full_name }),
     };
 
-    // Before/After เฉพาะ worker_force_status_changed (27.13) — previous_status มาจากค่าที่ service
-    // อ่าน queueEntry.status ไว้ก่อนเปลี่ยนสถานะจริง (ดู admin-workers.service.ts) ห้ามสร้างค่าปลอมเมื่อ
-    // ไม่มี queueEntry เดิม (worker คนนี้ไม่เคยเข้าคิวมาก่อน) จึงส่งเฉพาะ After ในกรณีนั้น
+    // Before/After เฉพาะ worker_force_status_changed — previous_status มาจากค่า queueEntry.status เดิมก่อนเปลี่ยนสถานะจริง
+    // ห้ามสร้างค่าปลอมเมื่อไม่มี queueEntry เดิม (worker ไม่เคยเข้าคิวมาก่อน) จึงส่งเฉพาะ After ในกรณีนั้น
     let before: Record<string, unknown> | undefined;
     let after: Record<string, unknown> | undefined;
 
@@ -762,7 +752,7 @@ function mapAdminActionLogEvents(
       search_text: buildSearchText([
         `admin_action:${row.id}`,
         eventType,
-        row.actor_worker_code,
+        row.actor_username,
         row.actor_full_name,
         row.reason_code,
         row.reason_text,
@@ -776,6 +766,7 @@ function mapAdminActionLogEvents(
   return events;
 }
 
+// Function รวม audit event จากทุก source เป็น timeline เดียว พร้อม filter/quick_filter/summary/pagination
 export async function listAuditEvents(
   query: unknown,
   callerPermissions: string[] = [],
@@ -793,9 +784,8 @@ export async function listAuditEvents(
     startAt: dateRange.startAt as Date,
     endAt: dateRange.endAt as Date,
   };
-  // 27.12: security/auth event มีเนื้อหา sensitive กว่า 8 source เดิม (IP, user agent, ความพยายาม
-  // login ที่ล้มเหลว) จึงต้องมี audit:read เพิ่มเติมจาก jobs:read ถึงจะเห็น — caller ที่ไม่มี permission
-  // นี้ยังเรียก endpoint เดิมได้ปกติ แค่ไม่เห็น event กลุ่มนี้ปนมาใน timeline เท่านั้น ไม่ใช่ 403
+  // security/auth event มีเนื้อหา sensitive กว่า source อื่น (IP, user agent, ความพยายาม login ที่ล้มเหลว)
+  // จึงต้องมี audit:read เพิ่มจาก jobs:read ถึงจะเห็น — caller ที่ไม่มี permission นี้ไม่เจอ 403 แค่ไม่เห็น event กลุ่มนี้ในไทม์ไลน์
   const canReadSecurityAudit = callerPermissions.includes("audit:read");
 
   const [
@@ -866,9 +856,8 @@ export async function listAuditEvents(
     ...mapSecurityAuditLogEvents(securityAuditLogRows),
   ];
 
-  // 27.15.1 — filter จากแถบค้นหา (actor_type/event_type/search, บวก date range ที่กรองมาตั้งแต่ระดับ
-  // DB query แล้ว) เท่านั้นที่มีผลต่อ Summary ต้องคำนวณ Summary จากชุดนี้ก่อนเสมอ ก่อนจะเอา
-  // quick_filter มากรองต่อสำหรับ Data/Pagination — quick_filter ต้องไม่ไปแตะ Summary เด็ดขาด
+  // filter จากแถบค้นหา (actor_type/event_type/search + date range) เท่านั้นที่มีผลต่อ Summary ต้องคำนวณ
+  // Summary จากชุดนี้ก่อนเสมอ แล้วค่อยเอา quick_filter มากรองต่อสำหรับ Data/Pagination — quick_filter ต้องไม่แตะ Summary
   const searchTerm = filters.search?.toLowerCase();
   const searchFilteredEvents = allEvents.filter((event) => {
     if (filters.actor_type && event.actor_type !== filters.actor_type) {
@@ -908,8 +897,7 @@ export async function listAuditEvents(
       uniqueVehicleIds.add(event.vehicle_job_id);
     }
 
-    // 27.15.2 — ReasonCode OR ReasonText ต้องนับเป็น "มีเหตุผลประกอบ" เหมือนกับที่ quick_filter=
-    // has_reason ใช้เช็คด้านล่าง ห้ามนับแค่ reason_code ฝั่งเดียว (เดิมนับแค่ reason_code จริงๆ)
+    // ReasonCode OR ReasonText ต้องนับเป็น "มีเหตุผลประกอบ" เหมือนกับที่ quick_filter=has_reason เช็ค ห้ามนับแค่ reason_code ฝั่งเดียว
     if (event.reason_code || event.reason_text) {
       withReasonCount += 1;
     }

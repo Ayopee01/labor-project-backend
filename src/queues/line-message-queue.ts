@@ -2,43 +2,41 @@
 import { Queue, Worker, type Job } from "bullmq";
 import type { Prisma } from "@prisma/client";
 // Import Config
-import { REDIS_CONFIG } from "../config/redis.config";
+import { buildBullConnection, REDIS_CONFIG } from "../config/redis.config";
+// Import Utils
 import { logger } from "../utils/logger";
 // Import Repositories
-import * as lineRepository from "../repositories/line.repository";
+import * as messageDeliveryLogRepository from "../repositories/shared/message-delivery-log.repository";
 // Import Types
 import type { LineMessage, LineMessageJobData } from "../types/line.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-const redisUrl = new URL(REDIS_CONFIG.url);
+// สร้าง connection สำหรับ BullMQ queue
+const bullConnection = buildBullConnection();
 
-const bullConnection = {
-  host: redisUrl.hostname,
-  port: Number(redisUrl.port || 6379),
-  password: redisUrl.password || undefined,
-  db: redisUrl.pathname ? Number(redisUrl.pathname.replace("/", "") || 0) : 0,
-  maxRetriesPerRequest: null,
-};
-
+// สร้าง queue สำหรับ LINE message
 const lineMessageQueue = new Queue(REDIS_CONFIG.lineMessageQueueName, {
   connection: bullConnection,
 });
 
+// สร้าง worker สำหรับ LINE message queue
 let lineWorker: Worker | null = null;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ส่ง LINE push message ผ่าน LINE Messaging API จริง
+// Function ส่ง LINE push message ผ่าน LINE Messaging API
 async function sendLinePushMessage(data: LineMessageJobData): Promise<void> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
+  // Throw error ถ้าไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN ใน env
   if (!token) {
     throw new Error(
       "LINE_CHANNEL_ACCESS_TOKEN is required for LINE push delivery."
     );
   }
 
+  // ส่ง request ไปยัง LINE Messaging API
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: {
@@ -51,6 +49,7 @@ async function sendLinePushMessage(data: LineMessageJobData): Promise<void> {
     }),
   });
 
+  // Throw error ถ้า LINE Messaging API ส่ง response ไม่สำเร็จ
   if (!response.ok) {
     const responseText = await response.text();
     throw new Error(`LINE push failed with ${response.status}: ${responseText}`);
@@ -76,7 +75,7 @@ export async function enqueueLoggedLineMessage(input: {
   payload: unknown;
   messages: LineMessage[];
 }): Promise<number> {
-  const logId = await lineRepository.createMessageDeliveryLog(
+  const logId = await messageDeliveryLogRepository.createMessageDeliveryLog(
     "LINE",
     input.action,
     input.payload as Prisma.InputJsonValue,
@@ -93,24 +92,25 @@ export async function enqueueLoggedLineMessage(input: {
 }
 
 // Function เริ่ม notification workers ใน Redis/BullMQ queue
-export function startNotificationWorkers(): void {
+export function startLineMessageWorker(): void {
   if (lineWorker) {
     return;
   }
 
+  // สร้าง worker สำหรับ LINE message queue
   lineWorker = new Worker(
     REDIS_CONFIG.lineMessageQueueName,
     async (job: Job<LineMessageJobData>) => {
       try {
         await sendLinePushMessage(job.data);
-        await lineRepository.updateMessageDeliveryLogStatus(
+        await messageDeliveryLogRepository.updateMessageDeliveryLogStatus(
           job.data.log_id,
-          lineRepository.MESSAGE_DELIVERY_STATUS.SENT
+          messageDeliveryLogRepository.MESSAGE_DELIVERY_STATUS.SENT
         );
       } catch (error) {
-        await lineRepository.updateMessageDeliveryLogStatus(
+        await messageDeliveryLogRepository.updateMessageDeliveryLogStatus(
           job.data.log_id,
-          lineRepository.MESSAGE_DELIVERY_STATUS.FAILED,
+          messageDeliveryLogRepository.MESSAGE_DELIVERY_STATUS.FAILED,
           error instanceof Error ? error.message : String(error)
         );
         throw error;
@@ -121,13 +121,14 @@ export function startNotificationWorkers(): void {
     }
   );
 
+  // Log error ถ้าเกิด error ใน worker
   lineWorker.on("failed", (_job, error) => {
     logger.error("LINE message job failed.", { error });
   });
 }
 
 // Function ปิด BullMQ LINE queue connection สำหรับ graceful shutdown
-export async function closeNotificationQueueConnections(): Promise<void> {
+export async function closeLineMessageQueueConnections(): Promise<void> {
   if (lineWorker) {
     await lineWorker.close();
     lineWorker = null;

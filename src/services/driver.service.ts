@@ -1,9 +1,12 @@
-// Import Dependencies
+// Import Config
 import { withTransaction } from "../db/prisma";
-import { VEHICLE_JOB_STATUS } from "../constants/job-status";
+import { VEHICLE_JOB_STATUS } from "../constants/status";
+// Import Repositories
 import * as driverRepository from "../repositories/driver.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
+// Import Queues
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
+// Import Services
 import { getRuntimeSettings } from "./shared/runtime-settings.service";
 import { publishNotification } from "./notifications.service";
 // Import Types
@@ -185,9 +188,8 @@ export async function markDriverJobReady(
     }
 
     if (vehicleJob.status !== VEHICLE_JOB_STATUS.WAIT) {
-      // ยอมให้ mark ready ได้เฉพาะตอน WAIT เท่านั้น (ครอบคลุม WORKING/COMPLETED/CANCELLED เดิม
-      // และ RELEASED ด้วย) กันงานที่ release-workers ปล่อยทีมกลับคิวไปแล้วถูกดึงกลับมา WORKING และ
-      // เรียก dispatch ซ้ำผ่านทางนี้
+      // ยอมให้ mark ready เฉพาะตอนสถานะ WAIT เท่านั้น กันงานที่ release-workers ปล่อยทีมกลับคิวไปแล้ว
+      // ถูกดึงกลับมาเรียก dispatch ซ้ำผ่านทางนี้
       throw new ApiError(
         409,
         "VEHICLE_JOB_NOT_READY",
@@ -200,11 +202,8 @@ export async function markDriverJobReady(
     return vehicleJob.id;
   });
 
-  // dispatchReadyWorkers เรียกแยกหลัง transaction ข้างบน commit แล้วเท่านั้น (ไม่ใช้ transaction เดิม
-  // ต่อ) เพราะ dispatch จริงเขียนทั้ง DB (ในทรานแซกชันของตัวเอง) และ Redis/BullMQ ให้ worker ที่ถูกจ่าย
-  // งาน — ถ้ายังอยู่ใน transaction เดิมแล้ว getVehicleJobDetail ด้านล่าง throw (เช่น race กับ Admin
-  // cancel) transaction จะ rollback ฝั่ง DB ของ worker ที่เพิ่งถูก dispatch แต่ Redis/BullMQ ของเขา
-  // ไม่ rollback ตาม ทำให้ติดค้างสถานะ ASSIGNED โดยไม่มี assignment จริง
+  // เรียก dispatchReadyWorkers แยกหลัง transaction ข้างบน commit แล้วเท่านั้น เพราะ dispatch เขียนทั้ง
+  // DB และ Redis/BullMQ — ถ้าอยู่ใน transaction เดิมแล้ว rollback ทีหลัง Redis/BullMQ จะไม่ rollback ตาม ทำให้ค้างสถานะผิด
   try {
     await dispatchReadyWorkers(undefined, {
       vehicle_job_ids: [vehicleJobId],

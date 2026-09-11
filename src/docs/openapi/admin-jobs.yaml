@@ -507,9 +507,9 @@
         COUNT ของ TicketProductFinancial ที่ finalize แล้วในช่วงวันที่เลือก ยอดต้อง reconcile กับผลรวม
         ของ daily-stall-fees ในช่วงวันเดียวกันได้เสมอ เพราะใช้แหล่งข้อมูลเดียวกัน แค่ group ต่างกัน
         shirt_color เป็น immutable snapshot ที่บันทึกไว้ตอน finalize (TicketProductFinancial.shirtColorSnapshot)
-        ไม่ใช่สีปัจจุบันของ MasterWorker: NAVY/BLUE/GREEN เมื่อ worker ทุกคนในแผงนั้นสีตรงกันเป๊ะ, MIXED
-        เมื่อมีมากกว่าหนึ่งสีปนกัน, UNKNOWN เมื่อไม่มี snapshot (ข้อมูลเก่าก่อนมีฟีเจอร์นี้) หรือค่าที่มีไม่ตรง
-        NAVY/BLUE/GREEN แม้แต่คนเดียว รองรับช่วงวันที่ข้ามเดือน/ปีได้ตามปกติ (ไม่บังคับเดือนเดียวเหมือน
+        ไม่ใช่สีปัจจุบันของ MasterWorker: เป็นสีจริงจาก master data ตรงๆ เมื่อ worker ทุกคนในแผงนั้นสีตรงกันเป๊ะ
+        (ไม่ผูกกับ whitelist คงที่ รองรับสีใหม่ที่ master data เพิ่มมาในอนาคตได้ทันที), MIXED เมื่อมีมากกว่าหนึ่ง
+        สีปนกัน, UNKNOWN เมื่อไม่มี snapshot (ข้อมูลเก่าก่อนมีฟีเจอร์นี้) หรือไม่มีค่าสี รองรับช่วงวันที่ข้ามเดือน/ปีได้ตามปกติ (ไม่บังคับเดือนเดียวเหมือน
         daily-stall-fees) แค่ห้ามเกิน 6 เดือนปฏิทินนับจาก date_from — summary และ available_markets/
         available_stalls/available_shirt_colors มาจาก filtered set ทั้งหมด ไม่เปลี่ยนตาม page/limit
         เหมือน daily-stall-fees, available_stalls แต่ละแถวผูกกับ market_code ของมันเสมอ
@@ -555,16 +555,11 @@
           name: shirt_color
           schema:
             type: string
-            enum:
-              - NAVY
-              - BLUE
-              - GREEN
-              - MIXED
-              - UNKNOWN
           description: >
-            Exact match on the shirt-color snapshot — applies to Data/summary/pagination, and
-            narrows available_markets/available_stalls (not available_shirt_colors, which never
-            narrows by its own dimension).
+            Exact match on the shirt-color snapshot — not a fixed enum, accepts any color present
+            in master data plus MIXED/UNKNOWN. Applies to Data/summary/pagination, and narrows
+            available_markets/available_stalls (not available_shirt_colors, which never narrows
+            by its own dimension).
         - in: query
           name: page
           schema:
@@ -597,7 +592,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/vehicle-jobs/{ticketNo}/financials:
+  /api/admin/vehicle-jobs/{ticketNumber}/financials:
     get:
       tags:
         - Admin Jobs
@@ -609,12 +604,12 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: ticketNo
+          name: ticketNumber
           required: true
           schema:
             type: string
-            example: TKT-20260723-000125
-          description: Vehicle TicketNo.
+            example: TRUCK-20260723-001
+          description: Vehicle TicketNumber.
       responses:
         "200":
           description: Persisted financial breakdown of the vehicle job.
@@ -686,7 +681,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/vehicle-jobs/{ticketNo}/assign-workers:
+  /api/admin/vehicle-jobs/{ticketNumber}/assign-workers:
     post:
       tags:
         - Admin Jobs
@@ -700,11 +695,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: ticketNo
+          name: ticketNumber
           required: true
           schema:
             type: string
-            example: TKT-20260723-000125
+            example: TRUCK-20260723-001
       requestBody:
         required: true
         content:
@@ -733,7 +728,7 @@
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/admin/vehicle-jobs/{ticketNo}/scan-deadline/extend:
+  /api/admin/vehicle-jobs/{ticketNumber}/scan-deadline/extend:
     post:
       tags:
         - Admin Jobs
@@ -745,11 +740,11 @@
         - bearerAuth: []
       parameters:
         - in: path
-          name: ticketNo
+          name: ticketNumber
           required: true
           schema:
             type: string
-            example: TKT-20260723-000125
+            example: TRUCK-20260723-001
       requestBody:
         required: true
         content:
@@ -776,6 +771,7 @@
       summary: ส่งยอดสินค้าแทน Worker
       description: >
         Admin ส่งจำนวนสินค้าของ Booth ตาม ticketNumber, ticketNo และ stallCode เมื่อ Worker ส่งเองไม่ได้ ระบบส่งเข้า flow ยืนยันจาก Vendor เหมือนการส่งยอดปกติ
+        หลังส่งสำเร็จ ถ้าทุก Booth ของ VehicleJob นี้ถูกส่งยอด/ยืนยัน/ยกเลิกครบแล้ว และ Worker ทั้งทีมหมดกะไปแล้วทุกคน ระบบจะปล่อยทั้งทีมกลับคิว (เทียบเท่า release-workers) ให้อัตโนมัติโดยไม่ต้องรอ Admin กดแยก — ถ้ามีแค่บางคนในทีมหมดกะ ยังต้องให้ Admin กด release-workers เองเพื่อปล่อยทั้งทีม
       operationId: overrideAdminTicketProductCounts
       security:
         - bearerAuth: []

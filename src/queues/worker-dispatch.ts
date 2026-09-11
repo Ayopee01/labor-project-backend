@@ -1,4 +1,7 @@
+// Import Libraries
 import { withTransaction } from "../db/prisma";
+// Import Repositories
+import * as adminActionLogRepository from "../repositories/shared/admin-action-log.repository";
 import * as workScheduleRepository from "../repositories/shared/work-schedule.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
 import * as profileRepository from "../repositories/shared/profile.repository";
@@ -6,25 +9,29 @@ import * as assignmentRepository from "../repositories/shared/vehicle-job-assign
 import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
 import * as vehicleJobRepository from "../repositories/shared/vehicle-job.repository";
 import * as workerShiftAttendanceRepository from "../repositories/shared/worker-shift-attendance.repository";
+// Import Services
 import { getRuntimeSettings } from "../services/shared/runtime-settings.service";
 import * as vehicleJobLifecycleService from "../services/shared/vehicle-job-lifecycle.service";
 import { publishAdminWorkerStatusChanged, publishNotification } from "../services/notifications.service";
 import { publishRealtimeEvent } from "../services/shared/realtime-notification.service";
 import { applyVendorTicketCompletionResult } from "../services/shared/ticket-completion.service";
 import { sendMobileAppForceUpdateNotification, sendMobileAppReleaseNotification } from "../services/shared/mobile-app-version.service";
-import { enqueueWorker, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerShiftEnd, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
-import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
+// Import Types
 import type { DbConnection } from "../types/shared/common.type";
-import type { AssignmentAcceptTimeoutResult, CompletedWorkerQueueResult, VehicleJobAssignmentDto } from "../types/worker.type";
+import type { AssignmentAcceptTimeoutResult, CompletedWorkerQueueResult, VehicleJobAssignmentDto, VehicleJobDto } from "../types/worker.type";
 import type { WorkScheduleDto } from "../types/admin-workers.type";
+import { ADMIN_ACTION_TYPE } from "../types/shared/admin-action-log.type";
+import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
+import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
+// Import Utils
+import { isWorkerSocketConnected, sendWorkerSocketEvent } from "../websockets/worker.socket";
+import { enqueueWorker, enqueueWorkersAtFront, getWorkerQueueStatus, markWorkerAssigned, markWorkerOpenApp, popReadyWorkers, removeScanWarning, scheduleAssignmentTimeout, scheduleScanTimeout, scheduleScanWarning, scheduleWorkerShiftEnd, startAssignmentTimeoutWorker, startWorkerBreakReturnWorker } from "./worker-queue";
 import { buildWorkScheduleShiftInstanceKey, getWorkScheduleShiftEndDelayMs, isTimeInWorkSchedule } from "../utils/shift";
-import { buildWorkerTicketPayload } from "../utils/ticket-payload";
+import { buildTicketCompletionResultExtraFields, buildWorkerTicketPayload } from "../utils/ticket-payload";
 import { logger } from "../utils/logger";
 import { buildDeadline, getDelayUntil } from "../utils/time";
 import { buildWorkerAssignedPayload, buildWorkerQueueSocketPayload } from "../utils/worker-payload";
-import { ASSIGNMENT_STATUS, TICKET_STATUS } from "../constants/job-status";
-import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../types/shared/worker-assignment-event.type";
-import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
+import { ASSIGNMENT_STATUS, SUBMITTED_TICKET_STATUSES, TERMINAL_JOB_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -75,36 +82,48 @@ async function dispatchReadyWorkersForVehicleJob(
   while (workersNeeded > 0) {
     const readyWorkers = await popReadyWorkers(workersNeeded);
 
+    // ถ้าไม่มี Worker ที่พร้อมจะ dispatch ให้ VehicleJob คันนี้แล้ว ให้ break ออกจาก loop
     if (readyWorkers.length === 0) {
       break;
     }
-    const workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
-      readyWorkers.map((worker) => worker.worker_id),
-      connection
-    );
+
+    // ดึง workerCode ของ Worker ที่ dispatch ได้จาก DB เพื่อใช้ใน notification และ log
+    let workerCodeMap: Map<number, string | null>;
+
+    try {
+      workerCodeMap = await profileRepository.findWorkerCodeMapByAccountIds(
+        readyWorkers.map((worker) => worker.worker_id),
+        connection
+      );
+    } catch (error) {
+      logger.error("Failed to load worker code map while dispatching workers.", {
+        vehicleJobId: vehicleJob.id,
+        workerIds: readyWorkers.map((worker) => worker.worker_id),
+        error,
+      });
+      workerCodeMap = new Map();
+    }
 
     for (const worker of readyWorkers) {
       const workerCode = workerCodeMap.get(worker.worker_id) ?? null;
-
-      // Function ดีด Worker นอกกะออกจากคิวก่อน dispatch
-      const workerSchedule = await workScheduleRepository.findCurrentByAccountId(
-        worker.worker_id,
-        connection
-      );
-
-      if (!workerSchedule || !isTimeInWorkSchedule(workerSchedule)) {
-        if (workerSchedule) {
-          await ejectWorkerForShiftEnd(worker.worker_id, workerSchedule);
-        } else {
-          await markWorkerOpenApp(worker.worker_id);
-        }
-
-        continue;
-      }
-
       let assignment: VehicleJobAssignmentDto;
 
       try {
+        const workerSchedule = await workScheduleRepository.findCurrentByAccountId(
+          worker.worker_id,
+          connection
+        );
+
+        if (!workerSchedule || !isTimeInWorkSchedule(workerSchedule)) {
+          if (workerSchedule) {
+            await ejectWorkerForShiftEnd(worker.worker_id, workerSchedule);
+          } else {
+            await markWorkerOpenApp(worker.worker_id);
+          }
+
+          continue;
+        }
+
         assignment = await assignmentRepository.createAssignment(
           vehicleJob.id,
           worker.worker_id,
@@ -118,9 +137,7 @@ async function dispatchReadyWorkersForVehicleJob(
           acceptDeadlineMs
         );
       } catch (error) {
-        // คืน Worker เข้า FIFO เมื่อสร้าง assignment ล้มเหลว — log ไว้เสมอเพื่อสืบสาเหตุได้ ถ้า
-        // createAssignment fail ต่อเนื่องเป็นระบบ worker ชุดเดิมจะถูกคืนเข้าคิวแล้วดึงออกมาลองใหม่
-        // วนซ้ำได้โดยไม่มี log ให้ตามหาสาเหตุเลยถ้าไม่ log ตรงนี้
+        // ถ้าเกิด error ระหว่างสร้าง Assignment ให้ VehicleJob ให้ log error
         logger.error("Failed to create assignment while dispatching worker.", {
           vehicleJobId: vehicleJob.id,
           workerId: worker.worker_id,
@@ -130,30 +147,41 @@ async function dispatchReadyWorkersForVehicleJob(
         continue;
       }
 
-      const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
-        vehicleJob.id,
-        connection
-      );
+      // ส่ง notification ไปยัง Worker และ Admin หลังจากสร้าง Assignment สำเร็จแล้ว
+      try {
+        const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+          vehicleJob.id,
+          connection
+        );
 
-      sendWorkerSocketEvent(
-        worker.worker_id,
-        "WORKER_ASSIGNED",
-        buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos)
-      );
-      publishNotification({
-        type: "WORKER_ASSIGNED",
-        title: "Worker assigned",
-        message: `Worker ${workerCode ?? worker.worker_id} was assigned to vehicle job ${vehicleJob.ticket_number}.`,
-        payload: {
-          ticketNumber: vehicleJob.ticket_number,
-          worker_code: workerCode,
-          status: assignment.status,
-          accept_deadline_at: assignment.accept_deadline_at,
-        },
-        audience: {
-          roles: ["admin"],
-        },
-      });
+        sendWorkerSocketEvent(
+          worker.worker_id,
+          "WORKER_ASSIGNED",
+          buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos)
+        );
+        publishNotification({
+          type: "WORKER_ASSIGNED",
+          title: "Worker assigned",
+          message: `Worker ${workerCode ?? worker.worker_id} was assigned to vehicle job ${vehicleJob.ticket_number}.`,
+          payload: {
+            ticketNumber: vehicleJob.ticket_number,
+            worker_code: workerCode,
+            status: assignment.status,
+            accept_deadline_at: assignment.accept_deadline_at,
+          },
+          audience: {
+            roles: ["admin"],
+          },
+        });
+      } catch (error) {
+        logger.error("Failed to notify worker/admin after successful dispatch assignment.", {
+          vehicleJobId: vehicleJob.id,
+          workerId: worker.worker_id,
+          assignmentId: assignment.id,
+          error,
+        });
+      }
+
       workersNeeded -= 1;
     }
   }
@@ -228,11 +256,7 @@ export async function handleAssignmentAcceptTimeout(input: {
     reason = "assignment_timeout_shift_unavailable";
   }
 
-  // dispatchReadyWorkers ไม่เรียกที่นี่ — ต้องให้ caller เรียกแยกเองหลัง transaction ที่ครอบฟังก์ชันนี้
-  // commit แล้วเท่านั้น เพราะอาจ dispatch worker คนอื่นที่ไม่เกี่ยวข้องไปยัง VehicleJob อื่น (เขียน DB+
-  // Redis/BullMQ จริง) ถ้ายังอยู่ใน transaction เดียวกับ caller แล้วโค้ดหลังจากนี้ throw จะทำให้ DB
-  // ของ worker คนอื่นที่ถูก dispatch ไปแล้ว rollback แต่ Redis/BullMQ ของเขาไม่ rollback ตาม
-
+  // ส่ง notification ไปยัง Worker และ Admin หลังจากจัดการ assignment accept timeout
   return {
     queue,
     reason,
@@ -242,9 +266,7 @@ export async function handleAssignmentAcceptTimeout(input: {
   };
 }
 
-// Function จัดการกรณี worker accept งานแล้วไม่ scan QR ภายในเวลา — คืน true เมื่อ timeout เกิดขึ้นจริง
-// (caller ต้องเรียก dispatchReadyWorkers เองหลัง transaction commit แล้ว ดูเหตุผลที่
-// handleAssignmentAcceptTimeout ด้านบน) คืน false เมื่อไม่มีอะไรเปลี่ยนแปลง (reschedule/แพ้ race)
+// Function จัดการ assignment scan timeout แบบกัน race
 async function handleAssignmentScanTimeout(input: {
   assignment: VehicleJobAssignmentDto;
   workerId: number;
@@ -278,9 +300,8 @@ async function handleAssignmentScanTimeout(input: {
     input.connection
   );
 
+  // ถ้า assignment ถูก accept หรือ complete ไปแล้วก่อนหน้านี้ ให้ return false เพราะไม่ต้องทำอะไรต่อ
   if (!timedOutAssignment) {
-    // แพ้ race ให้ worker scan สำเร็จไปแล้วหรือถูก Admin cancel พร้อมกัน — ไม่ต้องแจ้งเตือน
-    // timeout ที่จริงๆ ไม่ได้เกิดขึ้น
     return false;
   }
 
@@ -395,7 +416,7 @@ async function handleAssignmentScanWarning(input: {
 
 /* -------------------------------------- Completion Helpers -------------------------------------- */
 
-// Function ส่ง worker ที่จบงานกลับเข้าคิวเมื่อกะยังทำงานต่อได้
+// Function ส่ง worker ที่จบงานกลับเข้าคิวเมื่อ Shift ยังทำงานต่อได้
 export async function returnCompletedWorkersToQueue(
   input: CompletedWorkerQueueResult | null
 ): Promise<Array<string | null>> {
@@ -467,6 +488,176 @@ export async function returnCompletedWorkersToQueue(
   return requeuedWorkerCodes;
 }
 
+// Function พยายาม requeue worker ที่จบงานกลับเข้าคิวถ้ายังอยู่ใน Shift และ mark open_app ถ้าไม่อยู่ใน Shift
+export async function requeueWorkersAtFrontRespectingShift(
+  workerIds: number[]
+): Promise<{ requeuedWorkerIds: number[]; openAppWorkerIds: number[] }> {
+  const uniqueWorkerIds = [...new Set(workerIds)];
+
+  if (uniqueWorkerIds.length === 0) {
+    return { requeuedWorkerIds: [], openAppWorkerIds: [] };
+  }
+
+  const schedules = await Promise.all(
+    uniqueWorkerIds.map((workerId) => workScheduleRepository.findCurrentByAccountId(workerId)),
+  );
+
+  const requeuedWorkerIds: number[] = [];
+  const openAppWorkerIds: number[] = [];
+
+  uniqueWorkerIds.forEach((workerId, index) => {
+    const schedule = schedules[index];
+
+    if (schedule && isTimeInWorkSchedule(schedule)) {
+      requeuedWorkerIds.push(workerId);
+    } else {
+      openAppWorkerIds.push(workerId);
+    }
+  });
+
+  if (requeuedWorkerIds.length > 0) {
+    await enqueueWorkersAtFront(requeuedWorkerIds);
+  }
+
+  await Promise.all(openAppWorkerIds.map((workerId) => markWorkerOpenApp(workerId)));
+
+  return { requeuedWorkerIds, openAppWorkerIds };
+}
+
+// Function เรียง assignment ของ VehicleJob ตามเวลาที่ accept หรือเวลาที่สร้าง (ถ้า accept_at เป็น null) และ fallback ไปตาม id ถ้าเวลาเท่ากัน
+function sortAssignmentsByAcceptedAt(
+  assignments: VehicleJobAssignmentDto[]
+): VehicleJobAssignmentDto[] {
+  const priorityAt = (assignment: VehicleJobAssignmentDto): number => {
+    const value = assignment.accepted_at ?? assignment.created_at;
+    const timestamp = value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+
+    return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
+  };
+
+  return [...assignments].sort((left, right) => {
+    const leftPriorityAt = priorityAt(left);
+    const rightPriorityAt = priorityAt(right);
+
+    if (leftPriorityAt !== rightPriorityAt) {
+      return leftPriorityAt - rightPriorityAt;
+    }
+
+    return left.id - right.id;
+  });
+}
+
+// Function ตรวจสอบว่า Shift ของทีมงาน VehicleJob หมดแล้วหรือไม่ ถ้าหมดแล้วให้ปล่อย Worker ทั้งทีม
+export async function autoReleaseVehicleJobWorkersIfShiftEnded(
+  vehicleJob: Pick<VehicleJobDto, "id" | "ticket_number" | "status">,
+  actorId: number,
+): Promise<void> {
+  if (TERMINAL_JOB_STATUSES.includes(vehicleJob.status)) {
+    return;
+  }
+
+  const releasableAssignments = await withTransaction(async (transaction) => {
+    const lifecycleState = await vehicleJobRepository.findVehicleJobLifecycleState(
+      vehicleJob.id,
+      transaction,
+    );
+    const tickets = (lifecycleState?.marketJobs ?? []).flatMap(
+      (market) => market.tickets,
+    );
+
+    if (tickets.length === 0) {
+      return null;
+    }
+
+    const hasUnresolvedBooth = tickets.some(
+      (ticket) => !SUBMITTED_TICKET_STATUSES.includes(ticket.status),
+    );
+
+    if (hasUnresolvedBooth) {
+      return null;
+    }
+
+    const releasable = sortAssignmentsByAcceptedAt(
+      await assignmentRepository.listReleasableAssignmentsByVehicleJob(
+        vehicleJob.id,
+        transaction,
+      ),
+    );
+
+    if (releasable.length === 0) {
+      return null;
+    }
+
+    const schedules = await Promise.all(
+      releasable.map((assignment) =>
+        workScheduleRepository.findCurrentByAccountId(assignment.worker_id, transaction),
+      ),
+    );
+    // เช็คว่า Shift ของทีมงานทั้งหมดหมดแล้วหรือยัง ถ้ายังมีคนที่ Shift ยังไม่หมดก็ไม่ปล่อย Worker ทั้งทีม
+    const isWholeTeamShiftEnded = schedules.every(
+      (schedule) => !schedule || !isTimeInWorkSchedule(schedule),
+    );
+
+    if (!isWholeTeamShiftEnded) {
+      return null;
+    }
+
+    await assignmentRepository.releaseAssignments(
+      releasable.map((assignment) => assignment.id),
+      new Date(),
+      transaction,
+    );
+
+    await vehicleJobRepository.updateVehicleJobStatus(
+      vehicleJob.id,
+      VEHICLE_JOB_STATUS.RELEASED,
+      transaction,
+    );
+
+    await adminActionLogRepository.create(
+      {
+        vehicle_job_id: vehicleJob.id,
+        action_type: ADMIN_ACTION_TYPE.WORKERS_RELEASED,
+        reason_code: "auto_released_shift_ended",
+        reason_text: "Auto-released after ticket completion submission because a team member's shift already ended.",
+        actor_account_id: actorId,
+        metadata: {
+          worker_ids: releasable.map((assignment) => assignment.worker_id),
+        },
+      },
+      transaction,
+    );
+
+    return releasable;
+  });
+
+  if (!releasableAssignments) {
+    return;
+  }
+
+  const releasedWorkerAccountIds = releasableAssignments.map(
+    (assignment) => assignment.worker_id,
+  );
+  const releasedWorkerCodes = await returnCompletedWorkersToQueue({
+    vehicle_job: {
+      ticket_number: vehicleJob.ticket_number,
+    },
+    completed_worker_ids: releasedWorkerAccountIds,
+  });
+
+  publishRealtimeEvent({
+    type: "VEHICLE_JOB_WORKERS_RELEASED",
+    title: "Workers released automatically",
+    message: `${releasedWorkerAccountIds.length} worker(s) were auto-released from vehicle job ${vehicleJob.ticket_number} after shift end.`,
+    payload: {
+      ticketNumber: vehicleJob.ticket_number,
+      reason_code: "auto_released_shift_ended",
+      released_worker_codes: releasedWorkerCodes,
+    },
+    admin: true,
+  });
+}
+
 // Function ยืนยัน ticket อัตโนมัติเมื่อส่งยอดแล้วแต่ vendor ไม่ยืนยันภายในเวลาจาก config
 async function handleVendorConfirmationTimeout(input: {
   ticketId?: number;
@@ -509,52 +700,19 @@ async function handleVendorConfirmationTimeout(input: {
 
   await returnCompletedWorkersToQueue(result.completedVehicleJob);
 
+  const ticketPayload = buildWorkerTicketPayload(
+    result.ticket,
+    result.detail,
+    result.products,
+    buildTicketCompletionResultExtraFields(result, "vendor_confirm_timeout")
+  );
+
   publishRealtimeEvent({
     type: "TICKET_COMPLETION_RESULT",
     title: "Ticket completion auto-confirmed",
     message: `Ticket ${result.ticket.boothCode} was auto-confirmed after vendor timeout.`,
-    payload: {
-      ...buildWorkerTicketPayload(
-        result.ticket,
-        result.detail,
-        result.products,
-        {
-          submission_status: result.submission.status,
-          confirmed_at: result.submission.confirmed_at,
-          rejected_at: result.submission.rejected_at,
-          vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
-          completed_worker_codes: result.completedWorkerCodes,
-          ticket_completed_at:
-            result.completedVehicleJob?.vehicle_job.updated_at ?? null,
-          nextMarketCode: result.nextTicket?.marketCode ?? null,
-          nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
-          next_ticket_status: result.nextTicket?.ticket.status ?? null,
-          assignment_status: result.assignmentStatus,
-          reason: "vendor_confirm_timeout",
-        }
-      ),
-    },
-    worker_payload: {
-      ...buildWorkerTicketPayload(
-        result.ticket,
-        result.detail,
-        result.products,
-        {
-          submission_status: result.submission.status,
-          confirmed_at: result.submission.confirmed_at,
-          rejected_at: result.submission.rejected_at,
-          vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
-          completed_worker_codes: result.completedWorkerCodes,
-          ticket_completed_at:
-            result.completedVehicleJob?.vehicle_job.updated_at ?? null,
-          nextMarketCode: result.nextTicket?.marketCode ?? null,
-          nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
-          next_ticket_status: result.nextTicket?.ticket.status ?? null,
-          assignment_status: result.assignmentStatus,
-          reason: "vendor_confirm_timeout",
-        }
-      ),
-    },
+    payload: { ...ticketPayload },
+    worker_payload: { ...ticketPayload },
     admin: true,
     worker_ids: result.receiverAccountIds,
   });
@@ -576,7 +734,7 @@ async function handleVendorConfirmationTimeout(input: {
 
 /* -------------------------------------- Shift Handlers -------------------------------------- */
 
-// Function ปิดกะ worker เมื่อถึงเวลาสิ้นสุด และย้าย worker ที่ว่างกลับ open_app
+// Function ปิด Shift worker เมื่อถึงเวลาสิ้นสุด และย้าย worker ที่ว่างกลับ open_app
 async function handleWorkerShiftEnd(input: {
   workerId: number;
   scheduleId: number;
@@ -588,7 +746,7 @@ async function handleWorkerShiftEnd(input: {
     return;
   }
 
-  // Function อ่าน schedule สดก่อนปิดกะจาก delayed job
+  // ถ้าเวลาปัจจุบันยังอยู่ในช่วง Shift ให้ schedule งานปิด Shift อีกครั้งหลังจาก delay ที่กำหนดไว้ใน Shift
   if (isTimeInWorkSchedule(schedule)) {
     await scheduleWorkerShiftEnd(
       input.workerId,
@@ -603,7 +761,7 @@ async function handleWorkerShiftEnd(input: {
   await ejectWorkerForShiftEnd(input.workerId, schedule, input.shiftInstanceKey);
 }
 
-// Function ปิด attendance ของกะที่จบแล้วและคืน Worker เป็น open_app
+// Function ปิด attendance ของ Shift ที่จบแล้วและคืน Worker เป็น open_app
 async function ejectWorkerForShiftEnd(
   workerId: number,
   schedule: WorkScheduleDto,
@@ -628,6 +786,17 @@ async function ejectWorkerForShiftEnd(
   );
 
   if (currentAssignment) {
+    const queue = await getWorkerQueueStatus(workerId);
+
+    publishAdminWorkerStatusChanged({
+      title: "Worker overtime",
+      message: `Worker ${workerCode ?? workerId} shift ended but still has an active assignment.`,
+      workerCode,
+      queue,
+      assignment: currentAssignment,
+      reason: "shift_ended_overtime",
+    });
+
     return;
   }
 
@@ -648,7 +817,7 @@ async function ejectWorkerForShiftEnd(
   });
 }
 
-// Function พา worker กลับจาก break เข้าคิว หรือกลับ open_app ถ้า socket/กะ/assignment ไม่พร้อม
+// Function พา worker กลับจาก break เข้าคิว หรือกลับ open_app ถ้า socket/shift/assignment ไม่พร้อม
 async function handleWorkerBreakReturn(input: {
   workerId: number;
   scheduleId: number;
@@ -695,7 +864,7 @@ async function handleWorkerBreakReturn(input: {
   });
 }
 
-// Function เริ่ม BullMQ worker กลางสำหรับงาน timeout, accept, scan, warning, vendor และกะงาน
+// Function เริ่ม BullMQ worker กลางสำหรับงาน timeout, accept, scan, warning, vendor และ shift งาน
 export function startAssignmentTimeoutProcessing(): void {
   startAssignmentTimeoutWorker(async ({ assignmentId, workerId, ticketId, submissionId, mobileAppVersionId, kind }) => {
     if (kind === "mobile_app_release_notification") {
@@ -721,10 +890,6 @@ export function startAssignmentTimeoutProcessing(): void {
       return;
     }
 
-    // shouldDispatch บอกว่ามี timeout เกิดขึ้นจริงในทรานแซกชันนี้หรือไม่ — ใช้ตัดสินว่าต้องเรียก
-    // dispatchReadyWorkers หลัง transaction commit แล้วหรือเปล่า (ดูเหตุผลที่
-    // handleAssignmentAcceptTimeout ด้านบน ห้ามเรียก dispatchReadyWorkers ในทรานแซกชันเดียวกับ
-    // งาน timeout นี้ เพราะจะ dispatch worker คนอื่นที่ไม่เกี่ยวข้องไปด้วย)
     let shouldDispatch = false;
 
     await withTransaction(async (transaction) => {
@@ -771,7 +936,7 @@ export function startAssignmentTimeoutProcessing(): void {
       });
 
       if (!timeoutResult) {
-        // Function ข้าม timeout notification เมื่อแพ้ race
+        // ถ้า assignment ถูก accept หรือ complete ไปแล้วก่อนหน้านี้ ให้ return เพราะไม่ต้องทำอะไรต่อ
         return;
       }
 

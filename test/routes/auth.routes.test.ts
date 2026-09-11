@@ -1,20 +1,7 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 
-import { addAdmin, addWorker, getPassword, resetRouteTestState, resetSpacesMockState, restoreRouteTestLoader, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
-
-// ตั้ง ADMIN_IMAGE_STORAGE_DIR ให้ชี้ไปที่โฟลเดอร์ย่อยแยกต่างหาก (gitignored อยู่แล้วเพราะอยู่ใต้
-// storage/) ก่อน src/app.ts และ upload.middleware.ts ถูก import จริงใน startRouteTestServer() —
-// ป้องกันไม่ให้ test เขียนไฟล์รูปจริงเข้าไปปนกับ storage/admin-images ที่ใช้งานจริงบน local dev
-process.env.ADMIN_IMAGE_STORAGE_DIR = "storage/test-tmp-admin-images";
-
-// Function หา path ไฟล์จริงบน disk จาก image_url ที่ตอบกลับมา — URL prefix (/storage/admin-images/)
-// คงที่เสมอ แต่ physical directory มาจาก ADMIN_IMAGE_STORAGE_DIR ด้านบน ไม่ใช่ตัว URL เอง
-function resolveAdminImageDiskPath(imageUrl: string): string {
-  return path.join(process.cwd(), process.env.ADMIN_IMAGE_STORAGE_DIR as string, path.basename(imageUrl));
-}
+import { addAdmin, addWorker, getPassword, resetRouteTestState, resetSpacesMockState, restoreRouteTestLoader, spacesMockState, startRouteTestServer, state, type TestServer } from "../helpers/app-test-harness";
 
 let server: TestServer;
 let password: typeof import("../../src/utils/password");
@@ -54,6 +41,8 @@ test("POST /api/auth/login allows admin login without device fields", async () =
     "access_token",
     "expires_in",
     "refresh_token",
+    "server_time",
+    "server_time_unix_ms",
     "token_type",
   ]);
   assert.equal(response.body.account, undefined);
@@ -71,41 +60,6 @@ test("POST /api/auth/login rejects a nonexistent username with the same error as
 
   assert.equal(response.status, 401);
   assert.equal(response.body.code, "INVALID_CREDENTIALS");
-});
-
-test("POST /api/auth/login is rate-limited separately and more strictly than the general /api/auth/* limit", async () => {
-  // ทั้งไฟล์ตั้ง LOGIN_RATE_LIMIT_MAX_REQUESTS ไว้สูงมาก (ดู applyIsolatedTestEnv) เพื่อกัน false
-  // 429 จากการที่เทสต์อื่นๆ login จริงกันเยอะ — เทสต์นี้ต้องการยืนยันพฤติกรรม rate limit เอง จึงต้อง
-  // override กลับเป็นค่าต่ำที่รู้ตัวเลขแน่นอนเฉพาะเทสต์นี้ แล้วคืนค่าเดิมก่อนออกเสมอ
-  const previousLimit = process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS;
-
-  process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS = "10";
-
-  try {
-    const passwordHash = await password.hashPassword("Admin@123456");
-    const admin = addAdmin(9006, passwordHash);
-    const attempt = () =>
-      server.request("POST", "/api/auth/login", {
-        body: { username: admin.username, password: "WrongPassword@123456" },
-      });
-
-    const responses = [];
-
-    for (let i = 0; i < 11; i += 1) {
-      responses.push(await attempt());
-    }
-
-    const statuses = responses.map((response) => response.status);
-
-    assert.ok(statuses.slice(0, 10).every((status) => status === 401));
-    assert.equal(statuses[10], 429);
-  } finally {
-    if (previousLimit === undefined) {
-      delete process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS;
-    } else {
-      process.env.LOGIN_RATE_LIMIT_MAX_REQUESTS = previousLimit;
-    }
-  }
 });
 
 test("an authenticated request is rejected mid-session once the account's status becomes inactive, even though the session row itself is still active", async () => {
@@ -165,6 +119,8 @@ test("GET /api/auth/me returns only the admin profile fields", async () => {
     "phone",
     "position",
     "role",
+    "server_time",
+    "server_time_unix_ms",
     "status",
   ]);
   assert.equal(response.body.full_name, admin.full_name);
@@ -216,6 +172,8 @@ test("GET /api/auth/me returns current worker account from access token", async 
     "access_token",
     "expires_in",
     "refresh_token",
+    "server_time",
+    "server_time_unix_ms",
     "token_type",
   ]);
   assert.equal(login.body.account, undefined);
@@ -231,6 +189,8 @@ test("GET /api/auth/me returns current worker account from access token", async 
     "nationality",
     "phone",
     "role",
+    "server_time",
+    "server_time_unix_ms",
     "shift",
     "shirt_number",
     "shirt_type",
@@ -269,10 +229,14 @@ test("PATCH /api/auth/me/lang updates current account language", async () => {
   });
 
   assert.equal(update.status, 200);
-  assert.deepEqual(update.body, {
-    message: "Language updated successfully.",
-    lang: "EN",
-  });
+  assert.deepEqual(Object.keys(update.body).sort(), [
+    "lang",
+    "message",
+    "server_time",
+    "server_time_unix_ms",
+  ]);
+  assert.equal(update.body.message, "Language updated successfully.");
+  assert.equal(update.body.lang, "EN");
 
   const me = await server.request("GET", "/api/auth/me", {
     token: login.body.access_token,
@@ -404,7 +368,7 @@ test("PATCH /api/auth/me is rejected for a worker token (admin-only self-service
   assert.equal(update.status, 403);
 });
 
-test("POST /api/auth/me/upload-image uploads the file to local disk and persists image_url", async () => {
+test("POST /api/auth/me/upload-image uploads the file to Spaces and persists image_url", async () => {
   const passwordHash = await password.hashPassword("Admin@123456");
   const admin = addAdmin(1022, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
@@ -427,9 +391,9 @@ test("POST /api/auth/me/upload-image uploads the file to local disk and persists
   });
 
   assert.equal(response.status, 200);
-  assert.ok(response.body.image_url.startsWith("/storage/admin-images/"));
+  assert.ok(response.body.image_url.startsWith("https://"));
   assert.ok(response.body.image_url.endsWith(".jpg"));
-  assert.ok(fs.existsSync(resolveAdminImageDiskPath(response.body.image_url)));
+  assert.ok(spacesMockState.uploadedUrls.includes(response.body.image_url));
 
   const me = await server.request("GET", "/api/auth/me", {
     token: login.body.access_token,
@@ -441,7 +405,7 @@ test("POST /api/auth/me/upload-image uploads the file to local disk and persists
   assert.equal(me.body.image_url, response.body.image_url);
 });
 
-test("POST /api/auth/me/upload-image deletes the previous image from local disk when replaced", async () => {
+test("POST /api/auth/me/upload-image deletes the previous image from Spaces when replaced", async () => {
   const passwordHash = await password.hashPassword("Admin@123456");
   const admin = addAdmin(1025, passwordHash);
   const login = await server.request("POST", "/api/auth/login", {
@@ -465,7 +429,7 @@ test("POST /api/auth/me/upload-image deletes the previous image from local disk 
   const secondUpload = new FormData();
   secondUpload.append(
     "file",
-    new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: "image/png" }),
+    new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: "image/png" }),
     "second.png",
   );
   const second = await server.request("POST", "/api/auth/me/upload-image", {
@@ -475,8 +439,8 @@ test("POST /api/auth/me/upload-image deletes the previous image from local disk 
 
   assert.equal(second.status, 200);
   assert.notEqual(second.body.image_url, first.body.image_url);
-  assert.ok(!fs.existsSync(resolveAdminImageDiskPath(first.body.image_url)));
-  assert.ok(fs.existsSync(resolveAdminImageDiskPath(second.body.image_url)));
+  assert.ok(spacesMockState.deletedUrls.includes(first.body.image_url));
+  assert.ok(!spacesMockState.deletedUrls.includes(second.body.image_url));
 });
 
 test("POST /api/auth/me/upload-image rejects a non-image file", async () => {
@@ -518,7 +482,10 @@ test("POST /api/auth/me/upload-image ignores a spoofed filename extension and al
   const formData = new FormData();
   formData.append(
     "file",
-    new Blob([new Uint8Array([0x3c, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x3e])], {
+    // เนื้อไฟล์ต้องเป็น Magic Byte ของ JPEG จริง (ผ่าน matchesImageSignature ที่ตรวจจาก buffer ใน
+    // memory) — Test นี้ตั้งใจตรวจแค่ว่า Extension มาจาก Content-Type ที่ Validate แล้ว ไม่ใช่จาก
+    // Filename ที่ Client ปลอมมา (.html) ไม่ได้ตั้งใจตรวจเนื้อไฟล์ จึงต้องให้เนื้อไฟล์เป็นรูปจริง
+    new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], {
       type: "image/jpeg",
     }),
     "pwn.html",

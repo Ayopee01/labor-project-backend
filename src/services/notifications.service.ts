@@ -1,17 +1,14 @@
 // Import Library
 import type { Response } from "express";
-import * as workerNotificationRepository from "../repositories/shared/worker-notification.repository";
+// Import Middleware
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
+// Import Utils
 import { buildWorkerQueueSocketPayload } from "../utils/worker-payload";
-import { parseWithSchema } from "../validation/parser";
-import { paginationQuerySchema } from "../validation/schemas";
-import ApiError from "../utils/api-error";
 import { logger } from "../utils/logger";
-import { buildLocalizedNotification } from "../utils/notification-localization";
 // Import Types
 import type { AccessTokenPayload } from "../types/auth.type";
-import type { NotificationAudience, NotificationClient, RealtimeNotificationEvent, WorkerNotificationListResponse, WorkerStatusChangedInput } from "../types/notifications.type";
-import type { VehicleJobAssignmentDto, WorkerQueueEntryDto } from "../types/worker.type";
+import type { NotificationAudience, NotificationClient, RealtimeNotificationEvent, WorkerStatusChangedInput } from "../types/notifications.type";
+import type { VehicleJobAssignmentDto, VehicleWorkReadinessDto, WorkerQueueEntryDto } from "../types/worker.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
@@ -40,26 +37,29 @@ function canReceiveEvent(
   return false;
 }
 
-// Function บันทึก SSE event ใน service flow — ห่อด้วย try/catch เพราะ response อาจถูก destroy ไป
-// แล้ว (client หลุดกะทันหันแบบ ECONNRESET ก่อน "close" event ทัน) เขียนซ้ำเข้า stream ที่ตายแล้ว
-// จะ throw แบบ synchronous ได้ ถ้าไม่ครอบไว้จะทำให้ publishNotification ที่วน loop client อื่นๆ
-// หยุดกลางคันไปด้วย
+// Function เขียน SSE event ไปยัง client — ครอบด้วย try/catch เพราะ response อาจถูก destroy ไปแล้ว
+// (client หลุดกะทันหันก่อน "close" event) เขียนซ้ำจะ throw จนทำให้ loop client อื่นใน publishNotification หยุดไปด้วย
 function writeSseEvent(
   response: Response,
   eventName: string,
   data: unknown
 ): void {
   try {
+    const now = new Date();
+    // server_time/server_time_unix_ms ให้ frontend คำนวณ offset เวลาได้เหมือนฝั่ง REST/WebSocket — ใส่เฉพาะตอน data เป็น plain object
+    const eventData =
+      data && typeof data === "object" && !Array.isArray(data)
+        ? { ...data, server_time: now.toISOString(), server_time_unix_ms: now.getTime() }
+        : data;
+
     response.write(`event: ${eventName}\n`);
-    response.write(`data: ${JSON.stringify(toPascalCasePayload(data))}\n\n`);
+    response.write(`data: ${JSON.stringify(toPascalCasePayload(eventData))}\n\n`);
   } catch (error) {
     logger.error("Failed to write SSE event.", { error });
   }
 }
 
-// Function เลิก subscribe และเคลียร์ client ตัวหนึ่งออกจาก in-memory list ใน service flow — ใช้ร่วม
-// กันทั้ง "close" (client ปิด connection แบบสุภาพ) และ "error" (connection หลุดกะทันหัน เช่น
-// ECONNRESET) เพื่อไม่ให้ heartbeat interval/reference ของ client ที่ตายไปแล้วค้างอยู่ในระบบ
+// Function เคลียร์ client ออกจาก in-memory list เมื่อ connection ปิดหรือหลุด กัน heartbeat interval ค้าง
 function removeSseClient(clientId: number): void {
   const client = clients.get(clientId);
 
@@ -102,10 +102,7 @@ export function subscribeAdminEvents(
     heartbeat,
   });
 
-  // "close" = client ปิด connection ปกติ, "error" = connection หลุดกะทันหัน (เช่น ECONNRESET) ก่อน
-  // "close" event ทัน — ถ้าไม่ดัก error ไว้ Node จะ throw error ที่ไม่มี listener แบบ uncaught เมื่อ
-  // เขียนซ้ำเข้า stream ที่หลุดไปแล้ว (เช่นจาก heartbeat/publishNotification รอบถัดไป) จนกระทบ process
-  // ทั้งตัว ทั้งที่เป็นแค่ client SSE หนึ่งตัวหลุดเน็ต
+  // ดัก "error" ไว้ด้วย ไม่ใช่แค่ "close" — ไม่งั้น error ที่ไม่มี listener จะ throw แบบ uncaught จน crash ทั้ง process
   response.req.on("close", () => removeSseClient(clientId));
   response.req.on("error", () => removeSseClient(clientId));
   response.on("error", () => removeSseClient(clientId));
@@ -130,101 +127,13 @@ export function publishNotification(event: RealtimeNotificationEvent): void {
   }
 }
 
-export function persistWorkerNotification(input: {
-  worker_id: number;
-  type: string;
-  notification_key?: string | null;
-  lang?: string | null;
-  title: string;
-  message: string;
-  payload?: unknown;
-}): void {
-  void workerNotificationRepository.createWorkerNotification(input).catch((error) => {
-    logger.error("Failed to persist worker notification.", { error });
-  });
-}
-
-export function persistWorkerNotifications(inputs: Array<{
-  worker_id: number;
-  type: string;
-  notification_key?: string | null;
-  lang?: string | null;
-  title: string;
-  message: string;
-  payload?: unknown;
-}>): void {
-  void workerNotificationRepository.createWorkerNotifications(inputs).catch((error) => {
-    logger.error("Failed to persist worker notifications.", { error });
-  });
-}
-
-export async function listWorkerNotifications(
-  query: unknown,
-  auth?: AccessTokenPayload
-): Promise<WorkerNotificationListResponse> {
-  if (!auth || !auth.account_id || auth.role !== "worker") {
-    throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
-  }
-
-  const { page, limit } = parseWithSchema(paginationQuerySchema, query);
-  const result = await workerNotificationRepository.listWorkerNotifications(
-    auth.account_id,
-    page,
-    limit,
-  );
-
-  return {
-    data: result.items.map((item) => ({
-      id: item.id,
-      type: item.type,
-      notification_key: item.notification_key,
-      lang: item.lang,
-      title: item.title,
-      message: item.message,
-      notification: {
-        key: item.notification_key,
-        lang: item.lang,
-        title: item.title,
-        message: item.message,
-      },
-      payload: item.payload,
-      read_at: item.read_at,
-      created_at: item.created_at,
-    })),
-    pagination: {
-      page,
-      limit,
-      total: result.total,
-      total_pages: Math.ceil(result.total / limit),
-    },
-  };
-}
-
-export function buildWorkerNotification(input: {
-  type: string;
-  lang?: string | null;
-  notification_key?: string | null;
-  notification_params?: Record<string, unknown>;
-  payload?: Record<string, unknown>;
-  fallbackTitle: string;
-  fallbackMessage: string;
-}) {
-  return buildLocalizedNotification({
-    type: input.type,
-    lang: input.lang,
-    key: input.notification_key,
-    params: input.notification_params ?? input.payload,
-    fallbackTitle: input.fallbackTitle,
-    fallbackMessage: input.fallbackMessage,
-  });
-}
-
 // Function สร้าง worker status changed payload ใน service flow
 function buildWorkerStatusChangedPayload(input: {
   workerCode: string | null;
   queue: WorkerQueueEntryDto | null | undefined;
   reason: string;
   assignment?: VehicleJobAssignmentDto | null;
+  team_scan_readiness?: Pick<VehicleWorkReadinessDto, "is_ready"> | null;
   extraPayload?: Record<string, unknown>;
 }): Record<string, unknown> {
   return {
@@ -232,7 +141,8 @@ function buildWorkerStatusChangedPayload(input: {
     queue: buildWorkerQueueSocketPayload(
       input.queue,
       input.workerCode,
-      input.assignment ?? null
+      input.assignment ?? null,
+      input.team_scan_readiness ?? null
     ),
     reason: input.reason,
     ...(input.extraPayload ?? {}),

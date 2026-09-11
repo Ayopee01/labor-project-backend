@@ -1,9 +1,7 @@
 // Import Library
 import { Prisma, type MasterProduct, type MasterRate } from "@prisma/client";
-
-// Import Dependencies
+// Import Utils
 import { client } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 
@@ -11,7 +9,7 @@ import type { DbConnection } from "../../types/shared/common.type";
 
 // Function ค้นหา master_product ที่ยังใช้งานอยู่จาก productCode + packageCode
 // ใช้ทั้งตอน Gate สร้าง Ticket และตอน Worker เปลี่ยน PackageCode ระหว่างส่งยอด
-export async function findActiveProductsByProductCodeAndPackageCode(
+export async function listActiveProductsByProductCodeAndPackageCode(
   productCode: string,
   packageCode: string,
   connection?: DbConnection
@@ -31,7 +29,7 @@ export async function findActiveProductsByProductCodeAndPackageCode(
 }
 
 // Function ค้นหา master_product จาก packageCode สำหรับ Package Fallback
-export async function findActiveProductsByPackageCode(
+export async function listActiveProductsByPackageCode(
   packageCode: string,
   connection?: DbConnection
 ): Promise<MasterProduct[]> {
@@ -49,7 +47,7 @@ export async function findActiveProductsByPackageCode(
 }
 
 // Function ค้นหา master_rate ที่ตรง market และช่วงน้ำหนักที่ยังใช้งานอยู่
-export async function findActiveRatesByMarketAndWeight(
+export async function listActiveRatesByMarketAndWeight(
   marketCode: string,
   packageWeight: Prisma.Decimal,
   connection?: DbConnection
@@ -75,7 +73,7 @@ export async function findActiveRatesByMarketAndWeight(
 
 // Function ค้นหาแพ็กเกจที่ยังใช้งานอยู่ทั้งหมดของ productCode เดียว
 // ใช้โดย Worker ตอนเลือก PackageCode ใหม่ให้ Product เดิมในแผงที่กำลังส่งยอด
-export async function findActiveMasterProductPackagesByProductCode(
+export async function listActiveMasterProductPackagesByProductCode(
   productCode: string,
   connection?: DbConnection
 ) {
@@ -150,9 +148,8 @@ export async function findOwnerStallsByMarketAndBooth(
   return map;
 }
 
-// Function ค้นหาชื่อเต็มของ MasterMemberStall แบบ batch ตาม owner + memberLineUserId หลายคู่พร้อมกัน
-// scope ด้วย marketCode + ownerIdCard + ownerLineUserId เหมือน
-// findActiveVendorLineTargetsByMarketAndBooth เพื่อป้องกัน LINE ID ชนกันข้าม Owner
+// Function ค้นหาชื่อเต็มของ MasterMemberStall แบบ batch ตาม owner + memberLineUserId หลายคู่
+// scope ด้วย marketCode+ownerIdCard+ownerLineUserId เหมือนกันเพื่อป้องกัน LINE ID ชนกันข้าม owner
 export async function findMemberStallFullNamesByOwnerAndLineUserId(
   requests: Array<{
     marketCode: string;

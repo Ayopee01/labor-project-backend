@@ -16,8 +16,7 @@ export type ClientType = (typeof CLIENT_TYPE)[keyof typeof CLIENT_TYPE];
 
 const CLIENT_TYPE_VALUES = new Set<string>(Object.values(CLIENT_TYPE));
 
-// Config path prefix ที่แยก client type ได้ตรงตัวจาก path เดียว (ไม่ shared กับ client อื่น) — เรียง
-// ยาวสุดไม่จำเป็นเพราะ prefix ที่มีในระบบไม่มีปัญหา substring ทับกัน (ดู admin-audit.routes.test.ts ฯลฯ)
+// Config path prefix ที่แยก client type ได้ตรงตัวจาก path เดียว ไม่ shared กับ client อื่น
 const PATH_PREFIX_CLIENT_TYPE: ReadonlyArray<readonly [string, ClientType]> = [
   ["/api/workers", CLIENT_TYPE.WORKER_APP],
   ["/api/admin", CLIENT_TYPE.ADMIN_WEBAPP],
@@ -26,8 +25,7 @@ const PATH_PREFIX_CLIENT_TYPE: ReadonlyArray<readonly [string, ClientType]> = [
   ["/api/line", CLIENT_TYPE.LINE_OA],
 ];
 
-// Config role (จาก req.auth ที่ authMiddleware set ให้แล้ว) -> client type — ใช้เป็นสัญญาณเสริมที่แม่นกว่า
-// header สำหรับเส้น /api/auth ที่ authenticate สำเร็จแล้ว (ไม่ว่าจะมี roleMiddleware เพิ่มเติมหรือไม่)
+// Config แปลง role (จาก req.auth) เป็น client type ใช้เป็นสัญญาณเสริมที่แม่นกว่า header
 const ROLE_CLIENT_TYPE: Partial<Record<string, ClientType>> = {
   worker: CLIENT_TYPE.WORKER_APP,
   admin: CLIENT_TYPE.ADMIN_WEBAPP,
@@ -42,11 +40,8 @@ function isKnownClientType(value: string): value is ClientType {
   return CLIENT_TYPE_VALUES.has(value);
 }
 
-// Function หา client type ของ request หนึ่งอัน — ลำดับ: path prefix (ชัดเจน ไม่ shared) ก่อน, ถ้าเป็น
-// เส้น shared (เช่น /api/auth) หรือ path ที่ไม่ตรง prefix ไหนเลย ใช้ req.auth.role ที่ authMiddleware
-// set ให้แล้วเป็นสัญญาณรอง (แม่นกว่า header ที่ client อาจลืมส่ง), แล้วค่อย fallback ไป header
-// X-Client-Type ที่ client ส่งมาเอง (สำหรับเส้นที่ยังไม่ authenticate เช่น /login, /refresh), สุดท้าย
-// "unknown" ถ้าไม่มีสัญญาณอะไรเลย — ไม่มีกรณีไหน error
+// Function หา client type ของ request — ลำดับ: path prefix ก่อน, ถ้าไม่ตรงใช้ req.auth.role, แล้วค่อย
+// fallback ไป header X-Client-Type, สุดท้ายคืน "unknown" ถ้าไม่มีสัญญาณอะไรเลย
 export function detectClientType(req: Request): ClientType {
   const path = (req.originalUrl || req.path || "").split("?")[0];
 

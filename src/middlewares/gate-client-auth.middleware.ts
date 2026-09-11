@@ -1,12 +1,13 @@
+// Import Library
 import type { NextFunction, Request, Response } from "express";
-
+// Import Services
 import { verifyGateClientCredentials } from "../services/shared/gate-client-auth.service";
-
+// Import Utils
 import ApiError from "../utils/api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ถอดรหัส HTTP Basic credential เป็น client_id:client_secret สำหรับ API จาก Gate
+// Function decode Basic credentials จาก Authorization header เป็น clientId และ clientSecret
 function decodeBasicCredentials(authorization: string | undefined): {
   clientId: string;
   clientSecret: string;
@@ -53,7 +54,7 @@ function decodeBasicCredentials(authorization: string | undefined): {
   };
 }
 
-// Function ตรวจสอบสิทธิ์ request จาก Gate และแนบข้อมูล Gate client ลง req.gateClient
+// Function จัดการ gate client auth middleware สำหรับ Express middleware
 export default async function gateClientAuthMiddleware(
   req: Request,
   _res: Response,

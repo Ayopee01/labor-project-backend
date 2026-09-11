@@ -54,7 +54,7 @@ npm install
 cp .env.example .env
 ```
 
-Fill in the token secrets (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_LOGIN_CHALLENGE_SECRET`, `VENDOR_ACTION_TOKEN_SECRET`, `REFRESH_TOKEN_HASH_SECRET`) with any local values.
+Fill in the token secrets (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_LOGIN_CHALLENGE_SECRET`, `REFRESH_TOKEN_HASH_SECRET`) with any local values.
 
 ### 3. Start PostgreSQL and Redis
 
@@ -141,7 +141,7 @@ Log level follows the response status code: `>=500` → `error`, `>=400` → `wa
 
 **Configuring Sentry**: set `SENTRY_DSN` in `.env` (see `.env.example`) — a no-op until set.
 
-In local development (`NODE_ENV=development`), logs are pretty-printed via `pino-pretty` instead of raw JSON.
+Logs are raw JSON lines in every environment, including local development.
 
 ## Self-Hosted Log Stack (Grafana + Loki + Promtail)
 
@@ -234,7 +234,7 @@ Set these **GitHub repository secrets** (Settings → Secrets and variables → 
 
 `git reset --hard origin/main` runs as part of the deploy step — safe because `.env` is gitignored (never touched by it) and the deploy path is expected to only ever be updated by this job, not edited by hand on the droplet.
 
-Without these secrets set, the `deploy` job simply fails on every push to `main` (the rest of CI — typecheck/build/tests — is unaffected); leave them unset if auto-deploy isn't wanted yet and keep deploying manually via steps 1–5.
+Without `DEPLOY_HOST` set, the `deploy` job's SSH step is skipped (not failed) on every push to `main` (the rest of CI — typecheck/build/tests — is unaffected); leave the secrets unset if auto-deploy isn't wanted yet and keep deploying manually via steps 1–5. This also matters if a third-party service (e.g. Render) watches this repo's commit checks before deploying — a skipped step keeps the check green, whereas a hard SSH failure would not.
 
 ### UFW firewall
 
@@ -252,41 +252,26 @@ Port 3000 (Grafana) is deliberately **not** opened here — see the UFW rule in 
 
 ### Database backups
 
-`scripts/backup-postgres.sh` dumps the database with `pg_dump`, gzips it, uploads it to a DigitalOcean Spaces bucket (S3-compatible), and prunes backups older than `BACKUP_RETENTION_DAYS` from that bucket. Configure it entirely through the `SPACES_*` variables in `.env` (see `.env.example`) — no credentials are ever hardcoded in the script.
+Production PostgreSQL runs on a **DigitalOcean Managed Database** cluster, not in Docker on the droplet. Backups are handled entirely by DO itself — automatic daily backups with point-in-time recovery (7-day retention by default, extendable in the control panel under the cluster's **Backups & Restore** tab). There is no backup script or cron job in this repo to maintain.
 
-Install its dependencies once on the droplet:
+To point the app at the cluster:
 
-```bash
-sudo apt install -y postgresql-client s3cmd
-```
+1. Provision the Managed Database cluster in the DigitalOcean control panel (same region as the droplet, to keep latency low).
+2. Point `DATABASE_URL` (and `DOCKER_DATABASE_URL` if used) at the cluster's connection string, appending `?sslmode=require` — DO Managed Postgres requires SSL and refuses plain connections.
+3. Don't add the `local-db` profile to the production start command — just `docker compose --profile production up -d redis api-prod` (no `postgres` service needed on the droplet).
 
-Run it manually to test:
-
-```bash
-./scripts/backup-postgres.sh
-```
-
-**Cron** (every 6 hours, logging to a file so failures are visible):
-
-```bash
-crontab -e
-# add:
-0 */6 * * * cd /path/to/labor-project-backend && ./scripts/backup-postgres.sh >> /var/log/labor-backup.log 2>&1
-```
-
-**`loki_data` and whole-droplet safety net**: rather than a separate cron job, enable DigitalOcean's built-in **automatic daily Droplet snapshots** (Droplet → Backups, in the DigitalOcean control panel) — this covers `loki_data` and every other volume/file on the droplet as a single daily point-in-time image, independent of anything in this repo.
+**`loki_data` and whole-droplet safety net**: enable DigitalOcean's built-in **automatic daily Droplet snapshots** (Droplet → Backups, in the DigitalOcean control panel) — this covers `loki_data` and every other volume/file on the droplet as a single daily point-in-time image, independent of the database backups above.
 
 ### Pre-deploy secret checklist
 
 Before starting the stack in production, replace every one of these in `.env` (all currently `CHANGE_ME*` placeholders in `.env.example`):
 
-- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_LOGIN_CHALLENGE_SECRET`, `VENDOR_ACTION_TOKEN_SECRET`, `REFRESH_TOKEN_HASH_SECRET` — generate each separately: `openssl rand -base64 32`
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_LOGIN_CHALLENGE_SECRET`, `REFRESH_TOKEN_HASH_SECRET` — generate each separately: `openssl rand -base64 32`
 - `DOCKER_DATABASE_URL` (and `DATABASE_URL` if used directly) — replace the `password` placeholder with a real generated password
 - `CORS_ORIGIN` — the real frontend origin(s), not `*`
 - `GRAFANA_ADMIN_PASSWORD` — required before exposing port 3000, even behind the UFW team-IP rule above
 - `SPACES_ENDPOINT`, `SPACES_REGION`, `SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY` — from the DigitalOcean control panel (API → Spaces Keys); required for the app to start at all (admin profile image uploads)
-- `SPACES_ADMIN_BUCKET` — a public-read Spaces bucket for admin profile images (separate from the private backup bucket below)
-- `SPACES_BUCKET` — a private Spaces bucket for `scripts/backup-postgres.sh` database backups
+- `SPACES_ADMIN_BUCKET` — a public-read Spaces bucket for admin profile images
 - `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET` — from the LINE Developers console
 - `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` — from the Firebase service account JSON
 - `SENTRY_DSN` — optional; leave empty to keep Sentry disabled

@@ -1,15 +1,12 @@
 // Import Queues
 import { getWorkerBreakCount, scheduleWorkerShiftEnd } from "../../queues/worker-queue";
-
 // Import Repositories
 import * as assignmentRepository from "../../repositories/shared/vehicle-job-assignment.repository";
 import * as workerShiftAttendanceRepository from "../../repositories/shared/worker-shift-attendance.repository";
-
 // Import Types
 import type { MasterWorkerDto, WorkScheduleDto } from "../../types/admin-workers.type";
 import type { DbConnection } from "../../types/shared/common.type";
 import type { WorkerShiftCloseReason, WorkerStatusResponse } from "../../types/worker.type";
-
 // Import Utils
 import { buildWorkScheduleShiftInstanceKey, getWorkScheduleShiftEndDelayMs } from "../../utils/shift";
 import { buildBangkokDateRange, formatBangkokDate } from "../../utils/time";

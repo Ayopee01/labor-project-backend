@@ -1,31 +1,20 @@
 // Import Library
 import { Queue, Worker } from "bullmq";
-
 // Import Config
-import { REDIS_CONFIG } from "../config/redis.config";
+import { buildBullConnection, REDIS_CONFIG } from "../config/redis.config";
+// Import Service
 import { runSecurityAuditLogRetentionCleanup } from "../services/shared/security-audit-log.service";
+// Import Utils
 import { logger } from "../utils/logger";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config ชื่อ queue มี default เพราะ job นี้เป็น background housekeeping ล้วนๆ ไม่มี route/service ใด
-// เรียกใช้ระหว่าง request ปกติเลย (ต่างจาก BULLMQ_ASSIGNMENT_TIMEOUT_QUEUE ฯลฯ ใน redis.config.ts ที่
-// เป็น required env เพราะ core flow พึ่งพา) จึงไม่ต้องบังคับ env var ใหม่สำหรับทุก deployment
-const QUEUE_NAME =
-  process.env.BULLMQ_SECURITY_AUDIT_LOG_CLEANUP_QUEUE ?? "security-audit-log-cleanup";
-const JOB_NAME = "cleanup";
+const QUEUE_NAME = process.env.BULLMQ_SECURITY_AUDIT_LOG_CLEANUP_QUEUE ?? "security-audit-log-cleanup";
+const JOB_NAME = "cleanup"; 
 const REPEATABLE_JOB_ID = "security-audit-log-cleanup-daily";
 const RUN_EVERY_MS = 24 * 60 * 60 * 1000;
 
-const redisUrl = new URL(REDIS_CONFIG.url);
-
-const bullConnection = {
-  host: redisUrl.hostname,
-  port: Number(redisUrl.port || 6379),
-  password: redisUrl.password || undefined,
-  db: redisUrl.pathname ? Number(redisUrl.pathname.replace("/", "") || 0) : 0,
-  maxRetriesPerRequest: null,
-};
+const bullConnection = buildBullConnection();
 
 const cleanupQueue = new Queue(QUEUE_NAME, { connection: bullConnection });
 
@@ -33,8 +22,7 @@ let cleanupWorker: Worker | null = null;
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ลงทะเบียน repeatable job ของ retention cleanup — เรียกครั้งเดียวตอน startup ปลอดภัยเรียกซ้ำ
-// ได้เพราะ BullMQ ใช้ jobId เดียวกันแทนที่ schedule เดิมแทนที่จะสร้างซ้ำ
+// Function ลงทะเบียน repeatable job ของ retention cleanup เรียกซ้ำได้ปลอดภัยเพราะ BullMQ ใช้ jobId เดิมแทนที่ schedule เก่า
 export async function scheduleSecurityAuditLogCleanup(): Promise<void> {
   await cleanupQueue.add(
     JOB_NAME,

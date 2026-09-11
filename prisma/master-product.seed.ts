@@ -1,21 +1,12 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 
-/**
- * Source:
- * [CargoCheckpoint].[dbo].[dmp_LoadingWorkforceCal]
- *
- * Mapping rules:
- * - PackageWeight: numeric suffix from PackageName, e.g. "ลัง 20" => 20
- * - Range: converted to JSON { workerRanges: { ... } }
- * - Status: source has no status column, so seed uses "ACTIVE"
- * - CreateDate: CreateDate ?? created_at
- * - UpdateDate: UpdateDate ?? CreateDate ?? created_at
- * - Source timestamps are interpreted as Asia/Bangkok (+07:00)
- */
+/* -------------------------------------- Functions -------------------------------------- */
 
 // Function แปลง timestamp จาก master เป็น Date โดยตีความเป็นเวลา Asia/Bangkok
 const asBangkokDate = (value: string): Date =>
   new Date(`${value.replace(" ", "T")}+07:00`);
+
+/* -------------------------------------- Master Data -------------------------------------- */
 
 export const masterProductSeedData: Prisma.MasterProductUncheckedCreateInput[] =
   [

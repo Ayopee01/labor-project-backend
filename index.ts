@@ -3,17 +3,11 @@ import { createServer } from "http";
 
 dotenv.config({ quiet: true });
 
-// ต้อง init ก่อนอย่างอื่นทั้งหมด (แม้แต่ก่อน assertRuntimeEnv) เพื่อให้ Sentry จับ error ได้ตั้งแต่
-// ต้นจริงๆ รวมถึงกรณี env var ที่ required ขาดหายจน assertRuntimeEnv throw เอง
 require("./src/config/sentry");
-
-const { assertRuntimeEnv } = require("./src/config/env.config");
-
-assertRuntimeEnv();
 
 const { default: app } = require("./src/app");
 const { startAssignmentTimeoutProcessing } = require("./src/queues/worker-dispatch");
-const { startNotificationWorkers } = require("./src/queues/notification-queue");
+const { startLineMessageWorker } = require("./src/queues/line-message-queue");
 const { startRuntimeSettingsSync } = require("./src/queues/runtime-settings-sync");
 const { scheduleSecurityAuditLogCleanup, startSecurityAuditLogCleanupWorker } = require("./src/queues/security-audit-log-cleanup");
 const { registerGracefulShutdown } = require("./src/runtime/shutdown");
@@ -26,7 +20,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 const server = createServer(app);
 
 startAssignmentTimeoutProcessing();
-startNotificationWorkers();
+startLineMessageWorker();
 startRuntimeSettingsSync();
 startSecurityAuditLogCleanupWorker();
 void scheduleSecurityAuditLogCleanup().catch((error: unknown) => {

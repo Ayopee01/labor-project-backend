@@ -1,18 +1,15 @@
 // Import Library
 import { Prisma } from "@prisma/client";
 import type { SecurityAuditLog } from "@prisma/client";
-
-// Import Dependencies
+// Import Utils
 import { client } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { SecurityAuditLogDto, SecurityAuditLogWriteInput } from "../../types/shared/security-audit-log.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function map record ดิบจาก DB เป็น DTO — ไม่มี relation ให้ join (actor เป็น snapshot ที่เขียนไว้
-// ตอนสร้างแถวแล้ว) จึง map ตรงๆ ไม่ต้องมี mapper แยกไฟล์เหมือน AdminActionLog
+// Function map record จาก DB เป็น DTO ตรงๆ (ไม่มี relation ให้ join เพราะ actor เป็น snapshot ที่เขียนไว้แล้ว)
 function mapSecurityAuditLog(record: SecurityAuditLog): SecurityAuditLogDto {
   return {
     id: record.id,
@@ -33,10 +30,8 @@ function mapSecurityAuditLog(record: SecurityAuditLog): SecurityAuditLogDto {
   };
 }
 
-// Function บันทึก Security/Auth event ลง DB — ตัว repository นี้ throw ตามปกติเมื่อเขียนไม่สำเร็จ
-// ผู้เรียก (services/shared/security-audit-log.service.ts) เป็นผู้ตัดสินใจว่าจะปล่อยให้ throw
-// (เพื่อ rollback transaction ของ mutation ที่สำเร็จไปด้วย ตามข้อกำหนด 27.12 ข้อ 3) หรือ catch แบบ
-// best-effort (เมื่อไม่มี mutation อื่นให้ผูก atomicity ด้วย เช่น login ที่ถูกปฏิเสธ)
+// Function บันทึก Security/Auth event ลง DB — throw ตามปกติเมื่อเขียนไม่สำเร็จ ผู้เรียกเป็นคนตัดสินใจว่าจะ
+// ปล่อยให้ throw (rollback transaction ที่ผูกด้วย) หรือ catch แบบ best-effort (เช่น login ที่ถูกปฏิเสธ)
 export async function create(
   input: SecurityAuditLogWriteInput,
   connection?: DbConnection
@@ -65,8 +60,7 @@ export async function create(
   return mapSecurityAuditLog(record);
 }
 
-// Function ลบ SecurityAuditLog ที่เก่ากว่า cutoff — ใช้โดย retention cleanup job รายวัน (27.12 ข้อ 5)
-// คืนจำนวนแถวที่ลบเพื่อ log ปริมาณงานแต่ละรอบ
+// Function ลบ SecurityAuditLog ที่เก่ากว่า cutoff (ใช้โดย retention cleanup job รายวัน) คืนจำนวนแถวที่ลบ
 export async function deleteOlderThan(
   cutoff: Date,
   connection?: DbConnection

@@ -1,45 +1,42 @@
 // Import Library
 import { Queue, Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
-
 // Import Config
-import { REDIS_CONFIG } from "../config/redis.config";
+import { buildBullConnection, REDIS_CONFIG } from "../config/redis.config";
+// Import Services
 import { getRuntimeSettings } from "../services/shared/runtime-settings.service";
+// Import Utils
 import { getDelayUntil } from "../utils/time";
 import { logger } from "../utils/logger";
-
 // Import Types
 import type { AssignmentTimeoutJobData, WorkerPresenceDto, WorkerQueueEntryDto, WorkerScheduleJobData } from "../types/worker.type";
 import { WORKER_WORK_STATUS, WORKER_WORK_STATUSES, type WorkerWorkStatus } from "../types/shared/worker-status.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Redis connection สำหรับจัดการ worker queue และ delayed job
 const redis = new IORedis(REDIS_CONFIG.url, {
   maxRetriesPerRequest: null,
 });
 
-const redisUrl = new URL(REDIS_CONFIG.url);
+// BullMQ connection สำหรับจัดการ delayed job ของ assignment timeout, scan, warning, vendor และ mobile app release/force update
+const bullConnection = buildBullConnection();
 
-const bullConnection = {
-  host: redisUrl.hostname,
-  port: Number(redisUrl.port || 6379),
-  password: redisUrl.password || undefined,
-  db: redisUrl.pathname ? Number(redisUrl.pathname.replace("/", "") || 0) : 0,
-  maxRetriesPerRequest: null,
-};
-
+// Queue สำหรับ delayed job ของ assignment timeout, scan, warning, vendor และ mobile app release/force update
 const assignmentTimeoutQueue = new Queue(REDIS_CONFIG.assignmentTimeoutQueueName, {
   connection: bullConnection,
 });
 
+// Queue สำหรับ delayed job ของ worker break return และ shift end
 const workerBreakReturnQueue = new Queue(REDIS_CONFIG.workerBreakReturnQueueName, {
   connection: bullConnection,
 });
 
-let timeoutWorker: Worker | null = null;
-let breakReturnWorker: Worker | null = null;
+let timeoutWorker: Worker | null = null; // Worker สำหรับจัดการ delayed job ของ assignment timeout, scan, warning, vendor และ mobile app release/force update
+let breakReturnWorker: Worker | null = null; // Worker สำหรับจัดการ delayed job ของ worker break return และ shift end
 
-let lastWorkerQueueScore = 0;
+let lastWorkerQueueScore = 0; // ค่าลำดับของ worker queue score ล่าสุด (ใช้สำหรับ enqueueWorker)
+let lastWorkerQueueFrontScore = 0; // ค่าลำดับของ worker queue score ล่าสุดที่ใช้สำหรับ enqueueWorkersAtFront (ค่าติดลบ) เพื่อให้ worker ที่ enqueue ทีหลังอยู่หน้าคิวเสมอ
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -141,7 +138,7 @@ function buildWorkerQueueScore(): number {
 export async function enqueueWorker(accountId: number): Promise<WorkerQueueEntryDto> {
   const readyScore = buildWorkerQueueScore();
   const readyAt = new Date(readyScore);
-  // Function เขียน READY ก่อนเพิ่ม worker เข้า Redis FIFO เสมอ
+  // เขียน status ให้เสร็จก่อน zadd เสมอ เหตุผลเดียวกับ enqueueWorkersAtFront ด้านล่าง
   const queueEntry = await setWorkerStatus(accountId, WORKER_WORK_STATUS.READY, readyAt, null);
 
   await redis.zadd(
@@ -151,6 +148,12 @@ export async function enqueueWorker(accountId: number): Promise<WorkerQueueEntry
   );
 
   return queueEntry;
+}
+
+// Function จอง worker queue front scores สำหรับ enqueueWorkersAtFront
+function reserveWorkerQueueFrontScores(count: number): number {
+  lastWorkerQueueFrontScore -= count;
+  return lastWorkerQueueFrontScore;
 }
 
 // Function เพิ่มงานเข้า queue workers at front ใน Redis/BullMQ queue
@@ -163,25 +166,12 @@ export async function enqueueWorkersAtFront(
     return [];
   }
 
-  const currentHead = await redis.zrange(
-    REDIS_CONFIG.workerQueueKey,
-    0,
-    0,
-    "WITHSCORES"
-  );
-  const currentHeadScore = currentHead.length >= 2 ? Number(currentHead[1]) : null;
-  const firstScore = currentHeadScore === null || Number.isNaN(currentHeadScore)
-    ? buildWorkerQueueScore()
-    : currentHeadScore - uniqueAccountIds.length;
-  lastWorkerQueueScore = Math.max(
-    lastWorkerQueueScore,
-    firstScore + uniqueAccountIds.length - 1
-  );
+  const firstScore = reserveWorkerQueueFrontScores(uniqueAccountIds.length);
   const readyAt = new Date();
   const entries: WorkerQueueEntryDto[] = [];
 
   for (const [index, accountId] of uniqueAccountIds.entries()) {
-    // เขียนสถานะให้เสร็จก่อน zadd เสมอ เหตุผลเดียวกับ enqueueWorker ด้านบน
+    // เขียน status ให้เสร็จก่อน zadd เสมอ เพราะถ้าเกิด concurrent dispatch ดึง worker คนเดียวกันออกจากคิวซ้ำ จะได้ไม่เกิด race condition ที่ worker ถูก pop ออกจากคิวแล้วแต่ status hash ยังไม่อัปเดตเป็น READY ให้สั้นที่สุด
     const queueEntry = await setWorkerStatus(accountId, WORKER_WORK_STATUS.READY, readyAt, null);
 
     await redis.zadd(
@@ -219,14 +209,20 @@ export async function markWorkerBreak(
   return setWorkerStatus(accountId, WORKER_WORK_STATUS.BREAK, null, breakUntil);
 }
 
+// Function อัปเดตสถานะ worker ready ใน Redis/BullMQ queue
+export async function claimWorkerFromReadyQueue(accountId: number): Promise<boolean> {
+  const removed = await redis.zrem(REDIS_CONFIG.workerQueueKey, String(accountId));
+
+  return removed === 1;
+}
+
 // Function จัดการ pop ready workers จาก Redis FIFO แบบ atomic
 export async function popReadyWorkers(limit: number): Promise<WorkerQueueEntryDto[]> {
   if (limit <= 0) {
     return [];
   }
 
-  // ZPOPMIN เป็น atomic command
-  // ป้องกัน concurrent dispatch ดึง Worker คนเดียวกันออกจากคิวซ้ำ
+  // ZPOPMIN เป็น atomic command ป้องกัน concurrent dispatch ดึง worker คนเดียวกันออกจากคิวซ้ำ
   const popped = await redis.zpopmin(
     REDIS_CONFIG.workerQueueKey,
     limit
@@ -236,16 +232,12 @@ export async function popReadyWorkers(limit: number): Promise<WorkerQueueEntryDt
     return [];
   }
 
-  // Redis ZPOPMIN คืนค่า:
-  // [member, score, member, score, ...]
+  // แยก accountIds ออกจาก popped (popped เป็น array ของ [accountId, score] สลับกัน)
   const accountIds = popped.filter(
     (_value, index) => index % 2 === 0
   );
 
-  // เขียนสถานะ ASSIGNED แบบขนานทุกคนที่ pop มาพร้อมกัน (ไม่ await ทีละคน) — ลดช่วงเวลาที่ worker
-  // ถูกดึงออกจากคิวไปแล้ว (ZPOPMIN ทำงานทันที) แต่ status hash ของเขายังไม่ทันอัปเดตเป็น ASSIGNED
-  // (ยังเห็นเป็น READY อยู่ถ้ามีคนอ่านพร้อมกันพอดี) ให้เหลือสั้นที่สุดเท่าที่ทำได้โดยไม่ต้องเปลี่ยนไป
-  // ใช้ Lua script — คนละ Redis key กันคนละ worker จึงรันขนานกันได้ปลอดภัยไม่ชนกันเอง
+  // อัปเดตสถานะ worker เป็น assigned หลังจาก pop ออกจาก ready queue เสร็จแล้ว
   return Promise.all(
     accountIds.map((accountIdValue) =>
       markWorkerAssigned(Number(accountIdValue))
@@ -341,8 +333,7 @@ export async function recordWorkerHeartbeat(
   }, staleAfterSeconds);
 }
 
-// Function ล้าง worker presence ใน Redis/BullMQ queue — ใช้ตอน session ถูก revoke แบบชัดเจน (logout/admin
-// revoke) กันไม่ให้ presence ค้างเป็น online ต่อจนกว่า TTL จะหมดอายุเอง
+// Function ล้าง worker presence ทันทีตอน session ถูก revoke ชัดเจน (logout/admin) กันค้างเป็น online จนกว่า TTL จะหมดอายุเอง
 export async function clearWorkerPresence(accountId: number): Promise<void> {
   await redis.del(buildWorkerPresenceKey(accountId));
 }

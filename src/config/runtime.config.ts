@@ -1,5 +1,13 @@
+/* -------------------------------------- Types -------------------------------------- */
+
+// Type สำหรับ Key ของ Runtime Setting แต่ละรายการ
+export type RuntimeSettingKey = (typeof RUNTIME_SETTING_KEYS)[number];
+// Type สำหรับค่าของ Runtime Setting แต่ละรายการ
+export type RuntimeSettings = Record<RuntimeSettingKey, number>;
+
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config สำหรับ Runtime Setting — อ่านค่าจาก env
 export const RUNTIME_SETTING_KEYS = [
   "driver_session_ttl_hours",
   "worker_accept_deadline_seconds",
@@ -15,6 +23,4 @@ export const RUNTIME_SETTING_KEYS = [
   "vendor_reconfirm_timeout_hours",
 ] as const;
 
-export type RuntimeSettingKey = (typeof RUNTIME_SETTING_KEYS)[number];
 
-export type RuntimeSettings = Record<RuntimeSettingKey, number>;

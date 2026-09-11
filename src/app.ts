@@ -23,16 +23,27 @@ import workerRoutes from "./routes/worker.routes";
 
 const app = express();
 
-// Middleware
-app.use(requestIdMiddleware);
-app.use(requestLoggerMiddleware);
-app.use(securityHeadersMiddleware);
-app.use(rateLimitMiddleware);
+app.set("trust proxy", 1); // trust first proxy
+app.use(requestIdMiddleware); // Add requestId to each request for logging and tracing
+app.use(requestLoggerMiddleware); // Log each request
+app.use(securityHeadersMiddleware); // Set security headers
+app.use(rateLimitMiddleware); // Apply rate limiting
+
+// ใช้ CORS_ORIGIN จาก env
+const corsOrigin = process.env.CORS_ORIGIN;
+
+// Throw error ถ้าไม่มี CORS_ORIGIN ใน env
+if (!corsOrigin) {
+  throw new Error("CORS_ORIGIN is required.");
+}
+
+// CORS Configuration
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN,
+    origin: corsOrigin,
   })
 );
+// Body Parser Configuration
 app.use(
   express.json({
     verify: (req, _res, buffer) => {
@@ -40,22 +51,8 @@ app.use(
     },
   })
 );
-app.use(normalizeApiRequestBody);
+app.use(normalizeApiRequestBody); 
 app.use(pascalCaseApiResponse);
-
-// Serve รูปโปรไฟล์ Admin ที่ POST /api/auth/me/upload-image เขียนลง local disk ไว้ (ADMIN_IMAGE_STORAGE_DIR
-// ใน .env) — ใช้ชั่วคราวก่อน deploy จริงแทน DigitalOcean Spaces (src/config/spaces.ts)
-app.use(
-  "/storage/admin-images",
-  express.static(process.env.ADMIN_IMAGE_STORAGE_DIR ?? "./storage/admin-images")
-);
-
-// Serve รูป Worker ที่ decode ไว้ตอน sync จาก Master (MasterWorker.imageUrl, WORKER_IMAGE_STORAGE_DIR
-// ใน .env) — คู่ขนานกับ admin-images ด้านบน
-app.use(
-  "/storage/worker-images",
-  express.static(process.env.WORKER_IMAGE_STORAGE_DIR ?? "./storage/worker-images")
-);
 
 // Routes
 app.use("/", systemRoutes);

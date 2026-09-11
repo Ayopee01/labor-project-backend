@@ -1,21 +1,24 @@
 // Import Library
 import express from "express";
-// Import Dependencies
+// Import Middleware
 import authMiddleware from "../middlewares/auth.middleware";
 import roleMiddleware from "../middlewares/role.middleware";
 import sessionMiddleware from "../middlewares/session.middleware";
-import { loginRateLimitMiddleware } from "../middlewares/security.middleware";
-import { uploadAdminImageLocal } from "../middlewares/upload.middleware";
+import { matchesImageSignature, uploadAdminImage } from "../middlewares/upload.middleware";
+// Import Services
 import * as authService from "../services/auth.service";
+// Import Config
+import { uploadAdminProfileImage } from "../config/spaces";
+// Import Utils
 import ApiError from "../utils/api-error";
-
+// Import Types
 import type { Request } from "express";
 import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
 
 const router = express.Router();
 
-// Function ดึง IP/User-Agent/RequestId จาก request ปัจจุบันสำหรับ Security Audit Log (27.12) — ไม่มี
-// middleware ใดแนบค่านี้ลง req.auth ให้อัตโนมัติ จึงต้อง extract ตรงนี้แล้วส่งต่อเข้า service เอง
+/* -------------------------------------- Functions -------------------------------------- */
+
 function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
   return {
     ip_address: req.ip ?? null,
@@ -24,9 +27,10 @@ function buildSecurityAuditContext(req: Request): SecurityAuditRequestContext {
   };
 }
 
+/* -------------------------------------- Authentication Routes -------------------------------------- */
+
 router.post(
   "/login",
-  loginRateLimitMiddleware,
   async (req, res, next) => {
     try {
       const result = await authService.login(req.body, buildSecurityAuditContext(req));
@@ -39,7 +43,6 @@ router.post(
 
 router.post(
   "/login/confirm-force",
-  loginRateLimitMiddleware,
   async (req, res, next) => {
     try {
       const result = await authService.confirmForceLogin(
@@ -79,7 +82,6 @@ router.post(
   }
 );
 
-// Route ลงทะเบียนหรือ refresh FCM token ให้ Worker Mobile เมื่อ login ไม่ได้ส่ง token มา
 router.post(
   "/push-token",
   authMiddleware,
@@ -99,7 +101,6 @@ router.post(
   }
 );
 
-// Route ดึง profile ของ account ปัจจุบันจาก access token ที่ใช้งานอยู่
 router.get(
   "/me",
   authMiddleware,
@@ -114,8 +115,6 @@ router.get(
   }
 );
 
-// Route เปลี่ยน password ของ Admin ที่ login อยู่เอง — Worker ไม่มี password อิสระให้เปลี่ยน (password
-// มาจาก telephone เสมอ) จึงจำกัดเฉพาะ Admin
 router.patch(
   "/me/password",
   authMiddleware,
@@ -149,7 +148,6 @@ router.patch(
   }
 );
 
-// Route แก้ไขข้อมูลส่วนตัว (full_name/email/phone) ของ Admin ที่ login อยู่เอง
 router.patch(
   "/me",
   authMiddleware,
@@ -170,20 +168,28 @@ router.patch(
   }
 );
 
-// Route อัปโหลดรูปโปรไฟล์ของ Admin ที่ login อยู่เอง
 router.post(
   "/me/upload-image",
   authMiddleware,
   sessionMiddleware,
   roleMiddleware(["admin"]),
-  uploadAdminImageLocal.single("file"),
+  uploadAdminImage.single("file"),
   async (req, res, next) => {
     try {
       if (!req.file) {
         throw new ApiError(400, "IMAGE_FILE_REQUIRED", "Image file is required.");
       }
 
-      const imageUrl = `/storage/admin-images/${req.file.filename}`;
+      // ตรวจสอบว่า file ที่ upload ตรงกับ signature ของ image type ที่อนุญาตหรือไม่
+      if (!matchesImageSignature(req.file.buffer, req.file.mimetype)) {
+        throw new ApiError(
+          400,
+          "INVALID_IMAGE_TYPE",
+          "Uploaded file content does not match an allowed image type."
+        );
+      }
+
+      const imageUrl = await uploadAdminProfileImage(req.file.buffer, req.file.mimetype);
       const result = await authService.uploadOwnProfileImage(
         req.auth,
         imageUrl,

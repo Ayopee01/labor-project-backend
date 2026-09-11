@@ -1,20 +1,21 @@
 // Import Library
 import { Prisma } from "@prisma/client";
 
-// Import Dependencies
-import { TERMINAL_TICKET_STATUSES, VEHICLE_JOB_STATUS } from "../../constants/job-status";
+// Import Config
+import { TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS } from "../../constants/status";
+// Import Repositories
 import { countScannedAssignments } from "./vehicle-job-assignment.repository";
+// Import Mappers
 import { mapGateTicket, mapMarketJob, mapTicketProduct, mapVehicleJob } from "./mappers";
 import { client, requireDto } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { CurrentTicketProgressDto, VehicleJobDetailResponse, VehicleJobDto, VehicleWorkReadinessDto } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function แปลง vehicle job detail จาก DB
-export function mapVehicleJobDetail(
+// Function แปลง vehicle job detail จาก DB — ใช้เฉพาะภายในไฟล์นี้ (helper ของ getVehicleJobDetail) จึงไม่ export
+function mapVehicleJobDetail(
   record: Prisma.VehicleJobGetPayload<{
     include: {
       marketJobs: {
@@ -109,13 +110,14 @@ export async function getVehicleJobDetail(
   return vehicleJob ? mapVehicleJobDetail(vehicleJob) : null;
 }
 
+// Function เริ่มงาน VehicleJob: ตั้ง workStartedAt ครั้งแรก (ถ้ายังไม่เคยตั้ง) และเปลี่ยน status เป็น WORKING
 export async function markVehicleJobInProgress(
   vehicleJobId: number,
   connection?: DbConnection,
 ): Promise<VehicleJobDto> {
   const db = client(connection);
 
-  // Function ตั้ง workStartedAt ครั้งแรกที่รถเริ่มทำงานจริง
+  // ตั้ง workStartedAt เฉพาะครั้งแรกที่รถเริ่มทำงานจริง (ไม่ทับถ้าเคยตั้งแล้ว)
   await db.vehicleJob.updateMany({
     where: {
       id: vehicleJobId,
@@ -138,6 +140,7 @@ export async function markVehicleJobInProgress(
   return requireDto(mapVehicleJob(vehicleJob), "vehicle job progress");
 }
 
+// Function อัปเดตสถานะของ market job จาก DB
 export async function updateMarketJobStatus(
   marketJobId: number,
   status: string,
@@ -155,6 +158,7 @@ export async function updateMarketJobStatus(
   });
 }
 
+// Function อัปเดตสถานะของ gate ticket จาก DB
 export async function updateGateTicketStatus(
   ticketId: number,
   status: string,
@@ -173,6 +177,7 @@ export async function updateGateTicketStatus(
   return requireDto(mapGateTicket(ticket), "gate ticket status update");
 }
 
+// Function หาตั๋วที่ยังไม่ปิด (non-terminal) ใบแรกของ VehicleJob พร้อมข้อมูลตลาด
 export async function findCurrentOpenTicketByVehicleJob(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -221,6 +226,7 @@ export async function findCurrentOpenTicketByVehicleJob(
   return null;
 }
 
+// Function คำนวณความพร้อมของทีมงาน (จำนวนที่ scan เข้างานแล้วเทียบกับจำนวนที่ต้องการ)
 export async function getVehicleWorkReadiness(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -249,15 +255,15 @@ export async function getVehicleWorkReadiness(
   };
 }
 
+// Function ดึงรายการ vehicle job ที่สถานะ WORKING สำหรับ dispatch worker เพิ่ม
 export async function listDispatchableVehicleJobs(
   connection?: DbConnection,
 ): Promise<VehicleJobDto[]> {
   const db = client(connection);
   const vehicleJobs = await db.vehicleJob.findMany({
     where: {
-      // status: WORKING เท่านั้น (ไม่รวม RELEASED) — งานที่ release-workers ปล่อยทีมกลับคิวไปแล้ว
-      // จะไม่ถูกดึง worker ใหม่กลับเข้ามาซ้ำ จนกว่า Gate จะเพิ่ม booth ใหม่ (เปิด dispatch คืนให้เอง)
-      // หรือ Admin เปิด Dispatch กลับเองผ่าน /wait
+      // status: WORKING เท่านั้น (ไม่รวม RELEASED) — งานที่ release-workers ปล่อยทีมกลับคิวแล้ว
+      // จะไม่ถูกดึง worker ใหม่จนกว่า Gate จะเปิด booth ใหม่ หรือ Admin เปิด dispatch คืนเองผ่าน /wait
       status: VEHICLE_JOB_STATUS.WORKING,
     },
     orderBy: {
@@ -270,6 +276,7 @@ export async function listDispatchableVehicleJobs(
     .filter((vehicleJob): vehicleJob is VehicleJobDto => vehicleJob !== null);
 }
 
+// Function ดึง vehicle job พร้อม market job, ticket และ assignment ทั้งหมด สำหรับใช้ตัดสินใจ lifecycle
 export async function findVehicleJobLifecycleState(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -300,6 +307,7 @@ export async function findVehicleJobLifecycleState(
   });
 }
 
+// Function อัปเดตสถานะของ vehicle job จาก DB (ตั้ง completedAt เฉพาะตอนเปลี่ยนเป็น COMPLETED)
 export async function updateVehicleJobStatus(
   vehicleJobId: number,
   status: string,
@@ -312,7 +320,7 @@ export async function updateVehicleJobStatus(
     },
     data: {
       status,
-      // Function ตั้ง completedAt จากจุด lifecycle กลางเท่านั้น
+      // ตั้ง completedAt เฉพาะตอนเปลี่ยนเป็น COMPLETED เท่านั้น
       ...(status === VEHICLE_JOB_STATUS.COMPLETED && {
         completedAt: new Date(),
       }),
@@ -320,6 +328,49 @@ export async function updateVehicleJobStatus(
   });
 
   return requireDto(mapVehicleJob(vehicleJob), "vehicle job status update");
+}
+
+// Function ยกเลิก VehicleJob พร้อม cascade MarketJob/GateTicket ที่ยังไม่ terminal ให้เป็น CANCELLED จาก DB
+// ยกเว้น MarketJob/GateTicket ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับ — ยกเลิกทั้งรถต้องไม่เปลี่ยนประวัติที่จบไปแล้ว
+export async function cancelVehicleJobWithCascade(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<VehicleJobDto> {
+  const db = client(connection);
+  const vehicleJob = await db.vehicleJob.update({
+    where: {
+      id: vehicleJobId,
+    },
+    data: {
+      status: VEHICLE_JOB_STATUS.CANCELLED,
+      marketJobs: {
+        updateMany: {
+          where: {
+            status: {
+              notIn: TERMINAL_JOB_STATUSES,
+            },
+          },
+          data: {
+            status: VEHICLE_JOB_STATUS.CANCELLED,
+          },
+        },
+      },
+      tickets: {
+        updateMany: {
+          where: {
+            status: {
+              notIn: TERMINAL_TICKET_STATUSES,
+            },
+          },
+          data: {
+            status: TICKET_STATUS.CANCELLED,
+          },
+        },
+      },
+    },
+  });
+
+  return requireDto(mapVehicleJob(vehicleJob), "vehicle job cancel");
 }
 
 // Function สลับ dispatchNow และ status ของ VehicleJob จากฝั่ง Admin

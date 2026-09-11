@@ -29,10 +29,13 @@ function sanitizeString(value: string): string {
 
 function redact(value: unknown): unknown {
   if (value instanceof Error) {
+    // Stack Trace เก็บไว้เสมอ (Sanitize ผ่าน sanitizeString เหมือน message) — เดิมตัดทิ้งทุกครั้งทำให้
+    // ไม่มี Stack Trace เหลืออยู่ที่ไหนเลยใน Log ปกติ (Sentry เก็บแยกจาก Error ดิบต่างหาก) ถ้ายังไม่ได้
+    // ตั้ง SENTRY_DSN การ Debug 500 ใน Production จะเหลือแค่ชื่อ+ข้อความ Error ไม่พอสืบสาเหตุ (ดู BUG-013)
     return {
       name: value.name,
       message: sanitizeString(value.message),
-      stack: undefined,
+      stack: value.stack ? sanitizeString(value.stack) : undefined,
     };
   }
 

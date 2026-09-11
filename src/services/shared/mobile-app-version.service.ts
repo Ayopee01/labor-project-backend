@@ -1,23 +1,22 @@
-// Import Dependencies
+// Import Repositories
 import * as mobileAppVersionRepository from "../../repositories/shared/mobile-app-version.repository";
+// Import Config
+import { EMPTY_SECURITY_AUDIT_CONTEXT } from "../../config/security-audit.config";
+// Import Services
 import { sendWorkerPushNotificationToAllActive } from "./worker-push.service";
+// Import Queues
 import { removeMobileAppForceUpdateNotification, removeMobileAppReleaseNotification, scheduleMobileAppForceUpdateNotification, scheduleMobileAppReleaseNotification } from "../../queues/worker-queue";
+// Import Services
 import { diffChangedFields, writeSecurityAuditLog } from "./security-audit-log.service";
+// Import Config
 import { withTransaction } from "../../db/prisma";
-import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../../types/shared/security-audit-log.type";
-
 // Import Types
+import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../../types/shared/security-audit-log.type";
 import type { MobileAppVersionCreateInput, MobileAppVersionDto, MobileAppVersionStatus, MobileAppVersionUpdateInput } from "../../types/shared/mobile-app-version.type";
 import type { SecurityAuditRequestContext } from "../../types/shared/security-audit-log.type";
 
-const EMPTY_SECURITY_AUDIT_CONTEXT: SecurityAuditRequestContext = {
-  ip_address: null,
-  user_agent: null,
-  request_id: null,
-};
-
-// Type actor snapshot ที่ caller (admin-settings.service.ts) resolve มาให้แล้ว — ไฟล์นี้ไม่มี
-// accountRepository ของตัวเองและตั้งใจไม่เพิ่ม เพื่อไม่ให้ shared service ผูกกับ Account model โดยตรง
+// Actor snapshot ที่ caller resolve มาให้แล้ว — ไฟล์นี้ตั้งใจไม่มี accountRepository เอง
+// เพื่อไม่ให้ shared service ผูกกับ Account model โดยตรง
 export interface SecurityAuditActorSnapshot {
   actor_account_id: number | null;
   username: string | null;
@@ -78,21 +77,16 @@ export interface MobileAppVersionCheckResponse {
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function หาเวลาที่ Version หนึ่งเริ่มมีผลใช้งานจริง — ถ้ามี ForceUpdateAt ใช้ค่านั้น, ถ้าไม่มี
-// (ไม่บังคับ) ถือว่ามีผลทันทีตั้งแต่ตอนสร้าง (CreatedAt) — ไม่เกี่ยวกับ Release/Force-Update
-// Notification เลย (ดูหัวข้อ Notification ด้านล่างสำหรับเรื่องแจ้งเตือนแยกต่างหาก)
+// Function หาเวลาที่ Version เริ่มมีผลใช้งานจริง — ใช้ ForceUpdateAt ถ้ามี ไม่งั้นใช้ CreatedAt
 function resolveActivationTime(version: MobileAppVersionDto): number {
   const base = version.force_update_at ?? version.created_at;
 
   return new Date(base).getTime();
 }
 
-// Function กลาง หา Effective Version ณ เวลาหนึ่ง (Single Source of Truth ของ Admin GET, Mobile
-// Version Check, และ FCM Worker — ห้าม duplicate logic นี้ที่จุดอื่น)
-//
-// Concept: หา Version ที่ถึงเวลาใช้งานแล้ว (ActivationTime <= now) แล้วเลือกตัวที่ BuildNumber
-// สูงสุดในกลุ่มนั้น — Version ที่ ActivationTime ยังไม่ถึง (Scheduled) ต้องไม่ถูกเลือกเด็ดขาด
-// Activation ไม่พึ่ง BullMQ เลย เป็นการเทียบเวลา server สดๆ ทุกครั้งที่เรียกฟังก์ชันนี้
+// Function กลาง หา Effective Version ณ เวลาปัจจุบัน (Single Source of Truth ของ Admin GET, Mobile
+// Version Check, และ FCM Worker — ห้าม duplicate logic นี้ที่อื่น)
+// เลือก Version ที่ ActivationTime <= now แล้วเอา BuildNumber สูงสุด โดยเทียบเวลาสดทุกครั้ง ไม่พึ่ง BullMQ
 function resolveEffectiveMobileAppVersion(
   versions: MobileAppVersionDto[],
   now: Date,
@@ -109,8 +103,8 @@ function resolveEffectiveMobileAppVersion(
   );
 }
 
-// Function จัดกลุ่ม Version ทั้งหมดเป็น current/scheduled/history ตามเวลาปัจจุบัน — derive ล้วนๆ
-// ไม่มี status column เพราะเวลาผ่านไปแล้วไม่มีใครมา sync จะทำให้ status ค้างผิดได้
+// Function จัดกลุ่ม Version เป็น current/scheduled/history ตามเวลาปัจจุบัน — derive สดทุกครั้ง
+// ไม่เก็บเป็น status column เพราะเวลาผ่านไปแล้วไม่มีใครมา sync จะทำให้ค้างผิดได้
 function classifyMobileAppVersions(
   versions: MobileAppVersionDto[],
   now: Date,
@@ -163,8 +157,8 @@ function toAdminSummary(
 
 /* -------------------------------------- Notification Shared Helpers -------------------------------------- */
 
-// Function สร้าง params วันที่/เวลาแบบไทย (Asia/Bangkok) ของ ForceUpdateAt ไว้ใส่ใน Release
-// Notification (แจ้งล่วงหน้าว่าจะเริ่มบังคับเมื่อไหร่) — ถ้าไม่มี ForceUpdateAt คืน object ว่าง
+// Function แปลง ForceUpdateAt เป็นวันที่/เวลาไทย (Asia/Bangkok) สำหรับใส่ใน Release Notification
+// ถ้าไม่มี ForceUpdateAt คืน object ว่าง
 function buildForceUpdateDisplayParams(
   forceUpdateAt: string | null,
 ): { force_update_date?: string; force_update_time?: string } {
@@ -183,10 +177,9 @@ function buildForceUpdateDisplayParams(
 
 /* -------------------------------------- Release Notification (แจ้งเตือนล่วงหน้า) -------------------------------------- */
 
-// Function ประกอบและส่ง FCM Release Notification (แจ้งล่วงหน้าว่ามี Version ใหม่) — Title/Message
-// หลักมาจาก Pattern มาตรฐานของระบบผ่าน notification-localization (แปลตามภาษาของแต่ละ Worker) แล้ว
-// ต่อท้ายด้วย ReleaseMessage ที่ Admin พิมพ์เอง (free text ไม่ผ่าน localization)
-async function sendReleaseNotificationFcm(version: MobileAppVersionDto): Promise<void> {
+// Function ประกอบและส่ง FCM Release Notification — Title/Message มาตรฐานจาก notification-localization
+// (แปลตามภาษาของแต่ละ Worker) ต่อท้ายด้วย ReleaseMessage ที่ Admin พิมพ์เอง (free text)
+async function sendReleaseNotificationFcm(version: MobileAppVersionDto): Promise<boolean> {
   const timingParams = buildForceUpdateDisplayParams(version.force_update_at);
 
   try {
@@ -207,21 +200,29 @@ async function sendReleaseNotificationFcm(version: MobileAppVersionDto): Promise
         action: "CHECK_APP_VERSION",
       },
     });
+
+    return true;
   } catch (error) {
     logger.error("Failed to send mobile app version release FCM notification.", { error });
+
+    return false;
   }
 }
 
-// Function ส่ง Release Notification "ทันที" — claim ReleaseNotificationSentAt แบบ atomic ก่อนส่ง
-// จริงเสมอ กัน race ที่มีมากกว่าหนึ่งจุดพยายามส่งพร้อมกัน ถ้า claim ไม่สำเร็จ (คนอื่นส่งไปแล้ว) จะ
-// ไม่ส่งซ้ำ
+// Function ส่ง Release Notification ทันที — claim ReleaseNotificationSentAt แบบ atomic ก่อนส่งจริง
+// เพื่อกัน race ที่หลายจุดพยายามส่งพร้อมกัน ถ้า claim สำเร็จแต่ส่ง FCM ไม่สำเร็จ ต้อง clear กลับเป็น
+// null เสมอ ไม่งั้นจะค้างว่า "ส่งแล้ว" ทั้งที่ไม่มีใครได้รับจริง และจะไม่มีทาง resend ได้อีก
 async function sendReleaseNotificationNow(
   version: MobileAppVersionDto,
 ): Promise<MobileAppVersionDto> {
-  const claimed = await mobileAppVersionRepository.claimReleaseNotificationSent(version.id);
+  const claimedAt = await mobileAppVersionRepository.claimReleaseNotificationSent(version.id);
 
-  if (claimed) {
-    await sendReleaseNotificationFcm(version);
+  if (claimedAt) {
+    const sent = await sendReleaseNotificationFcm(version);
+
+    if (!sent) {
+      await mobileAppVersionRepository.clearReleaseNotificationSent(version.id, claimedAt);
+    }
   }
 
   return (
@@ -229,9 +230,8 @@ async function sendReleaseNotificationNow(
   );
 }
 
-// Function sync สถานะ Release Notification ให้ตรงกับ ReleaseNotificationAt ปัจจุบันของ Version —
-// ลบ delayed job เดิมเสมอก่อน แล้วค่อยตัดสินใหม่: ReleaseNotificationAt เป็น null ให้ส่งทันที,
-// มีค่าให้ schedule ใหม่ตามเวลานั้น ไม่ทำอะไรเลยถ้าส่งไปแล้ว (ReleaseNotificationSentAt ไม่ null)
+// Function sync สถานะ Release Notification ให้ตรงกับ ReleaseNotificationAt ปัจจุบัน — ลบ delayed
+// job เดิมก่อนเสมอ แล้วส่งทันทีถ้าไม่มีเวลาตั้งไว้ หรือ schedule ใหม่ถ้ามี ไม่ทำอะไรถ้าส่งไปแล้ว
 async function syncReleaseNotification(
   version: MobileAppVersionDto,
 ): Promise<MobileAppVersionDto> {
@@ -255,9 +255,8 @@ async function syncReleaseNotification(
   return version;
 }
 
-// Function ที่ BullMQ delayed job เรียกตอนถึง ReleaseNotificationAt — ห้ามเชื่อ payload ของ job
-// เกินกว่า id เพราะ Admin อาจ PATCH เปลี่ยน/ยกเลิกไปแล้วก่อนถึงเวลาจริง จึงต้องโหลด record ล่าสุด
-// จาก DB มาตรวจซ้ำทุกครั้งก่อนส่งจริง
+// Function ที่ BullMQ delayed job เรียกตอนถึง ReleaseNotificationAt — โหลด record ล่าสุดจาก DB
+// เสมอ เพราะ Admin อาจ PATCH เปลี่ยน/ยกเลิกไปแล้วก่อนถึงเวลาจริง
 export async function sendMobileAppReleaseNotification(
   mobileAppVersionId: number,
 ): Promise<void> {
@@ -269,10 +268,8 @@ export async function sendMobileAppReleaseNotification(
     return;
   }
 
-  // ป้องกัน race ที่ 2 PATCH พร้อมกันแย่งกัน schedule ด้วย jobId เดียวกัน (deterministic ต่อ id)
-  // จนอีก PATCH ที่ตั้งใจเลื่อนเวลาออกไปหลุดไป (BullMQ เพิกเฉย job ที่ jobId ซ้ำ) — เช็คเวลาจริงซ้ำ
-  // จาก DB ก่อนส่งเสมอ ถ้า release_notification_at ล่าสุดยังไม่ถึง (ถูกเลื่อนออกไปทีหลัง) ให้
-  // reschedule ใหม่ตามเวลาล่าสุดแทนที่จะส่งเร็วไปตามเวลาเก่าที่ job รอบนี้ถืออยู่
+  // ป้องกัน race จาก 2 PATCH ที่แย่งกัน schedule ด้วย jobId เดียวกัน — เช็คเวลาล่าสุดจาก DB ซ้ำ
+  // ก่อนส่งเสมอ ถ้ายังไม่ถึงเวลา (ถูกเลื่อนออกไป) ให้ reschedule ใหม่แทนที่จะส่งตามเวลาเก่า
   if (
     version.release_notification_at &&
     new Date(version.release_notification_at).getTime() > Date.now()
@@ -286,9 +283,8 @@ export async function sendMobileAppReleaseNotification(
 
 /* -------------------------------------- Force-Update Notification (บังคับอัปเดตแล้ว) -------------------------------------- */
 
-// Function ประกอบและส่ง FCM บังคับอัปเดต — ข้อความมาตรฐานของระบบล้วนๆ ("ถึงเวลาบังคับอัปเดตแล้ว")
-// ไม่ต่อท้ายด้วย ReleaseMessage เพราะไม่ต้องให้ Admin ตั้งค่าอะไรสำหรับแจ้งเตือนนี้
-async function sendForceUpdateNotificationFcm(version: MobileAppVersionDto): Promise<void> {
+// Function ประกอบและส่ง FCM บังคับอัปเดต — ข้อความมาตรฐานของระบบ ไม่ต่อท้ายด้วย ReleaseMessage
+async function sendForceUpdateNotificationFcm(version: MobileAppVersionDto): Promise<boolean> {
   try {
     await sendWorkerPushNotificationToAllActive({
       type: "APP_VERSION_FORCE_UPDATE",
@@ -303,22 +299,30 @@ async function sendForceUpdateNotificationFcm(version: MobileAppVersionDto): Pro
         action: "CHECK_APP_VERSION",
       },
     });
+
+    return true;
   } catch (error) {
     logger.error("Failed to send mobile app version force-update FCM notification.", { error });
+
+    return false;
   }
 }
 
 // Function ส่ง Force-Update Notification จริง — claim ForceUpdateNotificationSentAt แบบ atomic
-// ก่อนส่งเสมอ (คนละ tracker กับ Release Notification เพราะเป็นคนละข้อความคนละเวลากัน)
+// ก่อนส่งเสมอ (คนละ tracker กับ Release Notification) ถ้าส่ง FCM ไม่สำเร็จต้อง clear กลับเป็น null เสมอ
 async function sendForceUpdateNotificationNow(
   version: MobileAppVersionDto,
 ): Promise<MobileAppVersionDto> {
-  const claimed = await mobileAppVersionRepository.claimForceUpdateNotificationSent(
+  const claimedAt = await mobileAppVersionRepository.claimForceUpdateNotificationSent(
     version.id,
   );
 
-  if (claimed) {
-    await sendForceUpdateNotificationFcm(version);
+  if (claimedAt) {
+    const sent = await sendForceUpdateNotificationFcm(version);
+
+    if (!sent) {
+      await mobileAppVersionRepository.clearForceUpdateNotificationSent(version.id, claimedAt);
+    }
   }
 
   return (
@@ -326,9 +330,8 @@ async function sendForceUpdateNotificationNow(
   );
 }
 
-// Function sync สถานะ Force-Update Notification ให้ตรงกับ ForceUpdateAt ปัจจุบัน — ลบ delayed job
-// เดิมเสมอก่อน แล้ว schedule ใหม่ตาม ForceUpdateAt ถ้ายังตั้งไว้ (ไม่มี ForceUpdateAt = ไม่บังคับ =
-// ไม่ต้องมีแจ้งเตือนนี้เลย) ไม่ทำอะไรถ้าส่งไปแล้ว
+// Function sync สถานะ Force-Update Notification ให้ตรงกับ ForceUpdateAt ปัจจุบัน — ลบ job เดิม
+// ก่อนเสมอ แล้ว schedule ใหม่ถ้ายังตั้งไว้ ไม่ทำอะไรถ้าส่งไปแล้วหรือไม่มี ForceUpdateAt
 async function syncForceUpdateNotification(
   version: MobileAppVersionDto,
 ): Promise<MobileAppVersionDto> {
@@ -349,9 +352,8 @@ async function syncForceUpdateNotification(
   return version;
 }
 
-// Function ที่ BullMQ delayed job เรียกตอนถึง ForceUpdateAt — โหลด record ล่าสุดเสมอ (เหตุผล
-// เดียวกับ Release Notification: Admin อาจ PATCH เปลี่ยน/ถอด ForceUpdateAt ไปแล้วก่อนถึงเวลาจริง)
-// ยิงคู่ขนานกับ Version Activation ซึ่งเกิดจากการเทียบเวลาเองอยู่แล้ว ไม่ได้พึ่ง job นี้
+// Function ที่ BullMQ delayed job เรียกตอนถึง ForceUpdateAt — โหลด record ล่าสุดเสมอ
+// เหตุผลเดียวกับ Release Notification (Admin อาจ PATCH เปลี่ยน/ถอดไปแล้วก่อนถึงเวลาจริง)
 export async function sendMobileAppForceUpdateNotification(
   mobileAppVersionId: number,
 ): Promise<void> {
@@ -386,9 +388,8 @@ export async function getAdminMobileAppVersionOverview(): Promise<AdminMobileApp
   };
 }
 
-// Function สร้าง Mobile App Version ใหม่ — ถ้ามี ForceUpdateAt ในอนาคต จะเป็น Scheduled ทันที ไม่
-// กระทบ Worker จนกว่าจะถึงเวลา (ไม่มี Publish endpoint แยก) Release/Force-Update Notification เป็น
-// คนละเรื่องกับการ Activate Version โดยสิ้นเชิง ไม่ทำให้ Version Active เร็วขึ้นเลย
+// Function สร้าง Mobile App Version ใหม่ — ถ้ามี ForceUpdateAt ในอนาคตจะเป็น Scheduled ทันที
+// ไม่กระทบ Worker จนกว่าจะถึงเวลา (ไม่มี Publish endpoint แยก)
 export async function createMobileAppVersion(
   body: unknown,
   actorId: number | null,
@@ -421,10 +422,9 @@ export async function createMobileAppVersion(
     created_by: actorId,
     updated_by: actorId,
   };
-  // 27.14.2 — create + audit write ต้องอยู่ใน transaction เดียวกัน ถ้า audit write ล้มเหลว
-  // (writeSecurityAuditLog ไม่ catch error เอง) ทั้ง transaction ต้อง rollback ไปด้วย ไม่ให้เกิด
-  // version ที่ถูกสร้างจริงแต่ไม่มีหลักฐานใน audit log — sync notification ด้านล่างยังคงอยู่นอก
-  // transaction ตามเดิม เพราะเป็น I/O ภายนอก (BullMQ/FCM) ไม่ใช่ DB write ที่ต้อง atomic ร่วมด้วย
+  // create + audit write ต้องอยู่ transaction เดียวกัน เพื่อ rollback พร้อมกันถ้า audit เขียนไม่สำเร็จ
+  // (ไม่ให้เกิด version ที่สร้างจริงแต่ไม่มีหลักฐานใน audit log) — sync notification อยู่นอก
+  // transaction เพราะเป็น I/O ภายนอก (BullMQ/FCM) ไม่ใช่ DB write ที่ต้อง atomic ร่วมด้วย
   const created = await withTransaction(async (transaction) => {
     const record = await mobileAppVersionRepository.createMobileAppVersion(
       createInput,
@@ -470,7 +470,7 @@ export async function createMobileAppVersion(
 }
 
 // Function แก้ไข Mobile App Version — Version/BuildNumber แก้ได้เฉพาะตอนยัง Scheduled เท่านั้น
-// (ยังไม่กลายเป็น Current/History) กันไม่ให้ History ผิดเพี้ยนย้อนหลัง
+// กันไม่ให้ History ผิดเพี้ยนย้อนหลัง
 export async function updateMobileAppVersion(
   idParam: unknown,
   body: unknown,
@@ -504,8 +504,7 @@ export async function updateMobileAppVersion(
     );
   }
 
-  // เช็คบน merged state (ของเดิม + ค่าที่ patch มา) เพราะ PATCH อาจแก้แค่ฝั่งใดฝั่งหนึ่งของคู่นี้
-  // โดยพึ่งค่าที่ตั้งไว้แล้วจาก request ก่อนหน้า
+  // เช็คบน merged state (ค่าเดิม + ค่าที่ patch มา) เพราะ PATCH อาจแก้แค่ฝั่งเดียวของคู่นี้
   const mergedForceUpdateAt =
     input.force_update_at !== undefined ? input.force_update_at : existing.force_update_at;
   const mergedNotificationAt =
@@ -552,10 +551,8 @@ export async function updateMobileAppVersion(
     updated_by: actorId,
   };
 
-  // 27.14.2 — update + diff + audit write ต้องอยู่ใน transaction เดียวกัน (เหตุผลเดียวกับ
-  // createMobileAppVersion ด้านบน) diff คำนวณจาก `updated` ตรงๆ ได้เลยไม่ต้องรอ notification sync
-  // ก่อน เพราะ field ที่ diff ตรวจ (version/build_number/../release_notes) ไม่มีตัวไหนถูก
-  // notification sync แตะเลย (sync แก้แค่ releaseNotificationSentAt/forceUpdateNotificationSentAt)
+  // update + diff + audit write ต้องอยู่ transaction เดียวกัน (เหตุผลเดียวกับ createMobileAppVersion)
+  // diff คำนวณจาก updatedRecord ได้เลย เพราะ notification sync ไม่แตะ field ที่ diff ตรวจ
   const updated = await withTransaction(async (transaction) => {
     const updatedRecord = await mobileAppVersionRepository.updateMobileAppVersion(
       id,
@@ -632,9 +629,8 @@ export async function updateMobileAppVersion(
 
 /* -------------------------------------- Mobile Functions -------------------------------------- */
 
-// Function ตรวจ Version สำหรับ Worker Mobile Application ตอนเปิด App — Public, ไม่ต้อง Login
-// Backend เป็น Source of Truth ของเวลาเสมอ (new Date()) ห้าม Mobile ใช้เวลาเครื่องตัดสิน — resolve
-// จาก ForceUpdateAt เท่านั้น ไม่เกี่ยวกับ Notification ถูกส่งไปแล้วหรือยัง
+// Function ตรวจ Version สำหรับ Mobile App ตอนเปิดแอป — Public ไม่ต้อง Login
+// ใช้เวลา server (new Date()) เป็น Source of Truth เสมอ ห้าม Mobile ใช้เวลาเครื่องตัดสิน
 export async function checkMobileAppVersionForClient(
   query: unknown,
 ): Promise<MobileAppVersionCheckResponse> {
@@ -676,8 +672,7 @@ export async function checkMobileAppVersionForClient(
         }
       : null;
 
-  // ClientBuild ที่สูงกว่าหรือเท่ากับ Effective ถือว่าล่าสุดแล้วเสมอ ห้าม downgrade แม้ Client
-  // จะ Build สูงกว่า Server ก็ตาม
+  // ClientBuild ที่ >= Effective ถือว่าล่าสุดแล้วเสมอ ห้าม downgrade แม้ Client Build จะสูงกว่า Server
   const clientBuildNumber = input.build_number ?? 0;
 
   if (clientBuildNumber >= effective.build_number) {
@@ -692,9 +687,8 @@ export async function checkMobileAppVersionForClient(
     };
   }
 
-  // มี ForceUpdateAt ตั้งไว้ = Version นี้บังคับ Update — และ ServerTime >= ForceUpdateAt แล้วเสมอ
-  // ที่จุดนี้ เพราะ resolveEffectiveMobileAppVersion เลือกได้ก็ต่อเมื่อ ActivationTime (=
-  // ForceUpdateAt เมื่อมีค่า) ผ่านไปแล้วเท่านั้น — ไม่ต้องเช็คเวลาซ้ำอีกชั้น
+  // มี ForceUpdateAt = บังคับ Update เสมอ — ServerTime ผ่าน ForceUpdateAt ไปแล้วแน่นอนที่จุดนี้
+  // เพราะ resolveEffectiveMobileAppVersion เลือก Version ได้ก็ต่อเมื่อ ActivationTime ผ่านไปแล้วเท่านั้น
   const forceUpdateRequired = effective.force_update_at !== null;
 
   return {

@@ -1,15 +1,23 @@
+// Import Library
 import { z } from "zod";
-
+// Import Config
 import { withTransaction } from "../db/prisma";
+// Import Queues
 import { returnCompletedWorkersToQueue } from "../queues/worker-dispatch";
 import { removeVendorConfirmationTimeout } from "../queues/worker-queue";
+// Import Repositories
 import * as lineRepository from "../repositories/line.repository";
 import * as gateTicketRepository from "../repositories/shared/gate-ticket.repository";
-import { TICKET_STATUS } from "../constants/job-status";
+// Import Config
+import { TICKET_STATUS } from "../constants/status";
+// Import Types
 import type { LineDevCompletionResult, LineDevSubmissionItem, VendorTicketCompletionAction } from "../types/line.type";
+// Import Utils
 import ApiError from "../utils/api-error";
-import { buildWorkerTicketPayload } from "../utils/ticket-payload";
+import { buildTicketCompletionResultExtraFields, buildWorkerTicketPayload } from "../utils/ticket-payload";
+// Import Validation
 import { parseId, parseWithSchema } from "../validation/parser";
+// Import Services
 import { applyVendorTicketCompletionResult } from "./shared/ticket-completion.service";
 import { publishRealtimeEvent } from "./shared/realtime-notification.service";
 
@@ -94,20 +102,7 @@ export async function processLineDevSubmission(
     result.ticket,
     result.detail,
     result.products,
-    {
-      submission_status: result.submission.status,
-      confirmed_at: result.submission.confirmed_at,
-      rejected_at: result.submission.rejected_at,
-      vehicle_job_status: result.completedVehicleJob?.vehicle_job.status,
-      completed_worker_codes: result.completedWorkerCodes,
-      ticket_completed_at:
-        result.completedVehicleJob?.vehicle_job.updated_at ?? null,
-      nextMarketCode: result.nextTicket?.marketCode ?? null,
-      nextBoothCode: result.nextTicket?.ticket.boothCode ?? null,
-      next_ticket_status: result.nextTicket?.ticket.status ?? null,
-      assignment_status: result.assignmentStatus,
-      reason: "line_dev_tester",
-    },
+    buildTicketCompletionResultExtraFields(result, "line_dev_tester")
   );
 
   publishRealtimeEvent({

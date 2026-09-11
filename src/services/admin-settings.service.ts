@@ -1,21 +1,26 @@
-// Import Config
+// Import Library
 import { randomBytes } from "crypto";
+// Import Config
 import { ADMIN_PERMISSION_DEPENDENCIES, ADMIN_PERMISSION_LEVELS, OWNER_ONLY_PERMISSIONS, canManagePermissionLevel } from "../config/permission.config";
 import type { AdminPermission } from "../config/permission.config";
-// Import Dependencies
+import { EMPTY_SECURITY_AUDIT_CONTEXT } from "../config/security-audit.config";
 import { withTransaction } from "../db/prisma";
-import { accountRepository } from "../repositories/admin-settings.repository";
+// Import Repositories
+import * as adminSettingsRepository from "../repositories/admin-settings.repository";
+import * as accountRepository from "../repositories/shared/account.repository";
 import * as gateClientRepository from "../repositories/shared/gate-client.repository";
 import * as permissionRepository from "../repositories/shared/permission.repository";
 import * as sessionRepository from "../repositories/shared/session.repository";
 import { listSettings, upsertSettings } from "../repositories/shared/system-setting.repository";
+// Import Queues
 import { publishRuntimeSettingsInvalidation } from "../queues/runtime-settings-sync";
+// Import Services
 import { getAccountPermissions } from "./shared/account-permission.service";
 import { clearRuntimeSettingsCache, getRuntimeSettings } from "./shared/runtime-settings.service";
 import { diffChangedFields, writeSecurityAuditLog } from "./shared/security-audit-log.service";
 import * as mobileAppVersionService from "./shared/mobile-app-version.service";
-import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 // Import Types
+import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { AccountDto } from "../types/admin-workers.type";
 import type { DbConnection } from "../types/shared/common.type";
@@ -32,14 +37,7 @@ import { getActorId } from "../utils/actor";
 import ApiError from "../utils/api-error";
 import { hashPassword } from "../utils/password";
 
-const EMPTY_SECURITY_AUDIT_CONTEXT: SecurityAuditRequestContext = {
-  ip_address: null,
-  user_agent: null,
-  request_id: null,
-};
-
-// Function ประกอบ actor snapshot (username/full_name) สำหรับ Security Audit Log จาก actorId ที่มีอยู่
-// แล้ว — คืน null ทั้งคู่เมื่อไม่มี actorId (ไม่ควรเกิดจริงเพราะทุก route ผ่าน authMiddleware มาก่อน)
+// Function ประกอบ actor snapshot (username/full_name) จาก actorId สำหรับ Security Audit Log — คืน null ทั้งคู่ถ้าไม่มี actorId
 async function findActorSnapshot(
   actorId: number | null,
   connection?: DbConnection
@@ -48,7 +46,7 @@ async function findActorSnapshot(
     return { username: null, full_name: null };
   }
 
-  const actor = await accountRepository.findAdminById(actorId, connection);
+  const actor = await adminSettingsRepository.findAdminById(actorId, connection);
 
   return {
     username: actor?.username ?? null,
@@ -122,8 +120,7 @@ async function requireGateClient(clientIdParam: unknown): Promise<GateClientDto>
   return client;
 }
 
-// Function ดึง admin actor ที่ auth ผ่านแล้ว (401 ไม่มี auth / 403 ไม่ใช่ admin) ใน service flow —
-// จุดเดียวที่ทุก assertCan* ด้านล่างใช้ร่วมกันก่อนเช็คเงื่อนไขเฉพาะของตัวเอง
+// Function ดึง admin actor ที่ auth ผ่านแล้ว (401 ไม่มี auth / 403 ไม่ใช่ admin) — จุดร่วมที่ assertCan* ทุกตัวเรียกก่อนเช็คเงื่อนไขเฉพาะของตัวเอง
 async function requireAdminActor(auth?: AccessTokenPayload): Promise<AccountDto> {
   const actorId = getActorId(auth);
 
@@ -131,7 +128,7 @@ async function requireAdminActor(auth?: AccessTokenPayload): Promise<AccountDto>
     throw new ApiError(401, "UNAUTHORIZED", "Authentication is required.");
   }
 
-  const actorAccount = await accountRepository.findAdminById(actorId);
+  const actorAccount = await adminSettingsRepository.findAdminById(actorId);
 
   if (!actorAccount) {
     throw new ApiError(403, "ADMIN_ACTOR_NOT_FOUND", "Admin actor not found.");
@@ -140,8 +137,7 @@ async function requireAdminActor(auth?: AccessTokenPayload): Promise<AccountDto>
   return actorAccount;
 }
 
-// Function ตรวจสอบเงื่อนไข can manage admin permissions ใน service flow — คืน actorAccount กลับไป
-// ให้ caller ใช้ต่อ (เช่นเช็ค assertPermissionsGrantable) โดยไม่ต้อง query ซ้ำ
+// Function ตรวจสอบว่า actor จัดการ permissions ของ target ได้หรือไม่ — คืน actorAccount กลับไปให้ caller ใช้ต่อโดยไม่ต้อง query ซ้ำ
 async function assertCanManageAdminPermissions(
   targetAccount: AccountDto,
   nextPermissionLevel: string,
@@ -176,9 +172,8 @@ async function assertCanManageAdminPermissions(
   return actorAccount;
 }
 
-// Function ตรวจสอบเงื่อนไข can manage admin account (update basic info / reset password) ใน service
-// flow — ใช้ hierarchy check เดียวกับ assertCanManageAdminPermissions โดยไม่มี "next permission
-// level" check เพราะ endpoint นี้ไม่ได้แก้ permission_level
+// Function ตรวจสอบว่า actor จัดการ admin account อื่นได้หรือไม่ (แก้ข้อมูลพื้นฐาน/reset password)
+// ใช้ hierarchy check เดียวกับ assertCanManageAdminPermissions แต่ไม่มี "next permission level" check เพราะ endpoint นี้ไม่ได้แก้ permission_level
 async function assertCanManageAdminAccount(
   targetAccount: AccountDto,
   auth?: AccessTokenPayload
@@ -202,10 +197,8 @@ async function assertCanManageAdminAccount(
   }
 }
 
-// Function ตรวจสอบว่า permissions ที่จะมอบให้บัญชีอื่น (ตอนสร้างหรือแก้ไข) เป็นสิ่งที่ actor เอง
-// มีอยู่จริงหรือไม่ ใน service flow — permission_level เป็นแค่ตัวกำหนด "จัดการใครได้" ไม่ได้กำหนด
-// ว่า "แจกสิทธิ์ใดได้บ้าง" ถ้าไม่เช็คส่วนนี้ Admin ระดับล่างที่มี permission แคบๆ จะมอบสิทธิ์ที่ตัวเอง
-// ไม่มีให้บัญชีที่ตนสร้าง/แก้ไขได้ (Privilege Escalation ผ่านบัญชีลูกที่ตนควบคุม)
+// Function ตรวจสอบว่า permissions ที่จะมอบให้บัญชีอื่นเป็นสิทธิ์ที่ actor เองมีอยู่จริง ป้องกัน Privilege Escalation
+// permission_level กำหนดแค่ "จัดการใครได้" ไม่ได้กำหนดว่าแจกสิทธิ์ใดได้บ้าง
 async function assertPermissionsGrantable(
   actorAccount: AccountDto,
   requestedPermissions: AdminPermission[],
@@ -227,10 +220,8 @@ async function assertPermissionsGrantable(
   }
 }
 
-// Function ตรวจสอบว่า permission set ที่จะบันทึก (ตอนสร้างหรือแก้ไข) เคารพ dependency ที่ประกาศไว้ใน
-// ADMIN_PERMISSION_DEPENDENCIES ใน service flow — เช่น mobile_app_versions:create ต้องมาพร้อม
-// mobile_app_versions:read เสมอ ไม่งั้นจะแก้ข้อมูลได้โดยไม่มีสิทธิ์ดูข้อมูลตัวเอง ตรวจกับ requested
-// set เองล้วนๆ ไม่ต้อง query DB เพิ่ม
+// Function ตรวจสอบว่า permission set ที่จะบันทึกเคารพ dependency ใน ADMIN_PERMISSION_DEPENDENCIES
+// เช่น mobile_app_versions:create ต้องมาพร้อม mobile_app_versions:read เสมอ — ตรวจจาก requested set เอง ไม่ query DB เพิ่ม
 function assertPermissionDependenciesSatisfied(
   requestedPermissions: AdminPermission[]
 ): void {
@@ -267,12 +258,8 @@ function ownerOnlyPermissionSubset(
   );
 }
 
-// Function ตรวจสอบว่า permission ในกลุ่ม OWNER_ONLY_PERMISSIONS (เช่น mobile_app_versions:*) ไม่ถูก
-// grant/revoke โดย actor ที่ไม่ใช่ owner ใน service flow — เข้มงวดเฉพาะตอนที่ชุด permission กลุ่มนี้
-// "เปลี่ยนแปลงจริง" เท่านั้น ถ้า manager แก้ permission อื่นของ target โดยไม่ได้แตะกลุ่มนี้เลย (resubmit
-// ค่าเดิมของกลุ่มนี้กลับมาเหมือนเดิมเพราะ endpoint เป็น full replace ของทั้ง array) ต้องผ่านได้ปกติ
-// currentPermissions ว่างเปล่าสำหรับบัญชีที่เพิ่งสร้างใหม่ (createAdminAccount) จึงตรวจ "grant ครั้งแรก"
-// ได้เหมือนกันโดยอัตโนมัติ ไม่ต้องแยกเคส
+// Function ตรวจสอบว่า permission กลุ่ม OWNER_ONLY_PERMISSIONS ไม่ถูก grant/revoke โดย actor ที่ไม่ใช่ owner
+// เข้มงวดเฉพาะตอนชุดนี้เปลี่ยนแปลงจริง (resubmit ค่าเดิมต้องผ่านได้ปกติ เพราะ endpoint เป็น full replace)
 function assertOwnerOnlyPermissionsUnchanged(
   actorAccount: AccountDto,
   currentPermissions: readonly AdminPermission[],
@@ -297,8 +284,7 @@ function assertOwnerOnlyPermissionsUnchanged(
   }
 }
 
-// Function ตรวจสอบเงื่อนไข can create admin level ใน service flow — คืน actorAccount กลับไปให้
-// caller ใช้ต่อ (เช่นเช็ค assertPermissionsGrantable) โดยไม่ต้อง query ซ้ำ
+// Function ตรวจสอบว่า actor สร้าง admin ระดับที่ขอได้หรือไม่ — คืน actorAccount กลับไปให้ caller ใช้ต่อโดยไม่ต้อง query ซ้ำ
 async function assertCanCreateAdminLevel(
   nextPermissionLevel: string,
   auth?: AccessTokenPayload
@@ -316,11 +302,10 @@ async function assertCanCreateAdminLevel(
   return actorAccount;
 }
 
-// Function โหลดแอดมินเป้าหมายจาก DB ตาม id หรือ 404 ใน service flow — จุดเดียวที่ทุก endpoint ด้านล่าง
-// ที่แก้ไข/อ่านแอดมินอีกคนหนึ่งใช้ร่วมกันก่อนเช็คสิทธิ์เฉพาะของตัวเอง
+// Function โหลดแอดมินเป้าหมายจาก DB ตาม id หรือ 404 — จุดร่วมที่ endpoint แก้ไข/อ่านแอดมินอื่นเรียกก่อนเช็คสิทธิ์เฉพาะของตัวเอง
 async function requireAdminAccount(accountIdParam: unknown): Promise<AccountDto> {
   const accountId = parseId(accountIdParam);
-  const account = await accountRepository.findAdminById(accountId);
+  const account = await adminSettingsRepository.findAdminById(accountId);
 
   if (!account) {
     throw new ApiError(404, "ADMIN_NOT_FOUND", "Admin account not found.");
@@ -331,7 +316,7 @@ async function requireAdminAccount(accountIdParam: unknown): Promise<AccountDto>
 
 // Function ตรวจสอบเงื่อนไข admin username available ใน service flow
 async function assertAdminUsernameAvailable(username: string): Promise<void> {
-  const exists = await accountRepository.usernameExists(username);
+  const exists = await adminSettingsRepository.usernameExists(username);
 
   if (exists) {
     throw new ApiError(
@@ -428,8 +413,7 @@ export async function updateSystemSettings(
   });
 
   clearRuntimeSettingsCache();
-  // แจ้ง instance อื่น (ถ้ามี) ให้ล้าง cache ของตัวเองด้วย — วันนี้รันอยู่ instance เดียวจึงยังไม่มีผล
-  // อะไรเพิ่ม แต่พร้อมรองรับตอน scale หลาย instance โดยไม่ต้องแก้โค้ดตรงนี้อีก
+  // แจ้ง instance อื่นให้ล้าง cache ของตัวเอง — ตอนนี้รันเดี่ยวจึงยังไม่มีผล แต่พร้อมรองรับตอน scale หลาย instance
   await publishRuntimeSettingsInvalidation();
 
   return getRuntimeSettings();
@@ -695,13 +679,12 @@ export async function createAdminAccount(
   );
   await assertPermissionsGrantable(actorAccount, input.permissions);
   assertPermissionDependenciesSatisfied(input.permissions);
-  // บัญชีใหม่ยังไม่มี permission เดิมเลย (current = []) จึงเท่ากับตรวจ "grant ครั้งแรก" ของกลุ่ม
-  // owner-only โดยอัตโนมัติ
+  // บัญชีใหม่ current permissions = [] จึงเท่ากับตรวจ grant ครั้งแรกของกลุ่ม owner-only โดยอัตโนมัติ
   assertOwnerOnlyPermissionsUnchanged(actorAccount, [], input.permissions);
   await assertAdminUsernameAvailable(input.username);
 
   return withTransaction(async (transaction) => {
-    const account = await accountRepository.createAdmin(
+    const account = await adminSettingsRepository.createAdmin(
       {
         username: input.username,
         password_hash: await hashPassword(input.password),
@@ -788,20 +771,17 @@ export async function updateAdminUserPermissions(
   assertPermissionDependenciesSatisfied(input.permissions);
 
   return withTransaction(async (transaction) => {
-    // Lock แถว target account นี้ไว้ก่อน re-check hierarchy แล้วเขียนจริง กัน Race เมื่อ 2 admin
-    // แก้ target คนเดียวกันพร้อมกัน (เช่น Owner ลด target ให้เป็น manager ไปพร้อมกับที่อีก manager
-    // คนหนึ่งกำลังจะแก้ target คนเดียวกันโดยเช็ค hierarchy จาก state เก่าก่อนที่ target จะเปลี่ยน
-    // ระดับ) — fetch ใหม่หลัง lock เพื่อเช็คกฎ "ห้ามจัดการระดับเท่ากันหรือสูงกว่า" จากข้อมูลล่าสุด
+    // Lock แถว target ไว้ก่อน re-check hierarchy แล้วเขียนจริง กัน Race เมื่อ 2 admin แก้ target เดียวกันพร้อมกัน
+    // (เช่น Owner ลดระดับ target ขณะอีก manager กำลังเช็ค hierarchy จาก state เก่า) — fetch ใหม่หลัง lock เพื่อเช็คกฎล่าสุด
     await transaction.$queryRaw`SELECT id FROM accounts WHERE id = ${account.id} FOR UPDATE`;
 
-    const freshTarget = await accountRepository.findAdminById(account.id, transaction);
+    const freshTarget = await adminSettingsRepository.findAdminById(account.id, transaction);
 
     if (!freshTarget) {
       throw new ApiError(404, "ADMIN_NOT_FOUND", "Admin account not found.");
     }
 
-    // Snapshot ก่อนแก้ไขจริง กัน repository (โดยเฉพาะ mock ของ test) คืน object เดิมแทน fresh copy —
-    // updatePermissionLevel/updateStatus ด้านล่างจะ mutate freshTarget ถ้าไม่ snapshot ไว้ก่อน
+    // Snapshot ก่อนแก้ไขจริง — updatePermissionLevel/updateStatus ด้านล่างจะ mutate freshTarget ถ้าไม่ snapshot ไว้ก่อน
     const targetBeforeUpdate = { ...freshTarget };
 
     if (
@@ -817,8 +797,7 @@ export async function updateAdminUserPermissions(
       );
     }
 
-    // เช็คหลัง Lock ด้วยชุด permission ปัจจุบันล่าสุดของ target เพื่อกัน Race เดียวกับข้างบน — ต้อง
-    // เข้มงวดเฉพาะตอนชุด owner-only เปลี่ยนแปลงจริงเท่านั้น (ดู comment ของฟังก์ชัน)
+    // เช็คหลัง Lock ด้วยชุด permission ล่าสุดของ target เพื่อกัน Race เดียวกับข้างบน (ดู comment ของ assertOwnerOnlyPermissionsUnchanged)
     const currentPermissions = await permissionRepository.listByAccountId(
       account.id,
       transaction
@@ -830,7 +809,7 @@ export async function updateAdminUserPermissions(
       input.permissions
     );
 
-    let updatedAccount = await accountRepository.updatePermissionLevel(
+    let updatedAccount = await adminSettingsRepository.updatePermissionLevel(
       account.id,
       input.permission_level,
       transaction
@@ -916,8 +895,7 @@ export async function updateAdminUserPermissions(
   });
 }
 
-// Function อัปเดตข้อมูลพื้นฐาน (full_name/position/email/phone) ของแอดมินอีกคนหนึ่ง ใน service flow
-// — permission_level/permissions ยังคงแก้ผ่าน updateAdminUserPermissions ด้านบนเท่านั้น
+// Function อัปเดตข้อมูลพื้นฐาน (full_name/position/email/phone) ของแอดมินอีกคนหนึ่ง — permission_level/permissions ยังคงแก้ผ่าน updateAdminUserPermissions เท่านั้น
 export async function updateAdminAccount(
   accountIdParam: unknown,
   body: unknown,
@@ -932,7 +910,7 @@ export async function updateAdminAccount(
   await assertCanManageAdminAccount(account, auth);
 
   return withTransaction(async (transaction) => {
-    const updatedAccount = await accountRepository.updateAdminAccount(
+    const updatedAccount = await adminSettingsRepository.updateAdminAccount(
       account.id,
       {
         full_name: input.full_name,
@@ -983,8 +961,7 @@ export async function updateAdminAccount(
   });
 }
 
-// Function รีเซ็ตรหัสผ่านของแอดมินอีกคนหนึ่ง ใน service flow — revoke active session ทั้งหมดของ
-// เป้าหมายเหมือนกับ resetPassword ของ Worker (admin-workers.service.ts)
+// Function รีเซ็ตรหัสผ่านของแอดมินอีกคนหนึ่ง — revoke active session ทั้งหมดของเป้าหมาย เหมือน resetPassword ของ Worker (admin-workers.service.ts)
 export async function resetAdminPassword(
   accountIdParam: unknown,
   body: unknown,

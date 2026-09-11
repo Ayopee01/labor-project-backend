@@ -1,9 +1,10 @@
+// Import Library
 import type { NextFunction, Request, Response } from "express";
 import type { PlainObject } from "../types/shared/common.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
-// Config map key แบบ PascalCase เป็น key ภายในสำหรับ field ที่เดาอัตโนมัติแล้วเสี่ยงผิด
+// Config mapping ของ key request ที่เป็น PascalCase ให้แปลงเป็น snake_case สำหรับ service/repository
 const requestKeyMap: Record<string, string> = {
   AccessToken: "access_token",
   AccountId: "account_id",
@@ -107,7 +108,6 @@ const requestKeyMap: Record<string, string> = {
   ProductName: "productName",
   QrToken: "qr_token",
   QueuePosition: "queue_position",
-  RequeuedWorkerCodes: "requeued_worker_codes",
   ReleasedWorkerCodes: "released_worker_codes",
   ReleasedAt: "released_at",
   PreviousQuantity: "previous_quantity",
@@ -132,6 +132,8 @@ const requestKeyMap: Record<string, string> = {
   ScannedAt: "scanned_at",
   ScannedTicketNo: "scanned_ticket_no",
   ScanStatus: "scan_status",
+  ServerTime: "server_time",
+  ServerTimeUnixMs: "server_time_unix_ms",
   ShiftActive: "shift_active",
   ShirtNumber: "shirt_number",
   ShirtType: "shirt_type",
@@ -192,6 +194,7 @@ const requestKeyMap: Record<string, string> = {
   WorkerScanWarningBeforeMinutes: "worker_scan_warning_before_minutes",
   WorkersRequired: "workers_required",
   CheckedInCount: "checked_in_count",
+  AcceptedCount: "accepted_count",
   VendorConfirmTimeoutHours: "vendor_confirm_timeout_hours",
   VendorReconfirmTimeoutHours: "vendor_reconfirm_timeout_hours",
   WorkDate: "work_date",
@@ -236,16 +239,18 @@ const requestKeyMap: Record<string, string> = {
   WeightRangeName: "weight_range_name",
   WorkerCount: "worker_count",
   WorkerPayoutTotal: "worker_payout_total",
+  WorkerToQueue: "worker_to_queue",
+  WorkerToOpenapp: "worker_to_openapp",
 };
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function ตรวจสอบ plain object ก่อนแปลง key แบบ recursive
+// Function ตรวจสอบว่า value เป็น plain object หรือไม่ (ไม่ใช่ array, function, class instance, null, undefined)
 function isPlainObject(value: unknown): value is PlainObject {
   return Object.prototype.toString.call(value) === "[object Object]";
 }
 
-// Function ลดตัวอักษรแรกเป็นพิมพ์เล็กสำหรับ key PascalCase แบบง่าย
+// Function เพิ่มตัวอักษรแรกเป็นพิมพ์เล็กตอนสร้าง key response แบบ camelCase
 function lowerFirst(value: string): string {
   return value.charAt(0).toLowerCase() + value.slice(1);
 }
@@ -259,7 +264,7 @@ function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-// Function แปลง key แบบ snake_case, kebab-case, เว้นวรรค หรือ camelCase เป็น PascalCase สำหรับ response
+// Function แปลง key เป็น PascalCase สำหรับ public API response
 export function toPascalCaseKey(key: string): string {
   if (!key.includes("_") && /^[A-Z]/.test(key)) {
     return key;
@@ -273,7 +278,7 @@ export function toPascalCaseKey(key: string): string {
     .join("");
 }
 
-// Function แปลง key จาก public request เป็น key ภายใน service/repository
+// Function แปลง key เป็น snake_case สำหรับ service/repository
 function normalizeRequestKey(key: string): string {
   if (requestKeyMap[key]) {
     return requestKeyMap[key];
@@ -286,7 +291,7 @@ function normalizeRequestKey(key: string): string {
   return key;
 }
 
-// Function แปลง key ของ object แบบ recursive โดยคง array, Date และ scalar value ไว้
+// Function แปลง object key แบบ recursive สำหรับ array, plain object, และ primitive value
 function transformObjectKeys(
   value: unknown,
   keyTransformer: (key: string) => string
@@ -307,22 +312,37 @@ function transformObjectKeys(
   );
 }
 
-// Function แปลง body จาก casing ของ public API เป็น casing ภายในระบบ
+// Function แปลง request payload เป็น snake_case สำหรับ service/repository
 export function normalizeApiRequestPayload(value: unknown): unknown {
   return transformObjectKeys(value, normalizeRequestKey);
 }
 
-// Function แปลง response จาก service เป็น PascalCase สำหรับ public API
+// Function แปลง response payload เป็น PascalCase สำหรับ public API response
 export function toPascalCasePayload(value: unknown): unknown {
   return transformObjectKeys(value, toPascalCaseKey);
 }
 
-// Function ข้าม casing middleware สำหรับ Swagger และ route static upload
+// Function เพิ่ม server_time และ server_time_unix_ms ให้ response payload สำหรับ public API response
+function withServerTime(body: unknown): unknown {
+  if (!isPlainObject(body)) {
+    return body;
+  }
+
+  const now = new Date();
+
+  return {
+    ...body,
+    server_time: now.toISOString(),
+    server_time_unix_ms: now.getTime(),
+  };
+}
+
+// Function ตรวจสอบว่า request path เป็น path ที่ไม่ต้องแปลง case หรือไม่ (เช่น /api-docs, /uploads, /storage)
 function shouldSkipCaseMiddleware(req: Request): boolean {
   return req.path.startsWith("/api-docs") || req.path.startsWith("/uploads") || req.path.startsWith("/storage");
 }
 
-// Function ปรับรูปแบบ JSON body ที่รับเข้ามาก่อน route/service อ่าน schema
+// Function normalize request body สำหรับ public API request โดยแปลง key เป็น snake_case สำหรับ service/repository
 export function normalizeApiRequestBody(
   req: Request,
   _res: Response,
@@ -338,7 +358,7 @@ export function normalizeApiRequestBody(
   next();
 }
 
-// Function ครอบ res.json เพื่อให้ API response เป็น PascalCase โดยไม่เปลี่ยน DTO ภายใน
+// Function pascalCase response body สำหรับ public API response โดยแปลง key เป็น PascalCase และเพิ่ม server_time, server_time_unix_ms
 export function pascalCaseApiResponse(
   req: Request,
   res: Response,
@@ -351,6 +371,7 @@ export function pascalCaseApiResponse(
 
   const originalJson = res.json.bind(res);
 
-  res.json = ((body: unknown) => originalJson(toPascalCasePayload(body))) as Response["json"];
+  res.json = ((body: unknown) =>
+    originalJson(toPascalCasePayload(withServerTime(body)))) as Response["json"];
   next();
 }

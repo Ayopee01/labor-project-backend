@@ -1,4 +1,4 @@
-import type { VehicleJobAssignmentDto, VehicleJobDto, WorkerQueueEntryDto } from "../types/worker.type";
+import type { VehicleJobAssignmentDto, VehicleJobDto, VehicleWorkReadinessDto, WorkerQueueEntryDto } from "../types/worker.type";
 import { resolveWorkerWorkStatus } from "./worker-status";
 import { toUnixMs } from "./time";
 
@@ -25,7 +25,8 @@ export function buildWorkerAssignedPayload(
 export function buildWorkerQueueSocketPayload(
   queueEntry: WorkerQueueEntryDto | null | undefined,
   workerCode: string | null,
-  assignment: VehicleJobAssignmentDto | null = null
+  assignment: VehicleJobAssignmentDto | null = null,
+  teamScanReadiness?: Pick<VehicleWorkReadinessDto, "is_ready"> | null
 ) {
   if (!queueEntry) {
     return null;
@@ -33,7 +34,7 @@ export function buildWorkerQueueSocketPayload(
 
   return {
     worker_code: workerCode,
-    status: resolveWorkerWorkStatus(queueEntry, assignment),
+    status: resolveWorkerWorkStatus(queueEntry, assignment, teamScanReadiness),
     ...(queueEntry.ready_at ? { ready_at: queueEntry.ready_at } : {}),
     ...(queueEntry.break_until
       ? {

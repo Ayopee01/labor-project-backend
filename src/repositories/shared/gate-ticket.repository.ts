@@ -1,7 +1,9 @@
-import { SCANNED_ASSIGNMENT_STATUSES, TICKET_STATUS, TICKET_SUBMITTER_ROLE, TICKET_WORKER_STATUS } from "../../constants/job-status";
+// Import Config
+import { MASTER_MARKET_ACTIVE_STATUS, MASTER_OWNER_STALL_ACTIVE_STATUS, SCANNED_ASSIGNMENT_STATUSES, TICKET_STATUS, TICKET_SUBMITTER_ROLE, TICKET_WORKER_STATUS } from "../../constants/status";
+// Import Mappers
 import { mapGateTicket, mapTicketCompletionSubmission, mapTicketProduct } from "./mappers";
 import { client, requireDto } from "./repository-utils";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { GateTicketDto, TicketCompletionSubmissionDto, TicketProductConfirmationInput, TicketProductDto, VendorLineTargetDto } from "../../types/worker.type";
 
@@ -33,7 +35,7 @@ export async function hasSubmittedActiveTicketsForMarketJob(
   return count > 0;
 }
 
-// Function เช็คว่า worker คนนี้ถูกถอดออกจาก Booth นี้แผงเดียวไปแล้วหรือยัง (GateTicketWorkerExclusion)
+// Function เช็คว่า worker ถูกถอดออกจาก Booth นี้ไปแล้วหรือยัง
 export async function findGateTicketWorkerExclusion(
   gateTicketId: number,
   ticketWorkerId: number,
@@ -50,6 +52,28 @@ export async function findGateTicketWorkerExclusion(
   });
 
   return exclusion !== null;
+}
+
+// Function นับ worker ที่ยังนับเป็นคนหารเงินของ Booth นี้ (status WORKING และไม่ถูก exclude จาก Booth นี้)
+// Filter ต้องตรงกับ query ใน confirmTicketCompletion เพื่อเช็คก่อนว่า exclude แล้วจะเหลือ 0 คนหรือไม่
+export async function countEligibleWorkersForBooth(
+  marketJobId: number,
+  gateTicketId: number,
+  connection?: DbConnection
+): Promise<number> {
+  const db = client(connection);
+
+  return db.ticketWorker.count({
+    where: {
+      marketJobId,
+      status: TICKET_WORKER_STATUS.WORKING,
+      boothExclusions: {
+        none: {
+          gateTicketId,
+        },
+      },
+    },
+  });
 }
 
 // Function ถอด worker คนหนึ่งออกจาก Booth หนึ่งแผงเดียว (ไม่แตะ TicketWorker.status) จาก DB — ทำให้
@@ -69,6 +93,7 @@ export async function createGateTicketWorkerExclusion(
   });
 }
 
+// Function ค้นหา gate ticket ตาม ID สำหรับส่งยอด
 export async function findGateTicketForCompletion(
   ticketId: number,
   connection?: DbConnection
@@ -166,6 +191,7 @@ export async function findGateTicketForCompletionByWorkerHistoryAndTicketNoAndBo
   return mapGateTicket(ticket);
 }
 
+// Function หา LINE target ของแผงในตั๋วนี้ (wrap listActiveVendorLineTargetsByMarketAndBooth ด้วย ticketId)
 export async function listActiveVendorLineTargetsForTicket(
   ticketId: number,
   connection?: DbConnection
@@ -184,17 +210,16 @@ export async function listActiveVendorLineTargetsForTicket(
     return [];
   }
 
-  return findActiveVendorLineTargetsByMarketAndBooth(
+  return listActiveVendorLineTargetsByMarketAndBooth(
     ticket.marketJob.marketCode,
     ticket.boothCode,
     connection
   );
 }
 
-// Function ค้นหา LINE target (owner + member) ของแผงหนึ่งใบ ใช้ร่วมกันทั้งจาก ticketId
-// (listActiveVendorLineTargetsForTicket ด้านบน) และจาก marketCode+boothCode ตรงๆ (gate.repository.ts
-// ตอน Gate ยังไม่มี ticketId เพราะกำลังจะสร้าง Ticket ใหม่)
-export async function findActiveVendorLineTargetsByMarketAndBooth(
+// Function หา LINE target (owner + member) ของแผงหนึ่งใบ ใช้ร่วมกันทั้งจาก ticketId
+// (ผ่าน listActiveVendorLineTargetsForTicket) และจาก marketCode+boothCode ตรงๆ ตอนยังไม่มี ticket
+export async function listActiveVendorLineTargetsByMarketAndBooth(
   marketCode: string,
   boothCode: string,
   connection?: DbConnection
@@ -211,8 +236,8 @@ export async function findActiveVendorLineTargetsByMarketAndBooth(
 
   if (
     !ownerStall ||
-    ownerStall.status !== "active" ||
-    ownerStall.ownerStatus !== "Normal" ||
+    ownerStall.status !== MASTER_OWNER_STALL_ACTIVE_STATUS ||
+    ownerStall.ownerStatus !== MASTER_MARKET_ACTIVE_STATUS ||
     !ownerStall.lineUserId
   ) {
     return [];
@@ -223,7 +248,7 @@ export async function findActiveVendorLineTargetsByMarketAndBooth(
       marketCode: ownerStall.marketCode,
       ownerIdCard: ownerStall.cardId,
       ownerLineUserId: ownerStall.lineUserId,
-      status: "active",
+      status: MASTER_OWNER_STALL_ACTIVE_STATUS,
       memberStallStatusOnStall: "1",
     },
     orderBy: {
@@ -253,6 +278,7 @@ export async function findActiveVendorLineTargetsByMarketAndBooth(
   return targets;
 }
 
+// Function ดึงรายการสินค้าในตั๋ว
 export async function listTicketProducts(
   ticketId: number,
   connection?: DbConnection
@@ -272,6 +298,27 @@ export async function listTicketProducts(
     .filter((product): product is TicketProductDto => product !== null);
 }
 
+// Function ยกเลิก Gate ticket (booth) จาก DB — ไม่แตะ TicketWorker (Worker Roster) เพราะ Roster เป็นระดับ Business Ticket (market job) ไม่ใช่ระดับ Booth
+// การยกเลิก Booth เดียวไม่ควรกระทบสมาชิกที่ยังทำ Booth อื่นในใบเดียวกัน
+export async function cancelGateTicket(
+  ticketId: number,
+  connection?: DbConnection
+): Promise<GateTicketDto> {
+  const db = client(connection);
+
+  const ticket = await db.gateTicket.update({
+    where: {
+      id: ticketId,
+    },
+    data: {
+      status: TICKET_STATUS.CANCELLED,
+    },
+  });
+
+  return requireDto(mapGateTicket(ticket), "gate ticket cancel");
+}
+
+// Function อัปเดตยอดยืนยันของสินค้าในตั๋ว รองรับกรณีเปลี่ยน package (package_switch) ด้วย
 export async function updateTicketProductConfirmations(
   ticketId: number,
   items: TicketProductConfirmationInput[],
@@ -280,8 +327,7 @@ export async function updateTicketProductConfirmations(
   const db = client(connection);
 
   for (const item of items) {
-    // original_package_code ระบุแถว TicketProduct เดิมที่ Gate เคยประกาศ PackageCode ไว้ — ถ้าไม่ได้
-    // เปลี่ยน PackageCode ก็คือ packageCode ตัวเดียวกับที่ส่งมา (พฤติกรรมเดิม)
+    // original_package_code คือ packageCode เดิมก่อนเปลี่ยน (ถ้าไม่เปลี่ยนจะเท่ากับ packageCode ที่ส่งมา)
     const originalPackageCode = item.original_package_code ?? item.packageCode;
 
     const result =
@@ -326,6 +372,7 @@ export async function updateTicketProductConfirmations(
   );
 }
 
+// Function เปลี่ยนสถานะตั๋วเป็น DELIVERED (จาก WAIT/WORKING/REJECT) และล้าง reject reason
 export async function markTicketDelivered(
   ticketId: number,
   connection?: DbConnection
@@ -347,6 +394,7 @@ export async function markTicketDelivered(
   return result.count === 1;
 }
 
+// Function สร้าง submission ส่งยอดของตั๋ว โดยแยก submitter เป็น account (admin) หรือ worker ตาม role
 export async function createTicketCompletionSubmission(
   ticketId: number,
   submitterId: number,
@@ -375,9 +423,8 @@ export async function createTicketCompletionSubmission(
   );
 }
 
-// Function บันทึก roster ของ TicketWorker ที่ยัง WORKING ณ เวลา Submit จริง ผูกกับ Submission นี้
-// เจาะจง — ต้องเรียกทันทีในทรานแซกชันเดียวกับ createTicketCompletionSubmission ด้วย ticketWorkerIds
-// ชุดเดียวกับที่ใช้คำนวณ workerCountSnapshot ห้ามคำนวณชุดใหม่ ไม่งั้น count กับ list จะไม่ตรงกัน
+// Function บันทึก roster ของ TicketWorker ที่ยัง WORKING ตอน submit จริง ผูกกับ submission นี้
+// ต้องเรียกในทรานแซกชันเดียวกับ createTicketCompletionSubmission ด้วย ticketWorkerIds ชุดเดียวกับที่ใช้คำนวณ workerCountSnapshot
 export async function createSubmissionWorkerSnapshots(
   submissionId: number,
   ticketWorkerIds: number[],
@@ -398,6 +445,7 @@ export async function createSubmissionWorkerSnapshots(
   });
 }
 
+// Function หา submission ล่าสุดของตั๋วที่ยังสถานะ DELIVERED (รอ confirm/reject)
 export async function findWaitingTicketCompletionSubmission(
   ticketId: number,
   connection?: DbConnection
@@ -452,6 +500,7 @@ export async function listDeliveredTicketsWithLatestSubmission(
   return results;
 }
 
+// Function ค้นหา ticket completion submission ตาม ID จาก DB
 export async function findTicketCompletionSubmissionById(
   submissionId: number,
   connection?: DbConnection
@@ -466,6 +515,7 @@ export async function findTicketCompletionSubmissionById(
   return mapTicketCompletionSubmission(submission);
 }
 
+// Function ยืนยันปิดงานของตั๋ว (DELIVERED -> COMPLETED) พร้อมบันทึก snapshot worker ที่หารเงินของ Booth นี้
 export async function confirmTicketCompletion(
   ticketId: number,
   submissionId: number,
@@ -494,9 +544,8 @@ export async function confirmTicketCompletion(
     );
   }
 
-  // หมายเหตุ: TicketWorker (roster ของ Business Ticket) ไม่ถูกแตะที่นี่อีกต่อไป
-  // การปิด Roster เป็น COMPLETED เกิดเฉพาะตอน Lock ที่ finalizeMarketJobFinancials
-  // เพราะ Business Ticket หนึ่งอาจมีหลาย Booth และ Booth นี้เป็นเพียงใบเดียวที่จบ
+  // TicketWorker (roster ของ Business Ticket) ไม่ถูกแตะที่นี่ — ปิดเป็น COMPLETED เฉพาะตอน finalizeMarketJobFinancials
+  // เพราะ Business Ticket หนึ่งใบอาจมีหลาย Booth และ Booth นี้เป็นเพียงใบเดียวที่จบ
 
   const [ticket, submission] = await Promise.all([
     db.gateTicket.findUnique({
@@ -517,7 +566,7 @@ export async function confirmTicketCompletion(
   ]);
 
   if (ticket) {
-    // Format snapshot Worker ที่ใช้หารเงินของแผงนี้
+    // บันทึก snapshot worker ที่ใช้หารเงินของ Booth นี้ ณ เวลา confirm
     const workingWorkers = await db.ticketWorker.findMany({
       where: {
         marketJobId: ticket.marketJobId,
@@ -553,6 +602,7 @@ export async function confirmTicketCompletion(
   };
 }
 
+// Function reject ตั๋วที่ส่งยอด (DELIVERED -> REJECT) พร้อมเหตุผล
 export async function rejectTicketCompletion(
   ticketId: number,
   submissionId: number,

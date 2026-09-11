@@ -1,6 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { masterMarketSeedData } from "./master-market.seed";
 
+/* -------------------------------------- Mock Data -------------------------------------- */
+
+// Mock data สำหรับ LINE User ทดสอบสำหรับเจ้าของแผงและสมาชิกแผง
 const TEST_OWNER = {
   firstName: "พีรพล",
   lastName: "จันทร์ผล",
@@ -9,7 +12,6 @@ const TEST_OWNER = {
   telephone: "0000000000",
 } as const;
 
-// Config test stall members for LINE notification flow
 const TEST_MEMBERS = [
   {
     firstName: "Kittipoom",
@@ -27,8 +29,10 @@ const TEST_MEMBERS = [
   },
 ] as const;
 
+/* -------------------------------------- Functions -------------------------------------- */
+
 // Function ผูก LINE User ทดสอบกับทุกแผงที่มีอยู่จริงใน Master Market
-export async function seedTestLine(prisma: PrismaClient): Promise<void> {
+export async function seedLine(prisma: PrismaClient): Promise<void> {
   const syncedAt = new Date();
 
   const BATCH_SIZE = 10;

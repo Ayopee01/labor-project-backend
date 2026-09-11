@@ -28,7 +28,9 @@ export interface AdminActionLogDto {
   reason_code: string | null;
   reason_text: string | null;
   actor_account_id: number;
-  actor_worker_code: string | null;
+  // เก็บ Account.username ของ Admin ที่กระทำเสมอ (admin_action_logs ผูก actor เป็น Account เท่านั้น
+  // ไม่มี Worker เป็นผู้กระทำได้ตาม schema) ตั้งชื่อ actor_username ให้ตรงความจริง ไม่ใช่ actor_worker_code
+  actor_username: string | null;
   actor_full_name: string | null;
   actor_role: string | null;
   metadata: Record<string, unknown> | null;

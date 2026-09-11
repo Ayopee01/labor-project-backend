@@ -1,19 +1,23 @@
 // Import Library
 import IORedis from "ioredis";
-
 // Import Config
 import { REDIS_CONFIG } from "../config/redis.config";
+// Import Services
 import { clearRuntimeSettingsCache } from "../services/shared/runtime-settings.service";
+// Import Utils
 import { logger } from "../utils/logger";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// สร้างตัวแปรสำหรับ channel ของ runtime settings invalidation
 const RUNTIME_SETTINGS_INVALIDATION_CHANNEL = "runtime_settings:invalidate";
 
+// สร้าง Redis publisher สำหรับ runtime settings invalidation
 const publisher = new IORedis(REDIS_CONFIG.url, {
   maxRetriesPerRequest: null,
 });
 
+// สร้าง Redis subscriber สำหรับ runtime settings invalidation
 let subscriber: IORedis | null = null;
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -23,8 +27,7 @@ export async function publishRuntimeSettingsInvalidation(): Promise<void> {
   await publisher.publish(RUNTIME_SETTINGS_INVALIDATION_CHANNEL, "1");
 }
 
-// Function เริ่ม subscribe ฟัง runtime settings invalidation จาก instance อื่น (เรียกครั้งเดียวตอน
-// process start)
+// Function เริ่ม subscribe ฟัง runtime settings invalidation จาก instance อื่น (เรียกครั้งเดียวตอน process start)
 export function startRuntimeSettingsSync(): void {
   if (subscriber) {
     return;

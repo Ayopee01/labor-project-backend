@@ -3,20 +3,20 @@ import type { IncomingMessage } from "http";
 import type { Server } from "http";
 import type { Duplex } from "stream";
 import { WebSocket, WebSocketServer } from "ws";
-
-// Import Dependencies
+// Import Repositories
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import { findActiveById as findActiveWorkerSessionById } from "../repositories/shared/worker-session.repository";
-import { findCurrentAssignmentByWorker } from "../repositories/shared/vehicle-job-assignment.repository";
+import { findCurrentAssignmentByWorker, getVehicleJobTeamScanReadiness } from "../repositories/shared/vehicle-job-assignment.repository";
 import { clearWorkerPresence, getWorkerQueueStatus, recordWorkerHeartbeat } from "../queues/worker-queue";
-import { buildWorkerNotification, persistWorkerNotification, publishNotification } from "../services/notifications.service";
+import { publishNotification } from "../services/notifications.service";
+import { buildWorkerNotification, persistWorkerNotification } from "../services/shared/realtime-notification.service";
 import { sendWorkerPushNotificationByWorkerIds } from "../services/shared/worker-push.service";
+// Import Middlewares
 import { toPascalCasePayload } from "../middlewares/api-case.middleware";
-
 // Import Types
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AccessTokenPayload } from "../types/auth.type";
 import type { WorkerSocket, WorkerSocketEventOptions, WorkerSocketEventType, WorkerSocketPayload } from "../types/worker.type";
-
 // Import Utils
 import ApiError from "../utils/api-error";
 import { verifyAccessToken } from "../utils/jwt";
@@ -111,7 +111,7 @@ async function authenticateWorkerSocket(
     findActiveWorkerSessionById(payload.session_id),
   ]);
 
-  if (!worker || worker.status !== 1) {
+  if (!worker || worker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     throw new ApiError(403, "WORKER_NOT_ACTIVE", "Worker account is not active.");
   }
 
@@ -157,7 +157,7 @@ function registerWorkerSocket(accountId: number, socket: WorkerSocket): void {
 }
 
 // Function ลบ socket ออกจาก registry และเริ่ม grace period ก่อนประกาศว่า disconnected
-function unregisterWorkerSocket(socket: WorkerSocket): void {
+function handleWorkerSocketDisconnect(socket: WorkerSocket): void {
   const accountId = socket.workerId;
 
   if (!accountId) {
@@ -195,6 +195,11 @@ async function publishWorkerConnectionChanged(
       return null;
     }),
   ]);
+  // ต้องเช็ค teamScan ด้วย ไม่งั้น resolveWorkerWorkStatus (เรียกใน buildWorkerQueueSocketPayload)
+  // จะ default เป็น WORKING ทันทีที่ assignment ของ worker คนนี้ scan แล้ว ทั้งที่ทีมยังมาไม่ครบ
+  const teamScanReadiness = assignment
+    ? await getVehicleJobTeamScanReadiness(assignment.vehicle_job_id)
+    : null;
 
   const workerCode = worker?.labor_code ?? null;
 
@@ -205,7 +210,9 @@ async function publishWorkerConnectionChanged(
     payload: {
       worker_code: workerCode,
       socket_connected: connected,
-      queue: queueEntry ? buildWorkerQueueSocketPayload(queueEntry, workerCode, assignment) : null,
+      queue: queueEntry
+        ? buildWorkerQueueSocketPayload(queueEntry, workerCode, assignment, teamScanReadiness)
+        : null,
       assignment_status: assignment?.status ?? null,
       reason,
     },
@@ -226,9 +233,8 @@ async function handleWorkerSocketGraceExpired(accountId: number): Promise<void> 
   await publishWorkerConnectionChanged(accountId, false, "socket_disconnected");
 }
 
-// Function ตัดการเชื่อมต่อ socket ของ worker คนหนึ่งจากฝั่ง server ทันที ใน Worker WebSocket — ใช้ตอน
-// session ถูก revoke แบบชัดเจน (logout/admin revoke) เพื่อให้ admin เห็นว่า worker หลุดการเชื่อมต่อทันที
-// ไม่ต้องรอ grace period 15 วิที่ออกแบบไว้กันกรณีเน็ตกระตุกเท่านั้น
+// Function ตัดการเชื่อมต่อ socket ของ worker ทันทีจากฝั่ง server — ใช้ตอน session ถูก revoke ชัดเจน
+// (logout/admin revoke) ให้ admin เห็นผลทันที ไม่ต้องรอ grace period 15 วิที่กันไว้เผื่อเน็ตกระตุก
 export async function disconnectWorkerSocket(
   accountId: number,
   reason: string,
@@ -237,7 +243,7 @@ export async function disconnectWorkerSocket(
 
   if (sockets && sockets.size > 0) {
     for (const socket of sockets) {
-      // เคลียร์ workerId ก่อนปิด กัน close handler เดิม (unregisterWorkerSocket) ไปตั้ง grace timer ซ้ำ
+      // เคลียร์ workerId ก่อนปิด กัน close handler เดิม (handleWorkerSocketDisconnect) ไปตั้ง grace timer ซ้ำ
       // ซึ่งจะ publish WORKER_CONNECTION_CHANGED ซ้ำอีกรอบตอน 15 วิให้หลัง
       socket.workerId = undefined;
       socket.close();
@@ -314,11 +320,16 @@ export function sendWorkerSocketEvent(
       return;
     }
 
+    const now = new Date();
+    // server_time/server_time_unix_ms ค่าเดียวกับ occurred_at แค่ตั้งชื่อให้ตรงกับ REST response
+    // (api-case.middleware.ts) เพื่อให้ frontend คำนวณ offset เวลาได้แบบเดียวกันทั้ง REST และ WebSocket
     const event = toPascalCasePayload({
       type,
       notification,
       payload,
-      occurred_at: new Date().toISOString(),
+      occurred_at: now.toISOString(),
+      server_time: now.toISOString(),
+      server_time_unix_ms: now.getTime(),
     });
     const message = JSON.stringify(event);
 
@@ -470,7 +481,7 @@ export function setupWorkerWebSocket(server: Server): void {
       });
 
       socket.on("close", () => {
-        unregisterWorkerSocket(socket);
+        handleWorkerSocketDisconnect(socket);
       });
     }
   );
@@ -490,6 +501,7 @@ export function setupWorkerWebSocket(server: Server): void {
   }, 30000);
 }
 
+// Function ปิด Worker WebSocket server และเคลียร์ timer ทั้งหมดสำหรับ graceful shutdown
 export function closeWorkerWebSocketServer(): Promise<void> {
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);

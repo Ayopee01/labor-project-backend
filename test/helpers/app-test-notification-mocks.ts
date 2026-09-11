@@ -24,6 +24,42 @@ export const notificationServiceMock = {
       ...event,
       worker_payload: event.worker_payload ?? event.payload ?? {},
     }),
+  resolveTicketResultAudience,
+  publishAdminWorkerStatusChanged: (event: {
+    title: string;
+    message: string;
+    workerCode: string | null;
+    queue: unknown;
+    reason: string;
+    extraPayload?: Record<string, unknown>;
+  }) =>
+    state.notifications.push({
+      type: "WORKER_STATUS_CHANGED",
+      title: event.title,
+      message: event.message,
+      payload: {
+        worker_code: event.workerCode,
+        queue: event.queue,
+        reason: event.reason,
+        ...(event.extraPayload ?? {}),
+      },
+      audience: {
+        roles: ["admin"],
+      },
+    }),
+};
+
+export const realtimeNotificationServiceMock = {
+  publishRealtimeEvent: (event: { payload?: unknown; worker_payload?: unknown }) =>
+    // เลียนแบบ fallback ของ publishRealtimeEvent จริงใน realtime-notification.service.ts
+    // (worker_payload = input.worker_payload ?? payload) เพื่อให้ event ที่ mock บันทึกไว้ตรงกับสิ่งที่
+    // worker ได้รับจริง แม้ caller จะไม่ได้ส่ง worker_payload มาแยกต่างหาก
+    state.realtimeEvents.push({
+      ...event,
+      worker_payload: event.worker_payload ?? event.payload ?? {},
+    }),
+  resolveTicketResultAudience,
+  // Function จำลอง buildWorkerNotification จริง — ย้ายมาจาก notificationServiceMock ตาม Fix C
   buildWorkerNotification: (input: {
     type: string;
     lang?: string | null;
@@ -36,6 +72,7 @@ export const notificationServiceMock = {
     title: input.fallbackTitle,
     message: input.fallbackMessage,
   }),
+  // Function จำลอง persistWorkerNotification จริง — ย้ายมาจาก notificationServiceMock ตาม Fix C
   persistWorkerNotification: (input: {
     worker_id: number;
     type: string;
@@ -61,6 +98,7 @@ export const notificationServiceMock = {
       updated_at: now,
     });
   },
+  // Function จำลอง persistWorkerNotifications จริง — ย้ายมาจาก notificationServiceMock ตาม Fix C
   persistWorkerNotifications: (
     inputs: Array<{
       worker_id: number;
@@ -73,9 +111,10 @@ export const notificationServiceMock = {
     }>,
   ) => {
     for (const input of inputs) {
-      notificationServiceMock.persistWorkerNotification(input);
+      realtimeNotificationServiceMock.persistWorkerNotification(input);
     }
   },
+  // Function จำลอง listWorkerNotifications จริง — ย้ายมาจาก notificationServiceMock ตาม Fix C
   listWorkerNotifications: async (
     query: { page?: string; limit?: string },
     auth?: { account_id?: number; role?: string },
@@ -114,41 +153,6 @@ export const notificationServiceMock = {
       },
     };
   },
-  resolveTicketResultAudience,
-  publishAdminWorkerStatusChanged: (event: {
-    title: string;
-    message: string;
-    workerCode: string | null;
-    queue: unknown;
-    reason: string;
-    extraPayload?: Record<string, unknown>;
-  }) =>
-    state.notifications.push({
-      type: "WORKER_STATUS_CHANGED",
-      title: event.title,
-      message: event.message,
-      payload: {
-        worker_code: event.workerCode,
-        queue: event.queue,
-        reason: event.reason,
-        ...(event.extraPayload ?? {}),
-      },
-      audience: {
-        roles: ["admin"],
-      },
-    }),
-};
-
-export const realtimeNotificationServiceMock = {
-  publishRealtimeEvent: (event: { payload?: unknown; worker_payload?: unknown }) =>
-    // เลียนแบบ fallback ของ publishRealtimeEvent จริงใน realtime-notification.service.ts
-    // (worker_payload = input.worker_payload ?? payload) เพื่อให้ event ที่ mock บันทึกไว้ตรงกับสิ่งที่
-    // worker ได้รับจริง แม้ caller จะไม่ได้ส่ง worker_payload มาแยกต่างหาก
-    state.realtimeEvents.push({
-      ...event,
-      worker_payload: event.worker_payload ?? event.payload ?? {},
-    }),
-  resolveTicketResultAudience,
 };
 
 export const workerSocketMock = {
@@ -197,7 +201,9 @@ export const MESSAGE_DELIVERY_STATUS = {
   FAILED: "FAILED",
 } as const;
 
-export const lineRepositoryMock = {
+// Mock ของ src/repositories/shared/message-delivery-log.repository.ts — ย้ายมาจาก lineRepositoryMock
+// ตาม Fix D เพราะ table นี้ใช้ร่วมกันทั้ง fcm_push และ LINE channel
+export const messageDeliveryLogRepositoryMock = {
   MESSAGE_DELIVERY_STATUS,
   createMessageDeliveryLog: async (
     channel: string,
@@ -238,12 +244,15 @@ export const lineRepositoryMock = {
       record.sent_at = record.updated_at;
     }
   },
+};
+
+// Mock ของ src/repositories/shared/line-action-token.repository.ts — ย้ายมาจาก lineRepositoryMock ตาม Fix D
+export const lineActionTokenRepositoryMock = {
   createLineActionToken: async (input: {
     action: string;
     ticket_id: number;
     submission_id: number;
     boothCode: string;
-    expires_at?: Date;
   }) => {
     const now = new Date();
     const id = state.nextLineActionTokenId++;
@@ -254,9 +263,7 @@ export const lineRepositoryMock = {
       ticket_id: input.ticket_id,
       submission_id: input.submission_id,
       boothCode: input.boothCode,
-      expires_at:
-        input.expires_at?.toISOString() ??
-        new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       used_at: null,
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
@@ -265,8 +272,21 @@ export const lineRepositoryMock = {
     state.lineActionTokens.push(record);
     return record;
   },
+};
+
+export const lineRepositoryMock = {
   findLineActionToken: async (token: string) =>
     state.lineActionTokens.find((record) => record.token === token) ?? null,
+  claimLineActionTokenUsed: async (id: number) => {
+    const record = state.lineActionTokens.find((item) => item.id === id);
+
+    if (!record || record.used_at !== null) {
+      return false;
+    }
+
+    record.used_at = new Date().toISOString();
+    return true;
+  },
   upsertTicketRating: async (input: {
     ticket_id: number;
     submission_id: number;

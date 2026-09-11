@@ -1,23 +1,36 @@
-import { accountRepository, sessionRepository } from "../repositories/auth.repository";
+// Import Repositories
+import { createPending, findActiveById, findByUsername, revoke, updateRefreshTokenHash } from "../repositories/auth.repository";
+import * as accountRepository from "../repositories/shared/account.repository";
+import * as sessionRepository from "../repositories/shared/session.repository";
 import * as masterWorkerRepository from "../repositories/shared/master-worker.repository";
 import * as workerSessionRepository from "../repositories/shared/worker-session.repository";
+// Import Queues
 import { getWorkerQueueStatus } from "../queues/worker-queue";
+// Import Config
 import { AUTH_DEFAULTS, getAccessTokenExpiresInSeconds } from "../config/auth.config";
+import { EMPTY_SECURITY_AUDIT_CONTEXT } from "../config/security-audit.config";
+// Import Services
 import { getAccountPermissions } from "./shared/account-permission.service";
 import { performWorkerOfflineCascade } from "./worker.service";
 import { registerWorkerPushToken as registerWorkerPushTokenForSession, registerWorkerPushTokenForAccount, revokeWorkerPushTokensBySession, sendWorkerPushNotificationToSession } from "./shared/worker-push.service";
 import { diffChangedFields, writeSecurityAuditLog, writeSecurityAuditLogBestEffort } from "./shared/security-audit-log.service";
+// Import Utils
 import { disconnectWorkerSocket, sendWorkerSocketEvent } from "../websockets/worker.socket";
-import { deleteAdminProfileImageLocal as deleteAdminProfileImageByUrl } from "../config/local-storage";
+// Import Config
+import { deleteAdminProfileImageByUrl } from "../config/spaces";
 import { withTransaction } from "../db/prisma";
+// Import Types
 import { SECURITY_AUDIT_EVENT_TYPE, SECURITY_AUDIT_OUTCOME } from "../types/shared/security-audit-log.type";
 import type { AccessTokenPayload, AuthSuccessResponse, AuthTokens, MeResponse, ProfileCardShift, SessionDto, UpdateLangResponse } from "../types/auth.type";
 import type { DbConnection } from "../types/shared/common.type";
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { AccountDto, MasterWorkerDto } from "../types/admin-workers.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import type { SecurityAuditRequestContext } from "../types/shared/security-audit-log.type";
+// Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { changeOwnPasswordBodySchema, confirmForceLoginBodySchema, loginBodySchema, refreshBodySchema, updateOwnLangBodySchema, updateOwnProfileBodySchema } from "../validation/schemas";
+// Import Utils
 import ApiError from "../utils/api-error";
 import { signAccessToken, signLoginChallengeToken, signRefreshToken, verifyLoginChallengeToken, verifyRefreshToken } from "../utils/jwt";
 import { logger } from "../utils/logger";
@@ -31,21 +44,16 @@ const WORKER_ROLE = "worker";
 
 const ADMIN_SESSION_DEVICE_NAME = "Admin Web";
 
-// Config hash หลอกสำหรับกันไม่ให้ /auth/login ตอบเร็วขึ้นเวลา identifier ไม่มีอยู่จริง (เทียบกับ
-// identifier ที่มีจริงแต่ password ผิด) — ถ้า login() short-circuit ข้าม verifyPassword ไปเลยตอนหา
-// account/worker ไม่เจอ เวลาตอบสนองจะเร็วกว่ากรณี identifier มีจริงอย่างสม่ำเสมอ (argon2 verify ใช้
-// เวลาคงที่หลายสิบ ms) ทำให้แยกแยะได้จาก response time แม้ error message/status code จะเหมือนกันทุกกรณี
-// — hash เดียวนี้ compute ครั้งเดียวตอน module โหลด แล้วใช้แทน password_hash เมื่อไม่พบ account/worker
-// เพื่อให้ argon2.verify ทำงานจริงเสมอ ไม่ว่า identifier จะมีอยู่จริงหรือไม่
+// Hash หลอกสำหรับให้ argon2.verify ทำงานเสมอแม้ไม่พบ account/worker กัน timing attack ที่แยกได้ว่า
+// identifier มีอยู่จริงหรือไม่จากเวลาตอบสนอง — compute ครั้งเดียวตอน module โหลด
 const dummyPasswordHashPromise = hashPassword(
   "dummy-password-for-constant-time-login-check"
 );
 
 /* -------------------------------------- Admin (Account) helpers -------------------------------------- */
 
-// Function ดึง account ที่ต้อง active จริงตาม ID — ใช้ร่วมกันทุก flow ที่ต้องเช็คสถานะ account
-// ก่อนทำงานต่อ (pre-auth flow โยน 423 ACCOUNT_INACTIVE, self-service flow โยน 401 INVALID_TOKEN
-// เพื่อไม่ให้รู้ว่า account มีอยู่จริงแต่ inactive)
+// Function ดึง account ที่ต้อง active จริงตาม ID ใช้ร่วมกันทุก flow ที่ต้องเช็คสถานะก่อนทำงานต่อ —
+// pre-auth flow โยน 423 ACCOUNT_INACTIVE, self-service flow โยน 401 INVALID_TOKEN เพื่อไม่ให้รู้ว่า account มีอยู่จริง
 async function requireActiveAccountById(
   accountId: number,
   statusCode: number,
@@ -70,7 +78,7 @@ async function requireActiveWorkerById(
 ): Promise<MasterWorkerDto> {
   const worker = await masterWorkerRepository.findById(workerId);
 
-  if (!worker || worker.status !== 1) {
+  if (!worker || worker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     throw new ApiError(statusCode, errorCode, errorMessage);
   }
 
@@ -116,8 +124,7 @@ async function buildAdminMeResponse(
     status: account.status,
     email: account.email,
     phone: account.phone,
-    // ต้องเป็น null เสมอเมื่อยังไม่มีรูป ห้ามละ field ทิ้ง (Frontend ต้องแยก "ยังไม่มีรูป" ออกจาก
-    // response รุ่นเก่าที่ไม่มี contract นี้ได้)
+    // ต้องเป็น null เสมอเมื่อยังไม่มีรูป ห้ามละ field ทิ้ง เพื่อให้ Frontend แยกจาก response รุ่นเก่าที่ไม่มี field นี้ได้
     image_url: account.image_url ?? null,
     permission_level: account.permission_level,
     permissions: accountPermissions.permissions,
@@ -198,6 +205,39 @@ function requireWorkerDevice(
   };
 }
 
+// Function เช็คว่า Active Session ของ Worker (ถ้ามี) เป็นอุปกรณ์เดียวกับที่กำลัง Login หรือไม่ โยน 409
+// พร้อม Login Challenge Token ถ้าคนละอุปกรณ์ — เรียกทั้งนอก Transaction (fail-fast) และในนั้นหลังล็อกแถว (กัน race จริง)
+function assertNoConflictingWorkerSession(
+  workerId: number,
+  activeSession: SessionDto | null,
+  sessionDevice: { deviceId: string; deviceName: string }
+): void {
+  if (!activeSession || activeSession.device_id === sessionDevice.deviceId) {
+    return;
+  }
+
+  const loginChallengeToken = signLoginChallengeToken({
+    account_id: workerId,
+    role: WORKER_ROLE,
+    old_session_id: activeSession.id,
+    new_device_id: sessionDevice.deviceId,
+  });
+
+  throw new ApiError(
+    409,
+    "ACTIVE_SESSION_EXISTS",
+    "Another active session exists.",
+    {
+      login_challenge_token: loginChallengeToken,
+      active_device: {
+        device_id: activeSession.device_id,
+        device_name: activeSession.device_name,
+        last_active_at: activeSession.last_active_at,
+      },
+    }
+  );
+}
+
 // Function สร้าง admin session ใน service flow
 async function createAdminSession(
   account: AccountDto,
@@ -208,7 +248,7 @@ async function createAdminSession(
   const expiresAt = new Date(
     Date.now() + AUTH_DEFAULTS.sessionExpiresInMilliseconds
   ).toISOString();
-  const session = await sessionRepository.createPending(
+  const session = await createPending(
     {
       account_id: account.id,
       device_id: deviceId,
@@ -231,7 +271,7 @@ async function createAdminSession(
     session_id: session.id,
   });
 
-  await sessionRepository.updateRefreshTokenHash(
+  await updateRefreshTokenHash(
     session.id,
     hashRefreshToken(refreshToken),
     session.refresh_token_hash,
@@ -245,8 +285,7 @@ async function createAdminSession(
   };
 }
 
-// Function สร้าง worker session ใน service flow — คู่ขนานของ createAdminSession แต่เขียนลง
-// worker_sessions และ MasterWorker ไม่มี permission ให้ต้อง query
+// Function สร้าง worker session ใน service flow — คู่ขนานของ createAdminSession แต่เขียนลง worker_sessions และไม่มี permission ให้ query
 async function createWorkerSession(
   worker: MasterWorkerDto,
   deviceId: string,
@@ -306,15 +345,8 @@ async function buildAuthSuccessResponse(
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-const EMPTY_SECURITY_AUDIT_CONTEXT: SecurityAuditRequestContext = {
-  ip_address: null,
-  user_agent: null,
-  request_id: null,
-};
-
-// Function จัดการ login ใน service flow — dispatch ไปหา Account (Admin) หรือ MasterWorker (Worker)
-// ตาม username ที่ตรงกัน (Worker login ด้วย LaborCode เป็น username) ต้องเรียก verifyPassword เสมอ
-// ไม่ว่าจะเจอ identity ฝั่งไหนหรือไม่เจอเลย เพื่อกัน timing-based username enumeration
+// Function จัดการ login — dispatch ไปหา Account (Admin) หรือ MasterWorker (Worker login ด้วย LaborCode
+// เป็น username) ต้องเรียก verifyPassword เสมอไม่ว่าจะเจอ identity ฝั่งไหนหรือไม่เจอเลย เพื่อกัน timing-based username enumeration
 export async function login(
   body: unknown,
   context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
@@ -327,17 +359,20 @@ export async function login(
     fcm_token: fcmToken,
     platform,
   } = parseWithSchema(loginBodySchema, body);
-  const account = await accountRepository.findByUsername(username);
-  const worker = account ? null : await masterWorkerRepository.findByLaborCode(username);
+  // เรียก findByUsername และ findByLaborCode พร้อมกันเสมอ (ไม่ query แบบ fallback ทีละขั้น) เพื่อไม่ให้
+  // เวลาตอบสนองต่างกันระหว่าง username ที่เป็น Admin กับไม่ใช่ ซึ่งจะเป็นช่องทาง timing enumeration ใหม่
+  const [account, workerLookup] = await Promise.all([
+    findByUsername(username),
+    masterWorkerRepository.findByLaborCode(username),
+  ]);
+  const worker = account ? null : workerLookup;
   const passwordHash =
     account?.password_hash ?? worker?.password_hash ?? (await dummyPasswordHashPromise);
   const passwordValid = await verifyPassword(password, passwordHash);
 
   if ((!account && !worker) || !passwordValid) {
-    // Fire-and-forget (ไม่ await) เพื่อไม่ให้เวลาตอบสนองของ 401 ขึ้นกับเวลาที่ DB เขียน log เสร็จ —
-    // ทั้งสอง branch (username ไม่มี / password ผิด) เขียน log แบบเดียวกันเป๊ะ (ไม่ await ทั้งคู่) จึง
-    // ไม่สร้างช่องทาง timing ใหม่ระหว่างสอง case นี้ ส่วน response ยังคงเป็นข้อความเดียวกันเสมอ (401
-    // INVALID_CREDENTIALS) ไม่เปิดช่อง username enumeration ใน response
+    // Fire-and-forget (ไม่ await) เพื่อไม่ให้เวลาตอบสนองของ 401 ขึ้นกับเวลาเขียน log — ทั้งสอง branch
+    // (username ไม่มี / password ผิด) เขียน log และคืน response ข้อความเดียวกันเสมอ ไม่เปิดช่อง username enumeration
     void writeSecurityAuditLogBestEffort({
       event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_LOGIN_FAILED,
       outcome: SECURITY_AUDIT_OUTCOME.FAILURE,
@@ -377,15 +412,25 @@ export async function login(
       throw new ApiError(423, "ACCOUNT_INACTIVE", "Account is inactive.");
     }
 
-    const activeSession = await sessionRepository.findActiveByAccountId(account.id);
+    // Admin ตั้งใจให้มี session เดียวเสมอ ไม่แยกตามอุปกรณ์เหมือน Worker — device_id/device_name ที่ client
+    // ส่งมา (schema เดียวกับ Worker) จึงถูกละเว้นเสมอสำหรับ Admin ไม่ใช่บั๊ก
     const sessionDevice = {
       deviceId: getDefaultSessionDeviceId(account),
       deviceName: getDefaultSessionDeviceName(account),
     };
 
     return withTransaction(async (transaction) => {
+      // ล็อกแถว Account ก่อนเช็ค Active Session เดิม กัน race ระหว่าง login พร้อมกันสองคำขอที่ต่างฝ่าย
+      // ต่างเห็น session เดิมก่อนอีกฝ่าย commit แล้วจบด้วยการมี active session มากกว่า 1 session พร้อมกัน
+      await transaction.$queryRaw`SELECT id FROM accounts WHERE id = ${account.id} FOR UPDATE`;
+
+      const activeSession = await sessionRepository.findActiveByAccountId(
+        account.id,
+        transaction
+      );
+
       if (activeSession) {
-        await sessionRepository.revoke(activeSession.id, transaction);
+        await revoke(activeSession.id, transaction);
       }
 
       const tokens = await createAdminSession(
@@ -415,16 +460,16 @@ export async function login(
     });
   }
 
-  const activeWorker = worker as MasterWorkerDto;
+  const matchedWorker = worker as MasterWorkerDto;
 
-  if (activeWorker.status !== 1) {
+  if (matchedWorker.status !== MASTER_WORKER_STATUS.ACTIVE) {
     void writeSecurityAuditLogBestEffort({
       event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_LOGIN_FAILED,
       outcome: SECURITY_AUDIT_OUTCOME.FAILURE,
       actor_type: "worker",
-      actor_worker_id: activeWorker.id,
-      actor_username: activeWorker.labor_code,
-      actor_full_name: activeWorker.full_name,
+      actor_worker_id: matchedWorker.id,
+      actor_username: matchedWorker.labor_code,
+      actor_full_name: matchedWorker.full_name,
       failure_code: "account_inactive",
       ip_address: context.ip_address,
       user_agent: context.user_agent,
@@ -434,48 +479,38 @@ export async function login(
     throw new ApiError(423, "ACCOUNT_INACTIVE", "Account is inactive.");
   }
 
-  const activeSession = await workerSessionRepository.findActiveByWorkerId(activeWorker.id);
+  const activeSession = await workerSessionRepository.findActiveByWorkerId(matchedWorker.id);
   const sessionDevice = requireWorkerDevice(deviceId, deviceName);
 
-  if (activeSession && activeSession.device_id !== sessionDevice.deviceId) {
-    const loginChallengeToken = signLoginChallengeToken({
-      account_id: activeWorker.id,
-      role: WORKER_ROLE,
-      old_session_id: activeSession.id,
-      new_device_id: sessionDevice.deviceId,
-    });
-
-    throw new ApiError(
-      409,
-      "ACTIVE_SESSION_EXISTS",
-      "Another active session exists.",
-      {
-        login_challenge_token: loginChallengeToken,
-        active_device: {
-          device_id: activeSession.device_id,
-          device_name: activeSession.device_name,
-          last_active_at: activeSession.last_active_at,
-        },
-      }
-    );
-  }
+  assertNoConflictingWorkerSession(matchedWorker.id, activeSession, sessionDevice);
 
   return withTransaction(async (transaction) => {
-    if (activeSession) {
-      await workerSessionRepository.revoke(activeSession.id, transaction);
-      await revokeWorkerPushTokensBySession(activeSession.id, transaction);
+    // ล็อกแถว MasterWorker แล้วอ่าน active session ใหม่ภายใต้ lock เดียวกัน กัน race ระหว่าง login พร้อมกัน
+    // สองอุปกรณ์ — เช็คนอก transaction มีไว้ fail-fast เพื่อ UX เท่านั้น ต้อง re-check ใหม่เสมอหลังได้ lock แล้ว
+    await transaction.$queryRaw`SELECT id FROM master_workers WHERE id = ${matchedWorker.id} FOR UPDATE`;
+
+    const currentActiveSession = await workerSessionRepository.findActiveByWorkerId(
+      matchedWorker.id,
+      transaction
+    );
+
+    assertNoConflictingWorkerSession(matchedWorker.id, currentActiveSession, sessionDevice);
+
+    if (currentActiveSession) {
+      await workerSessionRepository.revoke(currentActiveSession.id, transaction);
+      await revokeWorkerPushTokensBySession(currentActiveSession.id, transaction);
     }
 
     const tokens = await createWorkerSession(
-      activeWorker,
+      matchedWorker,
       sessionDevice.deviceId,
       sessionDevice.deviceName,
       transaction
     );
     await registerWorkerPushTokenForAccount(
       {
-        worker_id: activeWorker.id,
-        worker_code: activeWorker.labor_code,
+        worker_id: matchedWorker.id,
+        worker_code: matchedWorker.labor_code,
         session_id: tokens.session.id,
         device_id: sessionDevice.deviceId,
         platform,
@@ -489,9 +524,9 @@ export async function login(
         event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_LOGIN_SUCCEEDED,
         outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
         actor_type: "worker",
-        actor_worker_id: activeWorker.id,
-        actor_username: activeWorker.labor_code,
-        actor_full_name: activeWorker.full_name,
+        actor_worker_id: matchedWorker.id,
+        actor_username: matchedWorker.labor_code,
+        actor_full_name: matchedWorker.full_name,
         session_id: tokens.session.id,
         ip_address: context.ip_address,
         user_agent: context.user_agent,
@@ -517,7 +552,7 @@ function getDefaultSessionDeviceName(_account: AccountDto): string {
 // Function ยืนยัน force login ใน service flow
 export async function confirmForceLogin(
   body: unknown,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  context: SecurityAuditRequestContext
 ) {
   const {
     login_challenge_token: loginChallengeToken,
@@ -536,117 +571,9 @@ export async function confirmForceLogin(
     );
   }
 
-  if (challenge.role === WORKER_ROLE) {
-    const oldSession = await workerSessionRepository.findActiveById(challenge.old_session_id);
-
-    if (!oldSession || oldSession.account_id !== challenge.account_id) {
-      throw new ApiError(
-        401,
-        "INVALID_LOGIN_CHALLENGE",
-        "Login challenge session is no longer active."
-      );
-    }
-
-    const worker = await requireActiveWorkerById(
-      challenge.account_id,
-      423,
-      "ACCOUNT_INACTIVE",
-      "Account is inactive."
-    );
-    const notificationPayload = {
-      reason: "force_login",
-      old_device_id: oldSession.device_id,
-      old_device_name: oldSession.device_name,
-      new_device_id: deviceId,
-      new_device_name: deviceName,
-    };
-
-    sendWorkerSocketEvent(worker.id, "SESSION_REVOKED", notificationPayload, {
-      push: false,
-      notificationKey: "auth.session_revoked",
-      notificationParams: notificationPayload,
-      fallbackTitle: "Signed in on another device",
-      fallbackMessage:
-        "This session was signed out because login was confirmed on another device.",
-    });
-    // Best-effort เท่านั้น — แค่แจ้งเตือนอุปกรณ์เดิมว่าถูกดีดออก ไม่ใช่ core ของ force login เอง ห้ามให้
-    // ความล้มเหลวของ FCM (Firebase credential ผิด, token หมดอายุ, network ขัดข้อง ฯลฯ) ทำให้ revoke
-    // session เดิม/สร้าง session ใหม่ด้านล่างไม่เกิดขึ้น
-    await sendWorkerPushNotificationToSession({
-      session_id: oldSession.id,
-      type: "SESSION_REVOKED",
-      title: "Signed in on another device",
-      message:
-        "This session was signed out because login was confirmed on another device.",
-      notification_key: "auth.session_revoked",
-      notification_params: notificationPayload,
-      lang: worker.lang,
-      payload: notificationPayload,
-    }).catch((error) => {
-      logger.warn("Failed to send force-login push notification to previous session.", { error });
-    });
-
-    return withTransaction(async (transaction) => {
-      await workerSessionRepository.revoke(oldSession.id, transaction);
-      await revokeWorkerPushTokensBySession(oldSession.id, transaction);
-
-      const tokens = await createWorkerSession(worker, deviceId, deviceName, transaction);
-      await registerWorkerPushTokenForAccount(
-        {
-          worker_id: worker.id,
-          worker_code: worker.labor_code,
-          session_id: tokens.session.id,
-          device_id: deviceId,
-          platform,
-          fcm_token: fcmToken,
-        },
-        transaction
-      );
-
-      // auth_session_revoked แยกจาก auth_force_login (27.14.1) — session_id คือ target session ที่
-      // ถูก revoke (ต่างจาก auth_force_login ที่ session_id คือ session ใหม่ที่สร้างขึ้น) ใช้
-      // request_id เดียวกันเพื่อ trace 2 event นี้กลับมาหากันได้จาก operation เดียวกัน
-      await writeSecurityAuditLog(
-        {
-          event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_SESSION_REVOKED,
-          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-          actor_type: "worker",
-          actor_worker_id: worker.id,
-          actor_username: worker.labor_code,
-          actor_full_name: worker.full_name,
-          session_id: oldSession.id,
-          ip_address: context.ip_address,
-          user_agent: context.user_agent,
-          request_id: context.request_id,
-          metadata: { revoke_source: "force_login", new_session_id: tokens.session.id },
-        },
-        transaction
-      );
-
-      await writeSecurityAuditLog(
-        {
-          event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_FORCE_LOGIN,
-          outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-          actor_type: "worker",
-          actor_worker_id: worker.id,
-          actor_username: worker.labor_code,
-          actor_full_name: worker.full_name,
-          session_id: tokens.session.id,
-          ip_address: context.ip_address,
-          user_agent: context.user_agent,
-          request_id: context.request_id,
-          metadata: { revoked_session_id: oldSession.id },
-        },
-        transaction
-      );
-
-      return buildAuthSuccessResponse(tokens);
-    });
-  }
-
-  const oldSession = await sessionRepository.findActiveById(challenge.old_session_id);
-
-  if (!oldSession || oldSession.account_id !== challenge.account_id) {
+  // Force login รองรับเฉพาะ Worker — signLoginChallengeToken สร้าง token นี้ด้วย role: WORKER_ROLE เสมอ
+  // (Admin ไม่มี flow นี้) เหลือ guard นี้ไว้กันกรณี token ผิดปกติเท่านั้น
+  if (challenge.role !== WORKER_ROLE) {
     throw new ApiError(
       401,
       "INVALID_LOGIN_CHALLENGE",
@@ -654,29 +581,57 @@ export async function confirmForceLogin(
     );
   }
 
-  const account = await requireActiveAccountById(
+  const oldSession = await workerSessionRepository.findActiveById(challenge.old_session_id);
+
+  if (!oldSession || oldSession.account_id !== challenge.account_id) {
+    throw new ApiError(
+      401,
+      "INVALID_LOGIN_CHALLENGE",
+      "Login challenge session is no longer active."
+    );
+  }
+
+  const worker = await requireActiveWorkerById(
     challenge.account_id,
     423,
     "ACCOUNT_INACTIVE",
     "Account is inactive."
   );
+  const notificationPayload = {
+    reason: "force_login",
+    old_device_id: oldSession.device_id,
+    old_device_name: oldSession.device_name,
+    new_device_id: deviceId,
+    new_device_name: deviceName,
+  };
 
-  return withTransaction(async (transaction) => {
-    await sessionRepository.revoke(oldSession.id, transaction);
+  const response = await withTransaction(async (transaction) => {
+    await workerSessionRepository.revoke(oldSession.id, transaction);
+    await revokeWorkerPushTokensBySession(oldSession.id, transaction);
 
-    const tokens = await createAdminSession(account, deviceId, deviceName, transaction);
+    const tokens = await createWorkerSession(worker, deviceId, deviceName, transaction);
+    await registerWorkerPushTokenForAccount(
+      {
+        worker_id: worker.id,
+        worker_code: worker.labor_code,
+        session_id: tokens.session.id,
+        device_id: deviceId,
+        platform,
+        fcm_token: fcmToken,
+      },
+      transaction
+    );
 
-    // auth_session_revoked แยกจาก auth_force_login (27.14.1) — session_id คือ target session ที่ถูก
-    // revoke (ต่างจาก auth_force_login ที่ session_id คือ session ใหม่ที่สร้างขึ้น) ใช้ request_id
-    // เดียวกันเพื่อ trace 2 event นี้กลับมาหากันได้จาก operation เดียวกัน
+    // auth_session_revoked แยกจาก auth_force_login — session_id คือ session เดิมที่ถูก revoke (ต่างจาก
+    // auth_force_login ที่ session_id คือ session ใหม่) ใช้ request_id เดียวกันเพื่อ trace 2 event นี้กลับมาหากันได้
     await writeSecurityAuditLog(
       {
         event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_SESSION_REVOKED,
         outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-        actor_type: "admin",
-        actor_account_id: account.id,
-        actor_username: account.username,
-        actor_full_name: account.full_name,
+        actor_type: "worker",
+        actor_worker_id: worker.id,
+        actor_username: worker.labor_code,
+        actor_full_name: worker.full_name,
         session_id: oldSession.id,
         ip_address: context.ip_address,
         user_agent: context.user_agent,
@@ -690,10 +645,10 @@ export async function confirmForceLogin(
       {
         event_type: SECURITY_AUDIT_EVENT_TYPE.AUTH_FORCE_LOGIN,
         outcome: SECURITY_AUDIT_OUTCOME.SUCCESS,
-        actor_type: "admin",
-        actor_account_id: account.id,
-        actor_username: account.username,
-        actor_full_name: account.full_name,
+        actor_type: "worker",
+        actor_worker_id: worker.id,
+        actor_username: worker.labor_code,
+        actor_full_name: worker.full_name,
         session_id: tokens.session.id,
         ip_address: context.ip_address,
         user_agent: context.user_agent,
@@ -705,6 +660,32 @@ export async function confirmForceLogin(
 
     return buildAuthSuccessResponse(tokens);
   });
+
+  // แจ้งเตือนอุปกรณ์เดิมหลัง commit สำเร็จจริงเท่านั้น เพื่อไม่ให้อุปกรณ์เดิมถูกหลอกว่า session ถูก revoke
+  // ไปแล้วทั้งที่ transaction อาจ fail และ session เดิมยังใช้งานได้จริงอยู่ — เป็น best-effort ไม่ให้ error ตรงนี้ทำให้ response พัง
+  sendWorkerSocketEvent(worker.id, "SESSION_REVOKED", notificationPayload, {
+    push: false,
+    notificationKey: "auth.session_revoked",
+    notificationParams: notificationPayload,
+    fallbackTitle: "Signed in on another device",
+    fallbackMessage:
+      "This session was signed out because login was confirmed on another device.",
+  });
+  await sendWorkerPushNotificationToSession({
+    session_id: oldSession.id,
+    type: "SESSION_REVOKED",
+    title: "Signed in on another device",
+    message:
+      "This session was signed out because login was confirmed on another device.",
+    notification_key: "auth.session_revoked",
+    notification_params: notificationPayload,
+    lang: worker.lang,
+    payload: notificationPayload,
+  }).catch((error) => {
+    logger.warn("Failed to send force-login push notification to previous session.", { error });
+  });
+
+  return response;
 }
 
 // Function ต่ออายุ access token ด้วย refresh token ใน service flow
@@ -762,7 +743,7 @@ export async function refresh(body: unknown) {
     };
   }
 
-  const session = await sessionRepository.findActiveById(payload.session_id);
+  const session = await findActiveById(payload.session_id);
 
   if (!session || session.account_id !== payload.account_id) {
     throw new ApiError(
@@ -803,16 +784,15 @@ export async function refresh(body: unknown) {
     session_id: session.id,
   });
 
-  const rotated = await sessionRepository.updateRefreshTokenHash(
+  const rotated = await updateRefreshTokenHash(
     session.id,
     hashRefreshToken(nextRefreshToken),
     session.refresh_token_hash
   );
 
   if (!rotated) {
-    // แพ้ race ให้อีก request ที่ใช้ refresh token เดิมตัวเดียวกันนี้รีเฟรชไปก่อนแล้วเสี้ยววินาที
-    // ก่อนหน้า (เช่น 2 tab/2 request ที่เจอ 401 พร้อมกันแล้ว trigger refresh พร้อมกันด้วย token
-    // เดิม) — refresh token ที่ใช้ในคำขอนี้ไม่ใช่ตัวล่าสุดของ session นี้อีกต่อไปแล้วจริงๆ
+    // แพ้ race ให้อีก request ที่ใช้ refresh token เดิมตัวเดียวกันรีเฟรชไปก่อนแล้ว (เช่น 2 tab เจอ 401
+    // พร้อมกันแล้ว trigger refresh ด้วย token เดิม) — token นี้ไม่ใช่ตัวล่าสุดของ session นี้อีกต่อไป
     throw new ApiError(
       401,
       "INVALID_REFRESH_TOKEN",
@@ -830,8 +810,8 @@ export async function refresh(body: unknown) {
 
 // Function จัดการ logout ใน service flow
 export async function logout(
-  auth?: AccessTokenPayload,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  auth: AccessTokenPayload | undefined,
+  context: SecurityAuditRequestContext
 ) {
   if (!auth || !auth.session_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -900,7 +880,7 @@ export async function logout(
   const account = await accountRepository.findById(auth.account_id);
 
   await withTransaction(async (transaction) => {
-    await sessionRepository.revoke(auth.session_id, transaction);
+    await revoke(auth.session_id, transaction);
 
     await writeSecurityAuditLog(
       {
@@ -963,12 +943,12 @@ export async function me(
   return buildAdminMeResponse(account, currentSession);
 }
 
-// Function จัดการ change own password ใน service flow — Admin เท่านั้น (route gate ด้วย
-// roleMiddleware(["admin"])) เพราะ Worker password มาจาก telephone เสมอ ไม่มี password อิสระให้เปลี่ยน
+// Function จัดการ change own password — Admin เท่านั้น (route gate ด้วย roleMiddleware(["admin"]))
+// เพราะ Worker password มาจาก telephone เสมอ ไม่มี password อิสระให้เปลี่ยน
 export async function changeOwnPassword(
   auth: AccessTokenPayload | undefined,
   body: unknown,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  context: SecurityAuditRequestContext
 ): Promise<{ message: string }> {
   if (!auth || !auth.account_id || !auth.session_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -1026,6 +1006,7 @@ export async function changeOwnPassword(
   });
 }
 
+// Function จัดการ update own lang (UI language) ใน service flow — ใช้ได้ทั้ง Admin และ Worker
 export async function updateOwnLang(
   auth: AccessTokenPayload | undefined,
   body: unknown
@@ -1061,14 +1042,13 @@ export async function updateOwnLang(
   };
 }
 
-// Function จัดการ update own profile (full_name/email/phone) ใน service flow — Admin เท่านั้น
-// (route gate ด้วย roleMiddleware(["admin"])) ใช้ buildAdminMeResponse เดิมเพื่อคืน profile ล่าสุด
-// ในรูปแบบเดียวกันทุกประการ
+// Function จัดการ update own profile (full_name/email/phone) — Admin เท่านั้น (route gate ด้วย
+// roleMiddleware(["admin"])) ใช้ buildAdminMeResponse เดิมเพื่อคืน profile รูปแบบเดียวกันทุกที่
 export async function updateOwnProfile(
   auth: AccessTokenPayload | undefined,
   currentSession: SessionDto | undefined,
   body: unknown,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  context: SecurityAuditRequestContext
 ): Promise<MeResponse> {
   if (!auth || !auth.account_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -1128,12 +1108,11 @@ export async function updateOwnProfile(
   });
 }
 
-// Function จัดการ upload own profile image ใน service flow — Admin เท่านั้น (route gate ด้วย
-// roleMiddleware(["admin"])) รูปของ Worker มาจาก MasterWorker.picture (sync จาก Master) เท่านั้น
+// Function จัดการ upload own profile image — Admin เท่านั้น รูปของ Worker มาจาก MasterWorker.picture (sync จาก Master) เท่านั้น
 export async function uploadOwnProfileImage(
   auth: AccessTokenPayload | undefined,
   imageUrl: string,
-  context: SecurityAuditRequestContext = EMPTY_SECURITY_AUDIT_CONTEXT
+  context: SecurityAuditRequestContext
 ): Promise<{ message: string; image_url: string }> {
   if (!auth || !auth.account_id) {
     throw new ApiError(401, "INVALID_TOKEN", "Invalid or expired token.");
@@ -1181,8 +1160,7 @@ export async function uploadOwnProfileImage(
     };
   });
 
-  // ลบรูปเก่าออกจาก Spaces แบบ best-effort หลัง commit สำเร็จแล้วเท่านั้น (ไม่ทำให้ request หลักล้มเหลว
-  // ถ้าลบไม่สำเร็จ) — no-op เงียบๆ ถ้า previousImageUrl เป็น path local เก่าก่อน migrate ไป Spaces
+  // ลบรูปเก่าออกจาก DigitalOcean Spaces แบบ best-effort หลัง commit สำเร็จแล้วเท่านั้น (ลบไม่สำเร็จไม่ทำให้ request หลักล้มเหลว)
   if (previousImageUrl && previousImageUrl !== imageUrl) {
     await deleteAdminProfileImageByUrl(previousImageUrl).catch((error) => {
       logger.error("Failed to delete previous admin profile image from storage.", { error });

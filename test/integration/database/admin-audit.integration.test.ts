@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ASSIGNMENT_STATUS } from "../../../src/constants/job-status";
+import { ASSIGNMENT_STATUS } from "../../../src/constants/status";
 import { listWorkerPerformance } from "../../../src/repositories/admin-audit.repository";
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../../../src/types/shared/worker-assignment-event.type";
 import { buildBangkokDateRange } from "../../../src/utils/time";

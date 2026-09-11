@@ -1,10 +1,12 @@
+// Import Repositories
 import * as baseMasterWorkerRepository from "./shared/master-worker.repository";
-import * as workerSessionRepository from "./shared/worker-session.repository";
+// Import Mappers
 import { mapMasterWorker } from "./shared/mappers";
 import { client, requireMapped, toId } from "./shared/repository-utils";
-
+// Import Types
 import type { Prisma } from "@prisma/client";
 import type { DbConnection } from "../types/shared/common.type";
+import { MASTER_WORKER_STATUS } from "../types/admin-workers.type";
 import type { MasterWorkerCreateInput, MasterWorkerDto, MasterWorkerUpdateInput, UserListFilters, UserListShift } from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
@@ -12,8 +14,7 @@ import type { MasterWorkerCreateInput, MasterWorkerDto, MasterWorkerUpdateInput,
 const SEARCH_MODE = "insensitive" as const;
 
 // ค่า timeWork จริงบน MasterWorker ที่ query shift MORNING/EVENING ต้อง map ไปหา — ใช้ค่าเดียวกับ
-// TIME_WORK_PRESETS ใน utils/shift.ts ที่กำหนดตอนสร้าง/แก้ไข worker เพื่อให้ filter ตรงกับ shift_name
-// ที่ response แสดงผลจริงเสมอ
+// TIME_WORK_PRESETS ใน utils/shift.ts เพื่อให้ filter ตรงกับ shift_name ที่ response แสดงผลจริงเสมอ
 const USER_LIST_SHIFT_TO_TIME_WORK: Record<UserListShift, "Morning" | "Evening"> = {
   MORNING: "Morning",
   EVENING: "Evening",
@@ -61,7 +62,9 @@ function buildWorkerWhere(filters: Partial<UserListFilters> = {}): Prisma.Master
   const where: Prisma.MasterWorkerWhereInput = {};
 
   if (filters.status !== undefined) {
-    where.status = filters.status === "active" ? 1 : { not: 1 };
+    where.status = filters.status === "active"
+      ? MASTER_WORKER_STATUS.ACTIVE
+      : { not: MASTER_WORKER_STATUS.ACTIVE };
   }
 
   if (filters.search) {
@@ -96,10 +99,7 @@ function buildWorkerWhere(filters: Partial<UserListFilters> = {}): Prisma.Master
   return where;
 }
 
-// Function จัดการ laborCode exists จาก DB — laborCode คือ identifier หลักของ worker เทียบเท่า
-// username เดิม ใช้ตรวจก่อนสร้าง/แก้ worker ทั้งคู่ (เดิมแยก usernameExists/workerCodeExists/
-// shirtNumberExists เพราะ Account เก็บ username แยกจาก Profile.shirt_number แต่ตอนนี้ laborCode
-// เป็น field เดียวบน MasterWorker)
+// Function ตรวจว่า laborCode มีอยู่แล้วหรือไม่ จาก DB — laborCode คือ identifier หลักของ worker ใช้ตรวจก่อนสร้าง/แก้ไข
 export async function laborCodeExists(
   laborCode: string,
   exceptWorkerId?: number | string | null,
@@ -139,13 +139,13 @@ export async function create(
       laborColor: input.labor_color,
       workStartDate: input.work_start_date ? new Date(input.work_start_date) : null,
       workCode: input.work_code ?? null,
+      coatNo: input.coat_no ?? null,
       timeWork: input.time_work ?? null,
       timeIn: input.time_in ?? null,
       timeOut: input.time_out ?? null,
       status: input.status ?? 1,
       source: "admin_created",
-      // ให้เป็น "TH" เสมอสำหรับ worker ที่สร้างทาง Admin (ไม่รับค่าจาก body) ต่างจาก worker ที่ sync
-      // มาจาก Master ซึ่งค่านี้มาจากข้อมูลจริง
+      // worker ที่สร้างทาง Admin ให้เป็น "TH" เสมอ (ไม่รับค่าจาก body) ต่างจาก worker ที่ sync มาจาก Master
       lang: "TH",
     },
   });
@@ -271,16 +271,3 @@ export async function updateShift(
 
   return requireMapped(mapMasterWorker(updated), "MasterWorker", "shift update");
 }
-
-const workerRepository = {
-  ...baseMasterWorkerRepository,
-  laborCodeExists,
-  create,
-  listUsers,
-  countUsers,
-  findByIdentifier,
-  update,
-  updateShift,
-};
-
-export { workerRepository, workerSessionRepository };

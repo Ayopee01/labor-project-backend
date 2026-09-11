@@ -184,7 +184,6 @@ export interface TicketProductDto {
 }
 
 // Type response รายการ PackageCode ที่ยังใช้งานอยู่ของ ProductCode เดียว — ใช้ให้ Worker เลือก
-// PackageCode ใหม่ตอนแก้ไขยอดส่ง (PackageName ไว้แสดงบน UI เท่านั้น ส่งจริงต้องใช้ PackageCode)
 export interface WorkerProductPackageOptionsResponse {
   ProductCode: string;
   ProductName: string;
@@ -213,23 +212,15 @@ export interface TicketWorkerDto {
 export interface TicketCompletionSubmissionDto {
   id: number;
   ticket_id: number;
-  // Submitter คือ Admin หรือ Worker อย่างใดอย่างหนึ่งเท่านั้น (ดู submitted_by_role) — field ตรง
-  // role ที่ไม่ตรงกับ role จะเป็น null เสมอ
   submitted_by_account_id: number | null;
   submitted_by_worker_id: number | null;
-  // Snapshot ตอนส่งยอดจริง ("worker" | "admin" จาก TICKET_SUBMITTER_ROLE) ห้าม derive จาก
-  // Account.role ตอนอ่าน — ดู field comment ใน prisma/schema.prisma
   submitted_by_role: string;
   status: string;
   confirmed_at: string | null;
   rejected_at: string | null;
   reject_reason: string | null;
   resolved_by_line_user_id: string | null;
-  // Count of WORKING TicketWorker rows at the moment this submission was created. Null for rows
-  // created before this feature — never backfilled/derived from current data.
   worker_count_snapshot: number | null;
-  // VehicleJobAssignment the submitting worker was actively working under at submit time. Null
-  // for admin-submitted-on-behalf rows and for rows created before this feature.
   assignment_id: number | null;
   created_at: string;
   updated_at: string;
@@ -292,7 +283,6 @@ export interface WorkerStatusResponse {
   work_start_date: string | null;
   phone: string | null;
   shift: WorkerStatusShift | null;
-  // Type flag บอกว่า Worker เข้าคิวได้ในกะปัจจุบัน
   shift_active: boolean;
   current_job?: WorkerCurrentJobResponse | null;
   break_until?: string;
@@ -318,8 +308,6 @@ export interface VehicleJobAssignmentDto {
   accepted_at: string | null;
   scanned_at: string | null;
   completed_at: string | null;
-  // Set when Admin releases this worker back to the FIFO queue early, before the whole
-  // TicketNumber closes. Distinct from completed_at (whole vehicle job finished).
   released_at: string | null;
   created_at: string;
   updated_at: string;
@@ -396,6 +384,19 @@ export interface WorkerAssignmentTeamMemberDto {
   scanned_at?: string | null;
 }
 
+// Type แถวดิบจาก Repository ก่อนคำนวณ scan_status — ให้ Service เป็นคนตัดสิน scan_status เอง
+export interface WorkerAssignmentTeamRawMemberDto {
+  worker_id?: number;
+  full_name: string;
+  worker_code: string | null;
+  coat_no?: string | null;
+  image_url: string | null;
+  status: string;
+  completed_at: string | null;
+  accepted_at?: string | null;
+  scanned_at?: string | null;
+}
+
 // Type สมาชิกทีมใน response ที่ส่งให้ Worker Mobile (ชื่อ field ตาม public API contract)
 export interface WorkerAssignmentTeamMemberResponse {
   worker_id?: number;
@@ -426,8 +427,6 @@ export interface WorkerCurrentJobBoothResponse {
 }
 
 export interface WorkerCurrentJobMarketResponse {
-  // Scan this Business Ticket's ticket_no (barcode on the Gate paper ticket) via
-  // check-in-barcode to check in the whole team.
   ticket_no: string;
   marketCode: string;
   marketName: string;
@@ -449,23 +448,27 @@ export interface WorkerCurrentJobTeamScanResponse {
   is_ready: boolean;
 }
 
+// Type สรุปว่าตอนนี้มีคน Accept งานนี้แล้วกี่คนจากที่ต้องการทั้งหมด (ก่อนจะถึงขั้นตอน scan QR)
+export interface WorkerCurrentJobTeamAcceptResponse {
+  workers_required: number;
+  accepted_count: number;
+  remaining_count: number;
+  is_ready: boolean;
+}
+
 export interface WorkerCurrentJobResponse {
-  // Type Business Ticket ที่ Worker คนนี้ scan เข้างานจริง
   scanned_ticket_no: string | null;
   ticket_number: string;
   license_plate: string;
   license_plate_province: string | null;
-  // Set only while the assignment is still PENDING (worker has not pressed accept yet).
   accept_deadline_at: string | null;
   accept_deadline_unix_ms: number | null;
-  // Set only once the assignment is ACCEPTED (worker is waiting to scan the QR check-in).
   scan_deadline_at: string | null;
   scan_deadline_unix_ms: number | null;
-  // Set once the whole team has scanned in and the vehicle job's status becomes WORKING — null
-  // until then, and never changes again once set (see markVehicleJobInProgress).
   work_started_at: string | null;
   work_started_at_unix_ms: number | null;
   vehicle_type: string | null;
+  team_accept: WorkerCurrentJobTeamAcceptResponse;
   team_scan: WorkerCurrentJobTeamScanResponse;
   markets: WorkerCurrentJobMarketResponse[];
   team: WorkerCurrentJobTeamMemberResponse[];
@@ -489,8 +492,6 @@ interface WorkerAssignmentStallDto {
 
 // Type ตลาดใน assignment ที่รวมแผงของตลาดนั้น (หนึ่งรายการ = หนึ่ง Business Ticket)
 interface WorkerAssignmentMarketDto {
-  // Scan this Business Ticket's ticket_no (barcode on the Gate paper ticket) via
-  // check-in-barcode to check in the whole team.
   ticket_no: string;
   marketName: string;
   stall_count: number;
@@ -507,6 +508,7 @@ export interface WorkerAssignmentAcceptResponse {
   license_plate_province: string | null;
   scan_deadline_at: string | null;
   scan_deadline_unix_ms: number | null;
+  team_accept: WorkerCurrentJobTeamAcceptResponse;
   team: WorkerAssignmentTeamMemberResponse[];
   markets: WorkerAssignmentMarketDto[];
 }
@@ -517,8 +519,6 @@ export interface WorkerAssignmentCheckInResponse {
   worker_status: WorkerWorkStatus;
   worker_code: string | null;
   ticket_number: string;
-  // Business Ticket (market) whose barcode this worker actually scanned — never guessed, always
-  // the one resolved from the ticket_no this request sent (see scanWorkerAssignment).
   ticket_no: string;
   team_scan: WorkerCurrentJobTeamScanResponse;
 }
@@ -534,7 +534,6 @@ export interface WorkerEarningsSummaryResponse {
     date: string;
     earnings: string;
   }>;
-  // หนึ่งแถว = รายได้ของ Worker จาก Business Ticket หนึ่งใบ (รวมทุก Booth ภายใต้ Ticket นั้น)
   details: Array<{
     completed_at: string;
     ticket_number: string;
@@ -591,7 +590,6 @@ export interface TicketCompletionResponse {
 }
 
 // Type ค่า Rate Snapshot ใหม่ที่คำนวณจากการเปลี่ยน PackageCode ตอน Worker ส่งยอด — service layer
-// เป็นคนคำนวณค่านี้จาก master data ก่อนส่งต่อให้ repository เขียนทับแถว TicketProduct เดิม
 export interface TicketProductPackageSwitchSnapshot {
   packageName: string;
   packageWeightSnapshot: string;
@@ -612,8 +610,6 @@ export interface TicketProductConfirmationInput {
   productCode: string;
   packageCode: string;
   confirmed_quantity: number;
-  // ระบุเฉพาะตอน Worker เปลี่ยน PackageCode: original_package_code คือ PackageCode เดิมที่ Gate
-  // เคยประกาศไว้ (ใช้หาแถว TicketProduct เดิม), package_switch คือ Rate Snapshot ใหม่ที่คำนวณแล้ว
   original_package_code?: string;
   package_switch?: TicketProductPackageSwitchSnapshot;
 }
@@ -638,4 +634,3 @@ export type WorkerSocketEventType =
   | "SESSION_REVOKED"
   | "WORKER_STATUS_CHANGED";
 
-// Type payload มาตรฐานของ Worker WebSocket event

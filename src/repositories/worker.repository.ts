@@ -1,11 +1,13 @@
+// Import Mappers
 import { mapVehicleJob, mapVehicleJobAssignment } from "./shared/mappers";
 import { client, requireDto } from "./shared/repository-utils";
-
+// Import Types
 import type { DbConnection } from "../types/shared/common.type";
 import type { WorkerAssignmentHistoryItemDto, WorkerEarningsSummaryResponse } from "../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
+// Function ดึงประวัติงานที่ Worker ถูกมอบหมายในช่วงวันที่กำหนด จาก DB
 export async function listWorkerAssignmentHistoryByDate(
   workerId: number,
   startAt: Date,

@@ -1,24 +1,20 @@
 // Import Library
 import { Prisma } from "@prisma/client";
 
-// Import Dependencies
+// Import Repositories
 import * as ticketFinancialRepository from "../../repositories/shared/ticket-financial.repository";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { TicketFinancializationResult } from "../../types/shared/ticket-financial.type";
-
 // Import Config
-import { SHIRT_COLOR_SNAPSHOT, TICKET_STATUS, TICKET_WORKER_STATUS, TERMINAL_TICKET_STATUSES, VALID_SHIRT_COLORS } from "../../constants/job-status";
-
+import { SHIRT_COLOR_SNAPSHOT, TICKET_STATUS, TICKET_WORKER_STATUS, TERMINAL_TICKET_STATUSES } from "../../constants/status";
 // Import Utils
 import ApiError from "../../utils/api-error";
 import { calculateProductStallCharge, calculateProductWorkerPayment } from "../../utils/labor-job-pricing";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Functionตรวจสอบว่า Product มี Rate Snapshot
-// ที่จำเป็นสำหรับ Financialization ครบหรือไม่
+// Function ตรวจสอบว่า Product มี Rate Snapshot ที่จำเป็นสำหรับ Financialization ครบหรือไม่
 function hasCompleteRateSnapshot(product: {
   packageWeightSnapshot: Prisma.Decimal | null;
 
@@ -57,10 +53,9 @@ function hasCompleteRateSnapshot(product: {
   );
 }
 
-// Function คำนวณ shirt_color_snapshot ของ worker ทุกคนที่หารเงินแผง/สินค้าหนึ่งรายการ — ใช้
-// MasterWorker.laborColor ตรงตัวเป๊ะเท่านั้น (case-sensitive ห้าม normalize) เทียบกับ
-// NAVY/BLUE/GREEN: สีเดียวกันทุกคนและตรง 1 ใน 3 ค่านี้ -> ใช้สีนั้น, สีต่างกัน (ไม่ว่าจะถูกต้องกี่สี
-// ปนกัน) -> MIXED, ค่าไม่ตรง/ไม่มีเลยแม้แต่คนเดียว (null หรือสะกดไม่ตรง) -> UNKNOWN
+// Function คำนวณ shirt_color_snapshot ของ worker ที่หารเงินแผง/สินค้าหนึ่งรายการ ใช้ MasterWorker.laborColor ตรงตัว (case-sensitive)
+// สีเดียวกันทุกคน -> ใช้สีนั้นตรงจาก master data เลย (ไม่ผูกกับ whitelist คงที่ในโค้ด รองรับสีใหม่ที่ master data
+// เพิ่มมาในอนาคตได้ทันที), สีต่างกัน -> MIXED, ไม่มีค่า -> UNKNOWN
 function resolveShirtColorSnapshot(
   boothWorkers: Array<{ worker: { laborColor: string | null } }>,
 ): string {
@@ -72,27 +67,13 @@ function resolveShirtColorSnapshot(
 
   const [color] = distinctColors;
 
-  return (VALID_SHIRT_COLORS as readonly (string | null)[]).includes(color)
-    ? (color as string)
-    : SHIRT_COLOR_SNAPSHOT.UNKNOWN;
+  return color ?? SHIRT_COLOR_SNAPSHOT.UNKNOWN;
 }
 
 // Function Finalize เงินทั้งหมดของ Business Ticket (market job) ทั้งใบ
-//
-// หลักการ:
-// - รอทุก Booth ของ Business Ticket นี้ Terminal ก่อน (COMPLETED หรือ CANCELLED)
-//   และต้องมีอย่างน้อยหนึ่ง Booth COMPLETED
-// - Lock Worker Roster ก่อนคำนวณเสมอ (WORKING -> COMPLETED) — ใช้เพื่อปิดไม่ให้ sync/cancel/add
-//   roster เข้ามาอีก (operational) ไม่ใช่ตัวหารเงินโดยตรงอีกต่อไป
-// - ใช้ confirmedQuantity เท่านั้น
-// - ใช้ Rate Snapshot เท่านั้น
-// - คิดแยก Product ของทุก Booth ที่ COMPLETED ภายใต้ Ticket นี้
-// - ProductCharge ปัดขึ้นแยกแต่ละ Product
-// - Worker หารแยกแต่ละ Product ด้วย Snapshot worker ของ "แผงนั้นๆ" (จำนวนคนที่ยัง WORKING ตอนแผงนี้
-//   confirm เอง) ไม่ใช่ roster สุดท้ายของทั้ง Ticket — คนที่ถูกยกเลิกออกจากทีมหลังแผงนี้ confirm ไปแล้ว
-//   ไม่ทำให้ตัวหารของแผงนี้ลดลงย้อนหลัง แต่ละแผงจึงหารกันคนละจำนวนได้ (ดู GateTicketWorkerSnapshot)
-// - Fund คำนวณแยกแต่ละ Product
-// - ห้าม Query Master Rate ใหม่
+// เงื่อนไข: ทุก Booth ต้อง Terminal และมีอย่างน้อยหนึ่ง Booth COMPLETED, Lock Roster ก่อนคำนวณเสมอ (กัน sync/cancel ซ้ำ)
+// คิดแยกแต่ละ Product ด้วย confirmedQuantity + Rate Snapshot เท่านั้น (ห้าม query rate ใหม่)
+// Worker หารด้วย Snapshot ของแผงนั้นๆ ตอน confirm ไม่ใช่ roster สุดท้าย เพื่อให้แต่ละแผงหารคนละจำนวนได้ถูกต้อง
 export async function finalizeMarketJobFinancials(
   marketJobId: number,
   connection?: DbConnection,
@@ -111,9 +92,7 @@ export async function finalizeMarketJobFinancials(
     );
   }
 
-  // Idempotent:
-  // ถ้า Financialize แล้วให้คืนค่าเดิม
-  // ห้ามคำนวณหรือสร้างรายการใหม่
+  // Idempotent: ถ้า Financialize แล้วให้คืนค่าเดิม ห้ามคำนวณหรือสร้างรายการใหม่
   if (context.financializedAt) {
     if (context.finalStallAmount === null) {
       throw new ApiError(
@@ -142,11 +121,8 @@ export async function finalizeMarketJobFinancials(
       (total, ticket) => total + ticket.products.length,
       0,
     );
-    // จำนวน worker ที่ได้เงินจริง = union ของ TicketWorkerPayment (ticketWorkerId) ทุกแผงในทั้ง
-    // Business Ticket — ต้องใช้ source of truth เดียวกับตอนคำนวณสด (distinctPaidWorkerIds ใน
-    // ฝั่งด้านล่าง) ไม่ใช่นับจาก finalEarningAmount !== null เพราะ finalEarningAmount ถูกเซ็ตเป็น
-    // 0 (ไม่ใช่ null) ให้ทุกคนใน Roster ตอน Lock อยู่แล้ว แม้บางคนจะไม่เคยอยู่ใน Snapshot ของแผงไหน
-    // เลยก็ตาม การนับจาก finalEarningAmount !== null จึงนับเกินจากที่คำนวณสดครั้งแรกได้
+    // จำนวน worker ที่ได้เงินจริง = union ของ ticketWorkerId จาก workerPayments ทุกแผง (เหมือนตอนคำนวณสด)
+    // ห้ามนับจาก finalEarningAmount !== null เพราะถูกเซ็ตเป็น 0 ให้ทุกคนใน Roster ตอน Lock อยู่แล้ว จะนับเกินจริงได้
     const paidWorkerIds = new Set<number>();
 
     for (const ticket of context.tickets) {
@@ -197,11 +173,7 @@ export async function finalizeMarketJobFinancials(
     );
   }
 
-  // ถ้า Business Ticket ยังไม่ได้ Financialize
-  // แต่มี Product Financial อยู่แล้ว
-  // ถือว่าเป็น Partial State ที่ไม่ควรเกิดขึ้น
-  //
-  // ห้ามเขียนทับข้อมูลทางการเงินเก่า
+  // ถ้ายังไม่ Financialize แต่มี Product Financial อยู่แล้ว ถือเป็น Partial State ที่ไม่ควรเกิด ห้ามเขียนทับข้อมูลเก่า
   const hasExistingFinancial = products.some(
     (product) => product.financial !== null,
   );
@@ -214,11 +186,7 @@ export async function finalizeMarketJobFinancials(
     );
   }
 
-  // Final Eligible Worker = Roster ที่ยัง WORKING ตอน Lock เท่านั้น
-  //
-  // ไม่ใช้:
-  // VehicleJob.workersRequired
-  // Master Worker Range
+  // Final Eligible Worker = Roster ที่ยัง WORKING ตอน Lock เท่านั้น ไม่ใช้ VehicleJob.workersRequired หรือ Master Worker Range
   const workingWorkers = context.ticketWorkers.filter(
     (worker) => worker.status === TICKET_WORKER_STATUS.WORKING,
   );
@@ -234,9 +202,8 @@ export async function finalizeMarketJobFinancials(
 
   const finalizedAt = new Date();
 
-  // Lock Roster ก่อนคำนวณเสมอ: จุดนี้คือจุดตัดสินว่าห้าม Sync/Cancel/Add Worker เข้า Roster นี้อีก
-  // (operational guard — ตัวหารเงินจริงต่อแผงมาจาก Snapshot ที่บันทึกไว้ตั้งแต่ตอนแผงนั้น confirm
-  // ด้านล่าง ไม่ใช่ค่า Lock ตรงนี้)
+  // Lock Roster ก่อนคำนวณเสมอ: ตัดสินว่าห้าม Sync/Cancel/Add Worker เข้า Roster นี้อีก (operational guard)
+  // ตัวหารเงินจริงต่อแผงมาจาก Snapshot ตอนแผงนั้น confirm ด้านล่าง ไม่ใช่ค่า Lock ตรงนี้
   await ticketFinancialRepository.lockMarketJobWorkerRoster(
     context.id,
     connection,
@@ -261,9 +228,8 @@ export async function finalizeMarketJobFinancials(
   }
 
   for (const ticket of completedTickets) {
-    // Worker ที่หารเงินของแผงนี้ = Snapshot ที่บันทึกไว้ตอนแผงนี้ confirm (ยัง WORKING ณ ตอนนั้น
-    // จริงๆ) — ถ้าไม่มี Snapshot เลย (ข้อมูลเก่าก่อนมีฟีเจอร์นี้) fallback ไปใช้ roster สุดท้ายของ
-    // ทั้ง Ticket แทน เพื่อไม่ให้ Ticket ที่ค้างอยู่ตอน deploy พังไป
+    // Worker ที่หารเงินของแผงนี้ = Snapshot ที่บันทึกไว้ตอน confirm (ยัง WORKING ตอนนั้นจริง)
+    // ถ้าไม่มี Snapshot (ข้อมูลเก่าก่อนมีฟีเจอร์นี้) fallback ไปใช้ roster สุดท้ายของทั้ง Ticket แทน
     const snapshotWorkerIds = ticket.workerSnapshots.map(
       (snapshot) => snapshot.ticketWorkerId,
     );
@@ -305,11 +271,7 @@ export async function finalizeMarketJobFinancials(
         );
       }
 
-      /*
-       * TypeScript ยังมอง field เป็น nullable
-       * แม้ผ่าน hasCompleteRateSnapshot แล้ว
-       * จึงเก็บเป็นตัวแปรหลัง validation
-       */
+      // TypeScript ยังมอง field เป็น nullable แม้ผ่าน hasCompleteRateSnapshot แล้ว จึงเก็บเป็นตัวแปรหลัง validation
       const stallRate = product.stallRateSnapshot;
 
       const laborRate = product.laborRateSnapshot;
@@ -322,8 +284,7 @@ export async function finalizeMarketJobFinancials(
         );
       }
 
-      // คำนวณยอดที่แผงต้องจ่าย
-      // ด้วย confirmed quantity เท่านั้น
+      // คำนวณยอดที่แผงต้องจ่าย ด้วย confirmed quantity เท่านั้น
       const stallCharge = calculateProductStallCharge({
         quantity: product.confirmedQuantity,
 
@@ -332,20 +293,16 @@ export async function finalizeMarketJobFinancials(
         laborRate,
       });
 
-      // คำนวณเงิน Worker
-      // ด้วย Snapshot Worker Count ของแผงนี้โดยเฉพาะ (ไม่ใช่ของทั้ง Ticket)
+      // คำนวณเงิน Worker ด้วย Snapshot Worker Count ของแผงนี้โดยเฉพาะ (ไม่ใช่ของทั้ง Ticket)
       const workerPayment = calculateProductWorkerPayment({
         laborFeeRaw: stallCharge.laborFeeRaw,
 
         actualWorkerCount: boothWorkerCount,
       });
 
-      // Method A ปัดขึ้น 2 รอบ (stallFeeRaw -> stallFeeRounded, แล้ว stallFeeRounded+laborFeeRaw ->
-      // productCharge อีกรอบ) — รอบที่สองนี้ปัดขึ้นเฉพาะเศษของ laborFeeRaw เท่านั้น (เพราะ
-      // stallFeeRounded เป็นจำนวนเต็มอยู่แล้ว) ได้ margin = ceil(laborFeeRaw) - laborFeeRaw ซึ่งเป็นเงิน
-      // จริงที่รวมอยู่ใน productCharge (ยอดที่เก็บจาก Vendor จริง) แต่ workerPayment ด้านล่างหาร
-      // laborFeeRaw (ไม่ใช่ productCharge) ให้ Worker+Fund พอดี — ถ้าไม่บวก margin นี้เข้า fundAmount
-      // ตรงนี้ stallFeeRounded+workerPayoutTotal+fundAmount จะไม่เท่ากับ productCharge ที่เก็บจริง
+      // Method A ปัดขึ้น 2 รอบ: stallFeeRaw -> stallFeeRounded แล้ว +laborFeeRaw -> productCharge (ปัดเศษ laborFeeRaw อีกครั้ง)
+      // margin = ceil(laborFeeRaw) - laborFeeRaw คือเงินจริงที่รวมอยู่ใน productCharge แต่ workerPayment หารจาก laborFeeRaw ตรงๆ
+      // ต้องบวก margin นี้เข้า fundAmount ไม่งั้น stallFeeRounded+workerPayoutTotal+fundAmount จะไม่เท่ากับ productCharge จริง
       const stallLaborRoundingMargin = stallCharge.productCharge
         .minus(stallCharge.stallFeeRounded)
         .minus(stallCharge.laborFeeRaw);
@@ -401,8 +358,7 @@ export async function finalizeMarketJobFinancials(
         connection,
       );
 
-      // รวมเฉพาะ ProductCharge
-      // ที่ผ่านการปัดตาม Method A แล้ว
+      // รวมเฉพาะ ProductCharge ที่ผ่านการปัดตาม Method A แล้ว
       finalStallAmount = finalStallAmount.plus(stallCharge.productCharge);
       boothStallAmountByTicketId.set(
         ticket.id,
@@ -440,8 +396,7 @@ export async function finalizeMarketJobFinancials(
 
     productCount: products.length,
 
-    // จำนวน worker ที่ได้รับเงินจริง (union ของ snapshot ทุกแผงใน Ticket นี้) ไม่ใช่แค่ roster
-    // สุดท้ายทั้ง Ticket เพราะแต่ละแผงอาจมีคนละชุดคนที่ยัง active ตอนแผงนั้น confirm
+    // จำนวน worker ที่ได้รับเงินจริง (union ของ snapshot ทุกแผง) ไม่ใช่ roster สุดท้ายทั้ง Ticket เพราะแต่ละแผงอาจมีคนละชุด
     workerCount: distinctPaidWorkerIds.size,
 
     finalStallAmount,

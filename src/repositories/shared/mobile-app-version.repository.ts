@@ -1,5 +1,6 @@
+// Import Utils
 import { client, requireMapped } from "./repository-utils";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { MobileAppVersionCreateInput, MobileAppVersionDto, MobileAppVersionUpdateInput } from "../../types/shared/mobile-app-version.type";
 
@@ -68,6 +69,7 @@ export async function listMobileAppVersions(
     .filter((record): record is MobileAppVersionDto => record !== null);
 }
 
+// Function ค้นหา mobile app version ตาม ID จาก DB
 export async function findMobileAppVersionById(
   id: number,
   connection?: DbConnection
@@ -96,6 +98,7 @@ export async function findMobileAppVersionByBuildNumber(
   return mapMobileAppVersion(record);
 }
 
+// Function สร้าง mobile app version ใหม่ลง DB
 export async function createMobileAppVersion(
   input: MobileAppVersionCreateInput,
   connection?: DbConnection
@@ -121,6 +124,7 @@ export async function createMobileAppVersion(
   return requireMapped(mapMobileAppVersion(record), "Mobile app version", "create");
 }
 
+// Function อัปเดตข้อมูล mobile app version จาก DB
 export async function updateMobileAppVersion(
   id: number,
   input: MobileAppVersionUpdateInput,
@@ -174,24 +178,42 @@ export async function updateMobileAppVersion(
   return requireMapped(mapMobileAppVersion(record), "Mobile app version", "update");
 }
 
-// Function ทำเครื่องหมายว่าส่ง FCM แจ้งเตือนล่วงหน้า (Release Notification) แล้วแบบ atomic (WHERE
-// release_notification_sent_at IS NULL) — คืน true เฉพาะตอนที่ตัวเรียกนี้เป็นคนอ้างสิทธิ์ส่งจริง
-// กันส่ง FCM ซ้ำเมื่อมีมากกว่าหนึ่งจุดพยายามส่งพร้อมกัน
+// Function claim สิทธิ์ส่ง FCM ล่วงหน้า (Release Notification) แบบ atomic (WHERE ...IS NULL) กันส่งซ้ำ
+// คืน Date ที่ claim ได้ (null ถ้ามีคนอื่น claim ไปก่อน) ใช้เป็น key ตอนเรียก clearReleaseNotificationSent
 export async function claimReleaseNotificationSent(
   id: number,
   connection?: DbConnection
-): Promise<boolean> {
+): Promise<Date | null> {
+  const claimedAt = new Date();
   const result = await client(connection).mobileAppVersion.updateMany({
     where: {
       id,
       releaseNotificationSentAt: null,
     },
     data: {
-      releaseNotificationSentAt: new Date(),
+      releaseNotificationSentAt: claimedAt,
     },
   });
 
-  return result.count === 1;
+  return result.count === 1 ? claimedAt : null;
+}
+
+// Function ยกเลิก claim "ส่งแล้ว" ของ Release Notification แบบ atomic เมื่อส่ง FCM จริงไม่สำเร็จ เปิดทางให้ retry ใหม่ได้
+// เช็ค releaseNotificationSentAt ต้องตรงกับ claimedAt เพื่อกัน race กับ claim ใหม่ที่อาจเกิดขึ้นระหว่างนั้น
+export async function clearReleaseNotificationSent(
+  id: number,
+  claimedAt: Date,
+  connection?: DbConnection
+): Promise<void> {
+  await client(connection).mobileAppVersion.updateMany({
+    where: {
+      id,
+      releaseNotificationSentAt: claimedAt,
+    },
+    data: {
+      releaseNotificationSentAt: null,
+    },
+  });
 }
 
 // Function ทำเครื่องหมายว่าส่ง FCM บังคับอัปเดต (Force Update Notification) แล้วแบบ atomic — คนละ
@@ -199,16 +221,35 @@ export async function claimReleaseNotificationSent(
 export async function claimForceUpdateNotificationSent(
   id: number,
   connection?: DbConnection
-): Promise<boolean> {
+): Promise<Date | null> {
+  const claimedAt = new Date();
   const result = await client(connection).mobileAppVersion.updateMany({
     where: {
       id,
       forceUpdateNotificationSentAt: null,
     },
     data: {
-      forceUpdateNotificationSentAt: new Date(),
+      forceUpdateNotificationSentAt: claimedAt,
     },
   });
 
-  return result.count === 1;
+  return result.count === 1 ? claimedAt : null;
+}
+
+// Function ยกเลิก Mark "ส่งแล้ว" ของ Force-Update Notification แบบ atomic — คู่ขนานกับ
+// clearReleaseNotificationSent ด้านบน ใช้เมื่อ Claim ไปแล้วแต่ส่ง FCM จริงไม่สำเร็จ
+export async function clearForceUpdateNotificationSent(
+  id: number,
+  claimedAt: Date,
+  connection?: DbConnection
+): Promise<void> {
+  await client(connection).mobileAppVersion.updateMany({
+    where: {
+      id,
+      forceUpdateNotificationSentAt: claimedAt,
+    },
+    data: {
+      forceUpdateNotificationSentAt: null,
+    },
+  });
 }

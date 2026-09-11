@@ -1,8 +1,10 @@
+// Import Library
 import { Prisma } from "@prisma/client";
-
-import { VEHICLE_JOB_STATUS, TICKET_WORKER_STATUS } from "../../constants/job-status";
+// Import Config
+import { VEHICLE_JOB_STATUS, TICKET_WORKER_STATUS } from "../../constants/status";
+// Import Utils
 import { client } from "./repository-utils";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
@@ -30,7 +32,7 @@ export async function findMarketJobFinancializationContext(
               id: "asc",
             },
             include: {
-              // Format include workerPayments สำหรับ replay แบบ idempotent
+              // Include workerPayments ไว้ด้วยสำหรับตรวจ replay แบบ idempotent
               financial: {
                 include: {
                   workerPayments: true,
@@ -38,9 +40,8 @@ export async function findMarketJobFinancializationContext(
               },
             },
           },
-          // Snapshot ของ worker ที่ยัง WORKING ณ ตอนแผงนี้ confirm — ใช้เป็นตัวหารเงินของแผงนี้
-          // โดยเฉพาะ แทนที่จะใช้ roster สุดท้ายของทั้ง Business Ticket (ดู
-          // finalizeMarketJobFinancials)
+          // Snapshot worker ที่ยัง WORKING ตอนแผงนี้ confirm ใช้เป็นตัวหารเงินของแผงนี้โดยเฉพาะ
+          // แทนที่จะใช้ roster สุดท้ายของทั้ง Business Ticket (ดู finalizeMarketJobFinancials)
           workerSnapshots: {
             orderBy: {
               id: "asc",
@@ -52,9 +53,8 @@ export async function findMarketJobFinancializationContext(
         orderBy: {
           id: "asc",
         },
-        // ต้องมี worker.laborColor เพื่อคำนวณ shirt_color_snapshot ตอน finalize (ดู
-        // resolveShirtColorSnapshot ใน ticket-financial.service.ts) — ห้ามอ่านค่านี้ย้อนหลังจาก
-        // MasterWorker ตรงๆ ตอน query รายงาน เพราะ laborColor แก้ทีหลังได้
+        // ต้องมี worker.laborColor เพื่อคำนวณ shirt_color_snapshot ตอน finalize (ดู resolveShirtColorSnapshot)
+        // ห้ามอ่านค่านี้ย้อนหลังจาก MasterWorker ตรงๆ ตอน query รายงาน เพราะ laborColor แก้ทีหลังได้
         include: {
           worker: true,
         },
@@ -104,6 +104,7 @@ export async function markMarketJobTicketWorkersCompleted(
   });
 }
 
+// Function บันทึกผลคำนวณการเงินของสินค้าหนึ่งชิ้นในตั๋ว พร้อมยอดจ่ายรายคนของ worker (workerPayments)
 export async function createTicketProductFinancial(
   input: {
     ticketProductId: number;
@@ -156,6 +157,7 @@ export async function createTicketProductFinancial(
   });
 }
 
+// Function อัปเดต final_earning_amount ของ ticket worker หลายคนพร้อมกัน (วนอัปเดตทีละคน)
 export async function updateTicketWorkerFinalEarningAmounts(
   amountsByTicketWorkerId: Map<number, Prisma.Decimal>,
   connection?: DbConnection

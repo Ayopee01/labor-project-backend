@@ -70,6 +70,7 @@ export type VendorTicketAction =
 // Type payload ใน token ที่ผูกกับ action ของ vendor ต่อ ticket
 export interface VendorTicketActionTokenPayload {
   token_type: "vendor_ticket_action";
+  id: number;
   action: VendorTicketAction;
   ticket_id: number;
   submission_id: number;
@@ -77,6 +78,10 @@ export interface VendorTicketActionTokenPayload {
   iat: number;
   exp: number;
 }
+
+// Config ช่วงคะแนนความพึงพอใจที่ Vendor ให้ได้
+export const MIN_RATING_SCORE = 1;
+export const MAX_RATING_SCORE = 5;
 
 // Type คะแนนความพึงพอใจที่ vendor ให้กับ ticket
 export interface TicketRatingDto {

@@ -371,6 +371,7 @@
       summary: ส่งยอดนับสินค้าของ Booth
       description: >
         Worker ส่งจำนวนสินค้าที่นับจริงตาม TicketNo และ BoothCode ระบบตรวจทุก product แล้วส่งให้ Vendor ยืนยันก่อน finalize ยอดเงิน
+        หลังส่งสำเร็จ ถ้า Worker คนนี้หมดกะไปแล้ว ระบบจะย้ายกลับ open_app ให้ทันที และถ้าทุก Booth ของ VehicleJob นี้ถูกส่งยอด/ยืนยัน/ยกเลิกครบแล้วด้วย พร้อมกับ Worker ทั้งทีมหมดกะไปแล้วทุกคน (ไม่ใช่แค่บางคน) ระบบจะปล่อยทั้งทีมกลับคิวให้อัตโนมัติ โดยไม่ต้องรอ Admin กด release-workers — ถ้ามีเพื่อนร่วมทีมบางคนยังไม่หมดกะ ต้องรอ Admin กด release-workers เองเพื่อปล่อยทั้งทีม
       operationId: completeWorkerAssignmentTicketWithBodyBoothCode
       security:
         - bearerAuth: []

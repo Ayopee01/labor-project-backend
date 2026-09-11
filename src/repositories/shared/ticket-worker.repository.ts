@@ -1,13 +1,26 @@
-// Import Dependencies
-import { SCANNED_ASSIGNMENT_STATUSES, TICKET_WORKER_STATUS } from "../../constants/job-status";
+// Import Library
+import { Prisma } from "@prisma/client";
+
+// Import Config
+import { SCANNED_ASSIGNMENT_STATUSES, TICKET_WORKER_STATUS } from "../../constants/status";
+// Import Mappers
 import { mapTicketWorker } from "./mappers";
 import { client } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { TicketWorkerDto } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
+
+// Function สร้าง data payload สำหรับยกเลิก TicketWorker จาก Admin action (ต่างจาก cancelDroppedTicketWorkers
+// ที่เป็น roster diff sync) — ใช้ร่วมกันทุกจุดที่ Admin สั่งยกเลิก Roster ต่างกันแค่ where clause ว่ายกเลิกขอบเขตไหน
+function buildCancelledTicketWorkerData(cancelledAt: Date): Prisma.TicketWorkerUpdateManyMutationInput {
+  return {
+    status: TICKET_WORKER_STATUS.CANCELLED,
+    cancelledAt,
+    completedAt: null,
+  };
+}
 
 // Function ค้นหา TicketWorker หนึ่งแถวของ worker คนหนึ่งใน Business Ticket ใบหนึ่งจาก DB — ใช้หา id
 // ก่อนสร้าง GateTicketWorkerExclusion (ต้องใช้ ticketWorkerId เป็น FK ไม่ใช่ workerId ตรงๆ)
@@ -49,15 +62,13 @@ export async function listTicketWorkers(
     .filter((worker): worker is TicketWorkerDto => worker !== null);
 }
 
-// Function Sync Worker Roster ของ Business Ticket ตามทีมปัจจุบัน
-export async function syncTicketWorkersFromVehicleAssignments(
+// Function ดึงสถานะ lock ของ Worker Roster ของ Business Ticket จาก DB — found: false เมื่อไม่มี
+// MarketJob แถวนี้อยู่จริง (ต่างจาก found: true + workerRosterLockedAt: null ที่แปลว่ายัง unlock)
+export async function findMarketJobRosterLockState(
   marketJobId: number,
-  vehicleJobId: number,
   connection?: DbConnection
-): Promise<TicketWorkerDto[]> {
+): Promise<{ found: boolean; workerRosterLockedAt: Date | null }> {
   const db = client(connection);
-  const now = new Date();
-
   const marketJob = await db.marketJob.findUnique({
     where: {
       id: marketJobId,
@@ -67,10 +78,18 @@ export async function syncTicketWorkersFromVehicleAssignments(
     },
   });
 
-  if (!marketJob || marketJob.workerRosterLockedAt !== null) {
-    return listTicketWorkers(marketJobId, connection);
-  }
+  return marketJob
+    ? { found: true, workerRosterLockedAt: marketJob.workerRosterLockedAt }
+    : { found: false, workerRosterLockedAt: null };
+}
 
+// Function ดึงรายชื่อ worker (ไม่ซ้ำ) ที่ assignment ยัง active อยู่ (SCANNED_ASSIGNMENT_STATUSES)
+// ของ VehicleJob คันนี้จาก DB — ใช้เป็น "ทีมปัจจุบัน" สำหรับ decide roster diff ฝั่ง Service
+export async function listActiveScannedAssignmentWorkerIds(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<number[]> {
+  const db = client(connection);
   const assignments = await db.vehicleJobAssignment.findMany({
     where: {
       vehicleJobId,
@@ -82,40 +101,43 @@ export async function syncTicketWorkersFromVehicleAssignments(
       id: "asc",
     },
   });
-  const activeWorkerAccountIds = [
-    ...new Set(
-      assignments.map((assignment) => assignment.workerId)
-    ),
-  ];
-  const existingWorkers = await db.ticketWorker.findMany({
-    where: {
-      marketJobId,
-    },
-    orderBy: {
-      id: "asc",
-    },
-  });
-  const existingWorkerAccountIds = new Set(
-    existingWorkers.map((worker) => worker.workerId)
-  );
-  const missingWorkerAccountIds = activeWorkerAccountIds.filter(
-    (workerId) => !existingWorkerAccountIds.has(workerId)
-  );
 
-  if (missingWorkerAccountIds.length > 0) {
-    await db.ticketWorker.createMany({
-      data: missingWorkerAccountIds.map((workerId) => ({
-        marketJobId,
-        workerId,
-        status: TICKET_WORKER_STATUS.WORKING,
-        joinedAt: now,
-      })),
-      skipDuplicates: true,
-    });
+  return [...new Set(assignments.map((assignment) => assignment.workerId))];
+}
+
+// Function สร้างแถว TicketWorker ให้ worker ที่ระบุ (workerIds ตัดสินใจโดย caller แล้วว่าใครขาดจาก
+// roster ปัจจุบัน) — skipDuplicates กันชนกรณี concurrent sync ของแผงอื่นในตลาดเดียวกัน
+export async function createTicketWorkersIfMissing(
+  marketJobId: number,
+  workerIds: number[],
+  connection?: DbConnection
+): Promise<void> {
+  if (workerIds.length === 0) {
+    return;
   }
 
-  // ตัดเฉพาะสมาชิกที่ยัง WORKING แต่ Assignment หลุดจากทีมแล้ว (worker ออกจากรถ)
-  // ไม่แตะแถวที่ถูก Cancel ไว้แล้ว (CANCELLED) หรือ COMPLETED แล้ว
+  const db = client(connection);
+
+  await db.ticketWorker.createMany({
+    data: workerIds.map((workerId) => ({
+      marketJobId,
+      workerId,
+      status: TICKET_WORKER_STATUS.WORKING,
+      joinedAt: new Date(),
+    })),
+    skipDuplicates: true,
+  });
+}
+
+// Function ตัดสมาชิก TicketWorker ที่ยัง WORKING แต่ไม่อยู่ใน activeWorkerAccountIds ที่ caller ระบุ
+// (worker ออกจากทีมแล้ว) — ไม่แตะแถวที่ถูก Cancel ไว้แล้ว (CANCELLED) หรือ COMPLETED แล้ว
+export async function cancelDroppedTicketWorkers(
+  marketJobId: number,
+  activeWorkerAccountIds: number[],
+  connection?: DbConnection
+): Promise<void> {
+  const db = client(connection);
+
   await db.ticketWorker.updateMany({
     where: {
       marketJobId,
@@ -130,11 +152,62 @@ export async function syncTicketWorkersFromVehicleAssignments(
     },
     data: {
       status: TICKET_WORKER_STATUS.CANCELLED,
-      cancelledAt: now,
+      cancelledAt: new Date(),
       completedAt: null,
       finalEarningAmount: null,
     },
   });
+}
 
-  return listTicketWorkers(marketJobId, connection);
+// Function ยกเลิก TicketWorker (roster) ที่ยัง WORKING ทั้งหมดของ VehicleJob จาก DB — ใช้ตอน Admin ยกเลิกทั้งคัน
+export async function cancelTicketWorkersByVehicleJob(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<void> {
+  const db = client(connection);
+
+  await db.ticketWorker.updateMany({
+    where: {
+      status: TICKET_WORKER_STATUS.WORKING,
+      marketJob: {
+        vehicleJobId,
+      },
+    },
+    data: buildCancelledTicketWorkerData(new Date()),
+  });
+}
+
+// Function ยกเลิก TicketWorker (roster) ที่ยัง WORKING ทั้งหมดของ Business Ticket (market job) ใบเดียว จาก DB — ใช้ตอน Admin ยกเลิกทั้งใบ
+export async function cancelTicketWorkersByMarketJob(
+  marketJobId: number,
+  connection?: DbConnection,
+): Promise<void> {
+  const db = client(connection);
+
+  await db.ticketWorker.updateMany({
+    where: {
+      status: TICKET_WORKER_STATUS.WORKING,
+      marketJobId,
+    },
+    data: buildCancelledTicketWorkerData(new Date()),
+  });
+}
+
+// Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket (market job) ใบเดียว จาก DB — คืน true ถ้ามีแถวถูกยกเลิกจริง
+export async function cancelTicketWorkerForMarketJob(
+  marketJobId: number,
+  workerId: number,
+  connection?: DbConnection,
+): Promise<boolean> {
+  const db = client(connection);
+  const result = await db.ticketWorker.updateMany({
+    where: {
+      marketJobId,
+      workerId,
+      status: TICKET_WORKER_STATUS.WORKING,
+    },
+    data: buildCancelledTicketWorkerData(new Date()),
+  });
+
+  return result.count === 1;
 }

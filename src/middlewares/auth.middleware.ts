@@ -1,7 +1,7 @@
 // Import Library
 import type { NextFunction, Request, Response } from "express";
+// Import Utils
 import { verifyAccessToken } from "../utils/jwt";
-// Import Dependencies
 import { extractBearerToken } from "../utils/bearer-token";
 
 /* -------------------------------------- Functions -------------------------------------- */

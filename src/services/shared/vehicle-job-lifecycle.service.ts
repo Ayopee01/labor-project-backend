@@ -1,22 +1,72 @@
-import { ACTIVE_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS } from "../../constants/job-status";
+// Import Config
+import { ACTIVE_ASSIGNMENT_STATUSES, TERMINAL_JOB_STATUSES, TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS } from "../../constants/status";
 import { withTransaction } from "../../db/prisma";
+// Import Types
 import { WORKER_ASSIGNMENT_EVENT_TYPE } from "../../types/shared/worker-assignment-event.type";
-import * as driverRepository from "../../repositories/driver.repository";
+// Import Repositories
+import * as driverSessionRepository from "../../repositories/shared/driver-session.repository";
+import * as gateTicketRepository from "../../repositories/shared/gate-ticket.repository";
+import * as marketJobRepository from "../../repositories/shared/market-job.repository";
 import * as ticketWorkerRepository from "../../repositories/shared/ticket-worker.repository";
 import * as assignmentRepository from "../../repositories/shared/vehicle-job-assignment.repository";
 import * as vehicleJobRepository from "../../repositories/shared/vehicle-job.repository";
 import * as workerAssignmentEventRepository from "../../repositories/shared/worker-assignment-event.repository";
+// Import Services
 import { finalizeMarketJobFinancials } from "./ticket-financial.service";
-
+// Import Types
 import type { DbConnection } from "../../types/shared/common.type";
-import type { CompletedVehicleJobResult, CurrentTicketProgressDto, VehicleJobDto } from "../../types/worker.type";
+import type { CompletedVehicleJobResult, CurrentTicketProgressDto, GateTicketDto, MarketJobDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto } from "../../types/worker.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function Sync Worker Roster ของทุก Business Ticket ที่ยัง Active และยังไม่ Lock ของ TicketNumber
-// นี้ ให้ตรงกับทีม Worker ปัจจุบัน เรียกทุกครั้งที่ทีมของ TicketNumber เปลี่ยน (Ticket ใหม่มา,
-// Worker accept/scan ใหม่) เพื่อให้สมาชิกใหม่ถูกเพิ่มเข้า Ticket อื่นที่ยังเปิดอยู่ด้วย ไม่ใช่แค่
-// Ticket ที่เพิ่ง Activate
+// Function Sync Worker Roster ของ Business Ticket ใบเดียวให้ตรงกับทีม Worker ปัจจุบัน
+// ตัดสินใจ roster diff เอง (ใครขาด/ใครหลุดทีม) แล้วสั่ง Repository persist (diff/lock decision เป็น business logic)
+export async function syncTicketWorkerRoster(
+  marketJobId: number,
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<TicketWorkerDto[]> {
+  const lockState = await ticketWorkerRepository.findMarketJobRosterLockState(
+    marketJobId,
+    connection,
+  );
+
+  if (!lockState.found || lockState.workerRosterLockedAt !== null) {
+    return ticketWorkerRepository.listTicketWorkers(marketJobId, connection);
+  }
+
+  const activeWorkerAccountIds =
+    await ticketWorkerRepository.listActiveScannedAssignmentWorkerIds(
+      vehicleJobId,
+      connection,
+    );
+  const existingWorkers = await ticketWorkerRepository.listTicketWorkers(
+    marketJobId,
+    connection,
+  );
+  const existingWorkerAccountIds = new Set(
+    existingWorkers.map((worker) => worker.worker_id),
+  );
+  const missingWorkerAccountIds = activeWorkerAccountIds.filter(
+    (workerId) => !existingWorkerAccountIds.has(workerId),
+  );
+
+  await ticketWorkerRepository.createTicketWorkersIfMissing(
+    marketJobId,
+    missingWorkerAccountIds,
+    connection,
+  );
+  await ticketWorkerRepository.cancelDroppedTicketWorkers(
+    marketJobId,
+    activeWorkerAccountIds,
+    connection,
+  );
+
+  return ticketWorkerRepository.listTicketWorkers(marketJobId, connection);
+}
+
+// Function Sync Worker Roster ของทุก Business Ticket ที่ยัง Active และยังไม่ Lock ของ TicketNumber นี้
+// เรียกทุกครั้งที่ทีมเปลี่ยน (Ticket ใหม่มา, Worker accept/scan ใหม่) เพื่อให้สมาชิกใหม่ถูกเพิ่มเข้า Ticket อื่นที่เปิดอยู่ด้วย
 async function syncAllOpenMarketJobRosters(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -37,14 +87,11 @@ async function syncAllOpenMarketJobRosters(
   );
 
   for (const market of openMarketJobs) {
-    await ticketWorkerRepository.syncTicketWorkersFromVehicleAssignments(
-      market.id,
-      vehicleJobId,
-      connection,
-    );
+    await syncTicketWorkerRoster(market.id, vehicleJobId, connection);
   }
 }
 
+// Function เปิด Ticket ถัดไปของ Vehicle Job นี้ถ้าพร้อม (sync roster และอัปเดตสถานะ Business Ticket/Ticket ตามลำดับ)
 export async function activateNextTicketIfReady(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -86,6 +133,7 @@ export async function activateNextTicketIfReady(
   };
 }
 
+// Function ตั้งสถานะ Vehicle Job เป็น In Progress แล้วเปิด Ticket แรกที่พร้อมทำงาน
 export async function markVehicleJobInProgress(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -100,6 +148,7 @@ export async function markVehicleJobInProgress(
   return vehicleJob;
 }
 
+// Function ปิด Vehicle Job เมื่อทุก Business Ticket จบครบแล้ว (finalize การเงินและปิด session ที่เกี่ยวข้อง)
 export async function closeCompletedVehicleJobIfReady(
   vehicleJobId: number,
   connection?: DbConnection,
@@ -110,11 +159,8 @@ export async function closeCompletedVehicleJobIfReady(
     );
   }
 
-  // Lock แถว VehicleJob นี้ไว้ก่อนอ่านสถานะ Booth ทั้งหมด — กัน Race ตอนที่ 2 Booth สุดท้ายของ
-  // Business Ticket เดียวกัน (หรือ Business Ticket คนละใบของ VehicleJob เดียวกัน) จบพร้อมกันคนละ
-  // Transaction ภายใต้ READ COMMITTED โดยไม่มี Lock ทั้ง 2 Transaction จะอ่านเห็น "ยังไม่ครบ" พร้อม
-  // กันแล้วไม่มีใคร Finalize การเงินเลยแม้ Booth จะครบจริงหลัง Commit ทั้งคู่ — การ Lock นี้บังคับให้
-  // Transaction ที่มาทีหลังต้องรอ Transaction แรก Commit ก่อน แล้วอ่านเห็นผลลัพธ์ล่าสุดเสมอ
+  // Lock แถว VehicleJob นี้ก่อนอ่านสถานะ Booth ทั้งหมด กัน Race ตอน 2 Booth สุดท้ายจบพร้อมกันคนละ Transaction
+  // (ไม่ Lock แล้วทั้งคู่จะอ่านเห็น "ยังไม่ครบ" พร้อมกัน ไม่มีใคร Finalize เลย) บังคับให้ Transaction หลังรอ Transaction แรก Commit ก่อน
   await connection.$queryRaw`SELECT id FROM vehicle_jobs WHERE id = ${vehicleJobId} FOR UPDATE`;
 
   const vehicleJob = await vehicleJobRepository.findVehicleJobLifecycleState(
@@ -145,8 +191,7 @@ export async function closeCompletedVehicleJobIfReady(
           connection,
         );
       } else {
-        // อย่างน้อยหนึ่ง Booth COMPLETED และทุก Booth Terminal แล้ว
-        // -> Lock Roster และ Finalize การเงินของ Business Ticket นี้ทั้งใบ
+        // อย่างน้อยหนึ่ง Booth COMPLETED และทุก Booth Terminal แล้ว -> Lock Roster และ Finalize การเงินทั้งใบ
         // (finalizeMarketJobFinancials จะเซ็ต MarketJob.status = COMPLETED เอง)
         await finalizeMarketJobFinancials(market.id, connection);
       }
@@ -163,9 +208,8 @@ export async function closeCompletedVehicleJobIfReady(
     return null;
   }
 
-  // TicketNumber จบได้ก็ต่อเมื่อทุก Business Ticket ที่มีอยู่ Terminal ครบ
-  // "และ" Gate ยืนยันแล้วว่าไม่มี Business Ticket เพิ่มเข้ามาอีก (ticketsClosedAt)
-  // ห้ามใช้แค่ "Ticket ที่เห็นตอนนี้ครบ" เพราะ Gate อาจยังส่ง Ticket ใหม่มาอีกก็ได้
+  // TicketNumber จบได้ต่อเมื่อทุก Business Ticket Terminal ครบ "และ" Gate ยืนยันแล้วว่าไม่มี Business Ticket เพิ่มอีก (ticketsClosedAt)
+  // ห้ามใช้แค่ Ticket ที่เห็นตอนนี้ครบ เพราะ Gate อาจยังส่ง Ticket ใหม่มาอีกได้
   const isVehicleComplete =
     refreshedVehicleJob.ticketsClosedAt !== null &&
     refreshedVehicleJob.marketJobs.length > 0 &&
@@ -199,9 +243,8 @@ export async function closeCompletedVehicleJobIfReady(
       );
 
   if (!wasAlreadyTerminal) {
-    // เพิกถอน driver session ที่ยัง active ทั้งหมดของรถคันนี้ทันทีที่ TicketNumber จบ (COMPLETED/CANCELLED)
-    // เพราะคนขับไม่จำเป็นต้องเปิดหน้า driver ต่อแล้ว ลดอายุของ token ที่ยังใช้ได้โดยไม่จำเป็น
-    await driverRepository.revokeDriverSessionsByVehicleJobId(
+    // เพิกถอน driver session ที่ยัง active ทั้งหมดทันทีที่ TicketNumber จบ เพราะคนขับไม่ต้องเปิดหน้า driver ต่อแล้ว
+    await driverSessionRepository.revokeDriverSessionsByVehicleJobId(
       vehicleJobId,
       connection,
     );
@@ -243,4 +286,85 @@ export async function closeCompletedVehicleJobIfReady(
         completed_worker_ids: completedWorkerAccountIds,
       }
     : null;
+}
+
+// Function ยกเลิก vehicle job ทั้งคัน — cascade ยกเลิก TicketWorker roster, VehicleJobAssignment ที่ยัง active,
+// และ MarketJob/GateTicket ที่ยังไม่ terminal (ตัดสินใจ cascade ที่นี่ ส่วน repository ทำแค่เขียนทีละ table)
+export async function cancelVehicleJob(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<VehicleJobDto> {
+  if (!connection) {
+    return withTransaction((transaction) =>
+      cancelVehicleJob(vehicleJobId, transaction),
+    );
+  }
+
+  await ticketWorkerRepository.cancelTicketWorkersByVehicleJob(
+    vehicleJobId,
+    connection,
+  );
+  await assignmentRepository.cancelActiveAssignmentsForVehicleJob(
+    vehicleJobId,
+    "admin_vehicle_job_cancel",
+    connection,
+  );
+
+  return vehicleJobRepository.cancelVehicleJobWithCascade(
+    vehicleJobId,
+    connection,
+  );
+}
+
+// Function ยกเลิก assignment ที่ยัง active ทั้งหมดของ VehicleJob โดยไม่แตะ TicketWorker/MarketJob/GateTicket/VehicleJob เอง (ต่างจาก cancelVehicleJob ที่ยกเลิกทั้งคัน)
+// ใช้เมื่อ Admin สั่งกลับไป Wait ก่อนทีมเริ่มทำงานจริง จึงไม่มี TicketWorker roster ให้ต้องยกเลิก
+export async function cancelActiveAssignmentsForVehicleJob(
+  vehicleJobId: number,
+  connection?: DbConnection,
+): Promise<VehicleJobAssignmentDto[]> {
+  return assignmentRepository.cancelActiveAssignmentsForVehicleJob(
+    vehicleJobId,
+    "admin_vehicle_job_wait",
+    connection,
+  );
+}
+
+// Function ยกเลิก Business Ticket (market job) ทั้งใบ — cascade ยกเลิก TicketWorker roster ของใบนี้
+// และ GateTicket ที่ยังไม่ terminal ภายใต้ใบนี้
+export async function cancelMarketJob(
+  marketJobId: number,
+  connection?: DbConnection,
+): Promise<MarketJobDto> {
+  await ticketWorkerRepository.cancelTicketWorkersByMarketJob(
+    marketJobId,
+    connection,
+  );
+
+  return marketJobRepository.cancelMarketJobWithCascade(
+    marketJobId,
+    connection,
+  );
+}
+
+// Function ยกเลิก Gate ticket (booth) เดียว — ไม่ cascade ไป TicketWorker เพราะ Roster เป็นระดับ Business
+// Ticket (market job) ไม่ใช่ระดับ Booth การยกเลิก Booth เดียวไม่ควรกระทบสมาชิกที่ยังทำ Booth อื่นในใบเดียวกัน
+export async function cancelGateTicket(
+  ticketId: number,
+  connection?: DbConnection,
+): Promise<GateTicketDto> {
+  return gateTicketRepository.cancelGateTicket(ticketId, connection);
+}
+
+// Function ยกเลิก Worker หนึ่งคนออกจาก Business Ticket (market job) ใบเดียว — ต่างจาก cancelAssignment: ไม่แตะ VehicleJobAssignment เลย
+// (worker ยังอยู่กับรถ/TicketNumber และยังทำ Business Ticket อื่นได้) กระทบเฉพาะ Roster ของใบนี้ใบเดียว
+export async function cancelTicketWorkerForMarketJob(
+  marketJobId: number,
+  workerId: number,
+  connection?: DbConnection,
+): Promise<boolean> {
+  return ticketWorkerRepository.cancelTicketWorkerForMarketJob(
+    marketJobId,
+    workerId,
+    connection,
+  );
 }

@@ -1,17 +1,19 @@
-import * as accountRepository from "./shared/account.repository";
+// Import Mappers
 import { mapAccount } from "./shared/mappers";
 import { client, requireMapped, toId } from "./shared/repository-utils";
-
+// Import Types
 import type { DbConnection } from "../types/shared/common.type";
 import type { AccountCreateInput, AccountDto } from "../types/admin-workers.type";
 
 /* -------------------------------------- Config -------------------------------------- */
 
+// Config ค่า role ของ admin account
 const ADMIN_ROLE = "admin";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-async function findAdminById(
+// Function ค้นหา admin account ตาม ID จาก DB
+export async function findAdminById(
   id: number | string,
   connection?: DbConnection,
 ): Promise<AccountDto | null> {
@@ -26,7 +28,8 @@ async function findAdminById(
   return mapAccount(account);
 }
 
-async function usernameExists(
+// Function ตรวจว่า username นี้มีอยู่ใน DB แล้วหรือไม่
+export async function usernameExists(
   username: string,
   connection?: DbConnection,
 ): Promise<boolean> {
@@ -43,6 +46,7 @@ async function usernameExists(
   return Boolean(account);
 }
 
+// Function สร้าง data สำหรับสร้าง admin account ใหม่
 function buildAdminAccountCreateData(account: AccountCreateInput) {
   return {
     username: account.username,
@@ -58,7 +62,8 @@ function buildAdminAccountCreateData(account: AccountCreateInput) {
   };
 }
 
-async function createAdmin(
+// Function สร้าง admin account ใหม่ลง DB
+export async function createAdmin(
   account: AccountCreateInput,
   connection?: DbConnection,
 ): Promise<AccountDto> {
@@ -72,7 +77,7 @@ async function createAdmin(
 
 // Function อัปเดตข้อมูลพื้นฐาน (full_name/position/email/phone) ของแอดมินอีกคนหนึ่งจาก DB — เฉพาะ
 // field ที่ส่งมา (ไม่ใช่ undefined) เท่านั้นที่ถูกเขียนทับ
-async function updateAdminAccount(
+export async function updateAdminAccount(
   id: number | string,
   fields: {
     full_name?: string;
@@ -98,7 +103,8 @@ async function updateAdminAccount(
   return requireMapped(mapAccount(updatedAccount), "Admin account", "update");
 }
 
-async function updatePermissionLevel(
+// Function อัปเดต permission level ของ account จาก DB
+export async function updatePermissionLevel(
   id: number | string,
   permissionLevel?: string | null,
   connection?: DbConnection,
@@ -119,14 +125,3 @@ async function updatePermissionLevel(
     "permission level update",
   );
 }
-
-const adminSettingsAccountRepository = {
-  ...accountRepository,
-  createAdmin,
-  findAdminById,
-  usernameExists,
-  updatePermissionLevel,
-  updateAdminAccount,
-};
-
-export { adminSettingsAccountRepository as accountRepository };

@@ -1,31 +1,30 @@
 // Import Library
 import { createHash } from "crypto";
 import { Prisma, type MasterMarket } from "@prisma/client";
-
-// Import Dependencies
+// Import Config
+import { TICKET_STATUS, VEHICLE_JOB_STATUS } from "../constants/status";
 import { withTransaction } from "../db/prisma";
-import { enqueueLoggedLineMessage } from "../queues/notification-queue";
+// Import Queues
+import { enqueueLoggedLineMessage } from "../queues/line-message-queue";
 import { dispatchReadyWorkers } from "../queues/worker-dispatch";
+// Import Repositories
 import * as gateRepository from "../repositories/gate.repository";
 import * as marketJobRepository from "../repositories/shared/market-job.repository";
+// Import Services
 import { publishNotification } from "./notifications.service";
 import * as rateResolutionService from "./shared/rate-resolution.service";
-
 // Import Types
 import type { GateOptionsResponse, GateProductOption, GateVehicleJobBody, GateVehicleJobCreateInput, GateVehicleJobResponse, GateVehicleJobResponseStatus, GateVehicleJobResult } from "../types/gate.type";
 import type { DbConnection } from "../types/shared/common.type";
 import type { LineMessage } from "../types/line.type";
 import type { MarketJobDto, VehicleJobDto, VendorLineTargetDto } from "../types/worker.type";
-
 // Import Validation
 import { parseWithSchema } from "../validation/parser";
 import { gateVehicleJobBodySchema } from "../validation/schemas";
-
 // Import Utils
 import ApiError from "../utils/api-error";
 import { calculateRequiredWorkerCount, packageWeightToDecimal, parseMasterProductRange } from "../utils/labor-job-pricing";
 import { logger } from "../utils/logger";
-
 // Import Flex Message Builder
 import { buildGateTicketCreatedFlexMessage } from "../utils/line-flex-message";
 
@@ -45,8 +44,7 @@ type LaborProductPreparation = {
     quantity: number;
   };
 
-  // จำนวน Worker จาก Master
-  // ใช้ Dispatch เท่านั้น
+  // จำนวน Worker จาก Master ใช้สำหรับ Dispatch เท่านั้น
   requiredWorkerCount: number;
 
   // Rate snapshot ณ ตอน Gate Create
@@ -95,8 +93,7 @@ type LaborJobPreparation = {
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Config status ที่คืนให้ Gate เท่านั้น — ตั้งใจแยกอิสระจาก VEHICLE_OPERATION_STATUS ของ Admin Ops
-// Board (คนละ contract, คนละผู้บริโภค) ไม่ให้การเปลี่ยนชื่อค่าฝั่ง Admin กระทบ Gate โดยไม่ตั้งใจ
+// Config status ที่คืนให้ Gate เท่านั้น แยกจาก VEHICLE_OPERATION_STATUS ของ Admin Ops Board โดยตั้งใจ
 const GATE_TICKET_RESPONSE_STATUS = {
   UNLOAD_NOW: "unload_now",
   WAITING_UNLOAD: "waiting_unload",
@@ -178,7 +175,7 @@ function isGateVehicleJobBody(
 }
 
 // Function หา Market + Booth จาก master
-async function findActiveMasterMarketBooth(
+async function requireActiveMasterMarketBooth(
   marketCode: string,
   boothCode: string,
   connection?: DbConnection
@@ -217,16 +214,8 @@ async function findActiveMasterMarketBooth(
   return marketBooth;
 }
 
-// Function เตรียมข้อมูล Master สำหรับสร้างงานจาก Gate
-//
-// หน้าที่:
-// - Validate Market / Booth
-// - Validate Product / Package
-// - หา Worker requirement จาก Gate Quantity
-// - หา Rate ที่ใช้
-// - Snapshot Rate
-//
-// Function นี้ยังไม่คำนวณเงินจริง
+// Function เตรียมข้อมูล Master สำหรับสร้างงานจาก Gate — validate Market/Booth/Product/Package, หา
+// Worker requirement จาก Gate Quantity, หา Rate ที่ใช้ และ snapshot Rate ไว้ (ยังไม่คำนวณเงินจริง)
 async function prepareLaborJob(
   input: GateVehicleJobBody,
   connection?: DbConnection
@@ -236,13 +225,12 @@ async function prepareLaborJob(
 
   let marketName = "";
 
-  // ให้ Product ทุกตัวใน request เดียวกัน
-  // ใช้เวลา snapshot เดียวกัน
+  // ให้ Product ทุกตัวใน request เดียวกันใช้เวลา snapshot เดียวกัน
   const rateSnapshotAt = new Date();
 
   for (const boothInput of input.Booths) {
     const marketBooth =
-      await findActiveMasterMarketBooth(
+      await requireActiveMasterMarketBooth(
         input.MarketCode,
         boothInput.BoothCode,
         connection
@@ -261,7 +249,7 @@ async function prepareLaborJob(
       of boothInput.Products
     ) {
       const product =
-        await rateResolutionService.findActiveMasterProduct(
+        await rateResolutionService.requireActiveMasterProduct(
           productInput.ProductCode,
           productInput.PackageCode,
           connection
@@ -272,8 +260,7 @@ async function prepareLaborJob(
           product.range
         );
 
-      // Gate Quantity ใช้ตรงนี้เท่านั้น
-      // เพื่อหา Worker ที่ต้องเรียก
+      // Gate Quantity ใช้ตรงนี้เท่านั้น เพื่อหา Worker ที่ต้องเรียก
       const workerRequirement =
         calculateRequiredWorkerCount(
           productInput.Quantity,
@@ -291,7 +278,7 @@ async function prepareLaborJob(
 
       // หา Rate ที่ใช้ ณ ตอนสร้างงาน
       const applicableRate =
-        await rateResolutionService.findApplicableRate(
+        await rateResolutionService.requireApplicableRate(
           input.MarketCode,
           packageWeight,
           connection
@@ -391,9 +378,8 @@ async function prepareLaborJob(
     );
   }
 
-  // Worker requirement ของ Ticket หนึ่งใบ = MAX ของทุก Product ในทุกแผงภายใน Ticket นั้น (ไม่ใช่ SUM
-  // แล้ว) เพราะแรงงานเรียกตามจำนวนสินค้าที่ใช้คนมากที่สุดในใบเดียวกัน ไม่ใช่บวกสะสมข้ามแผง — ระดับ
-  // TicketNumber (ข้าม Ticket หลายใบ) ยังคง SUM เหมือนเดิม ดู gate.repository.ts createVehicleJobFromGate
+  // Worker requirement ของ Ticket หนึ่งใบ = MAX ของทุก Product ในทุกแผงภายใน Ticket นั้น (ไม่ใช่ SUM)
+  // เพราะแรงงานเรียกตามสินค้าที่ใช้คนมากที่สุด ไม่ใช่บวกสะสมข้ามแผง — ข้าม TicketNumber ยังคง SUM เหมือนเดิม
   const workerCount = Math.max(...workerCounts);
 
   return {
@@ -410,10 +396,7 @@ async function prepareLaborJob(
   };
 }
 
-// Function สร้าง response ที่คืนให้ Gate
-//
-// Response นี้เป็นข้อมูล Operation เท่านั้น
-// ยังไม่มีเงินจริง
+// Function สร้าง response ที่คืนให้ Gate — เป็นข้อมูล Operation เท่านั้น ยังไม่มีเงินจริง
 function buildPublicGateVehicleJobResponse(
   vehicleJob: VehicleJobDto,
   marketJob: MarketJobDto,
@@ -502,8 +485,7 @@ function buildPublicGateVehicleJobResponse(
                 Quantity:
                   item.product.quantity,
 
-                // นี่คือ Master requirement
-                // ไม่ใช่จำนวนสำหรับหารเงินจริง
+                // นี่คือ Master requirement ไม่ใช่จำนวนสำหรับหารเงินจริง
                 WorkerCount:
                   item.requiredWorkerCount,
               })
@@ -536,8 +518,7 @@ function buildGateTicketCreatedMessages(
 }
 
 // Function แจ้ง Vendor แยกตามแผง
-// รับ vendorLineTargetsByBoothCode ที่ query ไว้แล้วตอนสร้าง Ticket (buildGateCreateInputWithVendorLineIds)
-// มาใช้ต่อเลย ไม่ query findActiveVendorLineTargetsByStall ซ้ำอีกรอบสำหรับ booth เดียวกัน
+// ใช้ vendorLineTargetsByBoothCode ที่ query ไว้แล้วตอนสร้าง Ticket ต่อเลย ไม่ query ซ้ำ
 async function notifyVendorGateTicketCreated(
   response: GateVehicleJobResponse,
   vendorLineTargetsByBoothCode: Map<string, VendorLineTargetDto[]>
@@ -651,21 +632,19 @@ function arePayloadsEqual(
   );
 }
 
-// Function สร้าง transaction ref ของ Gate
-//
-// Idempotency key มาจาก payload ทั้งก้อน (ไม่ใช่แค่ TicketNumber + TicketNo) เพื่อแยกแยะการส่ง
-// TicketNumber+TicketNo เดิมซ้ำจริง (replay) ออกจากคำขอที่เนื้อหาต่างกันแต่บังเอิญใช้ TicketNo ซ้ำ
-// หลังถูก Admin ยกเลิกไปแล้ว — กรณีหลังต้องถูกปฏิเสธด้วย GATE_TICKET_ALREADY_EXISTS ไม่ใช่ replay
+// Function สร้าง transaction ref ของ Gate (ใช้เป็น idempotency key)
+// ถ้า Vendor ส่ง IdempotencyKey มาให้ Hash จากค่านั้น กัน Retry ที่มี Field ผันแปร (เช่น TicketCreatedAt) ทำให้ Hash ไม่ตรงกัน
+// ถ้าไม่ส่งมา Hash ทั้ง Body แบบเดิม (ห้ามเปลี่ยน เพื่อให้ Ticket เก่าคำนวณ ref ได้ค่าเดิม) และแยก replay จริงจาก TicketNo ซ้ำหลังถูกยกเลิก
 function buildGateTransactionRef(
   input: GateVehicleJobBody
 ): string {
+  const hashInput = input.IdempotencyKey
+    ? `IDEMPOTENCY_KEY:${input.IdempotencyKey}`
+    : JSON.stringify(normalizeJson(input));
+
   const hash =
     createHash("sha256")
-      .update(
-        JSON.stringify(
-          normalizeJson(input)
-        )
-      )
+      .update(hashInput)
       .digest("hex")
       .slice(0, 24);
 
@@ -821,9 +800,7 @@ function buildGateCreateInput(
 }
 
 // Function เติม Vendor LINE ID ให้แต่ละแผง
-// คืน vendorLineTargetsByBoothCode มาด้วย เพื่อให้ notifyVendorGateTicketCreated นำไปใช้ต่อได้เลย
-// โดยไม่ต้อง query findActiveVendorLineTargetsByStall ซ้ำอีกรอบสำหรับ booth เดิม (แต่ละ booth ในคำขอ
-// เดียวกันมี boothCode ไม่ซ้ำกันอยู่แล้ว จึงใช้เป็น key ได้ปลอดภัย)
+// คืน vendorLineTargetsByBoothCode มาด้วยให้ notifyVendorGateTicketCreated ใช้ต่อได้เลย ไม่ต้อง query ซ้ำ
 async function buildGateCreateInputWithVendorLineIds(
   input: GateVehicleJobCreateInput,
   connection?: DbConnection
@@ -843,7 +820,7 @@ async function buildGateCreateInputWithVendorLineIds(
               market.booths.map(
                 async (booth) => {
                   const vendorLineTargets =
-                    await gateRepository.findActiveVendorLineTargetsByStall(
+                    await gateRepository.listActiveVendorLineTargetsByStall(
                       market.marketCode,
                       booth.boothCode,
                       connection
@@ -891,6 +868,158 @@ async function buildGateCreateInputWithVendorLineIds(
       markets,
     },
     vendorLineTargetsByBoothCode,
+  };
+}
+
+// Function ตัดสินใจ business rule ทั้งหมดของการสร้าง/append VehicleJob + Business Ticket จาก Gate แล้วเรียก
+// gate.repository.ts เป็น persistence ตามลำดับเดิมทุกประการ (lock VehicleJob -> lock MarketJob -> สร้าง
+// Ticket/Product -> SUM -> finalize) ห้ามสลับลำดับ เพราะผูกกับ FOR UPDATE lock ที่กัน race condition ตอน Gate ยิงซ้ำ TicketNumber เดียวกัน
+export async function createOrAppendGateBusinessTicket(
+  input: GateVehicleJobCreateInput,
+  payloadSnapshot: Prisma.InputJsonValue,
+  connection?: DbConnection
+): Promise<{ vehicleJob: VehicleJobDto; marketJob: MarketJobDto }> {
+  const market = input.markets[0];
+  const dispatchNow = input.dispatch_now;
+  const vehicleStatus = dispatchNow ? VEHICLE_JOB_STATUS.WORKING : VEHICLE_JOB_STATUS.WAIT;
+  const ticketStatus = TICKET_STATUS.WAIT;
+  const requestedWorkersRequired = Math.max(1, market.workers_required);
+
+  // Lock VehicleJob ก่อนสร้างหรือ append Business Ticket
+  const existingVehicleJob = await gateRepository.lockAndFindVehicleJobByRef(
+    input.ticketNumber,
+    connection
+  );
+
+  const vehicleJob =
+    existingVehicleJob ??
+    (await gateRepository.createVehicleJob(
+      {
+        ticketNumber: input.ticketNumber,
+        licensePlate: input.license_plate,
+        licensePlateProvince: input.license_plate_province,
+        vehicleType: input.vehicle_type,
+        workersRequired: requestedWorkersRequired,
+        dispatchNow,
+        status: vehicleStatus,
+      },
+      connection
+    ));
+
+  // เปิด dispatch คืนเมื่อ Gate เพิ่ม booth หลัง release-workers
+  const canReopenDispatch =
+    existingVehicleJob?.status === VEHICLE_JOB_STATUS.WAIT ||
+    existingVehicleJob?.status === VEHICLE_JOB_STATUS.RELEASED;
+  const shouldUpdateVehicle =
+    existingVehicleJob !== null &&
+    (existingVehicleJob.license_plate !== input.license_plate ||
+      existingVehicleJob.license_plate_province !== input.license_plate_province ||
+      existingVehicleJob.vehicle_type !== input.vehicle_type ||
+      (dispatchNow && !existingVehicleJob.dispatch_now) ||
+      (dispatchNow && canReopenDispatch));
+
+  const savedVehicleJob =
+    shouldUpdateVehicle && existingVehicleJob
+      ? await gateRepository.updateVehicleJobDetails(
+        vehicleJob.id,
+        {
+          licensePlate: input.license_plate,
+          licensePlateProvince: input.license_plate_province,
+          vehicleType: input.vehicle_type,
+          dispatchNow: existingVehicleJob.dispatch_now || dispatchNow,
+          status:
+            dispatchNow && canReopenDispatch
+              ? vehicleStatus
+              : existingVehicleJob.status,
+        },
+        connection
+      )
+      : vehicleJob;
+  const marketStatus =
+    savedVehicleJob.status === VEHICLE_JOB_STATUS.WORKING || dispatchNow
+      ? VEHICLE_JOB_STATUS.WORKING
+      : VEHICLE_JOB_STATUS.WAIT;
+
+  // Re-check MarketJob หลัง lock ก่อน append
+  const existingMarket = input.existingMarketJobId
+    ? await gateRepository.lockAndFindMarketJobById(input.existingMarketJobId, connection)
+    : null;
+
+  const savedMarket =
+    existingMarket && existingMarket.status !== VEHICLE_JOB_STATUS.CANCELLED
+      ? // Gate ส่งแผงชุดใหม่เข้า Ticket เดิม (TicketNo + ตลาดเดิม ยัง active) — boothCount บวกเพิ่มเฉพาะแผงใหม่
+      // workersRequired ใช้ MAX ระหว่างของเดิมกับคำขอนี้ (แผงเดิมไม่ถูกแตะ ไม่ต้องคำนวณใหม่จากศูนย์)
+      await gateRepository.appendMarketJobBooths(
+        existingMarket.id,
+        {
+          boothCountIncrement: market.booth_count,
+          workersRequired: Math.max(existingMarket.workers_required, requestedWorkersRequired),
+          gateTransactionRef: market.gate_transaction_ref,
+        },
+        connection
+      )
+      : await gateRepository.createMarketJob(
+        {
+          vehicleJobId: savedVehicleJob.id,
+          ticketNo: market.ticketNo,
+          ticketCreatedAt: market.ticket_created_at,
+          boothCount: market.booth_count,
+          gateTransactionRef: market.gate_transaction_ref,
+          workersRequired: requestedWorkersRequired,
+          marketCode: market.marketCode,
+          marketName: market.marketName,
+          dropoffPoint: market.dropoff_point,
+          status: marketStatus,
+        },
+        connection
+      );
+
+  await gateRepository.createGateTicketsWithProducts(
+    savedVehicleJob.id,
+    savedMarket.id,
+    market.booths,
+    ticketStatus,
+    connection
+  );
+
+  // Worker requirement ของ TicketNumber = SUM ของทุก Business Ticket ที่ยัง active ใต้รถคันนี้ (ไม่นับที่ถูกยกเลิก)
+  // ห้ามใช้ MAX เพราะแต่ละ Business Ticket ต้องการ Worker เพิ่มเข้าไปจริง ไม่ใช่แทนที่กัน
+  const workersRequiredSum = await gateRepository.sumActiveMarketJobWorkersRequired(
+    savedVehicleJob.id,
+    connection
+  );
+  const totalWorkersRequired = workersRequiredSum ?? requestedWorkersRequired;
+
+  // ปิดรับ Ticket เพิ่มหลัง Gate create สำเร็จ
+  const ticketsClosedAt = savedVehicleJob.tickets_closed_at
+    ? new Date(savedVehicleJob.tickets_closed_at)
+    : new Date();
+
+  const ticketCount = await gateRepository.countActiveMarketJobs(savedVehicleJob.id, connection);
+
+  const finalVehicleJob = await gateRepository.finalizeVehicleJob(
+    savedVehicleJob.id,
+    {
+      workersRequired: totalWorkersRequired,
+      expectedTicketCount: ticketCount,
+      ticketsClosedAt,
+    },
+    connection
+  );
+
+  await gateRepository.createGateRequestLog(
+    {
+      gateTransactionRef: market.gate_transaction_ref,
+      vehicleJobId: finalVehicleJob.id,
+      marketJobId: savedMarket.id,
+      payloadSnapshot,
+    },
+    connection
+  );
+
+  return {
+    vehicleJob: finalVehicleJob,
+    marketJob: savedMarket,
   };
 }
 
@@ -987,11 +1116,7 @@ export async function getGateOptions(
       : []
   );
 
-  /*
-   * นับ ProductCode + PackageCode ก่อน
-   * เพราะ POST /api/gate/tickets จะ Reject
-   * ถ้า ProductCode + PackageCode ตรงมากกว่า 1 record
-   */
+  // นับ ProductCode + PackageCode ก่อน เพราะ POST /api/gate/tickets จะ Reject ถ้าคู่นี้ตรงมากกว่า 1 record
   const pairCounts = new Map<string, number>();
 
   for (const row of productRows) {
@@ -1138,13 +1263,9 @@ export async function createVehicleJobFromGate(
     );
   }
 
-  // TicketNumber เดิมที่มีอยู่แล้วไม่ได้แปลว่าต้องปฏิเสธ เพราะ TicketNumber เดียวมีหลาย Business
-  // Ticket ได้ ถ้า TicketNo นี้มี Ticket ที่ยัง active อยู่จริงภายใต้ TicketNumber เดียวกัน (ด้วย
-  // gate_transaction_ref อื่น เพราะ replay เดิมถูกจัดการไปแล้วด้านบน) มี 2 กรณี:
-  // - MarketCode ตรงกับ Ticket เดิม -> append แผงชุดนี้เข้า Ticket เดิม (ดู existingMarketJobId ด้านล่าง)
-  // - MarketCode ต่างจาก Ticket เดิม -> ปฏิเสธเสมอ (TicketNo ต้องไม่ซ้ำข้ามตลาด) ถ้า Ticket เดิมผิด
-  //   ต้องให้ Admin ยกเลิกก่อน (status = CANCELLED) เมื่อยกเลิกแล้ว ticketNo เดิมจะว่างอีกครั้งให้ Gate
-  //   สร้างใหม่ได้ทันที (findMarketJobByVehicleAndTicketNo กรอง CANCELLED ออกให้แล้ว)
+  // TicketNumber เดิมที่มีอยู่แล้วไม่ได้แปลว่าต้องปฏิเสธ เพราะ TicketNumber เดียวมีหลาย Business Ticket ได้
+  // ถ้า TicketNo นี้มี Ticket active อยู่แล้ว: MarketCode ตรงกัน -> append แผงเข้า Ticket เดิม (existingMarketJobId)
+  // MarketCode ต่างกัน -> ปฏิเสธเสมอ ต้องให้ Admin ยกเลิก Ticket เดิมก่อนถึงจะสร้างใหม่ด้วย TicketNo นี้ได้
   const existingVehicleJob =
     await gateRepository.findVehicleJobByRef(
       input.TicketNumber
@@ -1191,7 +1312,7 @@ export async function createVehicleJobFromGate(
       }
 
       const existingBoothCodes =
-        await gateRepository.findGateTicketBoothCodesByMarketJobId(
+        await gateRepository.listGateTicketBoothCodesByMarketJobId(
           existingMarketJob.id
         );
       const duplicateBoothCode = input.Booths.find((booth) =>
@@ -1223,10 +1344,7 @@ export async function createVehicleJobFromGate(
   const createResult =
     await withTransaction(
       async (transaction) => {
-        // Resolve Master + Worker requirement
-        // และ Snapshot Rate
-        //
-        // ยังไม่คำนวณเงินจริง
+        // Resolve Master + Worker requirement และ Snapshot Rate (ยังไม่คำนวณเงินจริง)
         const preparation =
           await prepareLaborJob(
             input,
@@ -1254,7 +1372,7 @@ export async function createVehicleJobFromGate(
 
         // สร้าง VehicleJob (ถ้ายังไม่มี) และ Business Ticket ใหม่
         const { vehicleJob, marketJob } =
-          await gateRepository.createVehicleJobFromGate(
+          await createOrAppendGateBusinessTicket(
             gateInputWithVendorLineIds,
             input as unknown as Prisma.InputJsonValue,
             transaction
@@ -1289,10 +1407,8 @@ export async function createVehicleJobFromGate(
         };
       }
     ).catch(async (error) => {
-      // เช็คเพิ่มว่าเป็น boothCode ชนกันจาก race condition หรือไม่ (ยิง Gate ซ้ำพร้อมกันด้วย
-      // BoothCode เดียวกัน แข่งกัน insert หลังผ่าน pre-check ด้านบนไปแล้วทั้งคู่) ถ้าใช่ ให้แปลงเป็น
-      // ApiError เดียวกับที่ pre-check ด้านบนโยนไว้ แทนที่จะปล่อยเป็น raw Prisma error — จุดกันชนสุดท้าย
-      // เสริมจาก pre-check ด้านบนที่ทำนอก transaction (แข่งกันได้ในช่วงเวลาสั้นๆ ระหว่างเช็คกับเขียนจริง)
+      // เช็คว่าเป็น boothCode ชนกันจาก race condition หรือไม่ (ยิง Gate ซ้ำพร้อมกันด้วย BoothCode เดียวกัน)
+      // ถ้าใช่ แปลงเป็น ApiError เดียวกับ pre-check ด้านบน แทนที่จะปล่อย raw Prisma error ออกไป
       const target =
         error instanceof Prisma.PrismaClientKnownRequestError
           ? error.meta?.target
@@ -1317,10 +1433,8 @@ export async function createVehicleJobFromGate(
         );
       }
 
-      // เช็คกรณี ticketNumber ชนกันจาก race condition เดียวกัน (Gate ยิง payload เดิมซ้ำเร็วมากจน
-      // ทั้งสอง request เช็ค replay ไม่เจอกันเพราะ transaction แรกยังไม่ commit) — ตอนนี้ transaction
-      // ที่ชนะน่าจะ commit ไปแล้ว จึง re-query replay อีกครั้งแล้วคืน response เดิมแทนที่จะโยน raw
-      // Prisma error ออกไปให้ Gate เจอ 500 ที่ไม่สื่อความหมาย
+      // เช็คกรณี ticketNumber ชนกันจาก race condition เดียวกัน (สอง request เช็ค replay ไม่เจอกันเพราะ
+      // transaction แรกยังไม่ commit) — re-query replay อีกครั้งแล้วคืน response เดิม แทนที่จะโยน raw Prisma error
       const isDuplicateTicketNumber =
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === "P2002" &&

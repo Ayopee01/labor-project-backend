@@ -1,12 +1,12 @@
 // Import Library
 import type { Account, AdminActionLog, DriverSession, GateTicket, MarketJob, MasterWorker, TicketCompletionSubmission, TicketProduct, TicketWorker, UserSession, VehicleJob, VehicleJobAssignment, WorkerSession } from "@prisma/client";
-
 // Import Types
 import type { SessionDto } from "../../../types/auth.type";
 import type { DriverSessionDto } from "../../../types/driver.type";
 import type { GateTicketDto, MarketJobDto, TicketCompletionSubmissionDto, TicketProductDto, TicketWorkerDto, VehicleJobAssignmentDto, VehicleJobDto } from "../../../types/worker.type";
 import type { AdminActionLogDto, AdminActionType } from "../../../types/shared/admin-action-log.type";
-import { ACCOUNT_ROLES, type AccountDto, type AccountRole, type MasterWorkerDto, type MasterWorkerSource, type SafeAccountDto, type SafeMasterWorkerDto, type WorkScheduleDto } from "../../../types/admin-workers.type";
+import { ACCOUNT_ROLES, type AccountDto, type AccountRole, type MasterWorkerDto, type MasterWorkerSource, type SafeAccountDto, type WorkScheduleDto } from "../../../types/admin-workers.type";
+import { ACCOUNT_STATUSES, type AccountStatus } from "../../../types/shared/account.type";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
@@ -22,7 +22,7 @@ function toIsoString(value: Date | string | null): string | null {
   return value;
 }
 
-// Function จัดการ เป็น date string จาก DB
+// Function แปลงวันที่จาก DB เป็น date string รูปแบบ YYYY-MM-DD
 function toDateString(value: Date | string): string {
   if (value instanceof Date) {
     return value.toISOString().slice(0, 10);
@@ -44,22 +44,7 @@ export function sanitizeAccount(account: AccountDto | null): SafeAccountDto | nu
   return safeAccount;
 }
 
-// Function ตัดข้อมูล sensitive ออกจาก master worker response
-export function sanitizeMasterWorker(worker: MasterWorkerDto): SafeMasterWorkerDto;
-export function sanitizeMasterWorker(worker: null): null;
-export function sanitizeMasterWorker(
-  worker: MasterWorkerDto | null
-): SafeMasterWorkerDto | null {
-  if (!worker) {
-    return null;
-  }
-
-  const { password_hash: _passwordHash, ...safeWorker } = worker;
-
-  return safeWorker;
-}
-
-// Function จัดการ เป็น account role จาก DB
+// Function แปลง role string จาก DB เป็น AccountRole (throw ถ้าไม่รู้จัก)
 function toAccountRole(role: string): AccountRole {
   if ((ACCOUNT_ROLES as readonly string[]).includes(role)) {
     return role as AccountRole;
@@ -68,7 +53,16 @@ function toAccountRole(role: string): AccountRole {
   throw new Error(`Unsupported account role: ${role}`);
 }
 
-// Function จัดการ เป็น master worker source จาก DB
+// Function แปลง status string จาก DB เป็น AccountStatus (throw ถ้าไม่รู้จัก)
+function toAccountStatus(status: string): AccountStatus {
+  if ((ACCOUNT_STATUSES as readonly string[]).includes(status)) {
+    return status as AccountStatus;
+  }
+
+  throw new Error(`Unsupported account status: ${status}`);
+}
+
+// Function แปลง source string จาก DB เป็น MasterWorkerSource (default เป็น master_sync)
 function toMasterWorkerSource(source: string): MasterWorkerSource {
   if (source === "admin_created") {
     return "admin_created";
@@ -88,7 +82,7 @@ export function mapAccount(record: Account | null): AccountDto | null {
     username: record.username,
     password_hash: record.passwordHash,
     role: toAccountRole(record.role),
-    status: record.status,
+    status: toAccountStatus(record.status),
     full_name: record.fullName,
     position: record.position,
     email: record.email,
@@ -194,9 +188,8 @@ export function mapSession(record: UserSession | null): SessionDto | null {
   };
 }
 
-// Function แปลง session (Worker) จาก DB — คืน SessionDto shape เดียวกับ mapSession เพื่อให้ทุกจุดที่
-// อ่าน req.session (worker-push.service, controllers ฯลฯ) ใช้โค้ดเดียวกันได้ไม่ว่า session จะมาจาก
-// user_sessions (Admin) หรือ worker_sessions (Worker) — account_id ในที่นี้คือ MasterWorker.id
+// Function แปลง session (Worker) จาก DB ให้เป็น SessionDto shape เดียวกับ mapSession
+// เพื่อให้โค้ดที่อ่าน session ใช้ร่วมกันได้ทั้ง Admin และ Worker (account_id คือ MasterWorker.id)
 export function mapWorkerSession(record: WorkerSession | null): SessionDto | null {
   if (!record) {
     return null;
@@ -424,7 +417,7 @@ export function mapAdminActionLog(
     reason_code: record.reasonCode,
     reason_text: record.reasonText,
     actor_account_id: record.actorAccountId,
-    actor_worker_code: record.actor?.username ?? null,
+    actor_username: record.actor?.username ?? null,
     actor_full_name: record.actor?.fullName ?? null,
     actor_role: record.actor?.role ?? null,
     metadata: (record.metadata as Record<string, unknown> | null) ?? null,

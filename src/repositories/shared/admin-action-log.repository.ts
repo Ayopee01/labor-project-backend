@@ -1,10 +1,8 @@
 // Import Library
 import { Prisma } from "@prisma/client";
-
-// Import Dependencies
+// Import Mappers
 import { mapAdminActionLog } from "./mappers";
 import { client, requireDto } from "./repository-utils";
-
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { AdminActionLogDto, AdminActionLogWriteInput } from "../../types/shared/admin-action-log.type";

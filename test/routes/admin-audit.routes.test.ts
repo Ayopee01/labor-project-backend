@@ -1390,7 +1390,7 @@ test("GET /api/admin/audit/events includes Before/After on worker_force_status_c
   assert.deepEqual(secondEvent.after, { status: "open_app" });
 });
 
-test("GET /api/admin/audit/events omits SecurityAuditLog events for a caller without audit:read, and maps actorCode/workerCode/attemptedUsername correctly for a caller with audit:read (27.12 phase 1)", async () => {
+test("GET /api/admin/audit/events omits SecurityAuditLog events for a caller without audit:read, and maps actorCode/actor_name/attemptedUsername correctly for a caller with audit:read (27.12 phase 1)", async () => {
   const today = bangkokDateKey();
 
   const unknownUsernameLogId = state.nextSecurityAuditLogId++;
@@ -1508,8 +1508,10 @@ test("GET /api/admin/audit/events omits SecurityAuditLog events for a caller wit
   assert.equal(workerLogoutEvent.actor_type, "worker");
   assert.equal(workerLogoutEvent.actor_id, "15003");
   assert.equal(workerLogoutEvent.worker_id, "15003");
-  // requestKeyMap มี WorkerCode -> worker_code เหมือนกัน (ดูเหตุผลเดียวกับ actor_name ด้านบน)
-  assert.equal(workerLogoutEvent.metadata.worker_code, "W15003");
+  // Worker actor ใช้ metadata key เดียวกับ Admin actor (actorCode/actor_name) แทน workerCode เดิม
+  // เพื่อให้ Frontend เช็ค key เดียวกันได้ไม่ว่า actor_type จะเป็น admin หรือ worker
+  assert.equal(workerLogoutEvent.metadata.actorCode, "W15003");
+  assert.equal(workerLogoutEvent.metadata.actor_name, "Worker 15003");
 });
 
 test("GET /api/admin/audit/events paginates SecurityAuditLog events correctly (total/total_pages/page overflow) merged in with the same code path as the other 8 sources, and excludes them entirely from pagination for a caller without audit:read (27.12 item 9 — merged pagination)", async () => {

@@ -1,9 +1,7 @@
 // Import Library
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-
 // Import Config
 import type { AdminPermission } from "../config/permission.config";
-
 // Import Utils
 import ApiError from "../utils/api-error";
 

@@ -153,7 +153,7 @@ paths:
 
         `audit:read` เป็น owner-only permission (เหมือน mobile_app_versions:*) — owner ได้ default
         มาจาก seed เท่านั้น manager/supervisor ไม่ได้ default และมีแต่ owner grant ให้คนอื่นต่อได้
-        SecurityAuditLog แถวเก่ากว่า SECURITY_AUDIT_LOG_RETENTION_DAYS วัน (default 180 วัน) ถูกลบทิ้ง
+        SecurityAuditLog แถวเก่ากว่า SECURITY_AUDIT_LOG_RETENTION_DAYS วัน (ตั้งค่าใน .env) ถูกลบทิ้ง
         โดย cleanup job รายวัน ไม่ retain ตลอดไป
       security:
         - bearerAuth: []

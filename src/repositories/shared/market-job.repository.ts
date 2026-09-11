@@ -1,8 +1,8 @@
-// Import Dependencies
-import { VEHICLE_JOB_STATUS } from "../../constants/job-status";
+// Import Config
+import { TERMINAL_TICKET_STATUSES, TICKET_STATUS, VEHICLE_JOB_STATUS } from "../../constants/status";
+// Import Mappers
 import { mapMarketJob } from "./mappers";
-import { client } from "./repository-utils";
-
+import { client, requireDto } from "./repository-utils";
 // Import Types
 import type { DbConnection } from "../../types/shared/common.type";
 import type { MarketJobDto } from "../../types/worker.type";
@@ -67,4 +67,35 @@ export async function listActiveTicketNosByVehicleJobId(
   });
 
   return marketJobs.map((marketJob) => marketJob.ticketNo);
+}
+
+// Function ยกเลิก Business Ticket (market job) พร้อม cascade GateTicket ที่ยังไม่ terminal ให้เป็น CANCELLED จาก DB
+// ยกเว้น ticket ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับ — ยกเลิกทั้งตลาดต้องไม่เปลี่ยนประวัติ booth ที่จบไปแล้ว
+export async function cancelMarketJobWithCascade(
+  marketJobId: number,
+  connection?: DbConnection,
+): Promise<MarketJobDto> {
+  const db = client(connection);
+  const marketJob = await db.marketJob.update({
+    where: {
+      id: marketJobId,
+    },
+    data: {
+      status: VEHICLE_JOB_STATUS.CANCELLED,
+      tickets: {
+        updateMany: {
+          where: {
+            status: {
+              notIn: TERMINAL_TICKET_STATUSES,
+            },
+          },
+          data: {
+            status: TICKET_STATUS.CANCELLED,
+          },
+        },
+      },
+    },
+  });
+
+  return requireDto(mapMarketJob(marketJob), "market job cancel");
 }

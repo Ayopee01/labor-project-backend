@@ -1,8 +1,10 @@
 // Import Library
 import { z } from "zod";
 import { ADMIN_PERMISSION_LEVELS, ADMIN_PERMISSIONS } from "../config/permission.config";
-import { SHIRT_COLOR_SNAPSHOT, VEHICLE_OPERATION_STATUS } from "../constants/job-status";
+import { VEHICLE_OPERATION_STATUS } from "../constants/status";
+import { DEFAULT_PAGE_LIMIT } from "../constants/pagination";
 import { ACCOUNT_ROLES, USER_LIST_SHIFTS } from "../types/admin-workers.type";
+import { ADMIN_AUDIT_ACTOR_TYPE_VALUES } from "../types/admin-audit.type";
 import { GATE_CLIENT_STATUSES } from "../types/shared/gate-client.type";
 import { WORKER_WORK_STATUS } from "../types/shared/worker-status.type";
 import { WORKER_NATIONALITIES, WORKER_SHIRT_TYPES } from "../utils/worker-code";
@@ -295,6 +297,16 @@ const optionalLimitNumber = z.preprocess(
   z.coerce.number().int().min(1).max(100).optional()
 );
 
+const pageQuerySchema = z.preprocess(
+  emptyStringToUndefined,
+  z.coerce.number().int().min(1).default(1)
+);
+
+const limitQuerySchema = z.preprocess(
+  emptyStringToUndefined,
+  z.coerce.number().int().min(1).max(100).default(DEFAULT_PAGE_LIMIT)
+);
+
 /* -------------------------------------- Common Schemas -------------------------------------- */
 
 export const idSchema = z.coerce.number().int().positive();
@@ -450,6 +462,13 @@ export const gateVehicleJobBodySchema = z
     Booths: z.array(gateVehicleJobBoothSchema).min(1),
 
     Dispatch: z.boolean(),
+
+    // Optional — Gate Vendor ยังไม่ส่งมาปัจจุบัน (ระบบ Fallback ไปใช้ Hash ทั้ง Body แบบเดิม) เมื่อ Vendor
+    // อัปเดตฝั่งเขาให้ส่ง Field นี้มาด้วยค่าคงที่ตัวเดียวกันทุกครั้งที่ Retry คำขอเดิม (ไม่สร้างใหม่ทุก
+    // ครั้งเหมือน TicketCreatedAt) ระบบจะใช้ค่านี้เป็น Idempotency Key แทน Hash ทั้ง Body ทันที กัน Retry
+    // ที่ Payload มี Field ผันแปร (เช่น Timestamp สร้างใหม่) ถูกมองว่าเป็นคำขอใหม่ทั้งที่ตั้งใจ Retry
+    // (ดู BUG-020)
+    IdempotencyKey: optionalTrimmedString,
   })
   .superRefine((input, context) => {
     // ตรวจ BoothCount ให้ตรงกับจำนวน Booth จริง
@@ -631,14 +650,8 @@ export const adminAuditWorkerPerformanceQuerySchema = z
     worker_code: optionalTrimmedString,
     date_from: optionalDateString,
     date_to: optionalDateString,
-    page: z.preprocess(
-      emptyStringToUndefined,
-      z.coerce.number().int().min(1).default(1)
-    ),
-    limit: z.preprocess(
-      emptyStringToUndefined,
-      z.coerce.number().int().min(1).max(100).default(20)
-    ),
+    page: pageQuerySchema,
+    limit: limitQuerySchema,
     sort_by: z.preprocess(
       emptyStringToUndefined,
       z.enum(adminAuditWorkerPerformanceSortByValues).optional()
@@ -676,12 +689,7 @@ export const adminAuditWorkerPerformanceQuerySchema = z
   });
 
 const adminAuditEventsActorTypeValues = [
-  "system",
-  "admin",
-  "worker",
-  "driver",
-  "vendor",
-  "gate",
+  ...ADMIN_AUDIT_ACTOR_TYPE_VALUES,
 ] as const;
 
 // 27.15.1 — quick_filter การ์ดด่วนเดียวที่แทน has_vehicle/has_reason/severity เดิมทั้งหมด ตั้งใจแยก
@@ -712,14 +720,8 @@ export const adminAuditEventsQuerySchema = z
       emptyStringToUndefined,
       z.enum(adminAuditQuickFilterValues).optional()
     ),
-    page: z.preprocess(
-      emptyStringToUndefined,
-      z.coerce.number().int().min(1).default(1)
-    ),
-    limit: z.preprocess(
-      emptyStringToUndefined,
-      z.coerce.number().int().min(1).max(100).default(20)
-    ),
+    page: pageQuerySchema,
+    limit: limitQuerySchema,
   })
   .strict()
   .superRefine((input, context) => {
@@ -840,8 +842,8 @@ export const adminDailyStallFeeQuerySchema = z
     search: optionalLowercaseString,
     product_code: optionalTrimmedString,
     package_code: optionalTrimmedString,
-    page: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).default(1)),
-    limit: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).max(100).default(20)),
+    page: pageQuerySchema,
+    limit: limitQuerySchema,
   })
   .strict()
   .superRefine((input, context) => {
@@ -873,18 +875,10 @@ export const adminMonthlyStallFeeQuerySchema = z
     date_to: dateString,
     market_search: optionalTrimmedString,
     booth_search: optionalTrimmedString,
-    shirt_color: z.preprocess(
-      emptyStringToUndefined,
-      z.enum([
-        SHIRT_COLOR_SNAPSHOT.NAVY,
-        SHIRT_COLOR_SNAPSHOT.BLUE,
-        SHIRT_COLOR_SNAPSHOT.GREEN,
-        SHIRT_COLOR_SNAPSHOT.MIXED,
-        SHIRT_COLOR_SNAPSHOT.UNKNOWN,
-      ]).optional()
-    ),
-    page: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).default(1)),
-    limit: z.preprocess(emptyStringToUndefined, z.coerce.number().int().min(1).max(100).default(20)),
+    // ไม่ผูกกับ whitelist คงที่ — ยอมรับสีใดก็ได้ที่มีจริงใน master data (รวมถึง MIXED/UNKNOWN ที่แอปคำนวณเอง)
+    shirt_color: optionalTrimmedString,
+    page: pageQuerySchema,
+    limit: limitQuerySchema,
   })
   .strict()
   .superRefine((input, context) => {
@@ -941,7 +935,7 @@ export const updateSystemSettingsBodySchema = z
   .object({
     driver_session_ttl_hours: z.coerce.number().int().positive().max(168).optional(),
     worker_accept_deadline_seconds: z.coerce.number().int().positive().max(600).optional(),
-    worker_accept_timeout_limit: z.coerce.number().int().positive().optional(),
+    worker_accept_timeout_limit: z.coerce.number().int().positive().max(20).optional(),
     worker_scan_deadline_minutes: z.coerce.number().int().positive().max(240).optional(),
     worker_scan_warning_before_minutes: z.coerce.number().int().positive().max(240).optional(),
     worker_scan_team_remaining_minutes: z.coerce.number().int().positive().max(240).optional(),
@@ -1012,7 +1006,6 @@ export const updateMobileAppVersionBodySchema = z
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required.",
   });
-// Function validates PATCH timing after merging stored and incoming values
 
 export const mobileAppVersionCheckQuerySchema = z.object({
   platform: z.enum(["android", "ios"]).optional(),
@@ -1042,7 +1035,7 @@ export const createAdminAccountBodySchema = z.object({
     .default([]),
 });
 
-// Schema body for updating basic admin account fields
+// Schema body สำหรับแก้ไขข้อมูลพื้นฐานของ Admin account
 export const updateAdminAccountBodySchema = z.object({
   full_name: optionalTrimmedString,
   position: optionalTrimmedString,
@@ -1102,16 +1095,6 @@ export const runtimeSettingsSchema = z.object({
 });
 
 /* -------------------------------------- Query Schemas -------------------------------------- */
-
-const pageQuerySchema = z.preprocess(
-  emptyStringToUndefined,
-  z.coerce.number().int().min(1).default(1)
-);
-
-const limitQuerySchema = z.preprocess(
-  emptyStringToUndefined,
-  z.coerce.number().int().min(1).max(100).default(20)
-);
 
 const optionalUserListShiftSchema = z.preprocess(
   emptyStringToUndefined,

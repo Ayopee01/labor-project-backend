@@ -2,7 +2,7 @@ import ApiError from "./api-error";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function reads a Bearer token from Authorization header
+// Function ดึง Bearer token จาก Authorization header
 export function extractBearerToken(
   authorization: string | undefined,
   errors: {

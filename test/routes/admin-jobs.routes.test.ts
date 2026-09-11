@@ -243,6 +243,8 @@ test("POST /api/admin/jobs/workers/:workerCode/status/force allows connected wor
   assert.deepEqual(Object.keys(response.body).sort(), [
     "full_name",
     "message",
+    "server_time",
+    "server_time_unix_ms",
     "status",
     "worker_code",
   ]);
@@ -2554,8 +2556,22 @@ test("POST /api/admin/vehicle-jobs/assignment/cancel (ticket_number + ticket_no 
     cancelled_at: null,
     completed_at: null,
   };
+  // Roster เพิ่มอีกหนึ่งคน (ไม่ผูก Assignment จริง แค่ไว้เป็น TicketWorker อีกคนของ Market Job เดียวกัน)
+  // เพื่อไม่ให้การถอน ticketWorker ออกจาก firstTicket ด้านล่างกลายเป็น "ถอน Worker คนสุดท้ายออกจาก
+  // Booth" ซึ่งตั้งแต่มี Fix ของ BUG-001 จะทำให้ระบบยกเลิกทั้ง Booth ให้อัตโนมัติ (ไม่ใช่ Behavior ที่
+  // Test นี้ตั้งใจตรวจ — Test นี้ตรวจแค่ว่า Snapshot การถอน Worker เป็นแบบเจาะจงต่อ Booth เท่านั้น)
+  const otherTicketWorker = {
+    id: state.nextTicketWorkerId++,
+    market_job_id: firstTicket.market_job_id,
+    worker_id: worker.id + 900000,
+    status: "WORKING",
+    final_earning_amount: null,
+    joined_at: new Date().toISOString(),
+    cancelled_at: null,
+    completed_at: null,
+  };
 
-  state.ticketWorkers.push(ticketWorker);
+  state.ticketWorkers.push(ticketWorker, otherTicketWorker);
 
   // ถอน worker ออกจาก firstTicket แผงเดียว ก่อน confirm ทั้งสองแผง
   const excludeResponse = await server.request(
@@ -5057,7 +5073,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/wait Dispatch:false before the 
   assert.equal(response.body.dispatch_now, false);
   assert.equal(response.body.reason_code, "R003");
   assert.deepEqual(
-    [...response.body.requeued_worker_codes].sort(),
+    [...response.body.worker_to_queue].sort(),
     [worker1.labor_code, worker2.labor_code].sort(),
   );
   assert.equal(job.status, "WAIT");
@@ -5114,7 +5130,7 @@ test("POST /api/admin/vehicle-jobs/:ticketNumber/wait Dispatch:true re-dispatche
   assert.equal(response.status, 200);
   assert.equal(response.body.status, "WORKING");
   assert.equal(response.body.dispatch_now, true);
-  assert.deepEqual(response.body.requeued_worker_codes, []);
+  assert.deepEqual(response.body.worker_to_queue, []);
   assert.equal(job.status, "WORKING");
   assert.equal(job.dispatch_now, true);
 
