@@ -19,13 +19,13 @@
           example: "1123"
       responses:
         "200":
-          description: Gate test helper options.
+          description: ตัวเลือกสำหรับใช้สร้าง request ทดสอบ Gate
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GateOptionsResponse"
         "401":
-          description: Missing or invalid Gate client credentials.
+          description: ไม่มี หรือ Gate client credentials ไม่ถูกต้อง
           content:
             application/json:
               schema:
@@ -51,37 +51,39 @@
               $ref: "#/components/schemas/GateTicketRequest"
       responses:
         "200":
-          description: Existing Gate request replayed by idempotency key.
+          description: ส่ง gate_transaction_ref ซ้ำกับ request เดิม ระบบคืน response เดิมที่เคยตอบไปแล้ว (REPLAYED) โดยไม่สร้างข้อมูลซ้ำ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GateTicketResponse"
         "201":
-          description: Gate ticket accepted.
+          description: รับ Gate ticket เข้าระบบสำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GateTicketResponse"
         "400":
-          description: Invalid Gate payload.
+          description: Payload ที่ Gate ส่งมาไม่ถูกต้องตามรูปแบบที่กำหนด
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Missing or invalid Gate client credentials.
+          description: ไม่มี หรือ Gate client credentials ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: >
-            Duplicate Gate request, invalid master mapping, duplicate booth/product-package,
-            missing required Gate master data, TicketNo reused for a different market while the
-            existing Ticket is still active (GATE_TICKET_ALREADY_EXISTS), TicketNo+market reused
-            with a BoothCode that already exists in that Ticket
-            (GATE_BOOTH_ALREADY_EXISTS_IN_TICKET), or TicketNo+market reused after that Ticket's
-            worker roster is already locked (GATE_TICKET_ROSTER_LOCKED).
+          description: >-
+            ส่ง gate_transaction_ref ซ้ำแต่ payload ไม่ตรงกับครั้งก่อน (GATE_TRANSACTION_REF_PAYLOAD_MISMATCH)
+            หรือ master data ที่อ้างอิงไม่ครบ/ไม่ถูกต้อง เช่น ไม่พบ MarketCode+BoothCode ที่ active
+            (MARKET_BOOTH_NOT_FOUND), ไม่ได้ตั้งชื่อตลาดไว้ (MARKET_NAME_NOT_CONFIGURED), คำนวณจำนวน
+            Worker ที่ต้องใช้ไม่ได้ (WORKER_REQUIREMENT_NOT_FOUND), หรือไม่ได้ตั้งค่า LINE ของ Vendor
+            ประจำแผงค้า (BOOTH_VENDOR_LINE_NOT_CONFIGURED) หรือ TicketNo ซ้ำข้ามตลาดขณะที่ Ticket เดิม
+            ยังไม่ถูกยกเลิก (GATE_TICKET_ALREADY_EXISTS) หรือ TicketNo+ตลาดเดิมมี BoothCode ที่ซ้ำกับที่มีอยู่แล้ว
+            (GATE_BOOTH_ALREADY_EXISTS_IN_TICKET) หรือ TicketNo+ตลาดเดิมที่ worker roster ถูก lock ไปแล้ว
+            (GATE_TICKET_ROSTER_LOCKED)
           content:
             application/json:
               schema:

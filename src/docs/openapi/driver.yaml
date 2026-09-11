@@ -1,4 +1,4 @@
-﻿paths:
+paths:
   /api/driver/qr-sessions:
     post:
       tags:
@@ -19,13 +19,19 @@
                   type: string
       responses:
         "201":
-          description: Driver session created.
+          description: สร้าง driver session สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DriverSessionResponse"
         "404":
-          description: Driver QR token is invalid.
+          description: Driver QR token ไม่ถูกต้อง
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: งานรถนี้ปิดไปแล้ว (สถานะเป็น COMPLETED หรือ CANCELLED)
           content:
             application/json:
               schema:
@@ -41,13 +47,19 @@
         - bearerAuth: []
       responses:
         "200":
-          description: Vehicle job detail.
+          description: รายละเอียดงานรถ
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VehicleJobDetailResponse"
+                $ref: "#/components/schemas/DriverVehicleJobDetailResponse"
         "401":
-          description: Missing or invalid driver session token.
+          description: ไม่มี driver session token หรือ token ไม่ถูกต้อง
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: ไม่พบงานรถที่ผูกกับ session นี้
           content:
             application/json:
               schema:
@@ -70,13 +82,31 @@
             example: TRUCK-20260723-001
       responses:
         "200":
-          description: Vehicle job ready acknowledgement.
+          description: ยืนยันงานรถพร้อมแล้ว
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DriverJobReadyResponse"
+        "401":
+          description: ไม่มี driver session token หรือ token ไม่ถูกต้อง
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Driver session does not belong to this job.
+          description: Driver session นี้ไม่ได้ผูกกับงานรถนี้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: ไม่พบงานรถนี้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: งานรถนี้ไม่ได้อยู่สถานะ WAIT จึงกดพร้อมไม่ได้ (เช่น ถูก release-workers ปล่อยทีมกลับคิวไปแล้ว)
           content:
             application/json:
               schema:

@@ -11,13 +11,13 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Runtime settings used by backend calculations.
+          description: ค่า runtime settings ที่ backend ใช้คำนวณ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeSettings"
         "403":
-          description: Missing settings:read permission.
+          description: ไม่มี permission settings:read
           content:
             application/json:
               schema:
@@ -39,19 +39,19 @@ paths:
               $ref: "#/components/schemas/UpdateRuntimeSettingsRequest"
       responses:
         "200":
-          description: Updated runtime settings.
+          description: ค่า runtime settings หลังแก้ไข
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuntimeSettings"
         "400":
-          description: Invalid settings payload.
+          description: Payload settings ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Missing settings:update permission.
+          description: ไม่มี permission settings:update
           content:
             application/json:
               schema:
@@ -68,13 +68,13 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Current, Scheduled, and History Mobile App Versions.
+          description: เวอร์ชัน Current, Scheduled และ History ของ Worker Mobile
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminMobileAppVersionOverviewResponse"
         "403":
-          description: Missing mobile_app_versions:read permission.
+          description: ไม่มี permission mobile_app_versions:read
           content:
             application/json:
               schema:
@@ -96,25 +96,25 @@ paths:
               $ref: "#/components/schemas/CreateMobileAppVersionRequest"
       responses:
         "201":
-          description: Mobile app version created.
+          description: สร้าง mobile app version สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminMobileAppVersionSummary"
         "400":
-          description: Invalid payload, or ReleaseNotificationAt is later than ForceUpdateAt.
+          description: Payload ไม่ถูกต้อง หรือ ReleaseNotificationAt อยู่หลัง ForceUpdateAt
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Missing mobile_app_versions:create permission.
+          description: ไม่มี permission mobile_app_versions:create
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: BuildNumber already exists.
+          description: BuildNumber นี้ถูกใช้ไปแล้ว
           content:
             application/json:
               schema:
@@ -135,7 +135,7 @@ paths:
           required: true
           schema:
             type: integer
-          description: Mobile app version id.
+          description: Id ของ mobile app version
       requestBody:
         required: true
         content:
@@ -144,31 +144,31 @@ paths:
               $ref: "#/components/schemas/UpdateMobileAppVersionRequest"
       responses:
         "200":
-          description: Mobile app version updated.
+          description: แก้ไข mobile app version สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminMobileAppVersionSummary"
         "400":
-          description: Invalid payload, or ReleaseNotificationAt is later than ForceUpdateAt (checked against the merged existing + patched state).
+          description: Payload ไม่ถูกต้อง หรือ ReleaseNotificationAt อยู่หลัง ForceUpdateAt (เทียบกับสถานะที่รวมค่าเดิม + ค่าที่แก้แล้ว)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Missing mobile_app_versions:update permission.
+          description: ไม่มี permission mobile_app_versions:update
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Mobile app version not found.
+          description: ไม่พบ mobile app version นี้
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: BuildNumber already exists, or Version/BuildNumber was changed after the version is no longer Scheduled (MOBILE_APP_VERSION_LOCKED).
+          description: BuildNumber นี้ถูกใช้ไปแล้ว หรือมีการแก้ Version/BuildNumber หลังจากเวอร์ชันนี้ไม่ได้อยู่สถานะ Scheduled แล้ว (MOBILE_APP_VERSION_LOCKED)
           content:
             application/json:
               schema:
@@ -185,13 +185,13 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Admin permission levels and admin accounts in each level.
+          description: ระดับ permission ของ Admin พร้อมบัญชีที่อยู่ในแต่ละระดับ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminRoleListResponse"
         "403":
-          description: Missing roles:read permission.
+          description: ไม่มี permission roles:read
           content:
             application/json:
               schema:
@@ -208,13 +208,13 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Gate client metadata. Secrets are never returned.
+          description: ข้อมูล Gate client (ไม่ส่ง secret กลับมา)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GateClientListResponse"
         "403":
-          description: Missing gate_clients:read permission.
+          description: ไม่มี permission gate_clients:read
           content:
             application/json:
               schema:
@@ -236,25 +236,25 @@ paths:
               $ref: "#/components/schemas/CreateGateClientRequest"
       responses:
         "201":
-          description: Gate client created. client_secret is shown only in this response.
+          description: สร้าง Gate client สำเร็จ (แสดง client_secret ให้เห็นเฉพาะ response นี้ครั้งเดียว)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GateClientSecretResponse"
         "400":
-          description: Invalid Gate client payload.
+          description: Payload ของ Gate client ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Missing gate_clients:create permission.
+          description: ไม่มี permission gate_clients:create
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: client_id already exists.
+          description: client_id นี้ถูกใช้ไปแล้ว
           content:
             application/json:
               schema:
@@ -284,25 +284,25 @@ paths:
               $ref: "#/components/schemas/UpdateGateClientRequest"
       responses:
         "200":
-          description: Gate client updated. Secrets are not returned.
+          description: แก้ไข Gate client สำเร็จ (ไม่ส่ง secret กลับมา)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GateClientMutationResponse"
         "400":
-          description: Invalid Gate client payload.
+          description: Payload ของ Gate client ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Missing gate_clients:update permission.
+          description: ไม่มี permission gate_clients:update
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Gate client not found.
+          description: ไม่พบ Gate client นี้
           content:
             application/json:
               schema:
@@ -326,19 +326,19 @@ paths:
             example: gate-north
       responses:
         "200":
-          description: Secret rotated. client_secret is shown only in this response.
+          description: เปลี่ยน secret สำเร็จ (แสดง client_secret ให้เห็นเฉพาะ response นี้ครั้งเดียว)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GateClientSecretResponse"
         "403":
-          description: Missing gate_clients:rotate_secret permission.
+          description: ไม่มี permission gate_clients:rotate_secret
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Gate client not found.
+          description: ไม่พบ Gate client นี้
           content:
             application/json:
               schema:
@@ -361,25 +361,25 @@ paths:
               $ref: "#/components/schemas/CreateAdminAccountRequest"
       responses:
         "201":
-          description: Admin account created.
+          description: สร้างบัญชี Admin สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateAdminAccountResponse"
         "400":
-          description: Invalid admin payload, or the requested permissions include mobile_app_versions:create/update without mobile_app_versions:read (PERMISSION_DEPENDENCY_NOT_SATISFIED).
+          description: Payload ของ Admin ไม่ถูกต้อง หรือ permission ที่ขอมี mobile_app_versions:create/update โดยไม่มี mobile_app_versions:read (PERMISSION_DEPENDENCY_NOT_SATISFIED)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Missing admins:create permission, new permission level is equal or higher than the actor, a requested permission the actor does not themselves hold (PERMISSIONS_NOT_GRANTABLE), or a mobile_app_versions:* permission granted by a non-owner actor (OWNER_ONLY_PERMISSIONS).
+          description: ไม่มี permission admins:create หรือ permission level ใหม่เท่ากับหรือสูงกว่าผู้เรียก หรือขอ permission ที่ผู้เรียกเองไม่มี (PERMISSIONS_NOT_GRANTABLE) หรือให้ permission กลุ่ม mobile_app_versions:* โดยผู้เรียกไม่ใช่ owner (OWNER_ONLY_PERMISSIONS)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Username already exists.
+          description: Username นี้ถูกใช้ไปแล้ว
           content:
             application/json:
               schema:
@@ -400,7 +400,7 @@ paths:
           required: true
           schema:
             type: integer
-          description: Admin account id.
+          description: Id ของบัญชี Admin
       requestBody:
         required: true
         content:
@@ -409,19 +409,19 @@ paths:
               $ref: "#/components/schemas/UpdateAdminAccountRequest"
       responses:
         "200":
-          description: Admin account updated.
+          description: แก้ไขบัญชี Admin สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UpdateAdminAccountResponse"
         "403":
-          description: Missing admins:update permission, target is the caller's own account, or target has an equal/higher permission level than the caller.
+          description: ไม่มี permission admins:update หรือเป้าหมายคือบัญชีของผู้เรียกเอง หรือเป้าหมายมี permission level เท่ากับหรือสูงกว่าผู้เรียก
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Admin account not found.
+          description: ไม่พบบัญชี Admin นี้
           content:
             application/json:
               schema:
@@ -442,7 +442,7 @@ paths:
           required: true
           schema:
             type: integer
-          description: Admin account id.
+          description: Id ของบัญชี Admin
       requestBody:
         required: true
         content:
@@ -451,19 +451,19 @@ paths:
               $ref: "#/components/schemas/ResetPasswordRequest"
       responses:
         "200":
-          description: Password reset. The target's active sessions are revoked.
+          description: รีเซ็ตรหัสผ่านสำเร็จ session ที่ active ของเป้าหมายทั้งหมดถูกยกเลิก
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ActionMessageResponse"
         "403":
-          description: Missing admins:reset_password permission, target is the caller's own account, or target has an equal/higher permission level than the caller.
+          description: ไม่มี permission admins:reset_password หรือเป้าหมายคือบัญชีของผู้เรียกเอง หรือเป้าหมายมี permission level เท่ากับหรือสูงกว่าผู้เรียก
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Admin account not found.
+          description: ไม่พบบัญชี Admin นี้
           content:
             application/json:
               schema:
@@ -484,22 +484,22 @@ paths:
           required: true
           schema:
             type: integer
-          description: Admin account id.
+          description: Id ของบัญชี Admin
       responses:
         "200":
-          description: Admin account permissions. The target admin must have a lower permission level than the actor.
+          description: สิทธิ์ของบัญชี Admin เป้าหมาย ต้องมี permission level ต่ำกว่าผู้เรียกเท่านั้นถึงจะดูได้
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminUserPermissionsResponse"
         "403":
-          description: Missing permissions:read permission, self lookup, or target permission level is equal or higher than the actor.
+          description: ไม่มี permission permissions:read หรือดูสิทธิ์ของตัวเอง หรือเป้าหมายมี permission level เท่ากับหรือสูงกว่าผู้เรียก
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Admin account not found.
+          description: ไม่พบบัญชี Admin นี้
           content:
             application/json:
               schema:
@@ -519,7 +519,7 @@ paths:
           required: true
           schema:
             type: integer
-          description: Admin account id.
+          description: Id ของบัญชี Admin
       requestBody:
         required: true
         content:
@@ -528,25 +528,29 @@ paths:
               $ref: "#/components/schemas/UpdateAdminUserPermissionsRequest"
       responses:
         "200":
-          description: Admin permissions/status updated. Active sessions for the target admin are revoked.
+          description: อัปเดตสิทธิ์/สถานะของ Admin สำเร็จ session ที่ active ของเป้าหมายถูกยกเลิกทั้งหมด
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UpdateAdminUserPermissionsResponse"
         "400":
-          description: Invalid permissions payload, or the requested permissions include mobile_app_versions:create/update without mobile_app_versions:read (PERMISSION_DEPENDENCY_NOT_SATISFIED).
+          description: Payload สิทธิ์ไม่ถูกต้อง หรือ permission ที่ขอมี mobile_app_versions:create/update โดยไม่มี mobile_app_versions:read (PERMISSION_DEPENDENCY_NOT_SATISFIED)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Missing permissions:update permission, target/new permission level is equal or higher than the actor, a requested permission the actor does not themselves hold (PERMISSIONS_NOT_GRANTABLE), or the request would change the target's mobile_app_versions:* permissions and the actor is not owner-level (OWNER_ONLY_PERMISSIONS) — resubmitting the target's existing mobile_app_versions:* set unchanged is allowed for any actor.
+          description: >-
+            ไม่มี permission permissions:update หรือ permission level ของเป้าหมาย/ระดับใหม่เท่ากับหรือสูงกว่าผู้เรียก
+            หรือขอ permission ที่ผู้เรียกเองไม่มี (PERMISSIONS_NOT_GRANTABLE) หรือ request นี้จะเปลี่ยน
+            permission กลุ่ม mobile_app_versions:* ของเป้าหมายโดยผู้เรียกไม่ใช่ owner (OWNER_ONLY_PERMISSIONS)
+            — ถ้าส่งชุด mobile_app_versions:* เดิมของเป้าหมายซ้ำโดยไม่เปลี่ยนแปลง ผู้เรียกระดับใดก็ทำได้
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Admin account not found.
+          description: ไม่พบบัญชี Admin นี้
           content:
             application/json:
               schema:

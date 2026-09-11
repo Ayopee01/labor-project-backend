@@ -11,13 +11,17 @@
         - bearerAuth: []
       responses:
         "200":
-          description: Current-shift worker status list for admin job operations. Workers with an active queue/assignment remain visible even when their WebSocket is disconnected; use SocketConnected to show connection state. Data is sorted by status column and status_entered_at, with ready workers ordered by Redis queue_position.
+          description: >-
+            รายการสถานะ Worker ของกะปัจจุบันสำหรับหน้าปฏิบัติการของ Admin Worker ที่มี queue/assignment
+            active อยู่จะยังแสดงอยู่แม้ WebSocket จะหลุดไปแล้ว — ใช้ SocketConnected เพื่อดูสถานะการเชื่อมต่อ
+            ข้อมูลเรียงตามคอลัมน์ status และ status_entered_at โดย Worker ที่ ready จะเรียงตาม Redis
+            queue_position
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminWorkerStatusListResponse"
         "403":
-          description: Authenticated account lacks jobs:read permission.
+          description: บัญชีที่ login อยู่ไม่มี permission jobs:read
           content:
             application/json:
               schema:
@@ -38,7 +42,7 @@
           required: true
           schema:
             type: string
-          description: WorkerCode, for example MN000115.
+          description: WorkerCode เช่น MN000115
       requestBody:
         required: true
         content:
@@ -47,28 +51,28 @@
               $ref: "#/components/schemas/AdminForceWorkerStatusRequest"
       responses:
         "200":
-          description: Worker status forced.
+          description: บังคับเปลี่ยนสถานะ Worker สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminForceWorkerStatusResponse"
         "400":
-          description: reason_code is missing.
+          description: ไม่ได้ส่ง reason_code มา
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: >
-            Worker is inactive, missing a schedule for forced break, outside their work shift
-            (WORKER_OUTSIDE_WORK_SHIFT — Admin must correct the worker's shift time first, for
-            any target status), or actor lacks workers:force_status permission.
+          description: >-
+            Worker ถูกปิดใช้งาน ไม่มีตารางกะสำหรับการบังคับพัก อยู่นอกเวลากะที่กำหนด (WORKER_OUTSIDE_WORK_SHIFT
+            — Admin ต้องแก้เวลากะของ Worker ก่อนถึงจะบังคับสถานะเป้าหมายใดๆ ได้) หรือผู้เรียกไม่มี
+            permission workers:force_status
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Worker is not online, has an active assignment, or break limit reached.
+          description: Worker ไม่ได้ online อยู่ มี assignment ที่ active อยู่แล้ว หรือพักครบจำนวนครั้งที่กำหนดแล้ว
           content:
             application/json:
               schema:
@@ -90,40 +94,40 @@
             type: string
             format: date
             example: "2026-07-07"
-          description: Optional legacy single-day filter in YYYY-MM-DD format. Equivalent to sending date_from and date_to as the same date.
+          description: กรองแบบวันเดียว (รูปแบบเก่า ไม่บังคับ) รูปแบบ YYYY-MM-DD เทียบเท่ากับส่ง date_from และ date_to เป็นวันเดียวกัน
         - in: query
           name: date_from
           schema:
             type: string
             format: date
             example: "2026-07-01"
-          description: Optional created date range start in YYYY-MM-DD format, interpreted in Asia/Bangkok.
+          description: วันเริ่มต้นของช่วงวันที่สร้าง (ไม่บังคับ) รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok
         - in: query
           name: date_to
           schema:
             type: string
             format: date
             example: "2026-07-07"
-          description: Optional created date range end in YYYY-MM-DD format, inclusive and interpreted in Asia/Bangkok.
+          description: วันสิ้นสุดของช่วงวันที่สร้าง (ไม่บังคับ, รวมวันนี้) รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok
         - in: query
           name: time_from
           schema:
             type: string
             example: "08:00"
-          description: Optional HH:mm time to narrow the range start beyond date/date_from's default of 00:00. Requires date or date_from to also be sent. Interpreted in Asia/Bangkok.
+          description: เวลา HH:mm สำหรับจำกัดจุดเริ่มต้นของช่วงให้แคบกว่าค่า default 00:00 ของ date/date_from (ไม่บังคับ) ต้องส่ง date หรือ date_from มาด้วย ตามเวลา Asia/Bangkok
         - in: query
           name: time_to
           schema:
             type: string
             example: "18:00"
-          description: Optional HH:mm time to narrow the range end beyond date/date_to's default of end-of-day. Requires date or date_to to also be sent. Inclusive of the given minute, interpreted in Asia/Bangkok.
+          description: เวลา HH:mm สำหรับจำกัดจุดสิ้นสุดของช่วงให้แคบกว่าค่า default สิ้นวันของ date/date_to (ไม่บังคับ) ต้องส่ง date หรือ date_to มาด้วย รวมนาทีที่ระบุ ตามเวลา Asia/Bangkok
         - in: query
           name: page
           schema:
             type: integer
             minimum: 1
             example: 1
-          description: Optional. If sent, the API returns only that page and includes pagination metadata after operation_status filtering.
+          description: ไม่บังคับ ถ้าส่งมา API จะคืนเฉพาะหน้านั้นพร้อม pagination metadata หลังกรองด้วย operation_status แล้ว
         - in: query
           name: limit
           schema:
@@ -131,12 +135,12 @@
             minimum: 1
             maximum: 100
             example: 20
-          description: Optional page size. Used only when page is sent. Defaults to 20.
+          description: จำนวนรายการต่อหน้า (ไม่บังคับ) ใช้เฉพาะตอนส่ง page มา ค่าเริ่มต้นคือ 20
         - in: query
           name: search
           schema:
             type: string
-          description: Search by ticketNo, license plate, gate transaction ref, marketCode/marketName, boothCode/boothName, productCode/productName/packageCode/packageName.
+          description: ค้นหาจาก ticketNo, ทะเบียนรถ, gate transaction ref, marketCode/marketName, boothCode/boothName, productCode/productName/packageCode/packageName
         - in: query
           name: operation_status
           schema:
@@ -150,46 +154,47 @@
               - ready_now
               - working
           description: >-
-            Mutually exclusive vehicle-level status — see
-            AdminVehicleOperationStatus for the full priority order used to decide
-            it. reject means at least one booth is currently REJECT and unresolved
-            (equivalent scope to has_issue=true, but as a status value instead of
-            a separate boolean). working also covers a vehicle job released early
-            via release-workers (VehicleJob.status=RELEASED, all booths already
-            submitted, waiting only on Vendor confirmation/timeout) since the work
-            itself is not done — filter or check vehicle_job.status directly if you
-            need to isolate released jobs specifically.
+            สถานะระดับงานรถที่มีได้ค่าเดียว (ไม่ซ้อนกัน) — ดู AdminVehicleOperationStatus สำหรับลำดับ
+            ความสำคัญเต็มที่ใช้ตัดสิน reject หมายถึงมีแผงค้าอย่างน้อยหนึ่งแผงอยู่สถานะ REJECT ที่ยังไม่แก้ไข
+            (ขอบเขตเทียบเท่ากับ has_issue=true แต่เป็นค่า status แทนที่จะเป็น boolean แยก) working ยังรวมถึง
+            งานรถที่ถูก release ก่อนกำหนดผ่าน release-workers ด้วย (VehicleJob.status=RELEASED ทุกแผงค้าส่ง
+            ยอดแล้ว รอแค่ Vendor ยืนยัน/timeout) เพราะงานยังไม่เสร็จจริง — filter หรือเช็ค vehicle_job.status
+            โดยตรงถ้าต้องการแยกงานที่ release แล้วออกมาเฉพาะ
         - in: query
           name: status
           schema:
             type: string
-          description: Optional. Filter directly by vehicle_job.status (e.g. WORKING), separate from operation_status which cannot distinguish it.
+          description: กรองตาม vehicle_job.status โดยตรง (เช่น WORKING) แยกจาก operation_status ที่แยกแยะค่านี้ไม่ได้ (ไม่บังคับ)
         - in: query
           name: has_issue
           schema:
             type: boolean
           description: >-
-            Optional. When true, only returns vehicles with at least one
-            currently-REJECT-status booth (market_summary.rejected > 0) — the same
-            vehicles operation_status=reject would return, kept as an independent
-            boolean filter for convenience.
+            ไม่บังคับ ถ้าเป็น true จะคืนเฉพาะงานรถที่มีแผงค้าอย่างน้อยหนึ่งแผงอยู่สถานะ REJECT ในปัจจุบัน
+            (market_summary.rejected > 0) — เป็นรถชุดเดียวกับที่ operation_status=reject จะคืนให้ เก็บไว้
+            เป็น boolean filter แยกต่างหากเพื่อความสะดวก
         - in: query
           name: dropoff_point
           schema:
             type: string
           description: >-
-            Optional. Filter to vehicle jobs with at least one MarketJob whose
-            dropoff_point exactly matches this value (case-insensitive). Applied
-            at the database query level alongside search and the date range, so
-            summary and pagination are computed after this filter — unlike
-            operation_status/status/has_issue which filter the already-built list.
+            ไม่บังคับ กรองเฉพาะงานรถที่มี MarketJob อย่างน้อยหนึ่งรายการที่ dropoff_point ตรงกับค่านี้เป๊ะ
+            (ไม่สนตัวพิมพ์เล็ก/ใหญ่) กรองที่ระดับ database query พร้อมกับ search และช่วงวันที่ เพราะฉะนั้น
+            summary และ pagination จะคำนวณหลัง filter นี้แล้ว — ต่างจาก operation_status/status/has_issue
+            ที่กรองจาก list ที่สร้างเสร็จแล้ว
       responses:
         "200":
-          description: Vehicle operation board list with summary, workers, markets, stall jobs, and products.
+          description: รายการงานรถสำหรับหน้าปฏิบัติการ พร้อม summary, worker, market, stall job และสินค้า
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminVehicleJobOperationListResponse"
+        "403":
+          description: บัญชีที่ login อยู่ไม่มี permission jobs:read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/admin/vehicle-jobs/history:
     get:
       tags:
@@ -207,28 +212,28 @@
             type: string
             format: date
             example: "2026-07-07"
-          description: Optional legacy single-day filter in YYYY-MM-DD format. Equivalent to sending date_from and date_to as the same date.
+          description: กรองแบบวันเดียว (รูปแบบเก่า ไม่บังคับ) รูปแบบ YYYY-MM-DD เทียบเท่ากับส่ง date_from และ date_to เป็นวันเดียวกัน
         - in: query
           name: date_from
           schema:
             type: string
             format: date
             example: "2026-07-01"
-          description: Optional created date range start in YYYY-MM-DD format, interpreted in Asia/Bangkok.
+          description: วันเริ่มต้นของช่วงวันที่สร้าง (ไม่บังคับ) รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok
         - in: query
           name: date_to
           schema:
             type: string
             format: date
             example: "2026-07-07"
-          description: Optional created date range end in YYYY-MM-DD format, inclusive and interpreted in Asia/Bangkok.
+          description: วันสิ้นสุดของช่วงวันที่สร้าง (ไม่บังคับ, รวมวันนี้) รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok
         - in: query
           name: page
           schema:
             type: integer
             minimum: 1
             example: 1
-          description: Optional. If sent, the API returns only that page and includes pagination metadata. If omitted, all matching rows are returned.
+          description: ไม่บังคับ ถ้าส่งมา API จะคืนเฉพาะหน้านั้นพร้อม pagination metadata ถ้าไม่ส่งจะคืนทุกแถวที่ตรงเงื่อนไข
         - in: query
           name: limit
           schema:
@@ -236,12 +241,12 @@
             minimum: 1
             maximum: 100
             example: 20
-          description: Optional page size. Used only when page is sent. Defaults to 20.
+          description: จำนวนรายการต่อหน้า (ไม่บังคับ) ใช้เฉพาะตอนส่ง page มา ค่าเริ่มต้นคือ 20
         - in: query
           name: search
           schema:
             type: string
-          description: Search by ticketNo, license plate, gate transaction ref, marketCode/marketName, boothCode/boothName, productCode/productName/packageCode/packageName.
+          description: ค้นหาจาก ticketNo, ทะเบียนรถ, gate transaction ref, marketCode/marketName, boothCode/boothName, productCode/productName/packageCode/packageName
         - in: query
           name: status
           schema:
@@ -258,7 +263,7 @@
               - ACCEPTED
               - SCANNED
               - TIMEOUT
-          description: Filter by status at vehicle, market, stall, stall confirmation, or worker assignment level.
+          description: กรองตามสถานะระดับ vehicle, market, stall, stall confirmation หรือ worker assignment
         - in: query
           name: history_status
           schema:
@@ -269,40 +274,41 @@
               - CANCELLED
               - REJECT_PENDING
           description: >-
-            Optional. Work History business group, distinct from status above — ALL means the OR
-            of COMPLETED, CANCELLED, and REJECT_PENDING only, not every status in the database.
-            REJECT_PENDING is a non-terminal vehicle job (status not in COMPLETED/CANCELLED) with
-            at least one Booth (GateTicket) currently in REJECT status. Grouping priority is
-            CANCELLED > COMPLETED > REJECT_PENDING. Applied at the database query level so
-            pagination.total and available_dropoff_points reflect the filtered set. When sent
-            together with status above, both apply as AND.
+            ไม่บังคับ กลุ่มธุรกิจของ Work History แยกต่างหากจาก status ด้านบน — ALL หมายถึง OR ของ
+            COMPLETED, CANCELLED และ REJECT_PENDING เท่านั้น ไม่ใช่ทุกสถานะใน database REJECT_PENDING คือ
+            งานรถที่ยังไม่จบ (status ไม่อยู่ใน COMPLETED/CANCELLED) และมีแผงค้า (GateTicket) อย่างน้อยหนึ่ง
+            แผงอยู่สถานะ REJECT อยู่ในปัจจุบัน ลำดับความสำคัญของกลุ่มคือ CANCELLED > COMPLETED >
+            REJECT_PENDING กรองที่ระดับ database query เพื่อให้ pagination.total และ
+            available_dropoff_points สะท้อนชุดที่กรองแล้ว ถ้าส่งมาพร้อมกับ status ด้านบน ทั้งคู่จะเป็นเงื่อนไข AND
         - in: query
           name: dropoff_point
           schema:
             type: string
           description: >-
-            Optional. Filter to vehicle jobs with at least one MarketJob whose
-            dropoff_point exactly matches this value (case-insensitive), applied
-            at the database query level so pagination.total reflects the filtered set.
+            ไม่บังคับ กรองเฉพาะงานรถที่มี MarketJob อย่างน้อยหนึ่งรายการที่ dropoff_point ตรงกับค่านี้เป๊ะ
+            (ไม่สนตัวพิมพ์เล็ก/ใหญ่) กรองที่ระดับ database query เพื่อให้ pagination.total สะท้อนชุดที่กรองแล้ว
       responses:
         "200":
-          description: >
-            Vehicle job history list with markets, stall jobs, and products. Each item also
-            includes workers (workers who actually accepted a dispatch, deduplicated one row per
-            worker_account_id — see AdminHistoryWorker), timeline (a chronological merge of worker
-            lifecycle events, booth submission/reject/confirm events, and admin actions), finance
-            (job-level totals reused from the same persisted financial records as
-            /financials, plus a real per-worker earnings breakdown — see AdminHistoryFinance), and
-            derived job-level timestamps (ticket_created_at, work_started_at,
-            submitted_complete_at, completed_at, duration_seconds) plus history_status (the Work
-            History business group this vehicle job belongs to, or null if none — see
-            history_status query parameter above).
-            Nothing here is recalculated from a formula; everything is read from existing
-            persisted data.
+          description: >-
+            รายการประวัติงานรถ พร้อม market, stall job และสินค้า แต่ละรายการยังมี workers (Worker ที่กดรับ
+            dispatch จริง ตัดซ้ำเหลือหนึ่งแถวต่อ worker_account_id — ดู AdminHistoryWorker), timeline
+            (รวมเหตุการณ์ตามลำดับเวลาของ worker lifecycle, การส่งยอด/ปฏิเสธ/ยืนยันของแผงค้า และ action ของ
+            admin), finance (ยอดรวมระดับงานที่ใช้ข้อมูลการเงินที่บันทึกไว้ชุดเดียวกับ /financials รวมถึง
+            รายได้จริงแยกตาม Worker — ดู AdminHistoryFinance) และ timestamp ระดับงานที่คำนวณแล้ว
+            (ticket_created_at, work_started_at, submitted_complete_at, completed_at,
+            duration_seconds) รวมถึง history_status (กลุ่มธุรกิจของ Work History ที่งานรถนี้สังกัด หรือ
+            null ถ้าไม่เข้ากลุ่มไหน — ดู query parameter history_status ด้านบน) ทุกอย่างในนี้ไม่มีการคำนวณใหม่
+            จากสูตรใดๆ อ่านจากข้อมูลที่บันทึกไว้อยู่แล้วทั้งหมด
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminVehicleJobListResponse"
+        "403":
+          description: บัญชีที่ login อยู่ไม่มี permission jobs:read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/admin/vehicle-jobs/history/daily-worker-income:
     get:
       tags:
@@ -320,41 +326,41 @@
             type: string
             format: date
             example: "2026-07-01"
-          description: Created date range start in YYYY-MM-DD, interpreted in Asia/Bangkok.
+          description: วันเริ่มต้นของช่วงวันที่สร้าง รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok
         - in: query
           name: date_to
           schema:
             type: string
             format: date
             example: "2026-07-07"
-          description: Created date range end in YYYY-MM-DD, inclusive, interpreted in Asia/Bangkok.
+          description: วันสิ้นสุดของช่วงวันที่สร้าง (รวมวันนี้) รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok
         - in: query
           name: from
           schema:
             type: string
             format: date
-          description: Alias of date_from.
+          description: ชื่อเรียกอื่นของ date_from
         - in: query
           name: to
           schema:
             type: string
             format: date
-          description: Alias of date_to.
+          description: ชื่อเรียกอื่นของ date_to
         - in: query
           name: worker_code
           schema:
             type: string
-          description: Filter to one worker's rows.
+          description: กรองเฉพาะแถวของ Worker คนนี้
         - in: query
           name: workerCode
           schema:
             type: string
-          description: Alias of worker_code.
+          description: ชื่อเรียกอื่นของ worker_code
         - in: query
           name: status
           schema:
             type: string
-          description: Filter by TicketWorker status.
+          description: กรองตามสถานะ TicketWorker
         - in: query
           name: shift
           schema:
@@ -362,17 +368,17 @@
             enum:
               - Morning
               - Evening
-          description: Filter by the worker's shift.
+          description: กรองตามกะของ Worker
         - in: query
           name: search
           schema:
             type: string
-          description: Search by ticketNo, license plate, marketCode/marketName, or worker code/name.
+          description: ค้นหาจาก ticketNo, ทะเบียนรถ, marketCode/marketName หรือรหัส/ชื่อ Worker
         - in: query
           name: keyword
           schema:
             type: string
-          description: Alias of search.
+          description: ชื่อเรียกอื่นของ search
         - in: query
           name: page
           schema:
@@ -390,16 +396,16 @@
             type: integer
             minimum: 1
             maximum: 100
-          description: Alias of limit.
+          description: ชื่อเรียกอื่นของ limit
       responses:
         "200":
-          description: One row per worker per Business Ticket, with the locked payout.
+          description: หนึ่งแถวต่อ Worker หนึ่งคนต่อ Business Ticket หนึ่งใบ พร้อมยอดที่ล็อกไว้แล้ว
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminDailyWorkerIncomeListResponse"
         "403":
-          description: Authenticated admin lacks jobs:read permission.
+          description: บัญชี Admin ที่ login อยู่ไม่มี permission jobs:read
           content:
             application/json:
               schema:
@@ -429,7 +435,7 @@
             type: string
             format: date
             example: "2026-08-01"
-          description: Report date range start in YYYY-MM-DD, interpreted in Asia/Bangkok. Required.
+          description: วันเริ่มต้นของช่วงรายงาน รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok ต้องส่งมา
         - in: query
           name: date_to
           required: true
@@ -437,33 +443,30 @@
             type: string
             format: date
             example: "2026-08-31"
-          description: >
-            Report date range end in YYYY-MM-DD, inclusive, interpreted in Asia/Bangkok. Required.
-            Range must not exceed 31 calendar days.
+          description: >-
+            วันสิ้นสุดของช่วงรายงาน (รวมวันนี้) รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok ต้องส่งมา
+            ช่วงห้ามเกิน 31 วันปฏิทิน
         - in: query
           name: search
           schema:
             type: string
-          description: >
-            Multi-token search (split on whitespace/comma; every token must match at least one
-            field, case-insensitive) across booth code, license plate, ticket_no, product code/name,
-            and package code/name.
+          description: >-
+            ค้นหาแบบหลาย token (แยกด้วยช่องว่าง/comma แต่ละ token ต้องตรงกับอย่างน้อยหนึ่ง field ไม่สนตัว
+            พิมพ์เล็ก/ใหญ่) ค้นจากรหัสแผงค้า ทะเบียนรถ ticket_no รหัส/ชื่อสินค้า และรหัส/ชื่อ Package
         - in: query
           name: product_code
           schema:
             type: string
-          description: >
-            Exact match on TicketProduct.productCode — applies to Data/summary/pagination, and
-            narrows available_packages (not available_products, which never narrows by its own
-            dimension).
+          description: >-
+            ตรงกับ TicketProduct.productCode เป๊ะ — มีผลกับ Data/summary/pagination และทำให้
+            available_packages แคบลง (ไม่ทำให้ available_products แคบลง เพราะไม่แคบตามมิติของตัวเอง)
         - in: query
           name: package_code
           schema:
             type: string
-          description: >
-            Exact match on TicketProduct.packageCode — applies to Data/summary/pagination, and
-            narrows available_products (not available_packages, which never narrows by its own
-            dimension).
+          description: >-
+            ตรงกับ TicketProduct.packageCode เป๊ะ — มีผลกับ Data/summary/pagination และทำให้
+            available_products แคบลง (ไม่ทำให้ available_packages แคบลง เพราะไม่แคบตามมิติของตัวเอง)
         - in: query
           name: page
           schema:
@@ -479,19 +482,19 @@
             default: 20
       responses:
         "200":
-          description: One row per finalized TicketProductFinancial within the date range.
+          description: หนึ่งแถวต่อ TicketProductFinancial ที่ finalize แล้วภายในช่วงวันที่เลือก
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminDailyStallFeeListResponse"
         "400":
-          description: Missing/invalid date range, or query validation error.
+          description: ไม่ได้ส่งช่วงวันที่มาหรือส่งมาไม่ถูกต้อง หรือ query ไม่ผ่านการตรวจสอบ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Authenticated admin lacks jobs:read permission.
+          description: บัญชี Admin ที่ login อยู่ไม่มี permission jobs:read
           content:
             application/json:
               schema:
@@ -524,7 +527,7 @@
             type: string
             format: date
             example: "2026-12-01"
-          description: Report date range start in YYYY-MM-DD, interpreted in Asia/Bangkok. Required.
+          description: วันเริ่มต้นของช่วงรายงาน รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok ต้องส่งมา
         - in: query
           name: date_to
           required: true
@@ -532,34 +535,32 @@
             type: string
             format: date
             example: "2027-01-31"
-          description: >
-            Report date range end in YYYY-MM-DD, inclusive, interpreted in Asia/Bangkok. Required.
-            May cross months/years freely; range must not exceed 6 calendar months from date_from.
+          description: >-
+            วันสิ้นสุดของช่วงรายงาน (รวมวันนี้) รูปแบบ YYYY-MM-DD ตามเวลา Asia/Bangkok ต้องส่งมา ข้ามเดือน/
+            ปีได้อย่างอิสระ แต่ช่วงห้ามเกิน 6 เดือนปฏิทินนับจาก date_from
         - in: query
           name: market_search
           schema:
             type: string
-          description: >
-            Partial, case-insensitive match on MarketJob.marketCode or marketName — applies to
-            Data/summary/pagination, and narrows available_stalls (not available_markets, which
-            never narrows by its own dimension).
+          description: >-
+            ตรงบางส่วนกับ MarketJob.marketCode หรือ marketName (ไม่สนตัวพิมพ์เล็ก/ใหญ่) — มีผลกับ
+            Data/summary/pagination และทำให้ available_stalls แคบลง (ไม่ทำให้ available_markets แคบลง
+            เพราะไม่แคบตามมิติของตัวเอง)
         - in: query
           name: booth_search
           schema:
             type: string
-          description: >
-            Partial, case-insensitive match on GateTicket.boothCode — applies to Data/summary/
-            pagination, and narrows available_markets (not available_stalls, which never narrows
-            by its own dimension).
+          description: >-
+            ตรงบางส่วนกับ GateTicket.boothCode (ไม่สนตัวพิมพ์เล็ก/ใหญ่) — มีผลกับ Data/summary/pagination
+            และทำให้ available_markets แคบลง (ไม่ทำให้ available_stalls แคบลง เพราะไม่แคบตามมิติของตัวเอง)
         - in: query
           name: shirt_color
           schema:
             type: string
-          description: >
-            Exact match on the shirt-color snapshot — not a fixed enum, accepts any color present
-            in master data plus MIXED/UNKNOWN. Applies to Data/summary/pagination, and narrows
-            available_markets/available_stalls (not available_shirt_colors, which never narrows
-            by its own dimension).
+          description: >-
+            ตรงกับสีเสื้อที่บันทึก snapshot ไว้เป๊ะ — ไม่ใช่ enum ตายตัว รับสีใดก็ได้ที่มีใน master data
+            รวมถึง MIXED/UNKNOWN มีผลกับ Data/summary/pagination และทำให้ available_markets/
+            available_stalls แคบลง (ไม่ทำให้ available_shirt_colors แคบลง เพราะไม่แคบตามมิติของตัวเอง)
         - in: query
           name: page
           schema:
@@ -575,19 +576,19 @@
             default: 20
       responses:
         "200":
-          description: One row per distinct market_code + booth_code + shirt_color group within the date range.
+          description: หนึ่งแถวต่อกลุ่ม market_code + booth_code + shirt_color หนึ่งกลุ่มภายในช่วงวันที่เลือก
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminMonthlyStallFeeListResponse"
         "400":
-          description: Missing/invalid date range (including exceeding the 6-month cap), or query validation error.
+          description: ไม่ได้ส่งช่วงวันที่มาหรือส่งมาไม่ถูกต้อง (รวมถึงเกิน 6 เดือน) หรือ query ไม่ผ่านการตรวจสอบ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Authenticated admin lacks jobs:read permission.
+          description: บัญชี Admin ที่ login อยู่ไม่มี permission jobs:read
           content:
             application/json:
               schema:
@@ -609,22 +610,22 @@
           schema:
             type: string
             example: TRUCK-20260723-001
-          description: Vehicle TicketNumber.
+          description: TicketNumber ของงานรถ
       responses:
         "200":
-          description: Persisted financial breakdown of the vehicle job.
+          description: รายละเอียดการเงินของงานรถที่บันทึกไว้
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminVehicleJobFinancialResponse"
         "403":
-          description: Authenticated admin lacks jobs:read permission.
+          description: บัญชี Admin ที่ login อยู่ไม่มี permission jobs:read
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Vehicle job was not found.
+          description: ไม่พบงานรถนี้
           content:
             application/json:
               schema:
@@ -647,36 +648,40 @@
               $ref: "#/components/schemas/AdminVehicleJobAssignmentCancelRequest"
       responses:
         "200":
-          description: Cancelled — shape depends on the resolved scope, see AdminVehicleJobAssignmentCancelResponse.
+          description: ยกเลิกสำเร็จ — รูปแบบ response ขึ้นอยู่กับขอบเขตที่ resolve ได้ ดู AdminVehicleJobAssignmentCancelResponse
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminVehicleJobAssignmentCancelResponse"
         "400":
-          description: INVALID_CANCEL_SCOPE — boothCode was given without ticket_no.
+          description: INVALID_CANCEL_SCOPE — ส่ง boothCode มาโดยไม่มี ticket_no
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: The resolved scope's target was not found (e.g. MARKET_JOB_NOT_FOUND, STALL_JOB_NOT_FOUND, ASSIGNMENT_NOT_FOUND, TICKET_WORKER_NOT_FOUND, WORKER_NOT_FOUND).
+          description: ไม่พบเป้าหมายของขอบเขตที่ resolve ได้ (เช่น MARKET_JOB_NOT_FOUND, STALL_JOB_NOT_FOUND, ASSIGNMENT_NOT_FOUND, TICKET_WORKER_NOT_FOUND, WORKER_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: บัญชี Admin ที่ login อยู่ไม่มี permission jobs:cancel
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: >-
-            The resolved scope's target is already closed or already submitted — e.g.
-            VEHICLE_JOB_CLOSED (whole-vehicle scope only — the vehicle is already COMPLETED or
-            CANCELLED; the row is locked and its status re-checked inside the same transaction
-            as the cancel, so this also rejects a vehicle a concurrent vendor confirm just closed),
-            MARKET_JOB_ALREADY_CLOSED, MARKET_JOB_ALREADY_SUBMITTED, STALL_JOB_ALREADY_CLOSED,
-            STALL_JOB_ALREADY_SUBMITTED, ASSIGNMENT_NOT_ACTIVE, WORKER_ALREADY_EXCLUDED_FROM_BOOTH
-            (worker + booth scope only — see the removed per-scope endpoints' prior documentation
-            for the exact guard each scope enforces). Cancelling a Business Ticket or Booth never
-            overwrites a sibling Market/Booth that already reached COMPLETED/CANCELLED, and always
-            rolls the parent Business Ticket/vehicle job status up afterward through the same
-            centralized lifecycle vendor confirmation uses (finalizing financials when applicable).
+            เป้าหมายของขอบเขตที่ resolve ได้ปิดไปแล้วหรือส่งยอดไปแล้ว เช่น VEHICLE_JOB_CLOSED (เฉพาะขอบเขตทั้งคัน
+            เท่านั้น — รถคันนี้เป็น COMPLETED หรือ CANCELLED ไปแล้ว โดย lock แถวนี้แล้วตรวจสถานะซ้ำในทรานแซกชัน
+            เดียวกับการยกเลิก จึงบล็อกรถที่เพิ่งถูกปิดจาก vendor confirm พร้อมกันได้ด้วย), MARKET_JOB_ALREADY_CLOSED,
+            MARKET_JOB_ALREADY_SUBMITTED, STALL_JOB_ALREADY_CLOSED, STALL_JOB_ALREADY_SUBMITTED,
+            ASSIGNMENT_NOT_ACTIVE, WORKER_ALREADY_EXCLUDED_FROM_BOOTH (เฉพาะขอบเขต worker + booth เท่านั้น —
+            ดูเอกสารเดิมของ endpoint แยกตามขอบเขตที่ถูกรวมเข้ามาแล้วสำหรับเงื่อนไขที่แต่ละขอบเขตบังคับใช้) การยกเลิก
+            Business Ticket หรือ Booth จะไม่เขียนทับ Market/Booth พี่น้องที่ถึง COMPLETED/CANCELLED ไปแล้ว และจะ
+            roll สถานะของ Business Ticket/งานรถแม่ขึ้นเสมอผ่าน lifecycle กลางชุดเดียวกับที่ vendor confirm ใช้
+            (finalize การเงินด้วยถ้าเข้าเงื่อนไข)
           content:
             application/json:
               schema:
@@ -708,22 +713,22 @@
               $ref: "#/components/schemas/AdminAssignWorkersRequest"
       responses:
         "201":
-          description: Workers assigned.
+          description: Assign Worker สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminAssignWorkersResponse"
         "400":
-          description: reason_code is missing.
+          description: ไม่ได้ส่ง reason_code มา
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: >
-            A listed worker is outside their work shift (WORKER_OUTSIDE_WORK_SHIFT) — this is
-            checked even if the worker's queue status shows ready, because ready alone does not
-            guarantee the worker is currently inside their shift window.
+          description: >-
+            มี Worker ในรายการอยู่นอกเวลากะของตัวเอง (WORKER_OUTSIDE_WORK_SHIFT) — เช็คแม้สถานะ queue ของ
+            Worker จะแสดงว่า ready แล้ว เพราะ ready อย่างเดียวไม่ได้การันตีว่า Worker อยู่ในช่วงเวลากะปัจจุบันจริง
+            หรือบัญชี Admin ที่ login อยู่ไม่มี permission jobs:assign
           content:
             application/json:
               schema:
@@ -753,13 +758,25 @@
               $ref: "#/components/schemas/AdminExtendScanDeadlineRequest"
       responses:
         "200":
-          description: Scan deadline extended.
+          description: ขยายเวลา scan deadline สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminExtendScanDeadlineResponse"
         "400":
-          description: reason_code is missing.
+          description: ไม่ได้ส่ง reason_code มา
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: บัญชี Admin ที่ login อยู่ไม่มี permission jobs:extend_deadline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: ไม่พบงานรถนี้ หรือไม่พบ assignment ที่รับงานแล้วและยัง active อยู่สำหรับขยายเวลา scan deadline
           content:
             application/json:
               schema:
@@ -802,31 +819,31 @@
               $ref: "#/components/schemas/AdminOverrideCountRequest"
       responses:
         "200":
-          description: Booth counts submitted.
+          description: ส่งยอดของแผงค้าสำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminOverrideCountResponse"
         "400":
-          description: Validation failed or submitted products are incomplete.
+          description: ข้อมูลไม่ผ่านการตรวจสอบ หรือส่งสินค้ามาไม่ครบ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Authenticated admin lacks jobs:override_count permission.
+          description: บัญชี Admin ที่ login อยู่ไม่มี permission jobs:override_count
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Vehicle job or booth was not found.
+          description: ไม่พบงานรถหรือแผงค้านี้
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Booth cannot accept a new submission.
+          description: แผงค้านี้รับการส่งยอดใหม่ไม่ได้แล้ว
           content:
             application/json:
               schema:
@@ -856,28 +873,27 @@
               $ref: "#/components/schemas/AdminVehicleWaitRequest"
       responses:
         "200":
-          description: Vehicle job dispatch toggled successfully.
+          description: เปลี่ยนสถานะ Dispatch ของงานรถสำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminVehicleWaitResponse"
         "403":
-          description: Authenticated admin lacks jobs:wait permission.
+          description: บัญชี Admin ที่ login อยู่ไม่มี permission jobs:wait
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Vehicle job was not found.
+          description: ไม่พบงานรถนี้
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: >
-            VEHICLE_JOB_CLOSED (vehicle job is already COMPLETED/CANCELLED), or
-            VEHICLE_JOB_ALREADY_STARTED (the whole team has already checked in and started
-            working; dispatch can no longer be changed).
+          description: >-
+            VEHICLE_JOB_CLOSED (งานรถนี้เป็น COMPLETED/CANCELLED ไปแล้ว) หรือ VEHICLE_JOB_ALREADY_STARTED
+            (ทั้งทีมเช็คอินและเริ่มทำงานไปแล้ว เปลี่ยน dispatch ไม่ได้อีก)
           content:
             application/json:
               schema:
@@ -907,25 +923,28 @@
               $ref: "#/components/schemas/AdminReleaseWorkersRequest"
       responses:
         "200":
-          description: Workers released back to the FIFO queue.
+          description: ปล่อย Worker กลับ FIFO queue สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminReleaseWorkersResponse"
         "403":
-          description: Authenticated admin lacks jobs:release_workers permission.
+          description: บัญชี Admin ที่ login อยู่ไม่มี permission jobs:release_workers
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Vehicle job was not found.
+          description: ไม่พบงานรถนี้
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Vehicle job is already closed (VEHICLE_JOB_CLOSED), has no booths yet (NO_SUBMITTED_BOOTHS), has a booth still WAIT/WORKING/REJECT (BOOTHS_NOT_SUBMITTED), or has no releasable workers (NO_RELEASABLE_WORKERS).
+          description: >-
+            งานรถนี้ปิดไปแล้ว (VEHICLE_JOB_CLOSED) ยังไม่มีแผงค้าไหนส่งยอดเลย (NO_SUBMITTED_BOOTHS) มีแผงค้า
+            ที่ยังอยู่สถานะ WAIT/WORKING/REJECT (BOOTHS_NOT_SUBMITTED) หรือไม่มี Worker ที่ปล่อยได้เลย
+            (NO_RELEASABLE_WORKERS)
           content:
             application/json:
               schema:

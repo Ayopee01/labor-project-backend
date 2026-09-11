@@ -366,6 +366,11 @@ export default function setupSwagger(app: Express): void {
     swaggerUi.serve,
     swaggerUi.setup(null, {
       customSiteTitle: "Backend API Docs",
+      // ขยายคอลัมน์ Name ของตาราง Parameters ให้กว้างพอ กันชื่อ header ยาวๆ เช่น X-Request-Id ตัดคำแล้วขึ้นบรรทัดใหม่แบบเพี้ยน
+      customCss: `
+        .swagger-ui .parameters-col_name { width: 260px; min-width: 220px; }
+        .swagger-ui .parameters-col_name .parameter__name { word-break: normal; white-space: normal; }
+      `,
       swaggerOptions: {
         url: "/api-docs/openapi.json",
         tagsSorter: sortSwaggerTags,

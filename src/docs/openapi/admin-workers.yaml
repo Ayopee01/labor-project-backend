@@ -19,31 +19,31 @@ paths:
               $ref: "#/components/schemas/CreateUserMultipartRequest"
       responses:
         "201":
-          description: Worker account created.
+          description: สร้างบัญชี Worker สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ActionMessageResponse"
         "400":
-          description: Invalid request body.
+          description: Request body ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Missing or invalid access token.
+          description: ไม่มี หรือ access token ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Authenticated account is not an admin.
+          description: บัญชีที่ login อยู่ไม่ใช่ Admin หรือไม่มี permission workers:create
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Username or shirt number already exists.
+          description: worker_code นี้ถูกใช้ไปแล้ว (worker_code มาจาก username ที่ส่งมาถ้ามี หรือสร้างอัตโนมัติจาก nationality + shirt_type + shirt_number)
           content:
             application/json:
               schema:
@@ -63,7 +63,7 @@ paths:
             type: integer
             minimum: 1
             default: 1
-          description: Page number.
+          description: เลขหน้า
         - in: query
           name: limit
           schema:
@@ -71,12 +71,12 @@ paths:
             minimum: 1
             maximum: 100
             default: 20
-          description: Number of records per page.
+          description: จำนวนรายการต่อหน้า
         - in: query
           name: search
           schema:
             type: string
-          description: Search by worker code or name.
+          description: ค้นหาจากรหัส Worker หรือชื่อ
         - in: query
           name: status
           schema:
@@ -84,22 +84,22 @@ paths:
             enum:
               - active
               - inactive
-          description: Filter by account status.
+          description: กรองตามสถานะบัญชี
         - in: query
           name: worker_code
           schema:
             type: string
-          description: Filter by partial, case-insensitive match on worker code.
+          description: กรองแบบ partial match (ไม่สนตัวพิมพ์เล็ก/ใหญ่) ตามรหัส Worker
         - in: query
           name: full_name
           schema:
             type: string
-          description: Filter by partial, case-insensitive match on full name.
+          description: กรองแบบ partial match (ไม่สนตัวพิมพ์เล็ก/ใหญ่) ตามชื่อ-นามสกุล
         - in: query
           name: shirt_number
           schema:
             type: string
-          description: Filter by partial, case-insensitive match on shirt number.
+          description: กรองแบบ partial match (ไม่สนตัวพิมพ์เล็ก/ใหญ่) ตามหมายเลขเสื้อ
         - in: query
           name: shift
           schema:
@@ -107,28 +107,28 @@ paths:
             enum:
               - MORNING
               - EVENING
-          description: Filter by work shift.
+          description: กรองตามกะทำงาน
       responses:
         "200":
-          description: Paginated worker list.
+          description: รายการ Worker แบบแบ่งหน้า
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserListResponse"
         "400":
-          description: Invalid query parameters.
+          description: Query parameter ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Missing or invalid access token.
+          description: ไม่มี หรือ access token ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Authenticated account is not an admin.
+          description: บัญชีที่ login อยู่ไม่ใช่ Admin หรือไม่มี permission workers:read
           content:
             application/json:
               schema:
@@ -148,28 +148,28 @@ paths:
           required: true
           schema:
             type: string
-          description: WorkerCode, for example MN000115.
+          description: WorkerCode เช่น MN000115
       responses:
         "200":
-          description: Worker account details.
+          description: รายละเอียดบัญชี Worker
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserDetailResponse"
         "401":
-          description: Missing or invalid access token.
+          description: ไม่มี หรือ access token ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Authenticated account is not an admin.
+          description: บัญชีที่ login อยู่ไม่ใช่ Admin หรือไม่มี permission workers:read
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Worker account not found.
+          description: ไม่พบบัญชี Worker นี้
           content:
             application/json:
               schema:
@@ -188,7 +188,7 @@ paths:
           required: true
           schema:
             type: string
-          description: WorkerCode, for example MN000115.
+          description: WorkerCode เช่น MN000115
       requestBody:
         required: true
         content:
@@ -197,37 +197,37 @@ paths:
               $ref: "#/components/schemas/UpdateUserRequest"
       responses:
         "200":
-          description: Worker account updated.
+          description: แก้ไขบัญชี Worker สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserDetailResponse"
         "400":
-          description: Invalid request body or shift time.
+          description: Request body หรือเวลากะไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Missing or invalid access token.
+          description: ไม่มี หรือ access token ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Authenticated account is not an admin.
+          description: บัญชีที่ login อยู่ไม่ใช่ Admin หรือไม่มี permission workers:update
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Worker account not found.
+          description: ไม่พบบัญชี Worker นี้
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Worker code already exists.
+          description: worker_code นี้ถูกใช้ไปแล้ว
           content:
             application/json:
               schema:
@@ -247,7 +247,7 @@ paths:
           required: true
           schema:
             type: string
-          description: WorkerCode, for example MN000115.
+          description: WorkerCode เช่น MN000115
       requestBody:
         required: true
         content:
@@ -256,31 +256,31 @@ paths:
               $ref: "#/components/schemas/ResetPasswordRequest"
       responses:
         "200":
-          description: Password reset successfully.
+          description: รีเซ็ตรหัสผ่านสำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ActionMessageResponse"
         "400":
-          description: Invalid request body.
+          description: Request body ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Missing or invalid access token.
+          description: ไม่มี หรือ access token ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Authenticated account is not an admin.
+          description: บัญชีที่ login อยู่ไม่ใช่ Admin หรือไม่มี permission workers:reset_password
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Worker account not found.
+          description: ไม่พบบัญชี Worker นี้
           content:
             application/json:
               schema:

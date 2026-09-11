@@ -14,21 +14,21 @@ paths:
           name: worker_code
           schema:
             type: string
-          description: Optional WorkerCode filter. If omitted, workers with assignment history in the period are aggregated.
+          description: กรองตาม WorkerCode (ไม่บังคับ) ถ้าไม่ส่งมาจะรวม Worker ทุกคนที่มีประวัติ assignment ในช่วงเวลานี้
         - in: query
           name: date_from
           schema:
             type: string
             format: date
             example: "2026-08-01"
-          description: Start Bangkok business date. Must be sent together with DateTo.
+          description: วันเริ่มต้นตามวันทำงาน Bangkok ต้องส่งคู่กับ DateTo
         - in: query
           name: date_to
           schema:
             type: string
             format: date
             example: "2026-08-31"
-          description: End Bangkok business date, inclusive. Must be sent together with DateFrom.
+          description: วันสิ้นสุดตามวันทำงาน Bangkok (รวมวันนี้ด้วย) ต้องส่งคู่กับ DateFrom
         - in: query
           name: page
           schema:
@@ -55,7 +55,7 @@ paths:
               - completed
               - admin_cancelled
               - worker_code
-          description: Optional DataTable sort column. Default is AcceptRate.
+          description: คอลัมน์ที่ใช้เรียง DataTable (ไม่บังคับ) ค่าเริ่มต้นคือ AcceptRate
         - in: query
           name: sort_order
           schema:
@@ -66,7 +66,7 @@ paths:
             default: desc
       responses:
         "200":
-          description: Worker performance summary.
+          description: สรุป performance ของ Worker
           content:
             application/json:
               schema:
@@ -101,19 +101,19 @@ paths:
                     AdminCancelledJobCount: 1
                     AcceptRate: "83.33"
         "400":
-          description: Validation error.
+          description: ข้อมูลที่ส่งมาไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Authentication is required.
+          description: ต้องยืนยันตัวตนก่อน
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Admin role with jobs:read permission is required.
+          description: ต้องเป็น Admin ที่มี permission jobs:read
           content:
             application/json:
               schema:
@@ -174,29 +174,29 @@ paths:
               - driver
               - vendor
               - gate
-          description: >
-            Search-bar filter (not a quick filter) — narrows Summary as well as Data/Pagination.
-            To narrow only Data/Pagination by admin/system actor without affecting Summary, use
-            quick_filter=admin|system instead (27.15.1).
+          description: >-
+            เป็น filter ของแถบค้นหา (ไม่ใช่ quick filter) จะทำให้ Summary แคบลงด้วยเช่นเดียวกับ Data/Pagination
+            ถ้าต้องการแคบเฉพาะ Data/Pagination ตาม actor admin/system โดยไม่กระทบ Summary ให้ใช้
+            quick_filter=admin|system แทน (27.15.1)
         - in: query
           name: event_type
           schema:
             type: string
-          description: Stable event code หนึ่งค่า (เช่น worker_assigned, vendor_confirmed, admin_override)
+          description: รหัส event คงที่หนึ่งค่า เช่น worker_assigned, vendor_confirmed, admin_override
         - in: query
           name: date_from
           schema:
             type: string
             format: date
             example: "2026-08-01"
-          description: Start Bangkok business date. Must be sent together with DateTo. ไม่ส่งเลยจะ default เป็นวันนี้ (Bangkok)
+          description: วันเริ่มต้นตามวันทำงาน Bangkok ต้องส่งคู่กับ DateTo ถ้าไม่ส่งเลยจะ default เป็นวันนี้ (Bangkok)
         - in: query
           name: date_to
           schema:
             type: string
             format: date
             example: "2026-08-31"
-          description: End Bangkok business date, inclusive. ห่างจาก DateFrom ได้ไม่เกิน 92 วัน
+          description: วันสิ้นสุดตามวันทำงาน Bangkok (รวมวันนี้ด้วย) ห่างจาก DateFrom ได้ไม่เกิน 92 วัน
         - in: query
           name: quick_filter
           schema:
@@ -207,22 +207,20 @@ paths:
               - critical
               - admin
               - has_reason
-          description: >
-            27.15.1 — single quick-filter card, replacing the old has_vehicle/has_reason/severity
-            params entirely (removed). Computed strictly AFTER Summary: Summary always reflects
-            only the search-bar filters (search/actor_type/event_type/date_from/date_to), never
-            quick_filter — only Data and Pagination narrow further when quick_filter is sent, so
-            switching between quick_filter values with the same search-bar filters must yield
-            byte-identical Summary every time. Omit for no quick filter. has_vehicle: VehicleJobId
-            is not null. system / admin: actor_type resolves to that value — use this instead of
-            the actor_type param above for a "quick tab" that must not narrow Summary. critical:
-            EventType is one of message_delivery_failed, worker_accept_timeout,
-            worker_scan_timeout, vendor_rejected, vehicle_cancelled, market_cancelled,
-            ticket_cancelled, worker_assignment_cancelled, ticket_worker_cancelled,
-            booth_worker_cancelled — must match Frontend's own severity rule for the same card.
-            has_reason: ReasonCode OR ReasonText is present — same condition Summary's
-            with_reason_count uses (27.15.2), so a caller filtering has_reason and one counting
-            with_reason_count always agree on which events qualify.
+          description: >-
+            27.15.1 — quick-filter card เดียว แทนที่ has_vehicle/has_reason/severity แบบเดิมทั้งหมด
+            (เอาออกไปแล้ว) คำนวณหลัง Summary เสมอ กล่าวคือ Summary จะสะท้อนเฉพาะ filter ของแถบค้นหา
+            (search/actor_type/event_type/date_from/date_to) เท่านั้น ไม่เกี่ยวกับ quick_filter — มีแค่
+            Data กับ Pagination เท่านั้นที่แคบลงอีกเมื่อส่ง quick_filter มา เพราะฉะนั้นสลับค่า quick_filter
+            ไปมาโดย filter ของแถบค้นหาชุดเดิม Summary ต้องเหมือนเดิมทุก byte เสมอ ไม่ส่งมาคือไม่มี quick
+            filter has_vehicle คือ VehicleJobId ไม่เป็น null system / admin คือ actor_type ตรงกับค่านั้น
+            — ใช้ตัวนี้แทน param actor_type ด้านบนสำหรับ "แท็บด่วน" ที่ต้องไม่ทำให้ Summary แคบลง critical
+            คือ EventType เป็นหนึ่งใน message_delivery_failed, worker_accept_timeout, worker_scan_timeout,
+            vendor_rejected, vehicle_cancelled, market_cancelled, ticket_cancelled,
+            worker_assignment_cancelled, ticket_worker_cancelled, booth_worker_cancelled — ต้องตรงกับ
+            กฎ severity ของฝั่ง Frontend สำหรับการ์ดเดียวกัน has_reason คือ ReasonCode หรือ ReasonText
+            มีค่า — เงื่อนไขเดียวกับที่ Summary.with_reason_count ใช้ (27.15.2) เพื่อให้ผู้ที่ filter
+            has_reason กับผู้ที่นับ with_reason_count ได้ผลลัพธ์ตรงกันเสมอว่า event ไหนเข้าเงื่อนไข
         - in: query
           name: page
           schema:
@@ -238,7 +236,7 @@ paths:
             default: 20
       responses:
         "200":
-          description: Audit event timeline.
+          description: Timeline ของ audit event
           content:
             application/json:
               schema:
@@ -281,19 +279,19 @@ paths:
                     worker_accepted: 25
                     worker_accept_timeout: 5
         "400":
-          description: Validation error (e.g. DateFrom/DateTo not paired, or range exceeds 92 days).
+          description: ข้อมูลที่ส่งมาไม่ถูกต้อง (เช่น ส่ง DateFrom/DateTo ไม่ครบคู่ หรือช่วงวันที่เกิน 92 วัน)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Authentication is required.
+          description: ต้องยืนยันตัวตนก่อน
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Admin role with jobs:read permission is required.
+          description: ต้องเป็น Admin ที่มี permission jobs:read
           content:
             application/json:
               schema:

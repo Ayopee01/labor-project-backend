@@ -12,7 +12,7 @@
           schema:
             type: string
           required: false
-          description: Required when LINE_CHANNEL_SECRET is configured.
+          description: ต้องส่งมาถ้าตั้งค่า LINE_CHANNEL_SECRET ไว้
       requestBody:
         required: true
         content:
@@ -21,11 +21,23 @@
               $ref: "#/components/schemas/LineWebhookRequest"
       responses:
         "200":
-          description: LINE webhook processed.
+          description: ประมวลผล LINE webhook สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LineWebhookResponse"
+        "401":
+          description: ไม่ได้ส่ง header x-line-signature มา หรือค่าลายเซ็นไม่ตรงกับที่คำนวณจาก LINE_CHANNEL_SECRET
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: ยังไม่ได้ตั้งค่า LINE_CHANNEL_SECRET ไว้บน server นี้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/line/dev:
     get:
       tags:
@@ -35,7 +47,7 @@
       operationId: getLineDevPage
       responses:
         "200":
-          description: LINE dev tester page.
+          description: หน้า LINE dev tester
           content:
             text/html:
               schema:
@@ -49,7 +61,7 @@
       operationId: listLineDevSubmissions
       responses:
         "200":
-          description: LINE dev submissions.
+          description: รายการ submission สำหรับ LINE dev tester
           content:
             application/json:
               schema:
@@ -70,11 +82,23 @@
           example: 501
       responses:
         "200":
-          description: Submission confirmed.
+          description: ยืนยัน submission สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LineDevCompletionResult"
+        "404":
+          description: ไม่พบ ticket completion submission นี้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Submission นี้ถูกยืนยัน ปฏิเสธ หรือถูกแทนที่ด้วยรายการอื่นไปแล้ว
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/line/dev/submissions/{submissionId}/reject:
     post:
       tags:
@@ -97,8 +121,20 @@
               $ref: "#/components/schemas/LineDevRejectRequest"
       responses:
         "200":
-          description: Submission rejected.
+          description: ปฏิเสธ submission สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LineDevCompletionResult"
+        "404":
+          description: ไม่พบ ticket completion submission นี้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Submission นี้ถูกยืนยัน ปฏิเสธ หรือถูกแทนที่ด้วยรายการอื่นไปแล้ว
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"

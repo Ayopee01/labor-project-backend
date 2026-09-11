@@ -16,25 +16,25 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Login successful.
+          description: Login สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthSuccessResponse"
         "400":
-          description: Invalid request body.
+          description: Request body ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Another active session exists on a different device.
+          description: มี session ที่ active อยู่แล้วบนอุปกรณ์อื่น
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoginConflictResponse"
         "423":
-          description: Account is inactive or locked.
+          description: บัญชีถูกปิดใช้งานหรือถูกล็อก
           content:
             application/json:
               schema:
@@ -59,25 +59,25 @@ paths:
               $ref: "#/components/schemas/ConfirmForceLoginRequest"
       responses:
         "200":
-          description: Force login confirmed and new session created.
+          description: ยืนยัน force login และสร้าง session ใหม่สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthSuccessResponse"
         "400":
-          description: Invalid request body or challenge data.
+          description: Request body หรือข้อมูล challenge ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Login challenge is invalid or expired.
+          description: Login challenge ไม่ถูกต้องหรือหมดอายุ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "423":
-          description: Account is inactive or locked.
+          description: บัญชีถูกปิดใช้งานหรือถูกล็อก
           content:
             application/json:
               schema:
@@ -97,19 +97,19 @@ paths:
               $ref: "#/components/schemas/RefreshRequest"
       responses:
         "200":
-          description: Token refresh successful.
+          description: ต่ออายุ token สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/RefreshSuccessResponse"
         "400":
-          description: Invalid request body.
+          description: Request body ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Refresh token is invalid, expired, or revoked.
+          description: Refresh token ไม่ถูกต้อง หมดอายุ หรือถูกยกเลิกไปแล้ว
           content:
             application/json:
               schema:
@@ -125,13 +125,13 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Logout successful.
+          description: Logout สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LogoutSuccessResponse"
         "401":
-          description: Access token is invalid, expired, or session was revoked.
+          description: Access token ไม่ถูกต้อง หมดอายุ หรือ session ถูกยกเลิกไปแล้ว
           content:
             application/json:
               schema:
@@ -155,25 +155,25 @@ paths:
               $ref: "#/components/schemas/WorkerPushTokenRequest"
       responses:
         "200":
-          description: Worker push token registered successfully.
+          description: บันทึก push token ของ Worker สำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkerPushTokenResponse"
         "400":
-          description: Invalid request body.
+          description: Request body ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Access token is invalid, expired, or session was revoked.
+          description: Access token ไม่ถูกต้อง หมดอายุ หรือ session ถูกยกเลิกไปแล้ว
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Only worker accounts can register worker push tokens.
+          description: เฉพาะบัญชี Worker เท่านั้นที่บันทึก push token ของ Worker ได้
           content:
             application/json:
               schema:
@@ -189,13 +189,13 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Current account data.
+          description: ข้อมูลบัญชีปัจจุบัน
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthenticatedAccount"
         "401":
-          description: Access token is invalid, expired, or session was revoked.
+          description: Access token ไม่ถูกต้อง หมดอายุ หรือ session ถูกยกเลิกไปแล้ว
           content:
             application/json:
               schema:
@@ -216,19 +216,19 @@ paths:
               $ref: "#/components/schemas/UpdateOwnProfileRequest"
       responses:
         "200":
-          description: Profile updated. Returns the same shape as GET /api/auth/me.
+          description: อัปเดต profile สำเร็จ คืนรูปแบบข้อมูลเดียวกับ GET /api/auth/me
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthenticatedAccount"
         "401":
-          description: Access token is invalid, expired, or session was revoked.
+          description: Access token ไม่ถูกต้อง หมดอายุ หรือ session ถูกยกเลิกไปแล้ว
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Caller is not an admin.
+          description: ผู้เรียกไม่ใช่ Admin
           content:
             application/json:
               schema:
@@ -254,28 +254,28 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: jpg, png, or webp, max 5MB.
+                  description: ไฟล์ jpg, png หรือ webp ขนาดไม่เกิน 5MB
       responses:
         "200":
-          description: Image uploaded and image_url persisted on the account.
+          description: อัปโหลดรูปสำเร็จ และบันทึก image_url ลงบัญชีแล้ว
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UploadOwnProfileImageResponse"
         "400":
-          description: Missing file, or invalid image type.
+          description: ไม่ได้ส่งไฟล์มา หรือชนิดไฟล์ไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Access token is invalid, expired, or session was revoked.
+          description: Access token ไม่ถูกต้อง หมดอายุ หรือ session ถูกยกเลิกไปแล้ว
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Caller is not an admin.
+          description: ผู้เรียกไม่ใช่ Admin
           content:
             application/json:
               schema:
@@ -285,7 +285,7 @@ paths:
       tags:
         - Auth
       summary: เปลี่ยนรหัสผ่านของผู้ใช้ปัจจุบัน
-      description: ตรวจรหัสผ่านเดิมก่อนตั้งรหัสใหม่ และยกเลิก session อื่นของ account เดียวกัน
+      description: ใช้ได้เฉพาะบัญชี Admin เท่านั้น ตรวจรหัสผ่านเดิมก่อนตั้งรหัสใหม่ และยกเลิก session อื่นของ account เดียวกัน
       operationId: changeOwnPassword
       security:
         - bearerAuth: []
@@ -297,19 +297,25 @@ paths:
               $ref: "#/components/schemas/ChangeOwnPasswordRequest"
       responses:
         "200":
-          description: Password changed. The current session stays active and other active sessions are revoked.
+          description: เปลี่ยนรหัสผ่านสำเร็จ session ปัจจุบันยังใช้งานต่อได้ ส่วน session อื่นของ account นี้จะถูกยกเลิกทั้งหมด
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChangeOwnPasswordResponse"
         "400":
-          description: Invalid request body or current password is incorrect.
+          description: Request body ไม่ถูกต้อง หรือรหัสผ่านเดิมไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Access token is invalid, expired, or session was revoked.
+          description: Access token ไม่ถูกต้อง หมดอายุ หรือ session ถูกยกเลิกไปแล้ว
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: ผู้เรียกไม่ใช่ Admin
           content:
             application/json:
               schema:
@@ -331,19 +337,19 @@ paths:
               $ref: "#/components/schemas/UpdateAccountLangRequest"
       responses:
         "200":
-          description: Language preference updated.
+          description: อัปเดตภาษาที่เลือกสำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UpdateAccountLangResponse"
         "400":
-          description: Invalid language payload.
+          description: ข้อมูลภาษาที่ส่งมาไม่ถูกต้อง
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Access token is invalid, expired, or session was revoked.
+          description: Access token ไม่ถูกต้อง หมดอายุ หรือ session ถูกยกเลิกไปแล้ว
           content:
             application/json:
               schema:

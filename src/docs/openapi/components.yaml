@@ -7,7 +7,7 @@
     gateBasicAuth:
       type: http
       scheme: basic
-      description: Gate Client Credentials. Username is client_id and password is client_secret.
+      description: ข้อมูลรับรองตัวตนของ Gate Client โดย Username คือ client_id และ Password คือ client_secret
   parameters:
     RequestIdHeader:
       in: header
@@ -15,7 +15,7 @@
       required: false
       schema:
         type: string
-      description: Optional correlation id for this request. If omitted, the server generates one. Echoed back in the X-Request-Id response header and every error response body — send your own value (or reuse the one from a prior response) to make it easier to find the matching log line when reporting an issue.
+      description: Correlation ID สำหรับ request นี้ (ไม่บังคับ) ถ้าไม่ส่งมา server จะสร้างให้เอง โดยจะส่งค่ากลับใน response header ชื่อ X-Request-Id และใน error response body ทุกครั้ง — แนะนำให้ส่งค่าของตัวเอง (หรือใช้ค่าจาก response ก่อนหน้าซ้ำ) เพื่อให้ค้นหา log บรรทัดที่ตรงกันได้ง่ายขึ้นเวลาแจ้งปัญหา
     ClientTypeHeader:
       in: header
       name: X-Client-Type
@@ -28,14 +28,14 @@
           - driver_webapp
           - gate
           - line_oa
-      description: Optional client identifier used only as a fallback for logging when the server cannot detect the client type from the request path or the authenticated account's role (e.g. on shared, not-yet-authenticated routes such as /api/auth/login). Not required on routes where the path or role already identifies the client.
+      description: ตัวระบุประเภท client (ไม่บังคับ) ใช้เป็นค่าสำรองสำหรับบันทึก log เฉพาะกรณีที่ server ตรวจไม่ได้ว่า client เป็นประเภทใดจาก path ของ request หรือ role ของบัญชีที่ login อยู่ (เช่น route ที่ใช้ร่วมกันและยังไม่ได้ authenticate อย่าง /api/auth/login) ไม่จำเป็นต้องส่งใน route ที่ path หรือ role สามารถระบุประเภท client ได้อยู่แล้ว
     ClientVersionHeader:
       in: header
       name: X-Client-Version
       required: false
       schema:
         type: string
-      description: Optional version string of the calling client app, recorded in server logs for debugging.
+      description: เวอร์ชันของ client app ที่เรียกใช้งาน (ไม่บังคับ) จะถูกบันทึกไว้ใน server log เพื่อใช้ช่วย debug
   schemas:
     ErrorResponse:
       type: object
@@ -83,6 +83,39 @@
           nullable: true
           description: ข้อความเวลาที่เหลือก่อนกะถัดไปแบบอ่านง่าย มีค่าเฉพาะตอน error เป็น OUTSIDE_WORK_SHIFT
           example: 28 minutes
+    ReadinessCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - error
+          description: ผลตรวจ dependency นี้
+          example: ok
+    ReadinessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - not_ready
+          description: ready เมื่อ database และ redis พร้อมทั้งคู่ ไม่งั้นเป็น not_ready
+          example: ready
+        checks:
+          type: object
+          description: ผลตรวจแยกตาม dependency
+          properties:
+            database:
+              $ref: "#/components/schemas/ReadinessCheck"
+            redis:
+              $ref: "#/components/schemas/ReadinessCheck"
+        timestamp:
+          type: string
+          format: date-time
+          description: เวลาที่ตรวจ (ISO 8601)
+          example: 2026-07-22T09:00:00.000Z
     Account:
       type: object
       properties:
@@ -534,7 +567,7 @@
           type: string
           nullable: true
           description: ข้ามได้ถ้าไม่ต้องการเปลี่ยน ส่ง null เพื่อล้างค่าเบอร์โทรที่บันทึกไว้ ส่งข้อความว่างถือว่า "ไม่เปลี่ยนแปลง" (ไม่ใช่การล้างค่า) ต้องส่ง null ชัดเจนถึงจะล้างค่าได้
-      description: All fields optional. Only fields actually sent (present in the JSON body) are updated. Admin-only (role-gated).
+      description: ทุก field ไม่บังคับ อัปเดตเฉพาะ field ที่ส่งมาจริง (มีอยู่ใน JSON body) เท่านั้น ใช้ได้เฉพาะ Admin (role-gated)
     UploadOwnProfileImageResponse:
       type: object
       properties:
@@ -1005,7 +1038,7 @@
           pattern: "^\\d{2}:\\d{2}$"
           example: "08:00"
         profile:
-          description: Backward compatible nested profile update.
+          description: อัปเดต profile แบบ nested object เก็บไว้เพื่อความเข้ากันได้กับรูปแบบเดิม
           $ref: "#/components/schemas/UpdateWorkerProfileInput"
         status:
           type: string
@@ -1341,15 +1374,7 @@
           example: 4
     AdminPermission:
       type: string
-      description: >-
-        mobile_app_versions:create and mobile_app_versions:update each require
-        mobile_app_versions:read to also be present in the same permission set
-        (PERMISSION_DEPENDENCY_NOT_SATISFIED otherwise). The whole
-        mobile_app_versions:* group can only be granted or revoked by an
-        owner-level admin, even by an actor who already holds
-        permissions:update (OWNER_ONLY_PERMISSIONS otherwise) — this only
-        blocks requests that actually change that group; resubmitting a
-        target's existing mobile_app_versions:* set unchanged is allowed.
+      description: mobile_app_versions:create และ mobile_app_versions:update แต่ละตัวต้องมี mobile_app_versions:read อยู่ใน permission set เดียวกันด้วย (ไม่งั้นจะได้ PERMISSION_DEPENDENCY_NOT_SATISFIED) กลุ่ม mobile_app_versions:* ทั้งหมดจะให้สิทธิ์หรือถอนสิทธิ์ได้เฉพาะ admin ระดับ owner เท่านั้น แม้จะเป็น actor ที่มี permissions:update อยู่แล้วก็ตาม (ไม่งั้นจะได้ OWNER_ONLY_PERMISSIONS) — กฎนี้บล็อกเฉพาะ request ที่เปลี่ยนแปลงกลุ่มนี้จริงๆ เท่านั้น ถ้าส่งชุด mobile_app_versions:* เดิมของ target ซ้ำโดยไม่เปลี่ยนแปลงจะอนุญาตให้ทำได้
       enum:
         - settings:read
         - settings:update
@@ -1465,7 +1490,7 @@
       example: active
     GateClient:
       type: object
-      description: Gate client metadata. secret_hash and client_secret are never returned by list/update APIs.
+      description: ข้อมูล Gate client โดย secret_hash และ client_secret จะไม่ถูกส่งกลับมาจาก API list/update เด็ดขาด
       properties:
         id:
           type: integer
@@ -1554,12 +1579,12 @@
           properties:
             client_secret:
               type: string
-              description: Shown only once during create or rotate. Store it in the Gate project.
+              description: แสดงให้เห็นแค่ครั้งเดียวตอน create หรือ rotate เท่านั้น ต้องเก็บค่านี้ไว้ที่ฝั่ง Gate project
               example: gate_live_RKs7bI2bUBW8n5UEkLEmguuECP5YrZkpaNcsmprnO5I
     MobileAppVersionStatus:
       type: string
       enum: [current, scheduled, history]
-      description: Derived from BuildNumber + ForceUpdateAt compared against server time — not a persisted column.
+      description: คำนวณจาก BuildNumber + ForceUpdateAt เทียบกับเวลา server ไม่ใช่ column ที่บันทึกไว้ใน DB
     MobileAppVersion:
       type: object
       properties:
@@ -1719,7 +1744,7 @@
           example: 2026-08-20T02:00:00.000Z
     UpdateMobileAppVersionRequest:
       type: object
-      description: At least one field is required. version/build_number are only accepted while the version is still Scheduled.
+      description: ต้องส่งอย่างน้อย 1 field version/build_number แก้ไขได้เฉพาะตอนที่เวอร์ชันนี้ยังอยู่สถานะ Scheduled เท่านั้น
       properties:
         version:
           type: string
@@ -1942,7 +1967,7 @@
         phone:
           type: string
           description: เบอร์โทรศัพท์
-      description: All fields optional. Only fields sent are updated. permission_level/permissions are not editable here — use PATCH /api/admin/users/{id}/permissions instead.
+      description: ทุก field ไม่บังคับ อัปเดตเฉพาะ field ที่ส่งมาเท่านั้น จุดนี้แก้ permission_level/permissions ไม่ได้ ให้ใช้ PATCH /api/admin/users/{id}/permissions แทน
     UpdateAdminAccountResponse:
       type: object
       properties:
@@ -2290,16 +2315,11 @@
             ticket_no:
               type: string
               example: TKT-20260804-000001
-              description: >
-                Business Ticket this submission belongs to (from markets[].ticket_no in the
-                accept response). Required because two Business Tickets under the same
-                vehicle, against different markets, can legitimately share the same
-                BoothCode — ticket_no plus BoothCode together resolve the exact booth
-                unambiguously.
+              description: Business Ticket ที่รายการส่งยอดนี้สังกัด (จาก markets[].ticket_no ใน accept response) ต้องส่งเพราะ Business Ticket 2 ใบภายใต้รถคันเดียวกัน แต่ต่าง market กัน อาจมี BoothCode ซ้ำกันได้ — ต้องใช้ ticket_no คู่กับ BoothCode ถึงจะระบุ booth ที่ถูกต้องได้ชัดเจน
             boothCode:
               type: string
               example: OM3/40
-              description: BoothCode from the accepted job payload. Send in body so values containing "/" do not need URL encoding.
+              description: BoothCode จาก payload งานที่กดรับ ส่งใน body เพื่อให้ค่าที่มี "/" ไม่ต้อง URL encode
     WorkerProductPackageOptionsResponse:
       type: object
       properties:
@@ -2981,20 +3001,14 @@
           format: date-time
           description: เวลาที่ token นี้หมดอายุ
         vehicle_job:
-          $ref: "#/components/schemas/VehicleJob"
+          $ref: "#/components/schemas/DriverVehicleJob"
     DriverJobReadyResponse:
       type: object
       properties:
-        ticketNo:
+        ticket_number:
           type: string
-          description: Business Ticket ที่เกี่ยวข้อง สังกัดตลาดเดียว
-          example: TKT-20260723-000125
-        ticket_completed_at:
-          type: string
-          format: date-time
-          nullable: true
-          description: เวลาที่งานทั้ง TicketNo/งานรถนี้เสร็จสมบูรณ์
-          example: "2026-08-14T04:00:00.000Z"
+          description: เลขอ้างอิงระดับรถ (TicketNumber) 14 หลัก ที่ Gate ออกให้ทั้งคัน
+          example: TRUCK-20260723-001
         license_plate:
           type: string
           description: ทะเบียนรถ
@@ -3006,18 +3020,125 @@
           example: Bangkok
         status:
           type: string
-          description: สถานะปัจจุบันของข้อมูลนี้
+          description: สถานะปัจจุบันของงานรถ หลังกดพร้อมแล้วจะเป็น WORKING
           example: WORKING
+    DriverVehicleJob:
+      type: object
+      description: ข้อมูลงานรถแบบย่อที่ Driver เห็น (ไม่มี field ระดับ Admin)
+      properties:
+        ticket_number:
+          type: string
+          description: เลขอ้างอิงระดับรถ (TicketNumber) 14 หลัก ที่ Gate ออกให้ทั้งคัน
+          example: TRUCK-20260723-001
+        license_plate:
+          type: string
+          description: ทะเบียนรถ
+          example: ABC-1234
+        license_plate_province:
+          type: string
+          nullable: true
+          description: จังหวัดของป้ายทะเบียน
+          example: Bangkok
+        vehicle_type:
+          type: string
+          nullable: true
+          description: ประเภทรถ
+        workers_required:
+          type: integer
+          description: จำนวน Worker ที่ต้องการสำหรับงานรถนี้
+        status:
+          type: string
+          description: สถานะปัจจุบันของงานรถ
+          example: WAIT
+        created_at:
+          type: string
+          format: date-time
+          description: เวลาที่สร้างข้อมูลนี้
+        updated_at:
+          type: string
+          format: date-time
+          description: เวลาที่แก้ไขข้อมูลนี้ล่าสุด
+    DriverTicketProduct:
+      type: object
+      properties:
+        productCode:
+          type: string
+          description: รหัสสินค้า
+        productName:
+          type: string
+          description: ชื่อสินค้า
+        packageCode:
+          type: string
+          description: รหัส Package
+        packageName:
+          type: string
+          description: ชื่อ Package
+        quantity:
+          type: string
+          description: จำนวนสินค้า
+    DriverBooth:
+      type: object
+      properties:
+        boothCode:
+          type: string
+          description: รหัสแผงค้า
+          example: OM3/40
+        boothName:
+          type: string
+          nullable: true
+          description: ชื่อแผงค้า
+        status:
+          type: string
+          description: สถานะปัจจุบันของแผงค้านี้
+        confirmation_status:
+          type: string
+          description: สถานะการยืนยันยอดของแผงค้านี้
+        products:
+          type: array
+          description: รายการสินค้าในแผงค้านี้
+          items:
+            $ref: "#/components/schemas/DriverTicketProduct"
+    DriverMarketJob:
+      type: object
+      description: Business Ticket (MarketJob) หนึ่งใบที่ Driver เห็น พร้อมแผงค้าทั้งหมดในใบนี้
+      properties:
+        ticket_no:
+          type: string
+          description: Business Ticket ที่เกี่ยวข้อง สังกัดตลาดเดียว
+          example: TKT-20260723-000125
+        boothCount:
+          type: integer
+          description: จำนวนแผงค้าใน Business Ticket ใบนี้
+        marketCode:
+          type: string
+          description: รหัสตลาด
+        marketName:
+          type: string
+          description: ชื่อตลาด
+        status:
+          type: string
+          description: สถานะปัจจุบันของ Business Ticket นี้
+        booths:
+          type: array
+          description: แผงค้าทั้งหมดใน Business Ticket นี้
+          items:
+            $ref: "#/components/schemas/DriverBooth"
+    DriverVehicleJobDetailResponse:
+      type: object
+      properties:
+        vehicle_job:
+          $ref: "#/components/schemas/DriverVehicleJob"
+        markets:
+          type: array
+          description: รายการ Business Ticket (ตลาด) ของงานรถนี้
+          items:
+            $ref: "#/components/schemas/DriverMarketJob"
     AdminVehicleJobAssignmentCancelRequest:
       type: object
       required:
         - ticket_number
         - reason_code
-      description: >-
-        Unified cancel request — scope is decided by which of ticket_no/boothCode/worker_code are
-        given (see AdminVehicleJobAssignmentCancelResponse for the full mapping table). Every
-        field except ticket_number and reason_code may be omitted or sent as null to mean "not
-        specified".
+      description: Request สำหรับยกเลิกแบบรวมจุดเดียว — ขอบเขตของการยกเลิกจะถูกกำหนดจากว่ามีการส่ง ticket_no/boothCode/worker_code ตัวไหนมาบ้าง (ดูตาราง mapping เต็มๆ ได้ที่ AdminVehicleJobAssignmentCancelResponse) ทุก field ยกเว้น ticket_number กับ reason_code สามารถไม่ส่งมา หรือส่งเป็น null เพื่อหมายถึง "ไม่ได้ระบุ" ได้
       properties:
         ticket_number:
           type: string
@@ -3048,16 +3169,7 @@
           description: ข้อความเหตุผล คู่กับ reason_code
           example: Gate created this ticket twice.
     AdminVehicleJobAssignmentCancelResponse:
-      description: >-
-        Shape depends on which scope was resolved from the request:
-        ticket_number alone -> AdminCancelVehicleJobRequeueResponse (whole vehicle job);
-        + ticket_no -> AdminCancelMarketJobResponse (one Business Ticket);
-        + ticket_no + boothCode -> AdminCancelStallJobResponse (one Booth);
-        + worker_code alone -> AdminCancelAssignmentResponse (one worker's assignment, whole
-        vehicle job); + ticket_no + worker_code -> AdminCancelTicketWorkerResponse (one worker
-        removed from one Business Ticket only); + ticket_no + boothCode + worker_code ->
-        AdminCancelTicketWorkerFromBoothResponse (one worker removed from just one Booth's payout
-        divisor, TicketWorker.status untouched).
+      description: "รูปแบบ response ขึ้นอยู่กับขอบเขตที่ resolve ได้จาก request: ticket_number อย่างเดียว -> AdminCancelVehicleJobRequeueResponse (ทั้งงานรถ); + ticket_no -> AdminCancelMarketJobResponse (Business Ticket ใบเดียว); + ticket_no + boothCode -> AdminCancelStallJobResponse (แผงค้าเดียว); + worker_code อย่างเดียว -> AdminCancelAssignmentResponse (assignment ของ Worker คนเดียว ทั้งงานรถ); + ticket_no + worker_code -> AdminCancelTicketWorkerResponse (ถอด Worker คนเดียวออกจาก Business Ticket ใบนั้นใบเดียว); + ticket_no + boothCode + worker_code -> AdminCancelTicketWorkerFromBoothResponse (ถอด Worker คนเดียวออกจากตัวหารค่าแรงของแผงค้านั้นแผงเดียว โดยไม่แตะ TicketWorker.status)"
       oneOf:
         - $ref: "#/components/schemas/AdminCancelVehicleJobRequeueResponse"
         - $ref: "#/components/schemas/AdminCancelMarketJobResponse"
@@ -3067,19 +3179,7 @@
         - $ref: "#/components/schemas/AdminCancelTicketWorkerResponse"
     AdminVehicleOperationStatus:
       type: string
-      description: >-
-        Mutually exclusive — every vehicle job falls into exactly one, decided in this
-        priority order (highest first): cancelled, completed, reject (any booth
-        currently REJECT, unresolved), wait_unload (dispatchNow=false, whether set by
-        Gate at creation or toggled off later by Admin), wait_worker (dispatchNow=true
-        but active workers < workers_required — FIFO auto-dispatch still filling the
-        team), ready_now (team full and dispatchNow=true, but work_started_at is still
-        null — nobody has scanned in yet), working (work_started_at is set — the whole
-        team has scanned in and is actively working; this also covers a vehicle job
-        released early via release-workers — VehicleJob.status=RELEASED — since the
-        work itself is not done yet, just waiting on Vendor confirmation/timeout; check
-        vehicle_job.status directly if you need to distinguish a released job from one
-        still being actively worked).
+      description: แต่ละงานรถจะอยู่ในสถานะใดสถานะหนึ่งเท่านั้น (ไม่ซ้อนกัน) โดยตัดสินตามลำดับความสำคัญนี้ (สูงสุดก่อน) คือ cancelled, completed, reject (มีแผงค้าใดๆ อยู่ในสถานะ REJECT ที่ยังไม่แก้ไข), wait_unload (dispatchNow=false ไม่ว่าจะตั้งมาจาก Gate ตอนสร้าง หรือถูก Admin ปิดทีหลังก็ตาม), wait_worker (dispatchNow=true แต่จำนวน Worker ที่ active < workers_required — ระบบ FIFO auto-dispatch ยังหาทีมให้ไม่ครบ), ready_now (ทีมครบแล้วและ dispatchNow=true แต่ work_started_at ยังเป็น null — ยังไม่มีใครสแกนเข้างานเลย), working (work_started_at ถูกตั้งค่าแล้ว — ทั้งทีมสแกนเข้างานและกำลังทำงานอยู่ รวมถึงกรณีงานรถที่ถูก release ก่อนกำหนดผ่าน release-workers ด้วย — VehicleJob.status=RELEASED — เพราะงานยังไม่เสร็จจริง แค่รอ Vendor ยืนยัน/timeout เท่านั้น ถ้าต้องการแยกงานที่ release แล้วออกจากงานที่ยังทำอยู่จริง ให้เช็คที่ vehicle_job.status โดยตรง)
       enum:
         - cancelled
         - completed
@@ -3819,7 +3919,7 @@
 
     AdminHistoryRejection:
       type: object
-      description: One resolved-or-pending rejection of a booth submission, derived from TicketCompletionSubmission rows in submitted order.
+      description: การปฏิเสธหนึ่งรายการของการส่งยอดแผงค้า ไม่ว่าจะแก้ไขแล้วหรือยังรอดำเนินการ คำนวณมาจากแถว TicketCompletionSubmission เรียงตามลำดับที่ส่งเข้ามา
       properties:
         rejectedAt:
           type: string
@@ -3848,7 +3948,7 @@
           description: ชื่อ Vendor ที่ปฏิเสธรายการนี้
 
     AdminHistoryProduct:
-      description: Same fields as AdminFinancialProduct except ticket_product_id (an internal PK the /financials override screen needs but Work History, which is read-only, does not).
+      description: field เดียวกับ AdminFinancialProduct ยกเว้น ticket_product_id (เป็น PK ภายในที่หน้าจอ override ของ /financials ต้องใช้ แต่ Work History ซึ่งเป็นแบบอ่านอย่างเดียวไม่จำเป็นต้องใช้)
       type: object
       properties:
         productCode:
@@ -3895,7 +3995,7 @@
           description: รายชื่อ Worker
 
     AdminHistoryBooth:
-      description: Booth (GateTicket) inside a Work History Business Ticket. Reuses the same persisted financial fields as AdminFinancialBooth (not recalculated) plus submission/rejection tracking the /financials endpoint does not need — omits ticket_id/ticket_no/marketCode/marketName since those are already available one level up on AdminHistoryMarket.
+      description: แผงค้า (GateTicket) ภายใน Business Ticket ของ Work History ใช้ field การเงินที่บันทึกไว้ชุดเดียวกับ AdminFinancialBooth (ไม่คำนวณใหม่) รวมถึงการติดตามการส่งยอด/การปฏิเสธที่ endpoint /financials ไม่จำเป็นต้องใช้ — ไม่มี ticket_id/ticket_no/marketCode/marketName เพราะมีอยู่แล้วในระดับบนสุดที่ AdminHistoryMarket
       type: object
       properties:
         boothCode:
@@ -4028,7 +4128,7 @@
 
     AdminHistoryMarket:
       type: object
-      description: One Business Ticket (MarketJob) inside a Work History vehicle job, with its booths formatted as AdminHistoryBooth.
+      description: Business Ticket (MarketJob) หนึ่งใบภายในงานรถของ Work History โดยแผงค้าของ Ticket นี้จะอยู่ในรูปแบบ AdminHistoryBooth
       properties:
         ticket_no:
           type: string
@@ -4063,7 +4163,7 @@
     AdminHistoryCancellation:
       type: object
       nullable: true
-      description: Cancellation details, reused for VehicleJob-, MarketJob-, GateTicket/Booth-, and per-worker-level cancellation. Null when that level's status is not CANCELLED. When status is CANCELLED but no matching AdminActionLog can be found, the sub-fields are null rather than guessed.
+      description: รายละเอียดการยกเลิก ใช้ร่วมกันทั้งระดับ VehicleJob, MarketJob, GateTicket/Booth และระดับ Worker แต่ละคน เป็น null ถ้าสถานะระดับนั้นไม่ใช่ CANCELLED ถ้าสถานะเป็น CANCELLED แต่หา AdminActionLog ที่ตรงกันไม่เจอ sub-field ต่างๆ จะเป็น null แทนที่จะเดาค่าขึ้นมา
       properties:
         cancelled_at:
           type: string
@@ -4089,7 +4189,7 @@
 
     AdminHistoryWorker:
       type: object
-      description: One worker who actually accepted a dispatch (VehicleJobAssignment.accepted_at not null) for this vehicle job, deduplicated by worker_account_id — the assignment with the latest accepted_at is chosen when the same worker was dispatched/accepted more than once. Workers who were dispatched but never accepted are excluded here but still appear in the timeline.
+      description: Worker หนึ่งคนที่กดรับงานจริง (VehicleJobAssignment.accepted_at ไม่เป็น null) สำหรับงานรถนี้ ตัดรายการซ้ำด้วย worker_account_id — ถ้า Worker คนเดียวกันถูก dispatch/กดรับมากกว่า 1 ครั้ง จะเลือก assignment ที่มี accepted_at ล่าสุด Worker ที่ถูก dispatch แต่ไม่เคยกดรับจะไม่แสดงในนี้ แต่ยังปรากฏใน timeline
       properties:
         worker_account_id:
           type: integer
@@ -4145,11 +4245,7 @@
 
     AdminHistoryTimelineItem:
       type: object
-      description: >
-        One event on the vehicle job's chronological timeline, merged from WorkerAssignmentEvent,
-        TicketCompletionSubmission, and AdminActionLog and sorted by occurred_at. COUNT_SUBMITTED
-        entries have actor_type "admin" (instead of "worker") when the submission came from
-        POST .../override-count instead of the worker's own submit-count flow.
+      description: เหตุการณ์หนึ่งรายการบน timeline ตามลำดับเวลาของงานรถ รวมมาจาก WorkerAssignmentEvent, TicketCompletionSubmission และ AdminActionLog แล้วเรียงตาม occurred_at รายการ COUNT_SUBMITTED จะมี actor_type เป็น "admin" (แทนที่จะเป็น "worker") เมื่อการส่งยอดนั้นมาจาก POST .../override-count แทนที่จะมาจาก flow submit-count ของ Worker เอง
       properties:
         type:
           type: string
@@ -4175,7 +4271,7 @@
 
     AdminHistoryFinance:
       type: object
-      description: Job-level finance totals for the whole vehicle job (all Business Tickets), summed from the same persisted TicketProductFinancial/TicketWorkerPayment values as AdminFinancialBooth. Never recalculated from a formula.
+      description: ยอดการเงินรวมระดับงานรถทั้งคัน (ทุก Business Ticket) รวมมาจากค่า TicketProductFinancial/TicketWorkerPayment ที่บันทึกไว้ชุดเดียวกับ AdminFinancialBooth ไม่มีการคำนวณใหม่จากสูตรใดๆ
       properties:
         stall_fee_total:
           type: string
@@ -4230,26 +4326,26 @@
                   type: string
                   format: date-time
                   nullable: true
-                  description: Earliest ticket_created_at across every Business Ticket (MarketJob) of this vehicle job. This is the time Gate created the first Ticket.
+                  description: ticket_created_at ที่เร็วที่สุดในบรรดา Business Ticket (MarketJob) ทั้งหมดของงานรถนี้ คือเวลาที่ Gate สร้าง Ticket ใบแรก
                 work_started_at:
                   type: string
                   format: date-time
                   nullable: true
-                  description: VehicleJob.work_started_at. Set once when the whole Worker team finishes scanning and the vehicle job starts WORKING.
+                  description: คือ VehicleJob.work_started_at จะถูกตั้งค่าครั้งเดียวตอนที่ทั้งทีม Worker สแกนเข้างานครบและงานรถเปลี่ยนเป็นสถานะ WORKING
                 submitted_complete_at:
                   type: string
                   format: date-time
                   nullable: true
-                  description: Latest booth submission timestamp. Set only when every non-cancelled Business Ticket has at least one submission.
+                  description: เวลาที่ส่งยอดของแผงค้าล่าสุด จะถูกตั้งค่าเฉพาะตอนที่ Business Ticket ที่ยังไม่ถูกยกเลิกทุกใบมีการส่งยอดอย่างน้อย 1 ครั้งแล้ว
                 completed_at:
                   type: string
                   format: date-time
                   nullable: true
-                  description: VehicleJob.completed_at. Set once when the central lifecycle changes the vehicle job to COMPLETED.
+                  description: คือ VehicleJob.completed_at จะถูกตั้งค่าครั้งเดียวตอนที่ central lifecycle เปลี่ยนสถานะงานรถเป็น COMPLETED
                 duration_seconds:
                   type: integer
                   nullable: true
-                  description: CompletedAt minus WorkStartedAt, in seconds. Null unless both are known.
+                  description: CompletedAt ลบ WorkStartedAt มีหน่วยเป็นวินาที เป็น null ถ้ายังไม่รู้ค่าใดค่าหนึ่ง
                 history_status:
                   type: string
                   nullable: true
@@ -4257,24 +4353,10 @@
                     - COMPLETED
                     - CANCELLED
                     - REJECT_PENDING
-                  description: >-
-                    The Work History business group this vehicle job belongs to (see the
-                    history_status query parameter). Priority is CANCELLED > COMPLETED >
-                    REJECT_PENDING. Null when the vehicle job matches none of the three groups
-                    (e.g. still WAIT/WORKING with no Booth currently in REJECT) — this can only
-                    happen when history_status was not sent, since sending it restricts results to
-                    the three groups already.
+                  description: กลุ่มธุรกิจของ Work History ที่งานรถนี้สังกัด (ดู query parameter history_status) ลำดับความสำคัญคือ CANCELLED > COMPLETED > REJECT_PENDING เป็น null เมื่องานรถนี้ไม่เข้าเงื่อนไขทั้ง 3 กลุ่ม (เช่น ยังอยู่สถานะ WAIT/WORKING และไม่มีแผงค้าใดอยู่ในสถานะ REJECT) — กรณีนี้จะเกิดได้เฉพาะตอนที่ไม่ได้ส่ง history_status มาเท่านั้น เพราะถ้าส่งมาผลลัพธ์จะถูกจำกัดให้อยู่ใน 3 กลุ่มนี้อยู่แล้ว
                 history_flags:
                   type: array
-                  description: >-
-                    Notable past events for this vehicle job, distinct from history_status (the
-                    current business group) — a job can have any number of these at once, except
-                    VEHICLE_CANCELLED_AFTER_START and VEHICLE_CANCELLED_BEFORE_START which are
-                    mutually exclusive. Always an array (never null, empty array when nothing
-                    matched), never contains duplicates, and is ordered as listed in the enum below
-                    regardless of when each event actually occurred. Derived entirely from existing
-                    transactional data (TicketCompletionSubmission, VehicleJobAssignment,
-                    WorkerAssignmentEvent, GateTicket) — never parsed from Timeline[].description.
+                  description: เหตุการณ์สำคัญในอดีตของงานรถนี้ แยกต่างหากจาก history_status (กลุ่มธุรกิจปัจจุบัน) — งานหนึ่งงานมีได้หลายรายการพร้อมกัน ยกเว้น VEHICLE_CANCELLED_AFTER_START กับ VEHICLE_CANCELLED_BEFORE_START ที่จะมีได้แค่อย่างใดอย่างหนึ่งเท่านั้น เป็น array เสมอ (ไม่เป็น null เป็น array ว่างถ้าไม่เข้าเงื่อนไขใดเลย) ไม่มีรายการซ้ำ และเรียงตามลำดับที่ระบุใน enum ด้านล่างเสมอ ไม่ว่าแต่ละเหตุการณ์จะเกิดขึ้นจริงเมื่อไหร่ คำนวณมาจากข้อมูล transaction ที่มีอยู่แล้วทั้งหมด (TicketCompletionSubmission, VehicleJobAssignment, WorkerAssignmentEvent, GateTicket) — ไม่ได้ parse มาจาก Timeline[].description เด็ดขาด
                     Backend sends only these stable English codes; translating to Thai text/icons/
                     colors is a Frontend concern.
                   items:
@@ -4296,7 +4378,7 @@
                 cancellation:
                   allOf:
                     - $ref: "#/components/schemas/AdminHistoryCancellation"
-                  description: Set when this vehicle job's status is CANCELLED (VEHICLE_JOB_CANCELLED). This is the top level, so there is no further fallback.
+                  description: ตั้งค่าเมื่อสถานะของงานรถนี้เป็น CANCELLED (VEHICLE_JOB_CANCELLED) นี่คือระดับบนสุดแล้ว จึงไม่มี fallback ต่อไปอีก
           description: ข้อมูลงานรถ
         markets:
           type: array
@@ -4538,10 +4620,7 @@
     DailyWorkerIncomeCancellation:
       type: object
       nullable: true
-      description: >-
-        Non-null only when payment_status = cancel (the whole ticket_no was cancelled by an
-        Admin). cancelled_by_type/cancelled_by_name come from the
-        admin_action_logs row written when the ticket_no was cancelled.
+      description: ไม่เป็น null เฉพาะตอน payment_status = cancel (ticket_no นี้ถูก Admin ยกเลิกทั้งใบ) โดย cancelled_by_type/cancelled_by_name มาจากแถว admin_action_logs ที่บันทึกไว้ตอนยกเลิก ticket_no นี้
       properties:
         cancelled_at:
           type: string
@@ -4561,12 +4640,7 @@
 
     DailyWorkerIncomePaymentStatus:
       type: string
-      description: >-
-        Mutually exclusive — decided in this priority order: cancel (ticket_no cancelled by
-        Admin) > success/partially_paid (ticket_no reached COMPLETED) > admin_reject/worker_reject
-        (a booth is currently REJECT, unresolved). A row that matches none of these five is
-        excluded from data entirely (e.g. ticket_no still WORKING with no reject and this worker
-        never cancelled) — not returned with a null/empty payment_status.
+      description: มีได้ค่าเดียวเท่านั้น (ไม่ซ้อนกัน) — ตัดสินตามลำดับความสำคัญนี้ คือ cancel (ticket_no ถูก Admin ยกเลิก) > success/partially_paid (ticket_no ถึงสถานะ COMPLETED) > admin_reject/worker_reject (มีแผงค้าอยู่ในสถานะ REJECT ที่ยังไม่แก้ไข) แถวที่ไม่เข้าเงื่อนไขทั้ง 5 นี้เลย (เช่น ticket_no ยังอยู่สถานะ WORKING ไม่มี reject และ Worker คนนี้ไม่เคยถูกยกเลิก) จะถูกตัดออกจากข้อมูลทั้งหมด — ไม่ส่งกลับมาเป็น payment_status ที่เป็น null/ว่างเปล่า
       enum:
         - success
         - partially_paid
@@ -4576,10 +4650,7 @@
 
     DailyWorkerIncomeItem:
       type: object
-      description: >-
-        One Worker's membership (TicketWorker) in one Business Ticket (ticket_no). payable is
-        TicketWorker.final_earning_amount taken as-is, never recomputed — already scoped to this
-        one ticket_no since TicketWorker is unique per (marketJobId, workerAccountId).
+      description: การเป็นสมาชิก (TicketWorker) ของ Worker คนหนึ่งใน Business Ticket (ticket_no) ใบหนึ่ง payable คือค่า TicketWorker.final_earning_amount นำมาใช้ตรงๆ ไม่มีการคำนวณใหม่ — จำกัดขอบเขตอยู่ที่ ticket_no ใบนี้ใบเดียวอยู่แล้ว เพราะ TicketWorker ไม่ซ้ำกันต่อ (marketJobId, workerAccountId)
       properties:
         worker:
           $ref: "#/components/schemas/DailyWorkerIncomeWorker"
@@ -5165,7 +5236,7 @@
           example: CANCELLED
     AdminCancelTicketWorkerResponse:
       type: object
-      description: Cancelling one worker's membership of a single Business Ticket — the worker stays checked in on the truck and keeps working any other Business Ticket, only this ticket_no's roster is affected.
+      description: ยกเลิกการเป็นสมาชิกของ Worker คนหนึ่งใน Business Ticket ใบเดียว — Worker ยังคงเช็คอินอยู่บนรถและทำงาน Business Ticket ใบอื่นต่อได้ปกติ กระทบเฉพาะรายชื่อของ ticket_no ใบนี้เท่านั้น
       properties:
         message:
           type: string
@@ -5188,10 +5259,7 @@
           example: CANCELLED
     AdminCancelTicketWorkerFromBoothResponse:
       type: object
-      description: >-
-        Removing one worker from just one Booth's payout divisor (GateTicketWorkerSnapshot at
-        confirm time) — does not touch TicketWorker.status, so the worker stays WORKING on the
-        rest of the Business Ticket and keeps working any other booth in it.
+      description: ถอด Worker คนหนึ่งออกจากตัวหารค่าแรงของแผงค้าเดียว (GateTicketWorkerSnapshot ตอนยืนยัน) — ไม่แตะ TicketWorker.status เพราะฉะนั้น Worker ยังคงอยู่สถานะ WORKING ในส่วนที่เหลือของ Business Ticket และทำงานแผงค้าอื่นในใบนี้ต่อได้ปกติ
       properties:
         message:
           type: string
@@ -5996,7 +6064,7 @@
           example: false
     WorkerTeamAccept:
       type: object
-      description: How many of the required workers have pressed Accept so far (independent of whether they have gone on to scan QR check-in yet).
+      description: จำนวน Worker ที่กด Accept ไปแล้วจากที่ต้องการทั้งหมด (ไม่เกี่ยวกับว่าได้สแกน QR เช็คอินต่อหรือยัง)
       properties:
         workers_required:
           type: integer
@@ -6270,11 +6338,7 @@
           description: รายการข้อมูลที่ตรงกับเงื่อนไข
     AdminAuditEventItem:
       type: object
-      description: >
-        Unified audit event projected from existing transactional sources (VehicleJob,
-        GateRequestLog, DriverSession, WorkerAssignmentEvent, TicketCompletionSubmission,
-        TicketRating, MessageDeliveryLog, AdminActionLog, SecurityAuditLog — see 27.12). No
-        central audit_events table exists — this is a merged read view.
+      description: เหตุการณ์ audit แบบรวมจุดเดียว คำนวณมาจากแหล่งข้อมูล transaction ที่มีอยู่แล้ว (VehicleJob, GateRequestLog, DriverSession, WorkerAssignmentEvent, TicketCompletionSubmission, TicketRating, MessageDeliveryLog, AdminActionLog, SecurityAuditLog — ดูหัวข้อ 27.12) ไม่มีตาราง audit_events กลางอยู่จริง นี่คือ view ที่รวมข้อมูลมาให้อ่านเท่านั้น
       properties:
         event_id:
           type: string
