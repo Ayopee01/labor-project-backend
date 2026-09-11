@@ -4,17 +4,18 @@ import { toUnixMs } from "./time";
 
 /* -------------------------------------- Functions -------------------------------------- */
 
-// Function builds worker assignment payload with active TicketNo values
+// Function builds worker assignment payload with active TicketNo values และเวลาที่แต่ละ Ticket ถูกบันทึกลง DB (created_at)
 export function buildWorkerAssignedPayload(
   assignment: VehicleJobAssignmentDto,
   vehicleJob: VehicleJobDto,
-  ticketNos: string[]
+  tickets: Array<{ ticket_no: string; created_at: string }>
 ) {
   return {
     ticketNumber: vehicleJob.ticket_number,
-    ticketNos,
+    ticketNos: tickets.map((ticket) => ticket.ticket_no),
+    tickets,
+    accept_created_at: assignment.created_at,
     assignment: {
-      created_at: assignment.created_at,
       accept_deadline_at: assignment.accept_deadline_at,
       accept_deadline_unix_ms: toUnixMs(assignment.accept_deadline_at),
     },

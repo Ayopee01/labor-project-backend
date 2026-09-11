@@ -69,6 +69,34 @@ export async function listActiveTicketNosByVehicleJobId(
   return marketJobs.map((marketJob) => marketJob.ticketNo);
 }
 
+// Function ดึง TicketNo พร้อมเวลาที่ MarketJob (Business Ticket) นี้ถูกบันทึกลง DB ที่ยัง active ทั้งหมดของ VehicleJob — ใช้ส่งให้ Worker เห็นตอนงานเข้า
+export async function listActiveTicketSummariesByVehicleJobId(
+  vehicleJobId: number,
+  connection?: DbConnection
+): Promise<Array<{ ticket_no: string; created_at: string }>> {
+  const db = client(connection);
+  const marketJobs = await db.marketJob.findMany({
+    where: {
+      vehicleJobId,
+      status: {
+        not: VEHICLE_JOB_STATUS.CANCELLED,
+      },
+    },
+    orderBy: {
+      id: "asc",
+    },
+    select: {
+      ticketNo: true,
+      createdAt: true,
+    },
+  });
+
+  return marketJobs.map((marketJob) => ({
+    ticket_no: marketJob.ticketNo,
+    created_at: marketJob.createdAt.toISOString(),
+  }));
+}
+
 // Function ยกเลิก Business Ticket (market job) พร้อม cascade GateTicket ที่ยังไม่ terminal ให้เป็น CANCELLED จาก DB
 // ยกเว้น ticket ที่ terminal ไปแล้ว (COMPLETED/CANCELLED) ไม่ให้ถูกเขียนทับ — ยกเลิกทั้งตลาดต้องไม่เปลี่ยนประวัติ booth ที่จบไปแล้ว
 export async function cancelMarketJobWithCascade(

@@ -428,6 +428,7 @@ export interface WorkerCurrentJobBoothResponse {
 
 export interface WorkerCurrentJobMarketResponse {
   ticket_no: string;
+  created_at: string;
   marketCode: string;
   marketName: string;
   booths: WorkerCurrentJobBoothResponse[];
@@ -461,6 +462,7 @@ export interface WorkerCurrentJobResponse {
   ticket_number: string;
   license_plate: string;
   license_plate_province: string | null;
+  accept_created_at: string;
   accept_deadline_at: string | null;
   accept_deadline_unix_ms: number | null;
   scan_deadline_at: string | null;
@@ -493,6 +495,7 @@ interface WorkerAssignmentStallDto {
 // Type ตลาดใน assignment ที่รวมแผงของตลาดนั้น (หนึ่งรายการ = หนึ่ง Business Ticket)
 interface WorkerAssignmentMarketDto {
   ticket_no: string;
+  created_at: string;
   marketName: string;
   stall_count: number;
   stalls: WorkerAssignmentStallDto[];

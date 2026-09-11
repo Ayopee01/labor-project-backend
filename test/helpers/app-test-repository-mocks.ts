@@ -2816,6 +2816,17 @@ export const marketJobRepositoryMock = {
       )
       .sort((left, right) => left.id - right.id)
       .map((market) => market.ticket_no),
+  listActiveTicketSummariesByVehicleJobId: async (vehicleJobId: number) =>
+    state.marketJobs
+      .filter(
+        (market) =>
+          market.vehicle_job_id === vehicleJobId && market.status !== "CANCELLED",
+      )
+      .sort((left, right) => left.id - right.id)
+      .map((market) => ({
+        ticket_no: market.ticket_no,
+        created_at: market.created_at,
+      })),
   // Function ยกเลิก Business Ticket (market job) พร้อม cascade GateTicket ที่ยังไม่ terminal — ย้ายมาจาก adminJobsRepositoryMock ตาม Fix B
   cancelMarketJobWithCascade: async (marketJobId: number) => {
     const marketJob = state.marketJobs.find((item) => item.id === marketJobId);

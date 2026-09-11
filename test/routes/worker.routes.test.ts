@@ -1518,25 +1518,29 @@ test("dispatch assigns ready workers in FIFO order", async () => {
   const payload = assignedEvent?.payload as {
     ticketNumber: string;
     ticketNos: string[];
+    tickets: Array<{ ticket_no: string; created_at: string }>;
+    accept_created_at: string;
     assignment: {
-      created_at: string;
       accept_deadline_at: string | null;
       accept_deadline_unix_ms: number | null;
     };
   };
 
   assert.deepEqual(Object.keys(payload).sort(), [
+    "accept_created_at",
     "assignment",
     "ticketNos",
     "ticketNumber",
+    "tickets",
   ]);
+  assert.ok(payload.accept_created_at);
   assert.equal(payload.ticketNumber, job.ticket_number);
   // Vehicle job นี้ยังไม่มี Business Ticket ใดๆ เลย (fixture ไม่ได้สร้าง MarketJob ไว้)
   assert.deepEqual(payload.ticketNos, []);
+  assert.deepEqual(payload.tickets, []);
   assert.deepEqual(Object.keys(payload.assignment).sort(), [
     "accept_deadline_at",
     "accept_deadline_unix_ms",
-    "created_at",
   ]);
   assert.equal(
     payload.assignment.accept_deadline_unix_ms,
@@ -1617,6 +1621,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
   assert.equal(response.body.team[0].shirt_number, String(worker.id));
   assert.equal(response.body.team[0].scan_status, "accepted");
   assert.deepEqual(Object.keys(response.body.markets[0]).sort(), [
+    "created_at",
     "marketName",
     "stall_count",
     "stalls",
@@ -1625,6 +1630,7 @@ test("POST /api/workers/me/assignments/:ticketNumber/accept accepts pending assi
   assert.equal(response.body.markets[0].marketName, "Market A");
   assert.equal(response.body.markets[0].stall_count, 1);
   assert.ok(response.body.markets[0].ticket_no);
+  assert.ok(response.body.markets[0].created_at);
   assert.deepEqual(Object.keys(response.body.markets[0].stalls[0]).sort(), [
     "boothCode",
     "boothName",

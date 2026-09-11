@@ -117,6 +117,7 @@ function buildWorkerAssignmentAcceptResponse(
     })),
     markets: detail.markets.map((market) => ({
       ticket_no: market.ticket_no,
+      created_at: market.created_at,
       marketName: market.marketName,
       stall_count: market.booths.length,
         stalls: market.booths.map((ticket) => ({
@@ -168,6 +169,7 @@ function buildWorkerCurrentJobResponse(
     ticket_number: detail.vehicle_job.ticket_number,
     license_plate: detail.vehicle_job.license_plate,
     license_plate_province: detail.vehicle_job.license_plate_province,
+    accept_created_at: assignment.created_at,
     accept_deadline_at:
       assignment.status === ASSIGNMENT_STATUS.PENDING
         ? assignment.accept_deadline_at
@@ -196,6 +198,7 @@ function buildWorkerCurrentJobResponse(
     team_scan: buildWorkerTeamScanResponse(teamScan),
     markets: detail.markets.map((market) => ({
       ticket_no: market.ticket_no,
+      created_at: market.created_at,
       marketCode: market.marketCode,
       marketName: market.marketName,
       booths: market.booths.map((ticket) => ({

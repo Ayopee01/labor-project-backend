@@ -1908,10 +1908,10 @@ export async function assignVehicleJobWorkers(
 
   // Assignment ทุกตัว commit ลง DB แล้วจริง จากนี้เป็นแค่ best-effort notify Redis/BullMQ/Socket
   // ต้องครอบ try/catch แยกทีละ worker ห้าม throw ออก ไม่งั้น worker ที่เหลือจะไม่ได้ schedule timeout ค้างถาวร และ request จะพัง 500 ทั้งที่ assign สำเร็จแล้ว
-  let ticketNos: string[] = [];
+  let tickets: Array<{ ticket_no: string; created_at: string }> = [];
 
   try {
-    ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+    tickets = await marketJobRepository.listActiveTicketSummariesByVehicleJobId(
       vehicleJob.id,
     );
   } catch (error) {
@@ -1932,7 +1932,7 @@ export async function assignVehicleJobWorkers(
       sendWorkerSocketEvent(
         assignment.worker_id,
         "WORKER_ASSIGNED",
-        buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos),
+        buildWorkerAssignedPayload(assignment, vehicleJob, tickets),
       );
     } catch (error) {
       logger.error("Failed to notify worker after manual assignment was already committed.", {

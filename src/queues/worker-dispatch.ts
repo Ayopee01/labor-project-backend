@@ -149,7 +149,7 @@ async function dispatchReadyWorkersForVehicleJob(
 
       // ส่ง notification ไปยัง Worker และ Admin หลังจากสร้าง Assignment สำเร็จแล้ว
       try {
-        const ticketNos = await marketJobRepository.listActiveTicketNosByVehicleJobId(
+        const tickets = await marketJobRepository.listActiveTicketSummariesByVehicleJobId(
           vehicleJob.id,
           connection
         );
@@ -157,7 +157,7 @@ async function dispatchReadyWorkersForVehicleJob(
         sendWorkerSocketEvent(
           worker.worker_id,
           "WORKER_ASSIGNED",
-          buildWorkerAssignedPayload(assignment, vehicleJob, ticketNos)
+          buildWorkerAssignedPayload(assignment, vehicleJob, tickets)
         );
         publishNotification({
           type: "WORKER_ASSIGNED",
