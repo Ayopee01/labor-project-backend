@@ -93,8 +93,20 @@ jobs:
       - name: Deploy test migrations
         run: npm run db:deploy
 
+      - name: Seed test system settings
+        run: npm run db:seed:test-settings
+
       - name: Integration tests
         run: RUN_DB_TESTS=1 npm run test:integration
+
+      - name: Concurrency tests
+        run: RUN_DB_TESTS=1 npm run test:concurrency
+
+      - name: End-to-end tests
+        run: RUN_DB_TESTS=1 npm run test:e2e
+
+      - name: Realtime tests
+        run: RUN_DB_TESTS=1 npm run test:realtime
 
   deploy:
     name: Deploy to DigitalOcean droplet

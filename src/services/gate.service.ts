@@ -1409,12 +1409,25 @@ export async function createVehicleJobFromGate(
     ).catch(async (error) => {
       // เช็คว่าเป็น boothCode ชนกันจาก race condition หรือไม่ (ยิง Gate ซ้ำพร้อมกันด้วย BoothCode เดียวกัน)
       // ถ้าใช่ แปลงเป็น ApiError เดียวกับ pre-check ด้านบน แทนที่จะปล่อย raw Prisma error ออกไป
-      const target =
+      // อ่าน field ที่ชน unique constraint ทั้ง 2 รูปแบบ: meta.target (Prisma engine เดิม) และ
+      // meta.driverAdapterError.cause.constraint.fields (adapter-pg ตั้งแต่ Prisma 7 ที่ใช้ driver
+      // adapter — ไม่มี meta.target อีกต่อไป ถ้าเช็คแบบเดิมอย่างเดียวจะไม่ match อะไรเลย ปล่อย raw
+      // Prisma error หลุดออกไปทั้งที่ตั้งใจดักไว้แล้ว — regression ที่ concurrency test จับได้จริง)
+      const targetFromMeta =
         error instanceof Prisma.PrismaClientKnownRequestError
           ? error.meta?.target
           : undefined;
+      const targetFromDriverAdapter =
+        error instanceof Prisma.PrismaClientKnownRequestError
+          ? (error.meta?.driverAdapterError as { cause?: { constraint?: { fields?: string[] } } } | undefined)
+              ?.cause?.constraint?.fields
+          : undefined;
       const targetText = (
-        Array.isArray(target) ? target.join(",") : String(target ?? "")
+        Array.isArray(targetFromMeta)
+          ? targetFromMeta.join(",")
+          : Array.isArray(targetFromDriverAdapter)
+            ? targetFromDriverAdapter.join(",")
+            : String(targetFromMeta ?? "")
       ).toLowerCase();
       const isDuplicateBoothCode =
         error instanceof Prisma.PrismaClientKnownRequestError &&

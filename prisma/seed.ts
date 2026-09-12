@@ -11,6 +11,7 @@ import { seedMasterRates } from "./master-rate.seed";
 import { seedMasterWorkers } from "./master-worker.seed";
 import { seedLine } from "./line.seed";
 import { seedMobileAppVersion } from "./version.seed";
+import { seedRuntimeSettings } from "./runtime-settings.seed";
 
 dotenv.config({ quiet: true });
 
@@ -63,22 +64,6 @@ const SEED_GATE_CLIENT = {
   name: "Main Gate Demo Client",
   secret: "gate_live_RnqzqVz1OCeLiEMMQRrddGDjaWxfDt2a7779bKJomTc",
 };
-
-// Mock data สำหรับ Runtime Settings
-const SEED_RUNTIME_SETTINGS = {
-  driver_session_ttl_hours: 24,
-  worker_accept_deadline_seconds: 60,
-  worker_accept_timeout_limit: 3,
-  worker_scan_deadline_minutes: 15,
-  worker_scan_warning_before_minutes: 2,
-  worker_scan_team_remaining_minutes: 5,
-  worker_break_duration_minutes: 15,
-  worker_break_limit: 4,
-  worker_break_count_ttl_hours: 48,
-  worker_presence_stale_seconds: 90,
-  vendor_confirm_timeout_hours: 24,
-  vendor_reconfirm_timeout_hours: 4,
-} as const;
 
 // Permission templates สำหรับแต่ละระดับ permission ของ admin
 const SEED_OPERATION_PERMISSIONS = ADMIN_PERMISSIONS.filter(
@@ -165,22 +150,7 @@ async function main(): Promise<void> {
     );
   }
 
-  for (const [key, value] of Object.entries(SEED_RUNTIME_SETTINGS)) {
-    await prisma.systemSetting.upsert({
-      where: {
-        key,
-      },
-      update: {
-        value: String(value),
-        updatedBy: admin.id,
-      },
-      create: {
-        key,
-        value: String(value),
-        updatedBy: admin.id,
-      },
-    });
-  }
+  await seedRuntimeSettings(prisma, admin.id);
 
   await prisma.gateClient.upsert({
     where: {
